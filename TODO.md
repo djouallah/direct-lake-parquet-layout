@@ -9,11 +9,11 @@ exercise cost. This file is what has not been done.
 
 ---
 
-## 7 of 17 layout groups are EXCLUDED from *Cost and speed by parquet layout*
+## 4 of 16 layout groups are EXCLUDED from *Cost and speed by parquet layout*
 
 **The `etl CU (8 vCores)` column is shown, and a layout with no run at that core count is dropped
 from the section entirely** — table and chart alike, with the count named in a note under the table.
-Nine rows survive today, all complete.
+Twelve rows survive today, all complete.
 
 This replaced hiding the column while 7 of 17 rows could not fill it: a cost column that is mostly
 dashes reads as "the build was free" rather than "nobody measured it at that size". Dropping the row
@@ -23,41 +23,51 @@ reason. They are still in *Every run*.
 
 The filter is on MEMBERSHIP, not on the value: a layout built at 8 vCores whose CU the ledger has not
 read yet keeps its row and dashes that one cell. "Measured, not yet costed" is not "never built".
+No group is in that state today — all 16 carry analytics CU, so the 4 that are missing are missing a
+BUILD, not a ledger read.
 
 *Cost and speed by parquet layout* reports build cost at ONE core count, because build cost tracks
 the machine and `layoutKey` does not carry `vcores` — a group holds runs from several machines and a
 median over them describes none of them (measured: one duckrun layout reads **9,986 CU at 8 vCores
 against 22,547 blended** across 8/16/32/64). See the `ETL_VCORES` comment in `dashboard/app.js`.
 
-Seven groups have never been built at 8 vCores. All seven are duckrun; every one exists only at 64
+Four groups have never been built at 8 vCores. All four are duckrun; every one exists only at 64
 cores. **Building them is what puts them back on the page.**
 
 **⚠️ The nightly does NOT fill these in, and an earlier note claiming it would was wrong.** The
 nightly builds one layout — `sort_by=date,time,price` at `row_group_size=2000000`, 72 row groups —
 and that group already has 8-core runs (it reads 9,897). A layout group is keyed on the sort columns
-and a band of the row-group count, so every one of the seven below is a layout the nightly never
+and a band of the row-group count, so every one of the four below is a layout the nightly never
 writes. Filling them needs a deliberate dispatch each.
 
 | `sort_by` | row groups | `row_group_size` to dispatch | runs in the group |
 |---|---:|---:|---:|
-| `date,time` | 19–25 | `6000000` | 6 |
 | `date,time,DUID` | 19–24 | `6000000` | 2 |
 | `date,DUID,time` | 24 | `6000000` | 5 |
 | `date,time,price` | 24 | `6000000` | 1 |
-| `date,time` | 72 | `2000000` | 1 |
-| `date,time,price` | 144 | `1000000` | 1 |
 | `date,time` | 144 | `1000000` | 1 |
 
 `row_group_size` is DERIVED (`143,980,961 ÷ row groups`) because most of these records predate that
-dispatch input and carry no `inputs.row_group_size` to copy. The 19–25 band is one group, so one
-dispatch at `6000000` covers it.
+dispatch input and carry no `inputs.row_group_size` to copy.
 
 Each row is one `Benchmark` dispatch at **`cores=8`** with that `sort_by` and `row_group_size`,
 everything else default.
 
-**The cost is real and is the reason this is a to-do rather than a task.** Seven from-scratch builds
+**Three of the original seven have been dispatched by hand and have landed** — they are on the page
+now and are not in the table above:
+
+| `sort_by` | `row_group_size` | run | row groups written |
+|---|---:|---|---:|
+| `date,time` | `6000000` | 31260566919 | 24 |
+| `date,time` | `2000000` | 31257464517 | 72 |
+| `date,time,price` | `1000000` | 31257855850 | 144 |
+
+Each landed in the band it was aimed at, so the derived `row_group_size` above is confirmed as the
+way to hit a band rather than a guess.
+
+**The cost is real and is the reason this is a to-do rather than a task.** Four from-scratch builds
 of 370M rows plus their query passes. At 8 vCores the CU rate is `cores / 2` = 4/s and a build reads
-~10,000 CU, so each is ~40 minutes of compute and the set is roughly **70,000 CU**.
+~10,000 CU, so each is ~40 minutes of compute and the set is roughly **40,000 CU**.
 
 Three ways to close it, in rough order of preference:
 
@@ -85,7 +95,7 @@ So chain them. Dispatch, wait for that run to finish, dispatch the next:
 
 ```bash
 # one "sort_by:row_group_size" per remaining layout
-for spec in "date,time:6000000" "date,DUID,time:6000000" "date,time,DUID:6000000"             "date,time,price:6000000" "date,time:2000000" "date,time:1000000"; do
+for spec in "date,time,DUID:6000000" "date,DUID,time:6000000"             "date,time,price:6000000" "date,time:1000000"; do
   # never dispatch while anything is live — this is the serialisation
   while gh run list --workflow Benchmark --limit 20         --json status -q '.[].status' | grep -qE 'in_progress|queued|pending'; do sleep 60; done
   gh workflow run Benchmark -f engines=duckrun -f cores=8      -f sort_by="${spec%%:*}" -f row_group_size="${spec##*:}"
@@ -96,6 +106,4 @@ done
 The `while` is the important line, not the `for`: it waits on ANY live Benchmark run, so the loop
 serialises against a nightly or a hand dispatch too, not just against itself. Budget ~1–1.5 h per
 iteration — an 8-vCore build is cheaper in CU than a 64-core one but slower on the clock — so the set
-is most of a day.
-
-`date,time,price` / `1000000` is not in the list above: it was dispatched as run 31257855850.
+is half a day.
