@@ -625,10 +625,11 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   [performance guidelines](https://learn.microsoft.com/en-us/fabric/data-warehouse/guidelines-warehouse-performance)
   (updated 2026-06-24): *"By default, V-Order is enabled on all warehouses."* Disabling is
   `ALTER DATABASE CURRENT SET VORDER = OFF`, **irreversible** once done, and the state is read with
-  `SELECT [name], [is_vorder_enabled] FROM sys.databases` (`1` on, `0` off). Nothing in this repo runs
-  that `ALTER`, and every dispatch creates its warehouse from nothing, so **every dwh run this repo
-  has ever measured wrote V-Ordered parquet** — while the record said `false` and the page printed `·`
-  and grouped dwh's layout bars as un-V-Ordered.
+  `SELECT [name], [is_vorder_enabled] FROM sys.databases` (`1` on, `0` off). Nothing in this repo ran
+  that `ALTER` for the first six dwh runs, and every dispatch creates its warehouse from nothing, so
+  **every dwh run measured up to 2026-08-09 wrote V-Ordered parquet** — while the record said `false`
+  and the page printed `·` and grouped dwh's layout bars as un-V-Ordered. The `dwh_vorder` dispatch
+  input runs it now; see the bullet below.
   Why it read false, and this is the part worth keeping: **both signals are SPARK-SHAPED.**
   `stats[dwh][*].vorder` is the Delta table property `delta.parquet.vorder.enabled`, a
   `TBLPROPERTIES` key; `ordering.dwh.vorder_files` was the Fabric **Spark** writer's per-file
@@ -655,6 +656,38 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   One thing this does NOT claim: that dwh's V-Order changes its parquet measurably here. Its
   `rg_overlap_pct` is 100% on every column but `cutoff`, which is consistent with the measured spark
   finding that V-Order does not reorder rows. That is the same open question, not a new one.
+- **`dwh_vorder` IS A DISPATCH INPUT, ON BY DEFAULT — and the `ALTER` being irreversible is not the
+  objection it looks like.** Ticking it off runs `ALTER DATABASE CURRENT SET VORDER = OFF` **before**
+  the build (V-Order only affects files written after it; there is no retrofit short of a rewrite),
+  which makes the dwh half of the experiment `spark_resource_profile` already allows. Microsoft
+  documents no way back from that `ALTER` — and it is safe here for one reason worth stating rather
+  than rediscovering: **the teardown deletes the warehouse at the end of every run** and the next
+  dispatch creates a new one, V-Ordered by default. The irreversibility is scoped to an item that
+  lives a single run. Do not lift this onto a warehouse that outlives its dispatch.
+  **The setter is FATAL and the reader stays best-effort — the asymmetry is the design.**
+  `dwh_vorder.py --off` verifies on the same connection that the flag actually moved and exits
+  non-zero if it did not. A missing *measurement* is honest (nobody could ask); a *set* that was
+  accepted and did nothing would leave the leg writing V-Ordered parquet while the record, the
+  dashboard column and the caption all said otherwise. DDL against a seconds-old warehouse fails that
+  way far more plausibly than by raising.
+  **It is recorded TWICE, in two blocks, and that is deliberate.** `layout.config.dwh.vorder` is what
+  the dispatch DECLARED and is what splits the dashboard COLUMN; `layout.ordering.dwh.vorder_enabled`
+  is the `sys.databases` READBACK and is what splits the layout BAR and feeds every caption. Neither
+  is derived from the other, so an `ALTER` that silently did nothing surfaces as a contradiction
+  instead of being taken on trust.
+  **Recording it on BOTH values breaks the `sorted` rule on purpose, and the six old records were
+  backfilled to match.** Everywhere else a flag is recorded only when it is ON, because absence and
+  off produce the same parquet — but that only works while the engine records *something* else.
+  **dwh carries no other config key**, so a default run's `variant()` signature would be `[]` and
+  `variantTag` renders an empty signature as the literal `unrecorded`: the page would print
+  `dwh·unrecorded` beside `dwh·noVOrder`, claiming not to know the thing it had just measured. So
+  `stats.py` records `"true"` as well as `"false"`, and the six pre-input dwh records carry a
+  backfilled `layout.config.dwh.vorder: "true"` — the same move already made for `vorder_enabled`
+  and the sort keys, and true of them for the same documented reason.
+  **`vorder` is NOT in `LAYOUT_CONFIG`**, so `producer()` still reads `dwh` for both. That follows
+  `sorted`'s removal from that list exactly: `layoutLabel` and `keyCells` already print `V-Order`
+  from the MEASURED `vorderOf`, so a `LAYOUT_CONFIG` entry would say it a second time and less
+  precisely.
 - **A Fabric Environment was built for the V-Order problem and reverted. Nothing here uses one.**
   Not because it failed — it published fine and its `readHeavyForPBI` profile is the *documented*
   answer — but because **attaching one gives up the starter pool**. Microsoft's Livy docs say so in

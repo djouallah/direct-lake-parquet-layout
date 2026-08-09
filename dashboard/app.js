@@ -427,8 +427,12 @@ export function stillAccruing(rec, hours = 2.0, now = null) {
 }
 
 /**
- * The config signature this run ran under, as sorted `[key, value]` pairs. `[]` when it recorded none
- * — which is dwh always, since Fabric Warehouse exposes no per-run knob.
+ * The config signature this run ran under, as sorted `[key, value]` pairs. `[]` when it recorded none.
+ *
+ * It used to be `[]` for dwh always, on the grounds that Fabric Warehouse exposes no per-run knob. It
+ * exposes one — V-Order, which `dwh_vorder` now turns off before the build — so a dwh run carries
+ * `vorder` and the six records predating that input were backfilled to `"true"` rather than left
+ * empty, so the two states sit in two columns and the history stays in one of them.
  */
 export function variant(rec) {
   const cfg = ((rec || {}).layout || {}).config || {};
@@ -471,6 +475,12 @@ export function variantTag(sig, terse = true) {
   // state rather than two that merely look alike, and there is nothing for the terse fallback to
   // disambiguate.
   if (d.sorted) bits.push("sorted");
+  // dwh's only knob, and it is spelled on BOTH values rather than by absence. `stats.py` records it
+  // either way — see the comment there — because dwh carries no other config key, so a default run's
+  // signature would otherwise be empty and `variantTag` would render it as the literal `unrecorded`
+  // right beside `dwh·noVOrder`. `V-Order` is the effect and the name a reader of this page wants;
+  // the input's own spelling (`dwh_vorder: true`) is in the record's `inputs` block.
+  if (d.vorder !== undefined) bits.push(String(d.vorder) === "true" ? "V-Order" : "noVOrder");
   // The write geometry, and it MUST be rendered rather than left implicit. `stats.py` records these
   // only when they differ from the default, so a run that carries one has genuinely written
   // different parquet and `variant()` has already split it into its own column — if the tag stayed
@@ -713,16 +723,19 @@ export function sortKeyOf(rec, table = DEFAULTS.table) {
  * **THE FALLBACK IS THE BLIND ONE, WHICH IS WHY IT IS THE FALLBACK.** `stats.<engine>.<table>.vorder`
  * is the Delta table property `delta.parquet.vorder.enabled`, and `ordering.<engine>.vorder_files` was
  * the Spark writer's per-file `add.tags.VORDER`. Both are Spark-shaped. Fabric's WAREHOUSE writer sets
- * neither and V-Orders **by default** on every new warehouse — irreversible once disabled, and nothing
- * in this repo disables it — so for years this page printed `·` for dwh and grouped its bars as
- * un-V-Ordered against parquet that was V-Ordered throughout. Measured on runs 31148571096 and
+ * neither and V-Orders **by default** on every new warehouse — so for years this page printed `·` for
+ * dwh and grouped its bars as un-V-Ordered against parquet that was V-Ordered throughout. Measured on runs 31148571096 and
  * 31167379761: 0 of 77 and 0 of 78 mart files tagged with `unknown: 0`, i.e. a fully successful read
  * of a log that carries no such marker.
  *
  * `vorder_enabled` is the authoritative reading, `sys.databases.is_vorder_enabled` off the warehouse
- * itself (`.github/scripts/dwh_vorder.py`). A `false` there is a real claim — someone ran the `ALTER` —
- * so it must win over the property, which is why the check is `typeof === "boolean"` and not a
- * truthiness test: `vorder_enabled: false` beside `vorder: true` has to read `false`.
+ * itself (`.github/scripts/dwh_vorder.py`). A `false` there is a real claim — the `dwh_vorder: false`
+ * dispatch ran the `ALTER` — so it must win over the property, which is why the check is
+ * `typeof === "boolean"` and not a truthiness test: `vorder_enabled: false` beside `vorder: true` has
+ * to read `false`. That input is also DECLARED in `layout.config.dwh.vorder`, which is what splits
+ * the COLUMN; this measured reading is what splits the BAR and what the caption prints, and the two
+ * are independent on purpose — a declared `false` whose `ALTER` silently did nothing would show up
+ * here as the contradiction it is rather than being taken on trust.
  *
  * The dwh records predating that read were BACKFILLED to `true` on the documented default, the same
  * way the sort keys were backfilled from the model at each run's SHA. So an absent key today means a

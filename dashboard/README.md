@@ -394,6 +394,16 @@ without a build, a token or a dispatch.
   dispatch input has no key at all and would collide with an explicit `false` — the whole engine falls
   back to the explicit spelling. A page printing one column name twice is unreadable and silent about
   why. The tag still never contains `COL_SEP`; `baseEngine` splits on it.
+  **`dwh`'s `vorder` is the ONE flag spelled on both values — `dwh·V-Order` against `dwh·noVOrder`.**
+  It is the exception the rule above cannot cover: dwh carries no other config key, so a default run's
+  signature would be **empty**, and an empty signature renders as the literal `unrecorded`. The
+  majority column would read `dwh·unrecorded` beside `dwh·noVOrder` — the page saying it does not know
+  the thing it just measured. So `stats.py` records `"true"` as well as `"false"` and the six records
+  predating the `dwh_vorder` input were backfilled to `"true"`, which is what keeps that history in one
+  column with every future default dispatch. Note the column and the BAR are split by different
+  witnesses: the column by this DECLARED key, the bar by `vorderOf`'s reading of the measured
+  `layout.ordering.dwh.vorder_enabled`. Neither is derived from the other, so an `ALTER` that was
+  accepted and did nothing shows up as a contradiction rather than being believed.
   The **engine half** takes `ENGINE_LABEL` too, so a column reads `duckdb iceberg·64c` and the page
   calls that engine one thing throughout — the layout rows had said `duckdb iceberg` while the columns
   said `iceberg`, which read as two subjects. That is only safe because **`baseEngine` reverses the

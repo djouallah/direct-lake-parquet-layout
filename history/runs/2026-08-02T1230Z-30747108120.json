@@ -693,7 +693,11 @@
   }
  },
  "layout": {
-  "config": {},
+  "config": {
+   "dwh": {
+    "vorder": "true"
+   }
+  },
   "detail_keys": [
    "schema",
    "total_rows",

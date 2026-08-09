@@ -850,8 +850,7 @@ def build_doc(per_engine, engines, guids=None, landing=None, encodings=None, ord
         #
         # `None` where the workflow set nothing, and the reader must print that as "not recorded"
         # rather than filling in a default — the whole point is that this reports the run, not the
-        # repo's intentions. dwh is absent on purpose: Fabric Warehouse exposes no knob here, and an
-        # invented row would imply one exists.
+        # repo's intentions.
         # Scoped to ENGINES, like `stats` and `engines` above: a `BUILD_ENGINES=spark` dispatch
         # never set `FABRIC_CORES` for a notebook it did not run, so recording a vCore count under
         # `duckrun` there states a hardware choice that no leg made. The reader prints this as the
@@ -880,6 +879,23 @@ def build_doc(per_engine, engines, guids=None, landing=None, encodings=None, ord
             ("iceberg", {"vcores": os.environ.get("FABRIC_CORES") or None}),
             ("spark", {"resource_profile": os.environ.get("SPARK_RESOURCE_PROFILE") or None,
                        "native_execution_engine": os.environ.get("SPARK_NATIVE_ENABLED") or None}),
+            # dwh USED TO BE ABSENT HERE, on the grounds that Fabric Warehouse exposes no per-run
+            # knob. It exposes exactly one, and this repo now turns it: `ALTER DATABASE CURRENT SET
+            # VORDER = OFF` before the build. It has to be recorded, and it CANNOT ride on the
+            # measured `layout.ordering.dwh.vorder_enabled` that `dwh_vorder.py` already writes:
+            # `layoutKey` bands the bars on the measured value, so those split by themselves, but
+            # `variant()` reads only this block — so without a key here a V-Order-OFF run and a
+            # V-Ordered one share one dashboard column, and `columnsFor` keeps the LATEST per column,
+            # which means the newer run would silently REPLACE the other in the CU table rather than
+            # sit beside it. That is the comparison the input exists to make.
+            # UNLIKE `sorted`, this is recorded on BOTH values rather than only the non-default one,
+            # and the six dwh records predating the input were BACKFILLED to "true" to match — the
+            # same move already made for `vorder_enabled` and the sort keys. Recording only "false"
+            # would have been the cheaper edit and it is wrong here: dwh carries no other config key,
+            # so the default runs' signature would be EMPTY, and `variantTag` renders an empty
+            # signature as the literal `unrecorded`. The majority column would read `dwh·unrecorded`
+            # beside `dwh·noVOrder` — a page saying it does not know the thing it just measured.
+            ("dwh", {"vorder": os.environ.get("DWH_VORDER") or None}),
         ) if any(e == n for n, _i, _k in ENGINES)},
         # `guid` is the join key to the CU ledger, and it used to be resolved here and thrown away
         # one line later (`_, per_engine[engine] = ...`). It is the item's identity; the display

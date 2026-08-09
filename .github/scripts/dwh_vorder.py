@@ -42,11 +42,29 @@ It must NOT land in `layout.config`: the dashboard's `variant()` walks every key
 column name, so a measured value there would split dwh's column and its layout bar whenever it moved.
 `layout.ordering` is the correct sibling — the same rule `ordering_for` documents.
 
+**IT ALSO SETS, WITH `--off`, AND THAT HALF IS FATAL — the asymmetry is deliberate.** `dwh_vorder`
+is a dispatch input now, so a run can ask for an un-V-Ordered warehouse and be compared against a
+V-Ordered one; `--off` issues `ALTER DATABASE CURRENT SET VORDER = OFF` and runs BEFORE the build,
+because V-Order only affects files written after it and there is no retrofit short of a rewrite.
+Reading is best-effort because a missing measurement is honest — nobody could ask. SETTING cannot be:
+a silent failure would leave the leg writing V-Ordered parquet while the record, the dashboard column
+and the caption all said it did not, which is the one shape of wrong this repo keeps paying for. So
+`--off` verifies the flag actually moved, on the same connection, and exits non-zero if it did not.
+It lives here rather than in a second script because this file already owns the only T-SQL connection
+in the repo, and two spellings of `connect()` would be two things to keep in step with the adapter.
+
+⚠️ The `ALTER` is **IRREVERSIBLE for that database** — Microsoft documents no way back. It is safe
+here for one reason and it is worth stating rather than rediscovering: the teardown DELETES the
+warehouse at the end of every run and the next dispatch creates a new one, V-Ordered by default. The
+irreversibility is scoped to an item that lives a single run. Do not lift this onto a warehouse that
+outlives its dispatch.
+
 Env in: `FABRIC_DWH_SERVER`, `FABRIC_DWH_NAME`, `FABRIC_ACCESS_TOKEN` (all set by `provision.py` and
 the token step), `RUN_RECORD`. **`RUN_RECORD` unset is a no-op**, so this stays runnable by hand to
 reproduce a CI reading. Diagnostics -> stderr.
 
-    python .github/scripts/dwh_vorder.py dwh
+    python .github/scripts/dwh_vorder.py dwh          # read, best-effort, records the answer
+    python .github/scripts/dwh_vorder.py dwh --off    # set, FATAL, records nothing
 """
 import os
 import struct
@@ -57,6 +75,12 @@ import record
 # What `disable-v-order` documents: 1 = enabled, 0 = disabled. `DB_NAME()` rather than a literal so
 # this cannot read a sibling warehouse's flag if the connection lands somewhere unexpected.
 QUERY = "SELECT [is_vorder_enabled] FROM sys.databases WHERE [name] = DB_NAME()"
+
+# `CURRENT`, never a database name: the connection is already bound to this run's warehouse, and
+# naming one would let a typo or a stale env point this at a sibling. Exactly the spelling
+# Microsoft's `disable-v-order` doc gives, and there is no matching `SET VORDER = ON` — the operation
+# is one-way, which is why nothing above offers to turn it back on.
+DISABLE = "ALTER DATABASE CURRENT SET VORDER = OFF"
 
 # SQL_COPT_SS_ACCESS_TOKEN, copied from the adapter's own
 # `dbt/adapters/fabric/fabric_token_provider.py` (the constant of the same name) — a token in the
@@ -78,6 +102,24 @@ def read_vorder(con):
     if not row or row[0] is None:
         return None
     return bool(row[0])
+
+
+def disable_vorder(con):
+    """Run the `ALTER` and CHECK IT TOOK, on the same connection. Raises when the flag did not move.
+
+    The readback is the whole value of this function. `ALTER DATABASE` is DDL against a warehouse
+    that was created seconds earlier, so the interesting failure is not an exception — it is a
+    statement that is accepted and does nothing, after which every file the build writes is V-Ordered
+    while the run's own record says `vorder: false`. Splitting it from `main` so a stub connection
+    can pin both halves offline, exactly as `read_vorder` is.
+    """
+    cur = con.cursor()
+    cur.execute(DISABLE)
+    cur.close()
+    got = read_vorder(con)
+    if got is not False:
+        raise RuntimeError(f"{DISABLE} left is_vorder_enabled = {got!r}, expected False")
+    return got
 
 
 def token_attrs(token):
@@ -111,6 +153,20 @@ def connect():
 
 def main(argv):
     engine = (argv[1] if len(argv) > 1 else "dwh").strip()
+    if "--off" in argv[1:]:
+        # NO try/except, and that is the whole difference from the read below. An exception here
+        # SHOULD kill the leg: the build has not run yet, so failing now costs a provisioned
+        # warehouse and nothing else, while continuing would spend the leg measuring the opposite of
+        # what was asked for. Records nothing either — the post-build read is what states the answer,
+        # and it will state `false` because this ran.
+        con = connect()
+        try:
+            disable_vorder(con)
+        finally:
+            con.close()
+        sys.stderr.write(f"  {engine}: V-Order disabled for this warehouse (irreversible; the "
+                         f"teardown deletes it)\n")
+        return 0
     try:
         con = connect()
         try:

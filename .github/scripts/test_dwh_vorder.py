@@ -100,6 +100,90 @@ def test_the_token_is_encoded_exactly_as_the_adapter_encodes_it():
     assert struct.unpack("<i", attrs[1256][:4])[0] == 2 * len(tok)
 
 
+class SetCur:
+    """Records every statement, and lets the ALTER change what a later readback answers."""
+
+    def __init__(self, con):
+        self.con = con
+
+    def execute(self, q):
+        self.con.sql.append(q)
+        if q == dwh_vorder.DISABLE:
+            self.con.row = self.con.after
+
+    def fetchone(self):
+        return self.con.row
+
+    def close(self):
+        pass
+
+
+class SetCon:
+    def __init__(self, after=(0,), before=(1,)):
+        self.row, self.after, self.sql, self.closed = before, after, [], False
+
+    def cursor(self):
+        return SetCur(self)
+
+    def close(self):
+        self.closed = True
+
+
+def test_off_issues_the_documented_alter_and_then_checks_it_took():
+    """`CURRENT`, not a database name — the connection is already bound to this run's warehouse, and
+    naming one would let a stale env disable a sibling. The readback in the SAME call is the whole
+    point: DDL that is accepted and does nothing is the failure worth catching, not an exception."""
+    con = SetCon()
+    assert dwh_vorder.disable_vorder(con) is False
+    assert con.sql[0] == "ALTER DATABASE CURRENT SET VORDER = OFF"
+    assert con.sql[1:] == [dwh_vorder.QUERY], "it verifies on the same connection, immediately"
+
+
+@pytest.mark.parametrize("after", [(1,), None, (None,)])
+def test_off_raises_when_the_flag_did_not_move(after):
+    """STILL ENABLED and COULD-NOT-CONFIRM are both failures here, which is the opposite of the read
+    path's rule. Reading is best-effort because an absent measurement is honest; setting is not,
+    because the leg would then write V-Ordered parquet while the record, the dashboard column and the
+    caption all said it did not."""
+    with pytest.raises(RuntimeError, match="is_vorder_enabled"):
+        dwh_vorder.disable_vorder(SetCon(after=after))
+
+
+def test_off_is_fatal_records_nothing_and_leaves_the_answer_to_the_post_build_read(tmp_path,
+                                                                                   monkeypatch):
+    """It runs BEFORE the build, so failing costs a provisioned warehouse and nothing else — whereas
+    continuing would spend the whole leg measuring the opposite of what was dispatched. And it writes
+    no key: the post-build read is what states the answer, and it will state `false` because this
+    ran. Two sources for one fact, and they are allowed to contradict each other."""
+    rec = tmp_path / "record-20-build-dwh.json"
+    monkeypatch.setenv("RUN_RECORD", str(rec))
+
+    con = SetCon()
+    monkeypatch.setattr(dwh_vorder, "connect", lambda: con)
+    assert dwh_vorder.main(["dwh_vorder.py", "dwh", "--off"]) == 0
+    assert con.closed, "the connection is closed even on the success path"
+    assert not rec.exists(), "the setter records nothing — the read after the build does that"
+
+    # A refusal must reach the runner as a non-zero exit, NOT the read path's quiet `return 0`.
+    monkeypatch.setattr(dwh_vorder, "connect", lambda: SetCon(after=(1,)))
+    with pytest.raises(RuntimeError):
+        dwh_vorder.main(["dwh_vorder.py", "dwh", "--off"])
+    monkeypatch.setattr(dwh_vorder, "connect",
+                        lambda: (_ for _ in ()).throw(RuntimeError("no driver")))
+    with pytest.raises(RuntimeError):
+        dwh_vorder.main(["dwh_vorder.py", "dwh", "--off"])
+    assert not rec.exists()
+
+
+def test_without_off_nothing_is_ever_altered():
+    """The read path must not issue DDL — it runs on every dwh leg, including the default one that
+    asked for V-Order to stay on."""
+    con = SetCon()
+    dwh_vorder.read_vorder(con)
+    assert con.sql == [dwh_vorder.QUERY]
+    assert "ALTER" not in dwh_vorder.QUERY.upper()
+
+
 def test_a_failure_records_nothing_and_never_fails_the_leg(tmp_path, monkeypatch):
     """Best-effort, like every other layout signal. A build that succeeded must not go red because a
     metadata query did — and the key must be ABSENT rather than `false`, because `false` is a claim

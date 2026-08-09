@@ -28,15 +28,19 @@ sys.path.insert(0, HERE)
 
 @pytest.fixture(autouse=True)
 def _no_ambient_duckdb_env(monkeypatch):
-    """Clear every DUCKDB_* var before each test.
+    """Clear every write-config var before each test.
 
     THE GATE MUST NOT BE A FUNCTION OF THE DISPATCH IT IS GATING. `benchmark.yml` puts
     `DUCKDB_SORTED` / `DUCKDB_SORT_BY` / the geometry into the job env, so a test that reads one
     without setting it asserts against whatever the human happened to type into the dispatch form.
     That is exactly what killed run 31073309328: a `sort_by=date,time,DUID` dispatch failed the free
     checks on a test that hardcoded `date,time`, and the run never reached a paid leg.
+
+    `DWH_VORDER` is here for the same reason and not because it is a DuckDB knob — it is the dwh
+    leg's V-Order input, and it reaches `stats.py` through that same workflow-level env.
     """
-    for k in ("DUCKDB_SORTED", "DUCKDB_SORT_BY", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB"):
+    for k in ("DUCKDB_SORTED", "DUCKDB_SORT_BY", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
+              "DWH_VORDER"):
         monkeypatch.delenv(k, raising=False)
 
 
@@ -259,6 +263,36 @@ def test_the_encodings_reach_the_document_under_their_engine(stats, tmp_path):
     assert doc["encodings"]["duckrun"]["mw"]["encodings"] == ["PLAIN"]
     assert "spark" not in doc["encodings"], "an engine that profiled nothing adds no column"
     json.dumps(doc, default=str)      # the record is written with json.dump
+
+
+@pytest.mark.parametrize("env,want", [(None, None), ("true", "true"), ("false", "false")])
+def test_the_dwh_vorder_input_is_recorded_on_BOTH_values(stats, monkeypatch, env, want):
+    """UNLIKE `sorted`, which is recorded only when it is ON. The asymmetry is not an oversight.
+
+    `sorted` can rely on absence because duckrun always records `vcores`, so its signature is never
+    empty. dwh carries NO other config key — so if only `false` were recorded, a default run's
+    signature would be `[]` and `variantTag` renders that as the literal `unrecorded`. The page would
+    read `dwh·unrecorded` beside `dwh·noVOrder`: it would claim not to know the thing it had just
+    measured. The six records predating the input were backfilled to `"true"` to match.
+    """
+    if env is None:
+        monkeypatch.delenv("DWH_VORDER", raising=False)
+    else:
+        monkeypatch.setenv("DWH_VORDER", env)
+    doc = stats.build_doc({}, ["dwh"], {}, None, {})
+    assert doc["config"]["dwh"] == {"vorder": want}
+
+
+def test_the_declared_vorder_and_the_measured_one_are_separate_keys(stats, monkeypatch):
+    """`layout.config` is DECLARED and splits the COLUMN; `layout.ordering.dwh.vorder_enabled` is
+    MEASURED (`dwh_vorder.py` reads `sys.databases`) and splits the BAR. Two witnesses for one fact,
+    on purpose: an `ALTER` that was accepted and did nothing shows up as the contradiction it is
+    rather than being taken on trust. So `stats.py` must not write the measured key and must not
+    infer the declared one from it."""
+    monkeypatch.setenv("DWH_VORDER", "false")
+    doc = stats.build_doc({}, ["dwh"], {}, None, {})
+    assert "vorder_enabled" not in doc["config"]["dwh"]
+    assert "vorder" not in doc.get("ordering", {}).get("dwh", {})
 
 
 def test_an_unsorted_run_records_no_key_at_all(stats, tmp_path, monkeypatch):

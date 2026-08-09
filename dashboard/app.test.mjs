@@ -381,6 +381,45 @@ test("a sorted write gets its own column, and absence reads as unsorted", () => 
   assert.ok(cols.some((c) => c.endsWith("sorted")), cols);
 });
 
+test("a V-Order-off warehouse gets its own column instead of replacing the V-Ordered one", () => {
+  // THE WHOLE REASON `layout.config.dwh.vorder` EXISTS. `layoutKey` already splits the BARS on the
+  // measured `vorder_enabled`, so the layout table separates them by itself — but `variant()` reads
+  // `layout.config` alone, and `columnsFor` keeps only the LATEST run per (engine, config). With no
+  // declared key the two runs share one signature and the newer one silently REPLACES the other in
+  // the CU table, which is the comparison the dispatch input was added to make.
+  const on = lay("dwh", 78, 20, { cfg: { vorder: "true" }, file: "a-1.json", vorder: true });
+  const off = lay("dwh", 78, 20, { cfg: { vorder: "false" }, file: "b-2.json", vorder: false });
+  const cols = d.columnsFor([on, off]).map((c) => c.col);
+  assert.deepEqual(cols.sort(), ["dwh·V-Order", "dwh·noVOrder"]);
+  // Same file and row-group band, so ONLY the V-Order element can be separating the bars.
+  assert.notDeepEqual(d.layoutKey(on), d.layoutKey(off));
+  assert.equal(d.layoutKey(on)[0], true);
+  assert.equal(d.layoutKey(off)[0], false);
+});
+
+test("the dwh V-Order tag is spelled on both values, unlike every other flag", () => {
+  // Absence-means-off cannot work here: dwh carries no other config key, so a default run's signature
+  // would be empty and `variantTag` renders that as the literal `unrecorded` — the page claiming not
+  // to know the thing it just measured. That is why stats.py records "true" as well as "false" and
+  // why the six records predating the input were backfilled.
+  assert.equal(d.variantTag([["vorder", "true"]]), "V-Order");
+  assert.equal(d.variantTag([["vorder", "false"]]), "noVOrder");
+  assert.equal(d.variantTag([]), "unrecorded", "the state the backfill exists to avoid");
+  // And it stays parseable back to its engine.
+  const tag = d.variantTag([["vorder", "false"]]);
+  assert.ok(!tag.includes(d.COL_SEP));
+  assert.equal(d.baseEngine(`dwh${d.COL_SEP}${tag}`), "dwh");
+});
+
+test("a backfilled dwh run keys to the same column as a default dispatch", () => {
+  // The backfill's only job. Six records predate the input; if they had been left without the key
+  // they would sit in a `dwh·unrecorded` column of their own and every future default run would open
+  // a second one — history split from the present by a difference that does not exist.
+  const old = lay("dwh", 78, 20, { cfg: { vorder: "true" }, file: "a-1.json", vorder: true });
+  const now = lay("dwh", 77, 20, { cfg: { vorder: "true" }, file: "b-2.json", vorder: true });
+  assert.deepEqual(d.columnsFor([old, now]).map((c) => c.col), ["dwh"]);
+});
+
 test("the writer name carries no ordering — that is a column of its own", () => {
   // `sorted` left LAYOUT_CONFIG: `keyCells` prints the resolved column list, so appending the flag to
   // the writer said the same thing twice and less precisely. It still SPLITS bars — `layoutKey`

@@ -111,6 +111,19 @@ on:
         description: "spark NEE"
         type: boolean
         default: true
+      # ON by default because that is what a Fabric warehouse IS — V-Order is enabled on every new
+      # warehouse and nothing here ever turned it off, so every dwh run this repo has measured wrote
+      # V-Ordered parquet. Ticking this off runs `ALTER DATABASE CURRENT SET VORDER = OFF` before the
+      # build, which is the dwh half of the experiment `spark_resource_profile` already allows.
+      # ⚠️ THE `ALTER` IS IRREVERSIBLE FOR THAT DATABASE — Microsoft's own doc says so, and it is why
+      # this looks more dangerous than it is: the teardown DELETES the warehouse at the end of every
+      # run and the next dispatch creates a new one, V-Ordered by default. So the irreversibility is
+      # scoped to an item that lives one run, and this input cannot leave anything behind. It would
+      # be a genuinely one-way door on a warehouse that outlived its run; none does.
+      dwh_vorder:
+        description: "dwh V-Order (off = ALTER DATABASE SET VORDER OFF before the build)"
+        type: boolean
+        default: true
       # THE SORT IS THE FIELD ITSELF — there is no `sorted` checkbox any more, and that is the fix
       # for the way this went wrong. A boolean gate sitting apart from the three fields it gated let
       # run 31158671699 be dispatched with a sort key and a row-group size that were both inert,
@@ -224,6 +237,11 @@ env:
   # Spark leg only. writeHeavy is the workspace default, so the default dispatch writes what a plain
   # Fabric session writes — and therefore NO V-Order, which readHeavyForPBI alone enables.
   SPARK_RESOURCE_PROFILE: ${{ github.event_name == 'schedule' && 'writeHeavy' || inputs.spark_resource_profile }}
+  # dwh leg only. Same boolean spelling as SPARK_NATIVE_ENABLED above, and normalised to the STRINGS
+  # 'true'/'false' because two readers compare it as one: the `server` job decides whether to run the
+  # `ALTER`, and `stats.py` records it under `layout.config.dwh` so the page can put a V-Ordered dwh
+  # column beside an un-V-Ordered one. Both take the same value from here, so they cannot disagree.
+  DWH_VORDER: ${{ (github.event_name == 'schedule' || inputs.dwh_vorder) && 'true' || 'false' }}
   # DuckDB legs only. `sort_by` is the switch AND the value: non-blank means the model declares a
   # sort and the geometry beside it, blank means it declares neither. DUCKDB_SORTED is DERIVED here
   # and is not an input — it stays because the model, `stats.py`'s `_nonbaseline` /
@@ -271,6 +289,8 @@ jobs:
           RUNIN_BENCHMARK: ${{ github.event_name == 'schedule' && 'true' || inputs.benchmark }}
           RUNIN_CORES: ${{ github.event_name == 'schedule' && '8' || inputs.cores }}
           RUNIN_SPARK_RESOURCE_PROFILE: ${{ github.event_name == 'schedule' && 'writeHeavy' || inputs.spark_resource_profile }}
+          RUNIN_DWH_VORDER: ${{ (github.event_name == 'schedule' || inputs.dwh_vorder)
+            && 'true' || 'false' }}
           RUNIN_NATIVE_EXECUTION_ENGINE: ${{ github.event_name == 'schedule' && 'true'
             || inputs.native_execution_engine }}
           # The three duckdb write knobs, which this block did NOT carry — so a record could not say
@@ -593,6 +613,18 @@ jobs:
             SQL=$(az account get-access-token --resource https://database.windows.net --query accessToken -o tsv)
             echo "::add-mask::$SQL"; echo "FABRIC_ACCESS_TOKEN=$SQL" >> "$GITHUB_ENV"
           fi
+      # BEFORE the build, because V-Order only affects files written AFTER it — there is no
+      # retrofit short of a rewrite. Skipped entirely when the input is on, which is the default and
+      # what every dwh run before this one measured: a new warehouse V-Orders by default, so "on"
+      # needs no statement, only "off" does.
+      # FATAL, unlike the read below, and the asymmetry is the point. The read is best-effort because
+      # a missing measurement is honest; a SET that silently failed would leave the whole leg
+      # measuring V-Ordered parquet while the record, the column and the caption all said otherwise.
+      # `dwh_vorder.py --off` verifies its own effect on the same connection and exits non-zero if
+      # the flag did not move.
+      - name: Turn V-Order OFF for this warehouse
+        if: matrix.engine == 'dwh' && env.DWH_VORDER == 'false'
+        run: python .github/scripts/dwh_vorder.py ${{ matrix.engine }} --off
       - name: dbt build --target ${{ matrix.engine }}
         # `|| dbt retry`: a killed Livy session (or any transient failure) fails only the nodes it
         # touched; retry re-runs just those in a FRESH session/process instead of failing the whole
