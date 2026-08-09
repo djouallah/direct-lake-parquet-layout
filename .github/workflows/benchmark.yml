@@ -90,8 +90,7 @@ on:
     - cron: "17 7 * * *"
   workflow_dispatch:
     inputs:
-      # THE FOUR THAT GET CHANGED. Everything below them is a default nobody touches from one
-      # dispatch to the next, so it sits at the bottom of the form.
+      # THE TWO THAT GET CHANGED: which engine, and how big a machine.
       engines:
         description: "engine — one per dispatch"
         type: choice
@@ -102,15 +101,12 @@ on:
         type: choice
         options: ["4", "8", "16", "32", "64"]
         default: "8"
-      spark_resource_profile:
-        description: "spark write profile — readHeavyForPBI is the only one with V-Order"
-        type: choice
-        options: ["writeHeavy", "readHeavyForPBI", "readHeavyForSpark"]
-        default: "writeHeavy"
-      native_execution_engine:
-        description: "spark NEE"
-        type: boolean
-        default: true
+
+      # ---- the write knobs, GROUPED BY ENGINE: duckrun, then spark, then dwh -------------------
+      # One dispatch builds one engine, so at most one of these groups is live in any run and the
+      # rest are inert — which is exactly why they sit together below the two fields that always
+      # matter, instead of being interleaved with them. Every one of them defaults to what a bare
+      # dispatch already writes, so an untouched form measures the plain layout on every engine.
       # THE SORT IS THE FIELD ITSELF — there is no `sorted` checkbox any more, and that is the fix
       # for the way this went wrong. A boolean gate sitting apart from the three fields it gated let
       # run 31158671699 be dispatched with a sort key and a row-group size that were both inert,
@@ -136,9 +132,25 @@ on:
         type: choice
         options: ["1024", "512", "128"]
         default: "1024"
-      # Down here with the other per-engine write knobs rather than up with the four that get
-      # changed, because it is not one of them. ON by default because that is what a Fabric warehouse
-      # IS — V-Order is enabled on every new warehouse and nothing here ever turned it off, so every
+      # writeHeavy is the WORKSPACE default, so it is the no-op value and a bare dispatch writes what
+      # a plain Fabric session writes. readHeavyForPBI is the only profile that turns V-Order on, and
+      # it also flips optimizeWrite to a 1 GB bin size — so it rewrites file layout well beyond
+      # V-Order, which is why it is opt-in per dispatch rather than pinned in profiles.yml.
+      spark_resource_profile:
+        description: "spark write profile — readHeavyForPBI is the only one with V-Order"
+        type: choice
+        options: ["writeHeavy", "readHeavyForPBI", "readHeavyForSpark"]
+        default: "writeHeavy"
+      # ON by default: it is what a Fabric user gets by choosing the faster engine. Measured across
+      # seven spark runs it moves NOTHING — same file and row-group layout either way — which is why
+      # `LAYOUT_CONFIG` excludes it from the layout grouping. Read the NEE bullet in CLAUDE.md before
+      # drawing a conclusion from a run with it on.
+      native_execution_engine:
+        description: "spark NEE"
+        type: boolean
+        default: true
+      # ON by default because that is what a Fabric warehouse IS —
+      # V-Order is enabled on every new warehouse and nothing here ever turned it off, so every
       # dwh run this repo measured up to 2026-08-09 wrote V-Ordered parquet, and a bare dispatch must
       # keep doing that. Ticking it off runs `ALTER DATABASE CURRENT SET VORDER = OFF` before the
       # build, which is the dwh half of the experiment `spark_resource_profile` already allows.
