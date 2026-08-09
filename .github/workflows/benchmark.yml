@@ -121,7 +121,7 @@ on:
       # scoped to an item that lives one run, and this input cannot leave anything behind. It would
       # be a genuinely one-way door on a warehouse that outlived its run; none does.
       dwh_vorder:
-        description: "dwh V-Order (off = ALTER DATABASE SET VORDER OFF before the build)"
+        description: "dwh V-Order"
         type: boolean
         default: true
       # THE SORT IS THE FIELD ITSELF — there is no `sorted` checkbox any more, and that is the fix
