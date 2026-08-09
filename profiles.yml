@@ -4,7 +4,7 @@
 #
 #   duckrun  -> DuckDB executes, delta-rs writes Delta Lake   (default; runs offline)
 #   iceberg  -> DuckDB + Iceberg REST catalog on OneLake
-#   dwh      -> Fabric Warehouse (T-SQL) via dbt-fabric-samdebruyn
+#   dwh      -> Fabric Warehouse (T-SQL) via dbt-fabric (Microsoft's own; needs Python >= 3.12)
 #   spark    -> Fabric Spark (Livy) via dbt-fabricspark, writes Delta
 #
 # All four read the SAME landed files (the shared download_aemo.py script lands plain
@@ -53,7 +53,17 @@ aemo_electricity:
             skip_create_table_metadata_updates: 1
             default_schema: dbo
 
-    # --- Fabric Warehouse (T-SQL). dbt-fabric-samdebruyn: type stays `fabric`, no ODBC.
+    # --- Fabric Warehouse (T-SQL) via Microsoft's own `dbt-fabric`. `type: fabric`, and NO ODBC:
+    # the adapter uses `mssql-python`, which bundles its own driver, so there is no `driver:` key
+    # here and nothing to install on the runner. It was `dbt-fabric-samdebruyn` — a fork whose only
+    # reason to exist here was that it had moved to mssql-python while upstream was still pyodbc.
+    # Upstream cut over in 1.10.1 (2026-08-08) and the fork's reason went with it. Upstream has no
+    # `driver:`/`port:` credential fields AT ALL, so every key below is one it accepts; it does
+    # require Python >= 3.12, which is why the `server` job in benchmark.yml no longer runs 3.11.
+    # `authentication: CLI` alongside an explicit `access_token` is not redundant: the adapter's
+    # `open()` always builds attrs_before from the token provider, and the provider short-circuits on
+    # `access_token` when one is set — CI sets it from `az account get-access-token`, and a by-hand
+    # run with it empty falls through to AzureCliCredential.
     dwh:
       type: fabric
       server: "{{ env_var('FABRIC_DWH_SERVER') }}"

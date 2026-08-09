@@ -73,17 +73,26 @@ export const STACK = {
   duckrun: ["dbt-duckrun", "DuckDB → delta-rs", "delta-rs"],
   iceberg: ["dbt-duckdb", "DuckDB → Iceberg REST catalog", "duckdb (iceberg)"],
   spark: ["dbt-fabricspark", "Fabric Spark (Livy) → Delta", "spark"],
-  dwh: ["dbt-fabric-samdebruyn", "Fabric Warehouse (T-SQL)", "warehouse"],
+  dwh: ["dbt-fabric", "Fabric Warehouse (T-SQL)", "warehouse"],
 };
 
-// Where each adapter lives, keyed like STACK. duckrun's adapter ships inside the duckrun package;
-// dwh is Sam Debruyn's fork of dbt-fabric (the PyPI package the build installs), not Microsoft's —
-// the URL is the fork's, verified against the package's own PyPI metadata.
+// Where each adapter lives, keyed like STACK. duckrun's adapter ships inside the duckrun package.
+// dwh is MICROSOFT'S OWN dbt-fabric. It was `dbt-fabric-samdebruyn`, Sam Debruyn's fork, for as long
+// as upstream was pyodbc-only and the build runner had no ODBC driver; upstream cut over to
+// mssql-python in 1.10.1 (2026-08-08) and the fork's reason to exist here went with it.
+// ⚠️ THESE ARE CONSTANTS, so the line above relabels EVERY dwh run on the page, the six the fork
+// built included — the same class of quiet lie as captioning a DUID-sorted run `by date, time`. It
+// is accepted only because the record now carries the truth: the leg writes `dbt.dwh.adapter` from
+// `importlib.metadata`, and the six fork runs were BACKFILLED, exactly as the sort keys and
+// `vorder_enabled` were. If a reader ever needs to know which adapter wrote a run, it comes off the
+// record, never off this map. Nothing renders it yet, deliberately — `variant()` cannot see an
+// adapter either, so the dwh column still blends the two, and splitting it is a decision to make on
+// measured evidence rather than pre-emptively.
 export const ADAPTER_URLS = {
   duckrun: "https://github.com/djouallah/duckrun",
   iceberg: "https://github.com/duckdb/dbt-duckdb",
   spark: "https://github.com/microsoft/dbt-fabricspark",
-  dwh: "https://github.com/sdebruyn/dbt-fabric",
+  dwh: "https://github.com/microsoft/dbt-fabric",
 };
 
 // A column is an engine (`spark`) or an engine under one CONFIG (`spark·readHeavyForPBI+NEE`), which is what

@@ -80,14 +80,16 @@ def test_it_asks_sys_databases_for_this_database_only():
 
 def test_the_token_is_encoded_exactly_as_the_adapter_encodes_it():
     """THE FIRST VERSION OF THIS FILE USED pyodbc AND WOULD HAVE FAILED EVERY RUN. The dwh leg pins
-    `dbt-fabric-samdebruyn`, whose dependency is `mssql-python` — pyodbc is not installed there, and
-    because this step is best-effort the failure would have been silent: no key in the record, and the
-    page falling back to the blind property exactly as before.
+    `dbt-fabric==1.11.0`, Microsoft's own adapter, whose dependency is `mssql-python` — pyodbc is not
+    installed there and the runner has no ODBC driver, and because this step is best-effort the
+    failure would have been silent: no key in the record, and the page falling back to the blind
+    property exactly as before. (It read `dbt-fabric-samdebruyn` when this was written; that fork's
+    only reason to exist here was mssql-python, and upstream took it over in 1.10.1.)
 
     So the connection is the risky part, and the token encoding is the half that can be checked
     offline. The adapter builds it by interleaving zero bytes
-    (`fabric_token_provider.py:224-227`); this asserts our `utf-16-le` spelling is byte-identical, so
-    a future reader cannot "tidy" either one into something the driver rejects."""
+    (`fabric_token_provider`'s `get_sql_attrs_before`); this asserts our `utf-16-le` spelling is
+    byte-identical, so a future reader cannot "tidy" either one into something the driver rejects."""
     from itertools import chain, repeat
     tok = "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.payload.sig"
     adapter_bytes = bytes(chain.from_iterable(zip(bytes(tok, "UTF-8"), repeat(0))))

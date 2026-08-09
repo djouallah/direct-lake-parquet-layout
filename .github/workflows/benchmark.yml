@@ -367,14 +367,36 @@ jobs:
                        f"leave it EMPTY for no sort")
           sys.stderr.write(f"row_group_size={int(rg):,} rows, "
                            f"sort_by={cols or 'none (unsorted)'}\n")
+          # THE dwh PIN IS EXACT, AND THAT IS THE GUARD RATHER THAN A PREFERENCE. This was
+          # `dbt-fabric-samdebruyn`, a fork whose ONLY reason to exist here was that it had moved to
+          # `mssql-python` (which bundles its own driver) while Microsoft's own adapter was still
+          # pyodbc — and the `server` job runs on a bare ubuntu image with no `msodbcsql18` and
+          # nothing that installs one. Upstream cut over in 1.10.1 (2026-08-08) and the fork's reason
+          # went with it. The trap is on the way back: 1.10.0 and EVERY version below it are pyodbc
+          # AND declare no `requires-python`, so a bare name — or a floor under 1.10.1 — resolves one
+          # of those on any interpreter, installs cleanly, and dies at CONNECT time, i.e. after
+          # `land` ran and `provision.py` created the warehouse, with capacity already spent. An
+          # exact pin makes pip refuse at install instead ("requires a different Python"), the check
+          # below refuses a loosened pin for free, and the leg asserts what pip actually resolved.
+          # 1.10.1+ needs Python >= 3.12, which is why the `server` job moved off 3.11.
+          #
+          # dbt-core and dbt-adapters keep the pins the FORK needed (it declared no dbt-core
+          # dependency at all, which is why they are spelled out here). Upstream does declare one, so
+          # they are no longer strictly required — they stay so that the ADAPTER is the only thing
+          # differing between the last fork run (31247580605) and the first upstream one.
           LEGS = {
               "duckrun": ("fabric", {"engine": "duckrun", "label": "delta_rs"}),
               "iceberg": ("fabric", {"engine": "iceberg", "label": "iceberg"}),
               "spark":   ("server", {"engine": "spark", "install": "dbt-fabricspark"}),
               "dwh":     ("server", {"engine": "dwh",
-                                     "install": "dbt-fabric-samdebruyn dbt-core==1.11.10 "
+                                     "install": "dbt-fabric==1.11.0 dbt-core==1.11.10 "
                                                 "dbt-adapters==1.23.0"}),
           }
+          _m = re.search(r"(?:^| )dbt-fabric==(\d+)\.(\d+)\.(\d+)(?: |$)", LEGS["dwh"][1]["install"])
+          if not _m or tuple(int(g) for g in _m.groups()) < (1, 10, 1):
+              sys.exit("dwh must pin dbt-fabric EXACTLY at >= 1.10.1 — the mssql-python cutover. "
+                       "Anything looser can resolve a pyodbc build, and this image has no ODBC "
+                       "driver, so it would fail at connect time with capacity already spent.")
           picked = [e.strip() for e in (os.environ.get("ENGINES") or "").split(",") if e.strip()]
           picked = picked or list(LEGS)
           unknown = [e for e in picked if e not in LEGS]
@@ -515,8 +537,41 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
+        # 3.12, NOT the 3.11 every other job in this repo runs, because Microsoft's `dbt-fabric` is
+        # `>=3.12,<3.14` since the mssql-python cutover (see the dwh pin in `plan`). This job also
+        # carries the SPARK leg, so that leg's dbt CLIENT moved 3.11 -> 3.12 on the same commit —
+        # deliberate and recorded here rather than discovered later: dbt-fabricspark supports
+        # 3.10-3.13 and spark's compute is Fabric-side, but if a spark timing shifts on the first run
+        # after this, the interpreter is the reason to rule out first.
+        with: {python-version: "3.12"}
       - run: pip install ${{ matrix.install }} requests pytz
+      # THE SWAP'S ONE SILENT FAILURE MODE, CLOSED — and the only place the adapter gets written down.
+      # `plan` checked the pin STRING; this checks what pip actually RESOLVED, offline, in about a
+      # second, BEFORE `azure/login` and before `provision.py` creates anything. A dbt-fabric that
+      # still wanted pyodbc would otherwise install cleanly here and fail at connect time.
+      # It also records the adapter, because `variant()` cannot see one: the dwh column blends every
+      # run of that engine, so without this nothing anywhere says which adapter wrote a given record.
+      # `dbt.<engine>` and NEVER `layout.config` — every key of that block becomes a dashboard column
+      # name, so a version there would split dwh's column on each bump (and dwh has no `layout.config`
+      # entry at all today, so it would orphan the six fork-built runs into a column of their own).
+      - name: The dwh adapter is Microsoft's, on mssql-python — assert it, then record it
+        if: matrix.engine == 'dwh'
+        run: |
+          ADAPTER=$(python - <<'EOF'
+          import importlib.metadata as md, json, re, sys
+          v = md.version("dbt-fabric")
+          names = {re.split(r"[\[<>=!~ ]", r.split(";")[0].strip(), 1)[0].strip().lower()
+                   for r in (md.requires("dbt-fabric") or [])}
+          if "mssql-python" not in names:
+              sys.exit(f"dbt-fabric {v} does not depend on mssql-python: {sorted(names)}")
+          if "pyodbc" in names:
+              sys.exit(f"dbt-fabric {v} still depends on pyodbc: {sorted(names)}")
+          import dbt.adapters.fabric  # noqa: F401 — and it imports
+          sys.stderr.write(f"  dbt-fabric {v}, mssql-python, no pyodbc\n")
+          print(json.dumps({"dbt": {"dwh": {"adapter": {"name": "dbt-fabric", "version": v}}}}))
+          EOF
+          )
+          python .github/scripts/record.py merge "$ADAPTER"
       # Here the runner really is the dbt client — compute is Fabric's, but the process doing the
       # planning, the CSV reads' round trips and any local sort lives on this box.
       - name: Runner hardware

@@ -886,6 +886,41 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   i.e. no V-Order). `readHeavyForPBI` is the only value that enables V-Order, and it also flips
   `optimizeWrite` to a 1 GB bin size, so ticking it rewrites file layout broadly — judge it in the
   `layout` job's table at the end of the run.
+- **The dwh leg is MICROSOFT'S `dbt-fabric`, pinned EXACTLY, on Python 3.12 — and all three halves of
+  that are load-bearing.** It was `dbt-fabric-samdebruyn`, a fork whose only reason to exist here was
+  that it used `mssql-python` (which bundles its own driver) while upstream was still pyodbc, and the
+  `server` job runs on a bare ubuntu image with no `msodbcsql18` and nothing that installs one.
+  Upstream cut over in **1.10.1 (2026-08-08)** — pyodbc removed outright, no `driver:`/`port:`
+  credential fields left, not opt-in — and the fork's reason went with it. Every profile key the dwh
+  target sets is one upstream accepts, so `profiles.yml`'s body did not change.
+  **THE TRAP IS ON THE WAY BACK.** 1.10.0 and every version below it are pyodbc **and declare no
+  `requires-python`**, so a bare `dbt-fabric` — or a floor under 1.10.1 — resolves one of those on
+  any interpreter, installs cleanly, and dies at CONNECT time: after `land` ran and `provision.py`
+  created the warehouse, with capacity already spent. Three layers stop that, each free: an EXACT pin
+  makes pip refuse at install ("requires a different Python"); `plan` refuses a loosened pin before
+  any leg spends; and the leg asserts what pip actually RESOLVED with `importlib.metadata.requires`
+  (`mssql-python` present, `pyodbc` absent, `dbt.adapters.fabric` imports) in about a second, before
+  `azure/login`. `dbt-core==1.11.10` / `dbt-adapters==1.23.0` stay pinned even though upstream —
+  unlike the fork — declares dbt-core itself: keeping them is what makes the ADAPTER the only thing
+  differing between the last fork run (31247580605) and the first upstream one.
+  **The whole `server` job moved 3.11 → 3.12, so the SPARK leg's dbt client moved with it.** That is
+  accepted rather than overlooked — dbt-fabricspark supports 3.10-3.13 and spark's compute is
+  Fabric-side — but it is the first thing to rule out if a spark timing shifts on the run after this.
+  Every other job stays on 3.11, including `checks`, which never installs the adapter.
+  **`variant()` cannot see an adapter**, so the dwh column blends the two. The leg now writes
+  `dbt.dwh.adapter` (name + resolved version) into its record fragment — **`dbt.<engine>`, never
+  `layout.config`**, whose every key becomes a dashboard column name, and where dwh has no entry at
+  all today so one would orphan the fork-built runs into a column of their own — and the six
+  fork-built dwh records were **backfilled** with the name and no version, because nothing recorded
+  which version each unpinned install resolved. The page is deliberately unchanged: the record is
+  honest, the column still blends. Splitting it is a decision for measured evidence.
+  Four upstream shapes were checked against v1.11.0's source before the swap, because CLAUDE.md and
+  the dwh model headers rest on them: `TYPE = "fabric"` (so `dbt_project.yml`'s `target.type ==
+  'fabric'` gate still enables the models AND the tests — the alternative is a green leg that builds
+  and tests nothing), `fabric__get_merge_sql` still delegating to `default__get_merge_sql`, the table
+  materialization still a CTAS (which is what makes `fct_summary`'s trailing `ORDER BY date` legal
+  here), and `fabric__get_test_sql` still wrapping the body in a CTE (which is what makes the leading
+  `--` comment blocks in `tests/dwh/` safe). Check those four again before bumping the pin.
 - **NOTHING THAT COMMITS OR SPENDS RUNS ON PUSH.** This replaces the older, blunter "nothing runs on
   push", and the narrowing is deliberate — read the reason before touching a trigger.
   The original: pushing to `main` used to trigger the four Fabric legs, so any code change — a

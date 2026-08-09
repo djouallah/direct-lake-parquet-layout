@@ -26,10 +26,13 @@ documentation for months and had it backwards.
 
 Runs on the dwh leg, after the build, on the runner that is already the dbt client — so the driver and
 the `database.windows.net` token are both in place. **`mssql_python`, NOT `pyodbc`:** the pin is
-`dbt-fabric-samdebruyn`, whose dependency is `mssql-python` (which bundles its own driver, hence no
-`DRIVER=` in the connection string and nothing to discover). pyodbc is not installed on that leg at
-all, so the first version of this file would have failed on every run — silently, because the step is
-best-effort. Do not "simplify" it back to pyodbc. **Best-effort and never fatal:** a
+`dbt-fabric==1.11.0`, Microsoft's own adapter, whose dependency is `mssql-python` (which bundles its
+own driver, hence no `DRIVER=` in the connection string and nothing to discover). pyodbc is not
+installed on that leg at all — and the runner image carries no ODBC driver either — so the first
+version of this file would have failed on every run, silently, because the step is best-effort. Do
+not "simplify" it back to pyodbc. This held under `dbt-fabric-samdebruyn` for the same reason: that
+fork existed here only because it had moved to mssql-python before upstream did, and upstream did in
+1.10.1. **Best-effort and never fatal:** a
 failure leaves the key ABSENT, never `false`, because `false` here is a claim (V-Order was disabled)
 and absence is the truth (nobody could ask). It writes into the leg's own record fragment, whose
 `layout.ordering.dwh` deep-merges with `stats.py`'s — `record.deep_update` unions dicts, and the
@@ -55,8 +58,10 @@ import record
 # this cannot read a sibling warehouse's flag if the connection lands somewhere unexpected.
 QUERY = "SELECT [is_vorder_enabled] FROM sys.databases WHERE [name] = DB_NAME()"
 
-# SQL_COPT_SS_ACCESS_TOKEN, copied from the adapter's own `fabric_token_provider.py:119` — a token in
-# the connection STRING is not supported by the driver.
+# SQL_COPT_SS_ACCESS_TOKEN, copied from the adapter's own
+# `dbt/adapters/fabric/fabric_token_provider.py` (the constant of the same name) — a token in the
+# connection STRING is not supported by the driver. Cited by SYMBOL rather than by line: the numbers
+# that used to be here were the fork's and are already wrong against upstream.
 SQL_COPT_SS_ACCESS_TOKEN = 1256
 
 
@@ -78,10 +83,10 @@ def read_vorder(con):
 def token_attrs(token):
     """The access token in the shape the driver wants: UTF-16-LE bytes behind a 4-byte length.
 
-    The adapter spells the encoding as an explicit zip-with-zeros
-    (`fabric_token_provider.py:224-227`); for an ASCII JWT that is exactly `utf-16-le`, and this is
-    the spelling that survives being read six months from now. Pinned by a test against the
-    adapter's own construction so the two cannot drift apart silently.
+    The adapter spells the encoding as an explicit zip-with-zeros (`fabric_token_provider`'s
+    `get_sql_attrs_before`); for an ASCII JWT that is exactly `utf-16-le`, and this is the spelling
+    that survives being read six months from now. Pinned by a test against the adapter's own
+    construction so the two cannot drift apart silently.
     """
     b = token.encode("utf-16-le")
     return {SQL_COPT_SS_ACCESS_TOKEN: struct.pack("<i", len(b)) + b}
@@ -90,7 +95,7 @@ def token_attrs(token):
 def connect():
     """`mssql_python`, and a connection string with no `DRIVER=` — see the module docstring.
 
-    Same keys the adapter builds in `fabric_connection_manager.py:158-181`, minus the branches for
+    Same keys the adapter builds in `fabric_connection_manager`'s `open()`, minus the branches for
     authentication methods this leg does not use: it always passes a token, never an
     `Authentication=ActiveDirectory*` mode (which is the one case where the driver acquires its own).
     """

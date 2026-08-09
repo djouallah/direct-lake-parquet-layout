@@ -639,6 +639,11 @@
      "price"
     ]
    }
+  },
+  "dwh": {
+   "adapter": {
+    "name": "dbt-fabric-samdebruyn"
+   }
   }
  },
  "engine": "dwh",

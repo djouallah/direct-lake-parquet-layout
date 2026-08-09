@@ -2301,13 +2301,17 @@ test("a single table renders without a tab strip", () => {
 
 test("the adapters are named and linked once, under the charts", () => {
   // The bars stopped captioning the adapter; this note is where a reader finds out what
-  // dbt-duckrun, dbt-duckdb, dbt-fabricspark and the samdebruyn fork actually are.
+  // dbt-duckrun, dbt-duckdb, dbt-fabricspark and dbt-fabric actually are.
   const out = render([full("a-1.json", "spark")], ledger({ OUT: 1.0, SEM: 2.0 }));
   for (const [engine, url] of Object.entries(d.ADAPTER_URLS)) {
     assert.equal(out.split(`href="${url}"`).length - 1, 1, `${engine} linked exactly once`);
   }
   const text = plain(out);
-  assert.ok(text.includes("dbt-fabric-samdebruyn") && text.includes("dbt-fabricspark"));
+  // NOT `text.includes("dbt-fabric")` — `dbt-fabricspark` contains it, so that assertion would be
+  // vacuous and would have kept passing while the warehouse adapter went missing. Assert the pairs.
+  assert.ok(text.includes("dbt-fabric — Fabric Warehouse")
+    && text.includes("dbt-fabricspark — Fabric Spark"),
+    `the two Fabric adapters must stay distinguishable — one name is a prefix of the other: ${text}`);
   assert.ok(out.indexOf('<div class="charts">') < out.indexOf("The adapters:"), "under the charts");
   assert.ok(out.indexOf("The adapters:") < out.indexOf("Cost by engine"), "not buried below");
   // ONE PER LINE — joined with `·`, the separator between two entries looked like the em dash inside

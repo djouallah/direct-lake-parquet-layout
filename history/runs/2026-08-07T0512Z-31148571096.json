@@ -630,6 +630,13 @@
    "aemo_dwh": "KPP_1"
   }
  },
+ "dbt": {
+  "dwh": {
+   "adapter": {
+    "name": "dbt-fabric-samdebruyn"
+   }
+  }
+ },
  "engine": "dwh",
  "full_load": true,
  "inputs": {

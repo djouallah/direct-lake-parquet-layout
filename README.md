@@ -83,7 +83,7 @@ Install the adapter and set the engine's env vars, then `dbt build --target <nam
 | target | adapter | key env vars |
 |---|---|---|
 | `iceberg` | `dbt-duckdb` | `WAREHOUSE_PATH`, `ONELAKE_ENDPOINT`, `ONELAKE_TOKEN`, `FILES_PATH` |
-| `dwh` | `dbt-fabric-samdebruyn` | `FABRIC_DWH_SERVER`, `FABRIC_DWH_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
+| `dwh` | `dbt-fabric` (needs Python ≥ 3.12) | `FABRIC_DWH_SERVER`, `FABRIC_DWH_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
 | `spark` | `dbt-fabricspark` | `FABRIC_WORKSPACE_ID`, `FABRIC_LAKEHOUSE_ID`, `FABRIC_LAKEHOUSE_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
 
 All four share `FILES_PATH` (the landing lakehouse) and `DBT_SCHEMA` (default `mart`).
