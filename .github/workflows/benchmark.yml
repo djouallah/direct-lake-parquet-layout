@@ -111,19 +111,6 @@ on:
         description: "spark NEE"
         type: boolean
         default: true
-      # ON by default because that is what a Fabric warehouse IS — V-Order is enabled on every new
-      # warehouse and nothing here ever turned it off, so every dwh run this repo has measured wrote
-      # V-Ordered parquet. Ticking this off runs `ALTER DATABASE CURRENT SET VORDER = OFF` before the
-      # build, which is the dwh half of the experiment `spark_resource_profile` already allows.
-      # ⚠️ THE `ALTER` IS IRREVERSIBLE FOR THAT DATABASE — Microsoft's own doc says so, and it is why
-      # this looks more dangerous than it is: the teardown DELETES the warehouse at the end of every
-      # run and the next dispatch creates a new one, V-Ordered by default. So the irreversibility is
-      # scoped to an item that lives one run, and this input cannot leave anything behind. It would
-      # be a genuinely one-way door on a warehouse that outlived its run; none does.
-      dwh_vorder:
-        description: "dwh V-Order"
-        type: boolean
-        default: true
       # THE SORT IS THE FIELD ITSELF — there is no `sorted` checkbox any more, and that is the fix
       # for the way this went wrong. A boolean gate sitting apart from the three fields it gated let
       # run 31158671699 be dispatched with a sort key and a row-group size that were both inert,
@@ -149,6 +136,21 @@ on:
         type: choice
         options: ["1024", "512", "128"]
         default: "1024"
+      # Down here with the other per-engine write knobs rather than up with the four that get
+      # changed, because it is not one of them. ON by default because that is what a Fabric warehouse
+      # IS — V-Order is enabled on every new warehouse and nothing here ever turned it off, so every
+      # dwh run this repo measured up to 2026-08-09 wrote V-Ordered parquet, and a bare dispatch must
+      # keep doing that. Ticking it off runs `ALTER DATABASE CURRENT SET VORDER = OFF` before the
+      # build, which is the dwh half of the experiment `spark_resource_profile` already allows.
+      # ⚠️ THE `ALTER` IS IRREVERSIBLE FOR THAT DATABASE — Microsoft's own doc says so, and it is why
+      # this looks more dangerous than it is: the teardown DELETES the warehouse at the end of every
+      # run and the next dispatch creates a new one, V-Ordered by default. So the irreversibility is
+      # scoped to an item that lives one run, and this input cannot leave anything behind. It would
+      # be a genuinely one-way door on a warehouse that outlived its run; none does.
+      dwh_vorder:
+        description: "dwh V-Order"
+        type: boolean
+        default: true
 
       # ---- rarely touched ----------------------------------------------------------------------
       build:
