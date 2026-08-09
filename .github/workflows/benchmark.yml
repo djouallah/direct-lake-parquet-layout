@@ -165,16 +165,14 @@ on:
         default: true
 
       # ---- rarely touched ----------------------------------------------------------------------
-      # THE `──` IS A DIVIDER FOR THE FORM, and it is a hack because GitHub gives no better one:
-      # `workflow_dispatch` renders each input's `description` as its label and offers no separator
-      # element, so the only way to draw a line between two groups is to put it in a label. This
-      # comment divider right above it is invisible on the form — that is the whole problem. It rides
-      # on `build` because that is the first field of the group it opens. Note `build` is a BOOLEAN,
-      # so the label sits to the RIGHT of the checkbox and the rule renders inline rather than as a
-      # full-width rule; that is as close as the form gets. Do not "tidy" it into the description of
-      # the field above — this marks the start of a section, not the end of one.
+      # THIS DIVIDER IS INVISIBLE ON THE DISPATCH FORM, and there is no fixing that. GitHub renders
+      # each input's `description` as its label and offers no separator element, so the only place a
+      # rule can go is inside a label — tried as `── rarely touched ──  run the dbt build`, and it
+      # renders inline to the RIGHT of the checkbox (booleans put their label there), which reads as
+      # part of the field name rather than as a section break. Reverted. The grouping below is for
+      # readers of this file only; do not spend another label on it.
       build:
-        description: "── rarely touched ──  run the dbt build"
+        description: "run the dbt build"
         type: boolean
         default: true
       benchmark:
