@@ -315,6 +315,14 @@ without a build, a token or a dispatch.
   column already leads with and nothing about the parquet, which is the chart's whole subject.
   **A writer that cannot express a sort simply has no sort half**, so spark and iceberg read `rg`
   alone — and that absence is itself the comparison against duckrun's sorted layouts, not a gap.
+  **A LOST DICTIONARY is on the label; a present one is not** — `rg 10.3M · no dict (mw, price)`,
+  never `dict yes`. 13 of the 17 layouts read `yes`, so printing it everywhere would spend a third of
+  every label on the default; the four that lost one are the finding, and three of those are exactly
+  the writers whose labels have room. WHICH columns lost it is the half that matters — `mw` alone is
+  a different parquet from `mw, price` — and it comes from the same `dictCell` the table's own
+  `dictionary` column prints, so the two can never disagree. Same rule as `sorted` and `vorder`: a
+  flag is worth ink when it is not the default. A `—` (no run in the group recorded encodings) is
+  dropped, exactly as an unmeasured `ordering` or `rg` is.
   Both halves come from `keyCells`, which is what *Cost and speed by parquet layout* prints in its
   own cells, so a dot and the row beside it cannot describe one parquet two different ways and a
   change to either follows the other.

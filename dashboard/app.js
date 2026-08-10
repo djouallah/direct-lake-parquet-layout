@@ -1772,6 +1772,19 @@ function layoutOf(members, table = DEFAULTS.table) {
   const bits = [];
   if (k.ordering && k.ordering !== DASH) bits.push(k.ordering);
   if (k.rgSize && k.rgSize !== DASH) bits.push(`rg ${k.rgSize}`);
+  // THE DICTIONARY, AND ONLY WHEN IT IS MISSING — `no dict (mw, price)`, never `dict yes`.
+  //
+  // 13 of the 17 layouts read `yes`, so printing it everywhere would spend a third of every label
+  // saying the thing that is true by default; the four that LOST a dictionary are the finding, and
+  // three of them are the writers whose labels have room (`spark writeHeavy`, `spark
+  // readHeavyForSpark`, `duckdb iceberg`). Same rule the rest of the page follows for `sorted` and
+  // for `vorder`: a flag is worth ink when it is not the default.
+  //
+  // The cell comes from `dictCell`, which is what the table's own `dictionary` column prints, so
+  // "no" here and "no" there can never disagree — including WHICH columns lost it, which is the
+  // half that matters: `mw` alone is a different parquet from `mw, price`. `—` is "no run in this
+  // group recorded encodings" and is dropped, exactly as an unmeasured `ordering` or `rg` is.
+  if (typeof k.dict === "string" && k.dict.startsWith("no ")) bits.push(`no dict ${k.dict.slice(3)}`);
   return bits.join(" · ") || producers(members);
 }
 

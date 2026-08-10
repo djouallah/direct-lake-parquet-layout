@@ -3011,6 +3011,37 @@ test("a named writer carries its LAYOUT too — rg size, and V-Order or the sort
   assert.ok(!texts.some((t) => t.includes("— ·")), `no dashed half: ${texts}`);
 });
 
+test("a LOST dictionary is on the label; a present one is not", () => {
+  // 13 of the 17 layouts read `yes`, so printing it everywhere spends a third of every label on the
+  // default. The four that LOST one are the finding — and WHICH columns lost it is the half that
+  // matters, because `mw` alone is a different parquet from `mw, price`. Same rule as `sorted` and
+  // `vorder`: a flag is worth ink when it is not the default.
+  const enc = (cols) => Object.fromEntries(cols.map(([c, dict]) =>
+    [c, { encodings: dict ? ["RLE_DICTIONARY", "PLAIN"] : ["PLAIN"] }]));
+  // `layout.encodings` is a SIBLING of `layout.stats`, which is where stats.py merges it — set here
+  // rather than through `lay`, whose options do not reach it.
+  const withEnc = (r, cols) => {
+    r.layout.encodings = { [r.engine]: enc(cols) };
+    return r;
+  };
+  const spark = withEnc(lay("spark", 12, 9, { file: "a.json" }),
+    [["mw", false], ["price", false], ["date", true]]);
+  const p = (rec, name, cold, warm, cu) => ({ name, cu, n: 1, ms: { cold, warm }, members: [{ rec }] });
+  const svg = d.scatterFit([
+    p(spark, "spark writeHeavy", 30000, 4000, 3769),
+    p(withEnc(lay("dwh", 78, 90, { file: "b.json" }), [["mw", true], ["price", true]]),
+      "dwh", 33767, 4330, 1960),
+    p(sortedBy(1, 24, ["date", "time"], { file: "c.json" }), "delta_rs", 21050, 3652, 1571),
+  ]);
+  const texts = [...svg.matchAll(/<text class="bar-caption"(?![^>]*key)[^>]*>([^<]+)</g)].map((m) => m[1]);
+  assert.ok(texts.includes("rg 16.0M · no dict (mw, price)"),
+    `the columns that lost it, named and sorted: ${texts}`);
+  assert.ok(!texts.some((t) => /dict yes|· yes/.test(t)), `and never the default: ${texts}`);
+  // THE SAME CELL THE TABLE PRINTS, so the label and the `dictionary` column cannot disagree about
+  // which columns lost it.
+  assert.equal(d.dictCell([{ rec: spark }]), "no (mw, price)");
+});
+
 test("a layout with no warm pass is dropped from the chart, and COUNTED", () => {
   // Both axes are query times, so a run missing one has nothing to put on the y axis. It is not
   // plotted at zero — an unmeasured tier is an absent thing, and a dot on the axis would read as
