@@ -1511,8 +1511,11 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   second read returns bigger numbers and `max()` takes them. "May still rise" on the page is DERIVED
   from `run.finished` being under two hours old — a property of the clock, not a flag written into a
   file that then has to be kept in step.
-- **THE TWO CU BAR CHARTS ARE DELETED. There is ONE chart on the page** — the SCATTER under
-  *Cost and speed by parquet layout*, one DOT per layout: cold ms across, warm ms up, both log, with
+- **THE TWO CU BAR CHARTS ARE DELETED. There is ONE chart on the page** — the SCATTER that now
+  LEADS *Cost and speed by parquet layout* (chart first, its table under it — reversing the older
+  "the table, then its chart", which was written for the bar charts, whose lengths were columns
+  printed a block away and which could therefore only follow; this one answers AGAINST the table's
+  ranking, so it introduces), one DOT per layout: cold ms across, warm ms up, both log, with
   its AREA the analytics CU and its colour the writer. `chartSvg`, `barPath`, `groupRows` and the
   `.bar` rules went with them.
   **The dot replaced a LINE** — each layout was a segment from its warm ms to its cold ms at the

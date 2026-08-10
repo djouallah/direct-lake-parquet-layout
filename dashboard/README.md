@@ -162,7 +162,7 @@ without a build, a token or a dispatch.
   Pages URL, because the offline copy is one loose file with no sibling to point at — and a 404 off
   a local disk looks like nothing happened at all. The build fails if that link ever stops matching.
 - **EVERY CHART AND TABLE COMES BEFORE EVERY PARAGRAPH, and the methodology is LAST.** The order is
-  *Cost and speed by layout* (its table, then its scatter), *Cost by engine*,
+  *Cost and speed by layout* (its scatter, then its table), *Cost by engine*,
   *Table layout*, *Input archive*,
   *Every run*, then *About these numbers* and the provenance line. `About these numbers` used to sit
   between the layout tables and the run table, so the last table on the page was below a screen of
@@ -195,7 +195,14 @@ without a build, a token or a dispatch.
   `PLAIN_DICTIONARY`, so `dict_pages < chunks` is flagged separately; no dictionary at all is
   flagged loudest. **Absent, never empty**, when no record carries `encodings` — which is every
   record written before `stats.py` learned to profile the mart.
-- **Cost and speed by layout is a TABLE, above its chart and *Cost by engine*.** One row per
+- **Cost and speed by layout is a CHART, then its TABLE — the scatter leads the section.** That
+  reverses an older "table, then its chart", which was written for the two bar charts it applied to:
+  their lengths WERE columns printed a block away, so they could only ever follow. This scatter is
+  not a restatement — three measures on three channels answer a question no column ordering can,
+  whether cost and speed move together, and here the answer runs AGAINST the table's ranking: the
+  cheapest duckrun layout is the slowest of its nine. A reader who meets the ranked table first has
+  been told cheapest-is-best before the chart gets to disagree.
+  The table follows immediately, unchanged and complete — one row per
   layout, cheapest first: `cores`, `etl CU`, `analytics CU`, `cold ms`, `warm ms`, `hot ms` — build
   before query, the order the work happens in, with the tiers continuing left-to-right in their own
   order.

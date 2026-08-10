@@ -2973,6 +2973,22 @@ test("every engine reaches the page — iceberg is a column, a row and a dot", (
   assert.ok(rest[1] - rest[0] > 120, `the others still spread: ${rest}`);
 });
 
+test("the scatter LEADS its section — chart, then the table it ranks", () => {
+  // REVERSES "the table, then its chart", which was written for the two bar charts: their lengths
+  // were columns printed a block away, so they could only follow. This scatter answers a question no
+  // column ordering can, and here it answers AGAINST the ranking — the cheapest layout is not the
+  // fastest — so a reader meeting the table first has been told cheapest-is-best before the chart
+  // can disagree.
+  const out = render(fitRuns([
+    ["spark", 80000, 4000, 3000], ["duckrun", 40000, 5000, 4000], ["dwh", 20000, 3000, 5000],
+  ]), ledger({ OUT: 1.0, SEM: 2.0 }));
+  const at = out.indexOf("Cost and speed by parquet layout");
+  assert.ok(at > 0, "the section is rendered");
+  const svg = out.indexOf("<svg", at), tbl = out.indexOf("<table", at);
+  assert.ok(svg > 0 && tbl > 0, "it has both a chart and a table");
+  assert.ok(svg < tbl, `the chart comes first: chart at ${svg}, table at ${tbl}`);
+});
+
 test("a named writer carries its LAYOUT too — rg size, and V-Order or the sort where there is one", () => {
   // `spark readHeavyForPBI` says who wrote it and nothing about WHAT. The chart's subject is the
   // parquet, so a dot labelled with its writer alone told the reader the one thing the table's

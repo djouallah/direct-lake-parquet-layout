@@ -1962,6 +1962,17 @@ export function renderFit(groups, times, tiers, counts = {}) {
   const cols = (tiers || []).filter((l) => pts.some((p) => p.ms[l]));
   pts.sort((a, b) => a.cu - b.cu);
   return ["<h3>Cost and speed by parquet layout</h3>",
+    // THE CHART FIRST, THE TABLE UNDER IT — and this REVERSES the older "the table, then its chart".
+    // That rule read the chart as a scannable restatement of numbers the table had already given,
+    // which was true of the two bar charts it was written for: their lengths WERE columns printed a
+    // block away. It is not true of this scatter. Three measures on three channels answers a
+    // question no column ordering can — whether cost and speed move together — and the answer here
+    // is that they move APART: the cheapest duckrun layout is the slowest of its nine. A reader who
+    // meets the ranked table first has already been told cheapest-is-best before seeing the
+    // scatter disagree.
+    // The table stays directly beneath, unchanged and complete, which is what the labels, the
+    // hovers and every caption point back into.
+    scatterFit(pts),
     // THE KEY IS PRINTED, not just grouped on. Six rows reading `duckrun sorted` with nothing to
     // tell them apart is a table asking the reader to trust a grouping it will not show. `ordering`
     // and `row group size` ARE `layoutKey` (the engine is already in the label) — the key bands the
@@ -2003,14 +2014,6 @@ export function renderFit(groups, times, tiers, counts = {}) {
     cut ? note(`${cut} layout${cut === 1 ? "" : "s"} not shown: never built at `
       + `${ETL_VCORES} vCores, so there is no build cost to compare. Their query numbers are in `
       + `**Every run**. See \`TODO.md\` for what filling them would take.`) : "",
-    // The same points as the table, plotted against each other. A ranked table cannot show whether
-    // two measures move TOGETHER, which is the one question a CU column and a time column side by
-    // side invite.
-    //
-    // STILL ONE CHART, but the mark is a DOT again and the three measures are on three channels:
-    // cold across, warm up, CU as the area. The line chart that put warm and cold at the two ends of
-    // a segment read well at eleven layouts and hatched at seventeen — see `scatterFit`.
-    scatterFit(pts),
   ].filter(Boolean).join("\n");
 }
 
@@ -3273,9 +3276,11 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // reason the CU is: a group's tiers are its own runs' median, not its column's newest record.
   const { times, counts } = queryTime(anaEntries.map(({ qid, rec }) => ({ col: qid, rec })));
 
-  // THE TABLE, THEN ITS CHART. It carries the grouping key, the sample size and the three query
-  // tiers as numbers; the chart under it is the same `martPoints` made scannable, so it follows
-  // rather than introduces.
+  // THE CHART, THEN ITS TABLE — see the note inside `renderFit`, which is where the order lives.
+  // The older rule ran the other way and was written for the two bar charts: their lengths WERE
+  // columns printed a block away, so they could only follow. A scatter of three measures on three
+  // channels answers a question no column ordering can, and here it answers it AGAINST the table's
+  // ranking, so it introduces rather than restates.
   //
   // TWO BAR CHARTS USED TO SIT HERE — `Capacity units per parquet layout` and `… per engine build`,
   // analytics above ETL — and they are DELETED. Not because the build half stopped mattering: it
