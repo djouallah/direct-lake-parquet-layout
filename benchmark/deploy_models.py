@@ -50,7 +50,29 @@ import report  # noqa: E402
 FAB = "https://api.fabric.microsoft.com/v1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TEMPLATE = os.path.join(HERE, "fct_summary.SemanticModel", "model.bim")
+
+# One template PER DATASET, each over that dataset's own tables. Still ONE template per run, which
+# is the experiment: identical DAX over identical semantic models with the dbt adapter as the only
+# variable. The dataset is not a variable inside a run — it is which run this is.
+TEMPLATES = {"aemo": "fct_summary.SemanticModel", "nyc": "fct_trips.SemanticModel"}
+
+
+def template():
+    """This dataset's `.bim`, or a loud refusal.
+
+    A MISSING template must fail HERE, before anything is deployed, and the reason is specific: the
+    other dataset's template would deploy perfectly happily against this dataset's lakehouse — the
+    repoint rewrites the OneLake reference and asks no questions — and then every query in the suite
+    would error on a table that does not exist. A report shaped like a result, with no result in it,
+    is worse than no report. The `bench` job is also the most expensive thing in the workflow, so a
+    refusal here is a refusal before the capacity is spent."""
+    ds = E.dataset()
+    path = os.path.join(HERE, TEMPLATES.get(ds, ""), "model.bim")
+    if not TEMPLATES.get(ds) or not os.path.exists(path):
+        sys.exit(f"no semantic model template for dataset {ds!r} "
+                 f"(expected {TEMPLATES.get(ds, '<unmapped>')}/model.bim under benchmark/). "
+                 f"Dispatch with benchmark=false to build and record layout without querying.")
+    return path
 
 # Workspace folder the models are grouped under, so a benchmark dispatch does not scatter four items
 # across the workspace root next to the lakehouses. duckrun creates it if absent (and raises if an
@@ -179,6 +201,9 @@ def _reparent(ws, item_id, name):
 def main():
     items = E.items()
     picked = [e for e in E.selected() if e in items]
+    # Resolved once, before the first delete: a missing template must not be
+    # discovered after an engine's previous model has already been removed.
+    TEMPLATE_PATH = template()
     ws = duckrun.workspace(os.environ["WS_ID"])
 
     deployed, failed = {}, {}
@@ -197,7 +222,7 @@ def main():
         # not be masked by three more attempts.
         for attempt in range(1, 4):
             try:
-                item_id = ws.deploy(TEMPLATE, name=name, overwrite=True, folder=FOLDER, **kwargs)
+                item_id = ws.deploy(TEMPLATE_PATH, name=name, overwrite=True, folder=FOLDER, **kwargs)
                 break
             except Exception as ex:
                 msg = str(ex)

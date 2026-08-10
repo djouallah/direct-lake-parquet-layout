@@ -62,18 +62,23 @@ from urllib.parse import unquote
 import requests
 import duckrun
 
+import datasets
 import record
 
 WS = os.environ["WS_ID"]
 FAB = "https://api.fabric.microsoft.com/v1"
 TRANSPORT = os.environ.get("AZURE_TRANSPORT_OPTION_TYPE", "curl")
 
+# Which dataset this run built, and therefore which items to read, which tables to compare and
+# which one is the mart. From the registry rather than literals: provision.py CREATES these names
+# and this script READS them back, so a divergence between the two is silent — it records the OTHER
+# dataset's layout under this run's id, and nothing raises.
+DATASET = datasets.selected()
+SPEC = datasets.spec(DATASET)
+
 # (engine label, Fabric item name, item kind)
-LANDING = "dbt_landing"
-ALL_ENGINES = [("duckrun", "dbt_delta", "lakehouses"),
-               ("iceberg", "dbt_iceberg", "lakehouses"),
-               ("spark", "dbt_spark", "lakehouses"),
-               ("dwh", "dbt_dwh", "warehouses")]
+LANDING = SPEC["landing"]
+ALL_ENGINES = datasets.engines(DATASET)
 
 # Narrowed to what the dispatch actually built. Reading an item this run did not touch would record
 # an older generation's layout under this run's id — and each read is 10+ minutes over OneLake.
@@ -94,11 +99,12 @@ ENGINES = [t for t in ALL_ENGINES if not _want or t[0] in _want]
 # that reads fct_summary and nothing else, so a disagreement between engines shows up here or
 # nowhere: a ⚠️ on a row means the four outputs are not the same, and it is the one signal that
 # can say so.
-TABLES = ["stg_csv_archive_log", "dim_calendar", "dim_duid",
-          "fct_price", "fct_scada", "fct_price_today", "fct_scada_today", "fct_summary"]
+TABLES = SPEC["tables"]
 
 # The one table the query benchmark touches, the layout chart is about, and `encodings_from` reads.
-MART = "fct_summary"
+# Per dataset: fct_summary on aemo, fct_trips on nyc. Its SCHEMA is derived from the stats rather
+# than hardcoded, so that half needs no registry entry.
+MART = SPEC["mart"]
 
 # How many physical rows `run_lengths` reads from the sample file. A FIXED ROW BUDGET rather than
 # "the first row group", because the engines' row-group sizes differ by two orders of magnitude
@@ -739,7 +745,7 @@ def declared_sort_key():
     # Fallback MUST match the model's own `env_var('DUCKDB_SORT_BY', ...)` default, or a hand run
     # with the var unset records a key it did not write. CI always sets it from the input.
     cols = [c.strip()
-            for c in os.environ.get("DUCKDB_SORT_BY", "date,time,price").split(",") if c.strip()]
+            for c in os.environ.get("DUCKDB_SORT_BY", SPEC["sort_by"]).split(",") if c.strip()]
     return {MART: cols} if cols else {}
 
 
@@ -841,8 +847,13 @@ def build_doc(per_engine, engines, guids=None, landing=None, encodings=None, ord
         # No `workspace` key. It was the WS_ID GUID, which is now a repo secret, and this document
         # is uploaded as a public-repo ARTIFACT — anyone can download it. Nothing ever read it back
         # (`cu/` takes `id` and `sha` only), so recording it only widened where the value lives.
+        # `dataset` lives HERE, in `run`, and NEVER in `config` below: every key of
+        # `layout.config` becomes a dashboard column name via variant(), so a dataset there would
+        # split every engine's column and re-band the whole history. It is a property of what was
+        # measured, not of how the engine was configured.
         "run": {"id": os.environ.get("GITHUB_RUN_ID"),
                 "sha": os.environ.get("GITHUB_SHA"),
+                "dataset": DATASET,
                 "written": datetime.now(timezone.utc).isoformat()},
         # What the build actually ran ON, read from the env the legs were given rather than from a
         # doc that can drift. A layout number means little without it: "4 files, 999 MB" is a

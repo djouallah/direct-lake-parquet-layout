@@ -96,6 +96,23 @@ on:
         type: choice
         default: "duckrun"
         options: ["duckrun", "dwh", "iceberg", "spark"]
+      # A CHOICE, never free text, and that is a safety property rather than a convenience. DATASET
+      # is read by dbt_project.yml's `+enabled` gates, where a typo does not raise — it makes EVERY
+      # gate false, so `dbt build` reports "Nothing to do", exits 0, the leg goes GREEN, the
+      # teardown deletes an empty lakehouse and the run records the layout of nothing. A dropdown
+      # makes that unreachable from the form; `datasets.selected()` and `check_gating.py` cover the
+      # ways in that do not go through the form.
+      #
+      # The two are a PAIR, not a menu. aemo is 143M rows of five narrow columns on a regular
+      # 5-minute grid (near-uniform); nyc is 17 columns with four categoricals at 97-99%
+      # single-value and two Zipfian zone ids. V-Order is an encoding pass, so it acts on column
+      # count x categorical skew — running both is what turns a V-Order result into a finding
+      # rather than one dataset's anecdote.
+      dataset:
+        description: "dataset — aemo (uniform) or nyc (skewed)"
+        type: choice
+        default: "aemo"
+        options: ["aemo", "nyc"]
       cores:
         description: "vCores (duckrun / iceberg only)"
         type: choice
@@ -113,8 +130,14 @@ on:
       # and nothing said so: it spent a full build and query pass rewriting the parquet it already
       # had. Blank `sort_by` is now the only way to ask for no sort, so the field a user fills in is
       # the field that takes effect.
+      # THE DEFAULT IS THE AEMO KEY, so a `dataset: nyc` dispatch MUST set this (or blank it). The
+      # `plan` job validates the columns against the selected dataset's mart and refuses a key that
+      # does not belong to it — free, before any leg spends capacity, where the alternative is
+      # duckrun failing mid-write with the build already paid for. It is not silently substituted:
+      # a run that quietly measured a different layout than the form described is the failure this
+      # whole field was reshaped to prevent (run 31158671699).
       sort_by:
-        description: "duckrun: sort fct_summary by — blank for no sort"
+        description: "duckrun: sort the mart by — blank for no sort; must match the dataset"
         type: string
         default: "date,time,price"
       # 2M, not 16M. 16M was spark `readHeavyForPBI`'s measured segment size (9 x 16.0M on this
@@ -238,6 +261,13 @@ env:
   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
   DBT_SCHEMA: mart
+  # Which dataset every job builds, reads and records. Workflow-level so it reaches EVERY job and
+  # step without being threaded one at a time — and so provision.py, fabric_run.py, stats.py,
+  # benchmark/engines.py and dbt's own `+enabled` gates all take it from one place. The scheduled
+  # literal is spelled out because the `inputs` context is EMPTY on a schedule event and
+  # workflow_dispatch defaults do NOT apply: `inputs.dataset || 'aemo'` cannot tell an absent input
+  # from a deliberate one, and a blank here would disable every model in the project.
+  DATASET: ${{ github.event_name == 'schedule' && 'aemo' || inputs.dataset }}
   AZURE_TRANSPORT_OPTION_TYPE: curl
   CURL_CA_INFO: /etc/ssl/certs/ca-certificates.crt
   DUCKDB_TEMP_DIR: /tmp/duckdb_spill
@@ -305,6 +335,13 @@ jobs:
       - name: Open this run's record
         env:
           RUN_ENGINE: ${{ github.event_name == 'schedule' && 'duckrun' || inputs.engines }}
+          # The dataset is an INPUT of the run, so it belongs in `inputs` alongside the
+          # engine and the write knobs. `stats.py` also writes it into `layout.run`, from
+          # the env the LEG was actually given — two independent statements of the same
+          # fact, so a dispatch that asked for one dataset and built the other shows up as
+          # a contradiction in the record rather than being taken on trust. That is the
+          # same shape as dwh_vorder's declared/measured pair.
+          RUNIN_DATASET: ${{ github.event_name == 'schedule' && 'aemo' || inputs.dataset }}
           RUNIN_BUILD: ${{ github.event_name == 'schedule' && 'true' || inputs.build }}
           RUNIN_BENCHMARK: ${{ github.event_name == 'schedule' && 'true' || inputs.benchmark }}
           RUNIN_CORES: ${{ github.event_name == 'schedule' && '8' || inputs.cores }}
@@ -359,6 +396,19 @@ jobs:
       - run: pip install pytest "duckrun>=0.4.36"
       - name: pytest the record, the teardown, the benchmark and the render layer
         run: python -m pytest .github/scripts/ benchmark/ cu/ -q
+      # THE GATING MATRIX, and it is the guard for the highest-probability failure this project has:
+      # a DATASET or `+enabled` mistake makes every model disabled, `dbt build` reports "Nothing to
+      # do" and EXITS 0, so the leg goes green having built nothing, the teardown deletes an empty
+      # lakehouse, and the run records the layout of an empty item. Nothing else in the pipeline can
+      # tell that apart from a successful run.
+      #
+      # It runs the whole (dataset x target) matrix through `dbt parse` and asserts the enabled model
+      # AND test sets plus every node's fqn. All four adapters install without credentials and parse
+      # touches no network, so this costs seconds and no capacity — and it is what CLAUDE.md has
+      # always said to do by hand after a gating change, run automatically instead.
+      - run: pip install dbt-core dbt-duckdb duckrun dbt-fabric dbt-fabricspark
+      - name: every (dataset, target) enables exactly the right models and tests
+        run: python .github/scripts/check_gating.py
 
   # Which legs run, decided ONCE and in one place. A GitHub matrix cannot be filtered by an input, so
   # the two `include:` lists are computed here and consumed with `fromJSON` — which also means the
@@ -377,6 +427,11 @@ jobs:
       fabric: ${{ steps.p.outputs.fabric }}
       server: ${{ steps.p.outputs.server }}
     steps:
+      # Checked out so the validation below can import the dataset registry instead of carrying a
+      # second copy of every mart's column list. A free runner, seconds, and the alternative is the
+      # kind of duplicate that drifts silently — which is the whole failure class this job exists
+      # to catch before capacity is spent.
+      - uses: actions/checkout@v4
       - id: p
         env:
           ENGINES: ${{ github.event_name == 'schedule' && 'duckrun' || inputs.engines }}
@@ -405,7 +460,24 @@ jobs:
           if raw and not raw.strip():
               sys.exit(f"sort_by is whitespace, which reads as sorted but names no column; "
                        f"leave it EMPTY for no sort")
-          sys.stderr.write(f"row_group_size={int(rg):,} rows, "
+          # ...and now the check that shape alone cannot make: are these columns of THIS DATASET's
+          # mart? With two datasets sharing one form, a well-formed-but-wrong key is no longer a
+          # typo — it is exactly what a `dataset: nyc` dispatch gets by leaving sort_by at the aemo
+          # default. Refused here, for free; NOT silently substituted, because a run that quietly
+          # measured a layout other than the one the form described is the failure this field was
+          # reshaped to prevent (run 31158671699).
+          sys.path.insert(0, ".github/scripts")
+          import datasets
+          ds = datasets.selected()          # refuses an unknown DATASET, loudly
+          spec = datasets.spec(ds)
+          known = set(spec["mart_columns"])
+          strays = [c for c in cols if c not in known]
+          if strays:
+              sys.exit(f"sort_by names {strays}, which are not columns of {ds}'s "
+                       f"{spec['mart']}. Known: {sorted(known)}. "
+                       f"This dataset's usual key is {spec['sort_by']!r}.")
+          sys.stderr.write(f"dataset={ds} mart={spec['mart']} "
+                           f"row_group_size={int(rg):,} rows, "
                            f"sort_by={cols or 'none (unsorted)'}\n")
           # THE dwh PIN IS EXACT, AND THAT IS THE GUARD RATHER THAN A PREFERENCE. This was
           # `dbt-fabric-samdebruyn`, a fork whose ONLY reason to exist here was that it had moved to
@@ -483,9 +555,14 @@ jobs:
       # skipped is only the DOWNLOAD, which is what makes a run reproducible — the same archive in,
       # so two dispatches of the same commit differ by nothing but what was changed. Turn
       # `skip_download` off to extend the archive; that is a different question and a different run.
-      - name: Download AEMO data (obstore -> OneLake)
+      # The dataset's OWN downloader — download_aemo.py or download_nyc_taxi.py. Two scripts, not
+      # one with a flag: they share a watermark IDIOM (an archive-log parquet at the Files root, so
+      # a re-run only fetches what is new) and nothing else. AEMO unzips ragged CSV from nemweb;
+      # NYC fetches monthly parquet from a CDN, reads each footer, refuses a month whose schema
+      # drifted and rewrites the rest to one canonical schema before uploading.
+      - name: Download the dataset (obstore -> OneLake)
         if: ${{ github.event_name != 'schedule' && !inputs.skip_download }}
-        run: python download_aemo.py
+        run: python "$(python .github/scripts/datasets.py --download)"
       - name: Say the archive was reused
         if: ${{ github.event_name == 'schedule' || inputs.skip_download }}
         run: echo "skip_download is on — building on the landed archive as-is" >&2

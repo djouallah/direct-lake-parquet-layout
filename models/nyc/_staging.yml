@@ -1,0 +1,37 @@
+version: 2
+
+# Shared across all three dialects — model names are identical in models/nyc/duckdb, models/nyc/dwh
+# and models/nyc/spark, so ONE patch documents/tests whichever tree is enabled for the target.
+#
+# THIS FILE'S LOCATION IS LOAD-BEARING. A generic test's fqn is the fqn of the YML FILE, not of the
+# model it patches, so living under models/nyc/ is what gives its tests the `nyc` segment that
+# `data_tests: aemo_electricity: nyc:` gates on. At the root of models/ it would carry no folder
+# segment at all and no gate could reach it — which is exactly the bug that once left dwh and spark
+# running zero tests. Do not move it up.
+
+models:
+  - name: stg_parquet_archive_log
+    description: >
+      View over the archive log download_nyc_taxi.py writes to the landing lakehouse
+      (Files/parquet_raw_archive_log.parquet). One log; every engine reads it with SQL.
+    columns:
+      - name: source_type
+        description: Type of source — 'yellow' for a monthly trip file, 'zone' for the lookup
+      - name: source_filename
+        description: Name of the downloaded file, without extension
+      - name: archive_path
+        description: Path under parquet_raw/, e.g. '/yellow/yellow_tripdata_2019-06.parquet'
+      - name: file_stem
+        description: >
+          Filename without extension — what the fact models store as `file`, and what every
+          dialect's pending-file selection dedups on. Named file_stem, not csv_filename as the
+          AEMO log's equivalent is, because nothing here is CSV.
+      - name: row_count
+        description: Rows in the source file, read from its parquet footer at land time
+      - name: columns
+        description: >
+          The source file's own column list as TLC published it, recorded so a schema question
+          can be answered from the log rather than by re-reading the archive. The landed copy is
+          normalised to the canonical 17 — see download_nyc_taxi.py.
+      - name: archived_at
+        description: Timestamp when the file was archived

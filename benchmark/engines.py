@@ -24,11 +24,39 @@ missing tier is a gap rather than a zero.
 import json
 import os
 
+# Item names PER DATASET — the same map .github/scripts/datasets.py holds, deliberately duplicated
+# rather than imported. This directory is built to be deletable by removing one folder and one
+# workflow file, and an import from .github/scripts would end that. The duplication is what keeps
+# the deletion free, exactly as `report.py` re-implements a dict-union rather than importing
+# record.py. `.github/scripts/test_datasets.py` asserts the two maps agree for every dataset, so
+# the copy cannot drift silently — which matters more here than it did with one dataset, because a
+# mismatch now deploys a semantic model over the OTHER dataset's lakehouse rather than failing.
+DATASET_ITEMS = {
+    "aemo": {"duckrun": "dbt_delta", "iceberg": "dbt_iceberg",
+             "spark": "dbt_spark", "dwh": "dbt_dwh"},
+    "nyc": {"duckrun": "dbt_nyc_delta", "iceberg": "dbt_nyc_iceberg",
+            "spark": "dbt_nyc_spark", "dwh": "dbt_nyc_dwh"},
+}
+
+# Which Fabric item KIND each engine writes into — a property of the adapter, not of the dataset,
+# so it is not repeated per dataset above.
+ENGINE_KIND = {"duckrun": "lakehouses", "iceberg": "lakehouses",
+               "spark": "lakehouses", "dwh": "warehouses"}
+
+
+def dataset():
+    """The dataset this run covers. Refuses an unknown name rather than falling back — the same
+    rule .github/scripts/datasets.py enforces, and for the same reason: DATASET also drives dbt's
+    `+enabled` gates, where a typo silently enables nothing and the leg goes green."""
+    name = (os.environ.get("DATASET") or "aemo").strip()
+    if name not in DATASET_ITEMS:
+        raise SystemExit(f"unknown dataset {name!r}; known: {', '.join(DATASET_ITEMS)}")
+    return name
+
+
 # (engine label, Fabric item display name, item kind) — same triple as stats.py's ENGINES.
-ENGINES = [("duckrun", "dbt_delta", "lakehouses"),
-           ("iceberg", "dbt_iceberg", "lakehouses"),
-           ("spark", "dbt_spark", "lakehouses"),
-           ("dwh", "dbt_dwh", "warehouses")]
+ENGINES = [(e, DATASET_ITEMS[dataset()][e], ENGINE_KIND[e])
+           for e in ("duckrun", "iceberg", "spark", "dwh")]
 
 ITEM = {e: item for e, item, _ in ENGINES}
 KIND = {e: kind for e, _, kind in ENGINES}
@@ -45,18 +73,29 @@ DEPLOY_MODE = "direct_lake"
 
 ALL = [e for e, _, _ in ENGINES]
 
-# Semantic models are named <PREFIX><engine>. The DAX suite is identical across them, so the model
-# name is the ONLY thing that identifies which engine's table a timing came from.
-PREFIX = "aemo_"
+# Semantic models are named <PREFIX><engine>, and the PREFIX is the dataset. Within one run the DAX
+# suite is identical across models, so the model name is the ONLY thing that identifies which
+# engine's table a timing came from; across runs the prefix is what keeps two datasets' timings from
+# colliding in `benchmark.timings`, which is keyed by model name.
+PREFIXES = {"aemo": "aemo_", "nyc": "nyc_"}
+
+
+def prefix():
+    return PREFIXES[dataset()]
 
 
 def model_name(engine):
-    return f"{PREFIX}{engine}"
+    return f"{prefix()}{engine}"
 
 
 def engine_of(model):
-    """Inverse of model_name. Tolerates being handed a bare engine label already."""
-    return model[len(PREFIX):] if model.startswith(PREFIX) else model
+    """Inverse of model_name. Tolerates being handed a bare engine label already, and tolerates the
+    OTHER dataset's prefix — merge_reports and the render layer read fragments by model name, and a
+    hard failure there would lose a whole run's report over a naming question."""
+    for p in PREFIXES.values():
+        if model.startswith(p):
+            return model[len(p):]
+    return model
 
 
 def selected(default=None):

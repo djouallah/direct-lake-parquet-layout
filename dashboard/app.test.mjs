@@ -1989,9 +1989,60 @@ test("a failed listing rejects rather than rendering an empty page", async () =>
 test("the dispatch inputs are query params now", () => {
   // `?record=30776174056` is a link to one run's page. It used to be a workflow dispatch.
   assert.deepEqual(d.optsFromSearch("?record=30776174056&ref=topic&table=fct_scada"), {
-    repo: d.DEFAULTS.repo, ref: "topic", table: "fct_scada", record: "30776174056",
+    repo: d.DEFAULTS.repo, ref: "topic", dataset: "aemo", table: "fct_scada",
+    record: "30776174056",
   });
   assert.deepEqual(d.optsFromSearch(""), { ...d.DEFAULTS });
+});
+
+test("?dataset= carries its mart with it, and an unknown one falls back", () => {
+  // Switching dataset must not also require knowing the mart's name — that pairing is the whole
+  // reason DATASET_TABLE exists rather than two independent params.
+  assert.equal(d.optsFromSearch("?dataset=nyc").table, "fct_trips");
+  assert.equal(d.optsFromSearch("?dataset=nyc").dataset, "nyc");
+  // ...but an explicit ?table= still wins, for asking an odd question of another shared table.
+  assert.equal(d.optsFromSearch("?dataset=nyc&table=dim_zone").table, "dim_zone");
+  // A reader-supplied URL falls back rather than rendering nothing: an empty page is a worse
+  // answer than the default one, and the value that matters is validated in the workflow.
+  assert.equal(d.optsFromSearch("?dataset=bogus").dataset, "aemo");
+  assert.equal(d.optsFromSearch("?dataset=bogus").table, "fct_summary");
+});
+
+test("datasetOf prefers what the dispatch asked for, then what the leg was given, then aemo", () => {
+  assert.equal(d.datasetOf({ inputs: { dataset: "nyc" } }), "nyc");
+  assert.equal(d.datasetOf({ layout: { run: { dataset: "nyc" } } }), "nyc");
+  // Declared beats measured, so a contradiction is visible rather than averaged away.
+  assert.equal(d.datasetOf({ inputs: { dataset: "aemo" }, layout: { run: { dataset: "nyc" } } }),
+    "aemo");
+  // ABSENT MEANS AEMO, and that is a statement about history: every record committed before the
+  // dataset input existed was an AEMO build. Getting this wrong drops the entire archive.
+  assert.equal(d.datasetOf({ engine: "duckrun" }), "aemo");
+  assert.equal(d.datasetOf({}), "aemo");
+  assert.equal(d.datasetOf(null), "aemo");
+});
+
+test("selectRuns keeps one dataset and NAMES what it dropped", () => {
+  // The two must never share a page: nothing in a column key or a layout key carries the dataset,
+  // so a taxi run would become "the latest duckrun record", print its file counts under the AEMO
+  // column, and empty the encodings table because none of its column names is in MART_COLUMNS.
+  const mk = (file, dataset) => {
+    const r = full(file, "duckrun");
+    if (dataset) r.inputs = { ...(r.inputs || {}), dataset };
+    return r;
+  };
+  const recs = [mk("a.json"), mk("b.json", "aemo"), mk("c.json", "nyc")];
+
+  const aemo = d.selectRuns(recs, "aemo");
+  assert.deepEqual(aemo.runs.map((r) => r._file), ["a.json", "b.json"]);
+  // Named, not silently dropped — a page that quietly ignores a record is indistinguishable from
+  // one that never had it.
+  assert.ok(aemo.skipped.some((s) => s.includes("c.json") && s.includes("nyc")));
+
+  const nyc = d.selectRuns(recs, "nyc");
+  assert.deepEqual(nyc.runs.map((r) => r._file), ["c.json"]);
+
+  // The default is aemo, so an existing caller that passes nothing is unaffected.
+  assert.deepEqual(d.selectRuns(recs).runs.map((r) => r._file), ["a.json", "b.json"]);
 });
 
 /** The shape `stats.py`'s `encodings_for` writes: one entry per column, per engine. */

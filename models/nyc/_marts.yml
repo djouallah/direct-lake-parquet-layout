@@ -1,0 +1,58 @@
+version: 2
+
+models:
+  - name: fct_trips
+    description: >
+      NYC TLC yellow-taxi trip records — the wide raw fact, and the table under layout test on this
+      dataset (stats.py's MART for DATASET=nyc, as mart.fct_summary is for aemo).
+
+      It is a RAW fact rather than an aggregate on purpose. The reason this dataset exists is that
+      fct_summary is five narrow columns on a regular 5-minute grid, which is close to the worst
+      possible surface for V-Order: an encoding pass acts on column count x categorical skew, and
+      that table has neither. Here there are 17 columns, of which RatecodeID, store_and_fwd_flag,
+      payment_type and VendorID sit at 97-99% single-value and the two LocationIDs are Zipfian on
+      Manhattan and the airports. Summarising would throw away the only property being measured.
+
+      NO GRAIN ASSERTION IS POSSIBLE. TLC trip records carry no natural unique key — duplicate
+      trips are a documented feature of the source — so there is no analogue of
+      assert_fct_summary_grain. What guards the write instead is file-level, and
+      assert_fct_trips_matches_archive_log is what checks it held.
+    columns:
+      - name: file
+        description: >
+          Source month, e.g. 'yellow_tripdata_2019-06'. The incremental key on every engine, and
+          the only thing standing between a re-dispatch and a doubled month.
+      - name: tpep_pickup_datetime
+        description: Pickup timestamp; joined to dim_date and the leading sort column by default
+      - name: tpep_dropoff_datetime
+        description: Dropoff timestamp
+      - name: PULocationID
+        description: Pickup zone, joined to dim_zone. Zipfian — Manhattan and the airports dominate
+      - name: DOLocationID
+        description: Dropoff zone, joined to dim_zone
+      - name: VendorID
+        description: Technology provider. Two live values, heavily skewed
+      - name: RatecodeID
+        description: Rate type. ~97% standard rate; 2 is the JFK flat fare
+      - name: store_and_fwd_flag
+        description: Y/N store-and-forward. ~99% 'N' — the least varied column in the table
+      - name: payment_type
+        description: Card/cash/other. Two values carry almost everything
+      - name: passenger_count
+        description: Reported passengers; 1 dominates
+      - name: trip_distance
+        description: Miles, long-tailed
+      - name: fare_amount
+        description: Metered fare
+      - name: extra
+        description: Rush-hour and overnight surcharges
+      - name: mta_tax
+        description: Flat MTA tax
+      - name: tip_amount
+        description: Tip; card trips only, cash tips are not recorded
+      - name: tolls_amount
+        description: Tolls paid
+      - name: improvement_surcharge
+        description: Flat improvement surcharge
+      - name: total_amount
+        description: Total charged to the passenger, excluding cash tips

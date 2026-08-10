@@ -51,13 +51,62 @@
 export const DEFAULTS = {
   repo: "djouallah/fabric-dbt-benchmark",
   ref: "main",
-  // Which table the layout grouping and the mart block are ABOUT.
+  // WHICH DATASET THE PAGE IS ABOUT. Two run through this project — `aemo` (143M rows of five
+  // narrow columns on a regular 5-minute grid, near-uniform) and `nyc` (17 columns, four
+  // categoricals at 97-99% single-value, two Zipfian zone ids). They are a PAIR: V-Order is an
+  // encoding pass, so it acts on column count x categorical skew, and running both is what makes a
+  // V-Order result a finding rather than one dataset's anecdote.
+  //
+  // They must never share a page. Every number here is per-column and per-layout-group, and nothing
+  // in those keys carries the dataset — so a taxi run would become "the latest duckrun record",
+  // print its file counts under the AEMO column, and empty the encodings table because none of its
+  // column names is in MART_COLUMNS. `?dataset=nyc` switches the page over; the filter is in
+  // `selectRuns`, the one gate every render path passes.
+  dataset: "aemo",
+  // Which table the layout grouping and the mart block are ABOUT. Derived from `dataset` unless
+  // `?table=` overrides it, so switching dataset does not also require knowing its mart's name.
   table: "fct_summary",
   // Render ONE run alone. A substring of the filename, so a run id or a date both work.
   record: "",
 };
 
 export const SERVER = "https://github.com";
+
+// Each dataset's mart — the table the layout grouping, the encodings block and the mart rows are
+// about. `?dataset=` picks the mart with it; `?table=` still overrides, for asking an odd question
+// of one of the other shared tables.
+export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips" };
+
+// The encodings block names columns explicitly rather than reading Object.keys, so it needs the
+// mart's column list per dataset. `cutoff` is aemo-only and derived; `file` is on both marts but is
+// the incremental key rather than data, so neither is worth a column on a page about encodings.
+export const DATASET_MART_COLUMNS = {
+  aemo: ["date", "time", "DUID", "mw", "price", "cutoff"],
+  nyc: ["tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID",
+        "VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "passenger_count",
+        "trip_distance", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount",
+        "improvement_surcharge", "total_amount"],
+};
+
+/**
+ * Which dataset a record describes.
+ *
+ * Read from the run record's own two statements, in order: `inputs.dataset` (what the dispatch
+ * ASKED for) then `layout.run.dataset` (what the leg was actually GIVEN, written by stats.py). They
+ * are recorded independently on purpose — the same declared/measured pairing `dwh_vorder` uses — so
+ * a dispatch that asked for one dataset and built the other shows up as a contradiction rather than
+ * being taken on trust.
+ *
+ * ABSENT MEANS `aemo`, and that is not a guess: every record committed before the dataset input
+ * existed was an AEMO build, so treating absence as the default is a statement about history rather
+ * than a fallback. Adding a third dataset does not disturb it.
+ */
+export function datasetOf(rec) {
+  const r = rec || {};
+  const declared = ((r.inputs || {}).dataset || "").trim();
+  const measured = (((r.layout || {}).run || {}).dataset || "").trim();
+  return declared || measured || "aemo";
+}
 
 // Engine order wherever one is needed. Not a filter — an engine outside this list still renders, it
 // just sorts to the end.
@@ -348,10 +397,17 @@ export function drifting(rec) {
  * filter, before `columnsFor` and before the `?record=` pin, so it is the one gate every render path
  * passes. Six filters in six renderers is the alternative, and they would have to agree.
  */
-export function selectRuns(records) {
+export function selectRuns(records, dataset = DEFAULTS.dataset) {
   const runs = [], skipped = [];
+  const want = dataset || DEFAULTS.dataset;
   for (const rec of records || []) {
     if (!rec) continue;
+    // THE DATASET FILTER, and it is here rather than in six renderers for the reason stated above:
+    // this is the one gate every render path passes, including the `?record=` pin. It is also why
+    // it comes BEFORE `incomplete` — a record from the other dataset is not a defective record, and
+    // listing it as "skipped: no benchmark" would read as a problem with this page's own history.
+    const ds = datasetOf(rec);
+    if (ds !== want) { skipped.push(`${rec._file || "?"}: dataset ${ds}, not ${want}`); continue; }
     const why = incomplete(rec);
     if (why) { skipped.push(`${rec._file || "?"}: ${why}`); continue; }
     runs.push(rec);
@@ -2458,7 +2514,7 @@ export function renderInput(cols) {
  * the right trade for a display list: it is checked against `stats.py` by a test, and the alternative
  * has already shipped GUIDs to the page.
  */
-export const MART_COLUMNS = ["date", "time", "DUID", "mw", "price", "cutoff"];
+export const MART_COLUMNS = DATASET_MART_COLUMNS.aemo;
 
 export function renderEncodings(groups, martTable = DEFAULTS.table) {
   const cols = [];
@@ -3428,7 +3484,7 @@ export function renderEmpty(repo = DEFAULTS.repo) {
  */
 export function compose(records, ledgerDoc, opts = {}) {
   const ledger = normaliseLedger(ledgerDoc);
-  const { runs: whole, skipped } = selectRuns(records);
+  const { runs: whole, skipped } = selectRuns(records, opts.dataset || DEFAULTS.dataset);
   if (!whole.length) return { html: renderEmpty(opts.repo || DEFAULTS.repo), skipped, cols: [] };
   const pick = (opts.record || "").trim();
   if (pick) {
@@ -3501,10 +3557,18 @@ export async function loadRemote(opts = {}) {
  *  params. A link to one run is now a link, not a workflow run. */
 export function optsFromSearch(search) {
   const p = new URLSearchParams(search || "");
+  // An unknown dataset falls back rather than raising: this is a reader-supplied URL, and an empty
+  // page is a worse answer than the default one. The value that MATTERS is validated where it costs
+  // something — the workflow's choice input and `datasets.selected()`.
+  const asked = (p.get("dataset") || "").trim();
+  const dataset = DATASET_TABLE[asked] ? asked : DEFAULTS.dataset;
   return {
     repo: p.get("repo") || DEFAULTS.repo,
     ref: p.get("ref") || DEFAULTS.ref,
-    table: p.get("table") || DEFAULTS.table,
+    dataset,
+    // `?dataset=` carries its mart with it, so switching datasets does not also require knowing
+    // the table's name. `?table=` still wins, for asking an odd question of another shared table.
+    table: p.get("table") || DATASET_TABLE[dataset] || DEFAULTS.table,
     record: p.get("record") || DEFAULTS.record,
   };
 }

@@ -63,14 +63,22 @@ def test_template_carries_every_shared_table():
 
 
 def test_template_table_set_matches_the_parity_dashboard():
-    """`stats.py`'s TABLES is the definition of "every shared table each engine emits". If a model is
-    added or renamed there and not here, the benchmark quietly stops covering it."""
-    stats = pathlib.Path(".github/scripts/stats.py")
-    if not stats.exists():           # running from outside the repo root
-        pytest.skip("stats.py not reachable from cwd")
-    src = stats.read_text(encoding="utf-8")
-    block = re.search(r"^TABLES = \[(.*?)\]", src, re.S | re.M)
-    assert block, "could not find TABLES in stats.py"
+    """The dataset registry's `tables` is the definition of "every shared table each engine emits".
+    If a model is added or renamed there and not here, the benchmark quietly stops covering it.
+
+    It reads `.github/scripts/datasets.py` by REGEX rather than importing it, deliberately: this
+    directory is built to be deletable by removing one folder and one workflow file, and an import
+    would end that. The regex is why the assertion skips rather than fails when the file is out of
+    reach — this test guards a mismatch, not the layout of someone's checkout.
+
+    (It used to read `TABLES = [...]` straight out of stats.py. That literal moved into the registry
+    when the second dataset arrived, and this test was the thing that noticed.)"""
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():             # running from outside the repo root
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"aemo":\s*\{.*?"tables":\s*\[(.*?)\]', src, re.S)
+    assert block, "could not find the aemo dataset's tables in datasets.py"
     assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(_parts(DL))
 
 

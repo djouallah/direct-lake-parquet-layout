@@ -30,13 +30,19 @@ import uuid
 
 import duckrun
 
+import datasets
 import record
 
 # Config the shipped project reads via env_var() — forwarded into the notebook if present.
 # Deliberately excludes tokens and the runner-only OneLake curl transport (AZURE_TRANSPORT_*).
 # REBUILD_SUMMARY was forwarded here; the input that set it is gone. SPARK_NATIVE_ENABLED does
 # not belong here either — it is a Livy conf, and there is no Livy session on this path.
-_FORWARD = ("FILES_PATH", "ONELAKE_TABLES_PATH", "WAREHOUSE_PATH", "ONELAKE_ENDPOINT",
+#
+# DATASET IS IN HERE AND MUST STAY. It is what dbt_project.yml's `+enabled` gates read, and a var
+# missing from this tuple is SILENTLY INERT inside the notebook — so omitting it would not fail,
+# it would build the AEMO models into the NYC lakehouse and log a clean run. Every other silent
+# failure in this file costs one un-attributed CU row; that one costs the wrong table.
+_FORWARD = ("DATASET", "FILES_PATH", "ONELAKE_TABLES_PATH", "WAREHOUSE_PATH", "ONELAKE_ENDPOINT",
             "DBT_SCHEMA", "DUCKDB_SORTED", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
             "DUCKDB_SORT_BY", "download_limit", "daily_download_limit")
 
@@ -139,7 +145,11 @@ def main() -> int:
             entry=".github/scripts/fabric_build.py",
             args=[engine],
             name=name,
-            lakehouse="dbt_landing",            # hosts the tiny result/log round-trip files
+            # Hosts the tiny result/log round-trip files. Dataset-resolved rather than a literal:
+            # this run's landing lakehouse is the one guaranteed to exist by the `land` job, and
+            # writing the round-trip into the OTHER dataset's item would both fail on a fresh
+            # workspace and bill the wrong item.
+            lakehouse=datasets.spec()["landing"],
             env=env,
             cores=cores,
             pip=["duckrun", "pytz"],            # duckrun brings dbt-duckdb + duckdb + deltalake

@@ -46,42 +46,93 @@ on-run-start:
   # Fabric Warehouse has no implicit schemas — create them before any model runs.
   - "{% if target.type == 'fabric' %}{{ create_schemas_if_not_exists(['landing', 'mart']) }}{% endif %}"
 
-# Three model folders, one per SQL dialect. Exactly one is enabled per target, so the
-# model NAMES are shared across dialects and ref()/tests are identical everywhere.
+# models/<DATASET>/<DIALECT>/<LAYER>. Two axes, and exactly one (dataset, dialect) tree is enabled
+# per run: the dialect from `target.type`, the dataset from the DATASET env var (a dispatch input).
+# Within a dataset the model NAMES are shared across its three dialects, which is what lets ref(),
+# the dataset's own patch files and its singular tests be written once.
+#
+# THREE RULES, all of them learned the expensive way. Read them before touching a `+enabled`.
+#
+# 1. NOTHING ON THE `aemo_electricity` KEY, EVER. A generic test declared in a patch file gets the
+#    fqn of the YML FILE, not of the model it patches (dbt/parser/schema_generic_tests.py) — so a
+#    gate on the project key matches it too. That is what a bare
+#    `aemo_electricity: +enabled: <duckdb only>` once did: it disabled the four unique/not_null
+#    tests along with the singular ones, and `dbt build --target dwh` (and --target spark) ran ZERO
+#    tests while this file and the workflow both read as though the generic ones still applied.
+#    Putting the patch files under models/<dataset>/ is what gives them a gateable folder segment;
+#    do not move them back to the root of models/.
+#
+# 2. BOTH AXES IN ONE `+enabled`, ON THE DIALECT KEY. `+enabled` is a scalar, so a deeper folder key
+#    CLOBBERS a shallower one — putting `target.type` here and DATASET on the dataset key above
+#    parses clean, runs clean, and builds the WRONG DATASET with nothing red. Under `data_tests:`
+#    the dataset key DOES carry a gate (it is the only key a generic test's fqn touches) and the
+#    dialect keys below it must therefore REPEAT the dataset clause.
+#
+# 3. ALWAYS `env_var('DATASET', 'aemo')` WITH THE DEFAULT — a bare env_var() raises at parse for
+#    anyone who has not exported it, including every offline check.
+#
+# Verify with `.github/scripts/check_gating.py`, not by reading this comment: it runs the whole
+# (dataset x target) matrix through `dbt parse` and asserts the enabled model AND test sets plus
+# every fqn, in seconds, with no credentials. A DATASET typo makes every gate below false, and then
+# `dbt build` reports "Nothing to do" and exits GREEN having built nothing.
 models:
   aemo_electricity:
-    duckdb:                                                  # Delta (duckrun) + Iceberg
-      +enabled: "{{ target.type in ['duckrun', 'duckdb'] }}"
-      staging:    {+materialized: view,        +schema: landing}
-      dimensions: {+materialized: table,       +schema: mart}
-      marts:      {+materialized: incremental,  +schema: landing}
-    dwh:                                                     # Fabric Warehouse (T-SQL)
-      +enabled: "{{ target.type == 'fabric' }}"
-      staging:    {+materialized: view,        +schema: landing}
-      dimensions: {+materialized: table,       +schema: mart}
-      marts:      {+materialized: incremental,  +schema: landing}
-    spark:                                                   # Fabric Spark (Spark SQL)
-      +enabled: "{{ target.type == 'fabricspark' }}"
-      staging:    {+materialized: view,        +schema: landing}
-      dimensions: {+materialized: table,       +schema: mart}
-      marts:      {+materialized: incremental,  +schema: landing}
+    aemo:                                                    # AEMO NEM — CSV, 8 models
+      duckdb:                                                # Delta (duckrun) + Iceberg
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'aemo' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: landing}
+      dwh:                                                   # Fabric Warehouse (T-SQL)
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'aemo' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: landing}
+      spark:                                                 # Fabric Spark (Spark SQL)
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'aemo' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: landing}
+    nyc:                                                     # NYC TLC yellow taxi — parquet, 4 models
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'nyc' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'nyc' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'nyc' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
 
-# Singular tests, one folder per SQL dialect — same shape as models/ above, and gated the same
-# way, so every engine runs the same assertions in its own dialect.
+# Singular tests, tests/<DATASET>/<DIALECT>/ — the same two axes as models/ above, gated the same
+# way, so every engine runs the same assertions in its own dialect against the output it just wrote.
 #
-# The gate MUST sit on the folder key, never on `aemo_electricity` itself. A generic test declared
-# in models/_*.yml gets fqn ['aemo_electricity', '<test_name>'] — no folder segment, because the
-# patch files sit at the root of models/ — so a project-level `+enabled` matches it too. That is
-# what a bare `aemo_electricity: +enabled: <duckdb only>` did here: it disabled the four
-# unique/not_null tests along with the singular ones, and `dbt build --target dwh` (and --target
-# spark) ran ZERO tests while reading, in this file and in dbt.yml, as though the generic ones still
-# applied. Verify with `dbt parse --target dwh` and grep the manifest's `disabled` block, not by
-# reading the comment.
+# The dataset key carries a gate here and does NOT above, and that asymmetry is the whole point: a
+# generic test's fqn is ['aemo_electricity', '<dataset>', '<test_name>'] — dataset segment, no
+# dialect segment — so this is the only key that can reach it, and it must not carry a target.type
+# clause or the generic tests go back to running on one engine. The dialect keys below then repeat
+# the dataset clause because a deeper `+enabled` replaces the shallower one outright (rule 2).
 data_tests:
   aemo_electricity:
-    duckdb:
-      +enabled: "{{ target.type in ['duckrun', 'duckdb'] }}"
-    dwh:
-      +enabled: "{{ target.type == 'fabric' }}"
-    spark:
-      +enabled: "{{ target.type == 'fabricspark' }}"
+    aemo:
+      +enabled: "{{ env_var('DATASET', 'aemo') == 'aemo' }}"
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'aemo' }}"
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'aemo' }}"
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'aemo' }}"
+    nyc:
+      +enabled: "{{ env_var('DATASET', 'aemo') == 'nyc' }}"
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'nyc' }}"
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'nyc' }}"
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'nyc' }}"

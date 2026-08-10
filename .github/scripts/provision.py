@@ -52,10 +52,22 @@ the END puts a whole idle period between the delete and the next dispatch's crea
 """
 import json, os, sys, time, subprocess, requests
 
+import datasets
 import record
 
 mode = sys.argv[1]
-LANDING = "dbt_landing"
+# Which dataset this run builds — `aemo` unless DATASET says otherwise. Every item name below comes
+# from the registry rather than a literal, because the same names are read back by stats.py and
+# benchmark/engines.py and a divergence between them is silent: provisioning `dbt_nyc_delta` while
+# stats.py reads `dbt_delta` records the OTHER dataset's layout under this run's id, with nothing
+# raising anywhere. `selected()` refuses an unknown name for a related reason — see its docstring.
+DATASET = datasets.selected()
+SPEC = datasets.spec(DATASET)
+LANDING = SPEC["landing"]
+# Every dataset's landing item, not just this run's. The refusal in drop_guid() is a backstop
+# against a record that names the wrong role, and a backstop that only knows about the dataset
+# currently selected is no backstop at all.
+ALL_LANDING = {d["landing"] for d in datasets.DATASETS.values()}
 # The REST collection name this script POSTs to, mapped to the item TYPE Fabric reports it as —
 # which is the spelling the metrics model and the run record use. Two vocabularies for one thing,
 # so the mapping lives here rather than being spelled out at each call site.
@@ -96,7 +108,7 @@ TEARDOWN_KEEP = {"landing", "folder", "sql_endpoint"}
 # The `Files/landing` shortcut inside it goes with it, which is why the shortcut is ensured in each
 # ENGINE's own mode rather than once in `land`: at `land` time the lakehouse that hosts it may not
 # exist yet.
-DWH_SRC = "dbt_dwh_src"
+DWH_SRC = SPEC["dwh_src"]
 LANDING_SHORTCUT = "landing"
 ws = os.environ["WS_ID"]
 FAB = "https://api.fabric.microsoft.com/v1"
@@ -199,7 +211,7 @@ def ensure_folder(name):
 #
 # `benchmark` rather than `dbt` because `benchmark/deploy_models.py` already puts its semantic models
 # there (`BENCH_FOLDER`), so one name now covers every item either half of the workflow creates.
-RUN_FOLDER, LANDING_FOLDER = "benchmark", "landing"
+RUN_FOLDER, LANDING_FOLDER = SPEC["folder"], "landing"
 _FOLDERS = {}
 
 
@@ -247,7 +259,7 @@ def drop_guid(guid, name, kind, role):
     A 404 counts as success — the item was already gone (the notebook deletes itself, a re-run of
     the teardown, a by-hand cleanup) and the record should say so either way.
     """
-    if name == LANDING:
+    if name in ALL_LANDING:
         raise SystemExit(f"refusing to drop {name}: it holds the raw landing data")
     r = _req("DELETE", f"{FAB}/workspaces/{ws}/items/{guid}")
     if r.status_code == 404:
@@ -455,31 +467,32 @@ elif mode == "land":
             f"daily_download_limit={n}"]
 
 elif mode == "duckrun":
-    lh = ensure("lakehouses", "dbt_delta", lh_payload)
+    lh = ensure("lakehouses", datasets.item("duckrun", DATASET), lh_payload)
     out += [f"ONELAKE_TABLES_PATH={base}/{lh}/Tables",
             f"FILES_PATH={ensure_landing_shortcut(lh)}"]
 
 elif mode == "iceberg":
-    lh = ensure("lakehouses", "dbt_iceberg", lh_payload)
+    lh = ensure("lakehouses", datasets.item("iceberg", DATASET), lh_payload)
     out += [f"WAREHOUSE_PATH={ws}/{lh}",
             "ONELAKE_ENDPOINT=https://onelake.table.fabric.microsoft.com/iceberg",
             f"FILES_PATH={ensure_landing_shortcut(lh)}"]
 
 elif mode == "spark":
-    lh = ensure("lakehouses", "dbt_spark", lh_payload)
+    lh = ensure("lakehouses", datasets.item("spark", DATASET), lh_payload)
     out += [f"FABRIC_WORKSPACE_ID={ws}",
             f"FABRIC_WORKSPACE_NAME={workspace_display_name()}",
             f"FABRIC_LAKEHOUSE_ID={lh}",
-            "FABRIC_LAKEHOUSE_NAME=dbt_spark",
+            f"FABRIC_LAKEHOUSE_NAME={datasets.item('spark', DATASET)}",
             f"FILES_PATH={ensure_landing_shortcut(lh)}"]
 
 elif mode == "dwh":
-    ensure("warehouses", "dbt_dwh")
-    conn = warehouse_conn("dbt_dwh")
+    dwh = datasets.item("dwh", DATASET)
+    ensure("warehouses", dwh)
+    conn = warehouse_conn(dwh)
     # The one extra item this repo creates: a warehouse has no `Files` and cannot host a shortcut,
     # so dwh reads through a lakehouse holding nothing but that shortcut. See DWH_SRC.
     out += [f"FABRIC_DWH_SERVER={conn}",
-            "FABRIC_DWH_NAME=dbt_dwh",
+            f"FABRIC_DWH_NAME={dwh}",
             f"FABRIC_WORKSPACE_ID={ws}",
             "FABRIC_AUTH=CLI",
             f"FILES_PATH="
