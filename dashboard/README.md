@@ -212,13 +212,13 @@ without a build, a token or a dispatch.
   is the other half. It has a title and no commentary. Built from the same `martPoints` as the chart
   and the layout rows, so all three quote the same median.
   ⚠️ **A LAYOUT WITH NO RUN AT `ETL_VCORES` IS DROPPED FROM THE SECTION** — from the table and
-  from the chart, with the count named in a note under the table (2 of 16 today, both duckrun;
-  fourteen rows survive). The alternative was hiding the column while most rows could not fill it, and
-  a cost column that is mostly dashes reads as "the build was free" rather than "nobody measured it at
-  that size", and the `cores` column is what keeps that filter visible. **The cost is the chart**: 14
-  dots instead of 16, so two layouts' query timings leave a
-  section they had every right to be in, for a build-cost reason — they are still in *Every run*, and
-  [TODO.md](../TODO.md) says what building them would take.
+  from the chart, with the count named in a note under the table. **Today it drops nothing** — all
+  16 groups have an 8-core run, so the note is absent and every row is complete; it took seven
+  deliberate dispatches to get there ([TODO.md](../TODO.md) records them). The alternative was hiding
+  the column while most rows could not fill it, and a cost column that is mostly dashes reads as "the
+  build was free" rather than "nobody measured it at that size"; the `cores` column is what keeps the
+  filter visible. **The cost when it does drop one is the chart** — a layout's query timings leave a
+  section they had every right to be in, for a build-cost reason. They stay in *Every run*.
   The filter is on MEMBERSHIP, not on the value: a layout built at 8 whose CU the ledger has not read
   keeps its row and dashes that one cell, because "measured, not yet costed" is a different statement
   from "never built at this size". Table and chart filter together on purpose — they are the same
@@ -238,12 +238,12 @@ without a build, a token or a dispatch.
   the DuckDB legs run in, so only `duckrun` and `iceberg` record `vcores`; spark's compute is the
   workspace Livy pool and dwh's is the warehouse, and neither reads the input. Filtering on the value
   alone would have emptied the column for two of the four engines rather than narrowing it.
-  **A layout nobody has built at that size is a DASH, never a blend and never a zero** — 2 of 16
-  groups today, both duckrun and both DUID sorts. **The nightly does NOT fill them in**, and a first
-  version of this note said it would: the nightly writes ONE layout (`date,time,price` at 2M) whose
-  group already has 8-core runs, while every dashed group is a sort key or row-group size it never
-  builds. Closing them is two deliberate dispatches at `cores=8` — [TODO.md](../TODO.md) lists them
-  with the cost. `ETL_VCORES` is a constant that has to be kept in step with the dispatch default by
+  **A layout nobody has built at that size is a DASH, never a blend and never a zero** — none today,
+  and a NEW sort key or row-group band re-opens one the moment it is dispatched at 64 cores alone.
+  **The nightly does NOT fill them in**, and a first version of this note said it would: the nightly
+  writes ONE layout (`date,time,price` at 2M) whose group already has 8-core runs, while any new group
+  is a sort key or row-group size it never builds. Closing one is a deliberate dispatch at `cores=8` —
+  [TODO.md](../TODO.md) has the recipe and the serialisation rule. `ETL_VCORES` is a constant that has to be kept in step with the dispatch default by
   hand.
 - **Under it, ONE SCATTER, and the mark is a DOT again.** Each layout is one dot: **cold ms across,
   warm ms up, both axes log**, with **its AREA the analytics CU it cost** and **its colour the

@@ -1531,7 +1531,9 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   chart and present in every table reads as a rendering fault. Every omitted record is NAMED in the
   page's skipped list, `history/` is untouched, and it is one constant to delete when the leg is
   ready. Note the knock-on to every count in this file and in `TODO.md`: **16 layout groups, not
-  17.**
+  17** — and all 16 are on the page complete, the `ETL_VCORES` filter dropping nothing today after
+  seven deliberate 8-core dispatches. A new sort key or row-group band re-opens that gap; `TODO.md`
+  has the recipe.
   They were `Capacity units per parquet layout` and `Capacity units per engine build`, stacked,
   analytics first. **The reason is NOT that the build half stopped mattering** — it still carries
   the sharpest operational result here, **duckrun costs 1.8× at 64 cores for the same wall time**
