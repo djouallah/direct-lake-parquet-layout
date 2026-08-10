@@ -2973,6 +2973,28 @@ test("every engine reaches the page — iceberg is a column, a row and a dot", (
   assert.ok(rest[1] - rest[0] > 120, `the others still spread: ${rest}`);
 });
 
+test("a named writer carries its LAYOUT too — rg size, and V-Order or the sort where there is one", () => {
+  // `spark readHeavyForPBI` says who wrote it and nothing about WHAT. The chart's subject is the
+  // parquet, so a dot labelled with its writer alone told the reader the one thing the table's
+  // `parquet writer` column already leads with, and none of the shape. Both labels now.
+  const p = (rec, name, cold, warm, cu) => ({ name, cu, n: 1, ms: { cold, warm }, members: [{ rec }] });
+  const svg = d.scatterFit([
+    p(lay("spark", 12, 9, { vorder: true, file: "a.json" }), "spark readHeavyForPBI", 30000, 4000, 1514),
+    p(lay("iceberg", 386, 1172, { file: "b.json" }), "duckdb iceberg", 100394, 8000, 8641),
+    p(sortedBy(1, 24, ["date", "time", "price"], { file: "c.json" }), "delta_rs", 21050, 3652, 1571),
+  ]);
+  const texts = [...svg.matchAll(/<text class="bar-caption"(?![^>]*key)[^>]*>([^<]+)</g)]
+    .map((m) => m[1]).filter((t) => !["cold ms", "warm ms"].includes(t));
+  assert.ok(texts.includes("spark readHeavyForPBI"), `the writer still: ${texts}`);
+  // V-ORDER AND THE ROW GROUP SIZE, in the same words `keyCells` prints into the table beside it.
+  assert.ok(texts.includes("V-Order · rg 16.0M"), `and its shape: ${texts}`);
+  // A WRITER THAT CANNOT EXPRESS A SORT HAS NO SORT HALF TO SHOW, and that absence is itself the
+  // comparison against duckrun's — never an invented `—` where nothing was measured.
+  assert.ok(texts.includes("duckdb iceberg") && texts.includes("rg 0.1M"),
+    `iceberg names its writer and its rg alone: ${texts}`);
+  assert.ok(!texts.some((t) => t.includes("— ·")), `no dashed half: ${texts}`);
+});
+
 test("a layout with no warm pass is dropped from the chart, and COUNTED", () => {
   // Both axes are query times, so a run missing one has nothing to put on the y axis. It is not
   // plotted at zero — an unmeasured tier is an absent thing, and a dot on the axis would read as
@@ -3135,13 +3157,12 @@ test("duckrun labels its CHEAPEST and its FASTEST layout, and nothing else", () 
   // parquet two different ways, and a change to either follows the other.
   const k = d.keyCells([{ rec: sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }) }]);
   assert.equal(`${k.ordering} · rg ${k.rgSize}`, "date, time, price · rg 6.0M");
-  // Anchored `start` and past its own dot — printed rightward into the label gutter, never leftward
-  // back across the mark it names.
+  // Beside its own dot — the placer prefers the right of the mark and falls back to its left rather
+  // than dropping a name, so what is pinned is PROXIMITY, not the side.
   const xs = [...svg.matchAll(/<circle class="dot c\d" cx="([\d.]+)"/g)].map((m) => +m[1]);
-  for (const l of labs.filter((x) => /rg [\d.]+M$/.test(x.t))) {
-    assert.ok(!l.end, `"${l.t}" reads rightward`);
-    assert.ok(xs.some((c) => l.x > c && l.x - c < 40),
-      `"${l.t}" at ${l.x} sits just past its dot; dots at ${xs}`);
+  for (const l of labs.filter((x) => /\((cheapest|fastest)\)$/.test(x.t))) {
+    assert.ok(xs.some((c) => Math.abs(l.x - c) < 60),
+      `"${l.t}" at ${l.x} sits beside a dot; dots at ${xs}`);
   }
 
   // THE GUTTER IS ONLY RESERVED WHEN SOMETHING GOES IN IT. Widening the x axis unconditionally

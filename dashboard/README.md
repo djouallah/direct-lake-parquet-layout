@@ -300,12 +300,17 @@ without a build, a token or a dispatch.
   ONCE, with both words. Ties go to the table's own cheapest-first order, so a pick cannot move
   between two renders of one document. The rest are a hue and a hover, and every one of them is
   still a ranked row of the table above.
-- **What a label SAYS depends on the writer.** The writer itself when that identifies the dot, which
-  `uniqueName` decides — the three spark profiles. `dwh` has two configs and `delta_rs` nine, so
-  what actually tells them apart takes its place: the sort key and the row group SIZE —
-  `date, time · rg 2.0M`. Both halves come from `keyCells`, which is what *Cost and speed by parquet
-  layout* prints in its own cells, so a dot and the row beside it cannot describe one parquet two
-  different ways and a change to either follows the other.
+- **EVERY LABELLED DOT CARRIES ITS LAYOUT, and its writer's name as well when that name identifies
+  it.** `spark readHeavyForPBI · V-Order · rg 13.1–16.0M`, `duckdb iceberg · rg 0.1M`. The writer
+  half is what `uniqueName` decides — the three spark profiles and iceberg have it, `dwh` (two
+  configs) and `delta_rs` (nine) do not. The layout half is unconditional, and that is a change: a
+  dot labelled with its writer alone told the reader the one thing the table's `parquet writer`
+  column already leads with and nothing about the parquet, which is the chart's whole subject.
+  **A writer that cannot express a sort simply has no sort half**, so spark and iceberg read `rg`
+  alone — and that absence is itself the comparison against duckrun's sorted layouts, not a gap.
+  Both halves come from `keyCells`, which is what *Cost and speed by parquet layout* prints in its
+  own cells, so a dot and the row beside it cannot describe one parquet two different ways and a
+  change to either follows the other.
   **Size, not the count.** A count is a number you have to divide the table by before it means
   anything; `2.0M` is a segment size a reader can hold against VertiPaq's own, it is what the
   dispatch actually sets (`row_group_size`), and it does not move when the row count does.

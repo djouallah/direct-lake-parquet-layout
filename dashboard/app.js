@@ -1889,8 +1889,14 @@ export function scatterFit(pts) {
       // fact. A count is a number you have to divide the table by before it means anything; `2.0M`
       // is a segment size a reader can hold against VertiPaq's own, and it is what the dispatch
       // actually sets (`row_group_size`). It also stops the label moving when the row count does.
-      id2: bestOnly(p) ? bestLabel(p, best)
-        : (uniqueName(rows, p) ? "" : layoutOf(p.members)),
+      // EVERY LABELLED DOT CARRIES ITS LAYOUT, not only the ones whose writer name is ambiguous.
+      // `spark readHeavyForPBI` says who wrote it and nothing about WHAT — and the chart's subject
+      // is the parquet, so the reader was being told the one thing the table's `parquet writer`
+      // column already leads with and none of the shape. It reads `V-Order · rg 13.1–16.0M` beside
+      // its name now, which is the V-Order flag and the segment size in the same words `keyCells`
+      // prints. A writer that cannot express a sort simply has no sort half to show — spark and
+      // iceberg are `rg` only, and that absence is itself the comparison against duckrun's sorts.
+      id2: bestOnly(p) ? bestLabel(p, best) : layoutOf(p.members),
       tip: tipLines(p), hue: WRITER_HUE[p.name] || 1, c: p.cu,
     })), "cold ms", "CU", (v) => fmt(v, 0), "warm ms", modelNote(rows));
 }
