@@ -11,7 +11,7 @@ exercise cost. This file is what has not been done.
 
 ## Nothing is open.
 
-**All 16 layout groups are on *Cost and speed by parquet layout*, complete** — every one has a run at
+**All 17 layout groups are on *Cost and speed by parquet layout*, complete** — every one has a run at
 `cores=8`, so none is dropped by the `ETL_VCORES` filter, and every one carries analytics CU. The
 section that used to open this file (7 of 17 excluded, then 4, then 2) is closed by dispatch, not by
 a code change.
@@ -85,5 +85,5 @@ Seven dispatches at `cores=8`, each landing in the band it was aimed at:
 | `date,DUID,time` | `6000000` | 31303975708 | 24 |
 | `date,time,DUID` | `6000000` | 31308163981 | 24 |
 
-The eighth group it would have taken — `iceberg`'s — closed a different way: that engine left the
-dashboard entirely (`PAGE_OMIT`), which is why the count is 16 and not 17.
+The eighth — `iceberg`'s — needed no dispatch: it already had an 8-core run. That engine spent a
+few hours off the dashboard entirely and is back, so the count is 17.

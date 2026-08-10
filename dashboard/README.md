@@ -213,7 +213,7 @@ without a build, a token or a dispatch.
   and the layout rows, so all three quote the same median.
   ⚠️ **A LAYOUT WITH NO RUN AT `ETL_VCORES` IS DROPPED FROM THE SECTION** — from the table and
   from the chart, with the count named in a note under the table. **Today it drops nothing** — all
-  16 groups have an 8-core run, so the note is absent and every row is complete; it took seven
+  17 groups have an 8-core run, so the note is absent and every row is complete; it took seven
   deliberate dispatches to get there ([TODO.md](../TODO.md) records them). The alternative was hiding
   the column while most rows could not fill it, and a cost column that is mostly dashes reads as "the
   build was free" rather than "nobody measured it at that size"; the `cores` column is what keeps the
@@ -251,14 +251,14 @@ without a build, a token or a dispatch.
   cannot disagree about a number.
   **It replaced a LINE chart**, which drew each layout as a segment from its warm ms to its cold ms
   at the height of its CU — all three numbers in one mark, and the cold/warm trade readable as the
-  segment's LENGTH. That read well at eleven layouts. At sixteen, nine of them one writer at similar
-  CU, it stopped: a line is a WIDE mark, it spans most of a decade on a log x, so nine of them
+  segment's LENGTH. That read well at eleven layouts. At seventeen, nine of them one writer at
+  similar CU, it stopped: a line is a WIDE mark, it spans most of a decade on a log x, so nine of them
   overlap into a hatch that no hover pulls apart. `opacity: .8` was already a mitigation for the
   first two coincident pairs; it does not survive nine. A dot occupies one point, and points
   separate.
   **THE COST IS STATED RATHER THAN DISCOVERED LATER: the cold/warm trade is a distance from the
   diagonal again, not a length.** That is a worse encoding of it, and it is the price of separating
-  sixteen marks. The ratio is still one line of every dot's hover, and `hot` with it.
+  seventeen marks. The ratio is still one line of every dot's hover, and `hot` with it.
   **CU MOVED FROM THE Y AXIS TO THE AREA, which is a promotion.** It is the measure this project
   optimises for, and area is the channel that survives crowding — a dot keeps its size wherever it
   lands, while a y position is spent on separating marks. The size key names it (`CU`) and prints
@@ -277,7 +277,7 @@ without a build, a token or a dispatch.
   `[1,2,5]` yields a single tick over half a decade, and an axis with no numbers reads as a
   rendering failure rather than as a narrow range.
 - **`duckrun` LABELS TWO LAYOUTS — its CHEAPEST and its FASTEST. Everything else is labelled as
-  before.** Nine of the layouts are `delta_rs` — one hue, one writer name — so labelling them all
+  before.** Nine of the seventeen layouts are `delta_rs` — one hue, one writer name — so labelling them all
   prints nine `date, time · rg …` strings into one cluster, which is the crowding the dots were
   adopted to fix arriving back as text. `LABEL_BEST_ONLY` is a NAMED constant keyed on the ENGINE,
   never a computed "any engine with more than N dots": the computed version would silently start
@@ -570,25 +570,20 @@ without a build, a token or a dispatch.
   this engine was free" rather than "nobody measured it". The skipped records are **listed by file
   and reason in the sources section**, visible and never folded — they used to be only a count in
   the live status line, which the offline copy does not even have.
-- **`iceberg` IS NOT REPORTED AT ALL — no column, no row, no dot, page-wide.** `PAGE_OMIT` in
-  `app.js`, filtered in `selectRuns`, which is the one gate every render path passes: the generation
-  filter, `columnsFor`, the CU join and the `?record=` pin all read what it returns, so an omitted
-  engine cannot reach the page by any route. Filtering in each renderer instead would be six filters
-  that have to agree.
-  **It replaced `SCATTER_OMIT`, which was chart-only** — iceberg was off the one chart while still
-  holding a column in *Cost by engine*, a row in *Table layout* and a bucket in the CU table, and
-  the chart's caption was the only place the page admitted to it. An engine missing from the chart
-  and present in every table reads as a rendering fault.
-  **Why: the leg is not ready.** Its cold pass is 100,394 ms against 22,823–45,010 for everything
-  else, so it sets the scale of any chart it joins, and the layout behind that (1,172 row groups over
-  386 files) is not one anybody would ship. **The RECORDS are untouched** — `history/` keeps every
-  iceberg run, the ledger keeps its CU, and `STACK`/`ENGINE_LABEL`/`ENGINE_FAMILY` keep their
-  entries — so this is one constant to delete when the leg is worth reporting again.
-  **NAMED, never silent**: every omitted record is listed by file and reason in the sources section,
-  through the same list an incomplete record uses. A page that quietly ignores a record is
-  indistinguishable from a page that never had it.
-  It also drops the adapter from *The adapters* note: an adapter named in the methodology with no
-  column anywhere above it reads as a missing column.
+- **NO ENGINE IS OMITTED, and two constants that used to omit one are GONE.** `SCATTER_OMIT` kept
+  `iceberg` off the chart alone — absent from one figure, present in every table, with the chart's
+  caption the only place the page admitted it, which is the worst of the three states. `PAGE_OMIT`
+  made that consistent by dropping it page-wide. Both are deleted: `duckdb iceberg` is a column, a
+  layout row and a dot again.
+  **What they were buying was SCALE, and the MARK is what changed.** Its cold pass is 100,394 ms
+  against 22,823–45,010 for everything else; against the old LINE mark that meant a segment four
+  times the next longest, squashing every other layout into a fraction of the plot. A dot occupies
+  one point and both axes are log, so a 4x outlier costs a little under a decade of axis and moves
+  nothing else — the reason to exclude it was a property of the segment, not of the engine. A test
+  pins that the other dots still spread with it in.
+  **It plots as the biggest dot as well** (8,641 CU), which is the honest picture: it is genuinely
+  the dearest and slowest layout here, and a page comparing four adapters should say so rather than
+  quietly drop the one that loses.
 - **A run that was never TORN DOWN still renders, with a caveat.** Its items are alive and Fabric
   keeps billing them, so its total creeps upward and is an upper bound on that run rather than a
   measurement of it. It was briefly rejected outright; the creep is small and a column that

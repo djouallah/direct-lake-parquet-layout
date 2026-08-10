@@ -2343,11 +2343,9 @@ test("the adapters are named and linked once, under the charts", () => {
   // dbt-duckrun, dbt-duckdb, dbt-fabricspark and dbt-fabric actually are.
   const out = render([full("a-1.json", "spark")], ledger({ OUT: 1.0, SEM: 2.0 }));
   for (const [engine, url] of Object.entries(d.ADAPTER_URLS)) {
-    // AN ENGINE THE PAGE DOES NOT REPORT IS NOT ADVERTISED EITHER. `PAGE_OMIT` removes iceberg from
-    // every table above this note, and an adapter named here with no column anywhere reads as a
-    // missing column rather than as a deliberate omission.
-    assert.equal(out.split(`href="${url}"`).length - 1, engine === d.PAGE_OMIT ? 0 : 1,
-      `${engine} linked ${engine === d.PAGE_OMIT ? "never" : "exactly once"}`);
+    // ALL FOUR, iceberg included — the page reports every engine again, so it advertises every
+    // adapter again. This briefly asserted zero for the one the page was hiding.
+    assert.equal(out.split(`href="${url}"`).length - 1, 1, `${engine} linked exactly once`);
   }
   const text = plain(out);
   // NOT `text.includes("dbt-fabric")` — `dbt-fabricspark` contains it, so that assertion would be
@@ -2360,8 +2358,7 @@ test("the adapters are named and linked once, under the charts", () => {
   // ONE PER LINE — joined with `·`, the separator between two entries looked like the em dash inside
   // one, so four `name — what it is` pairs read as one wrapped run of text.
   const note_ = out.slice(out.indexOf("The adapters:"), out.indexOf("</p>", out.indexOf("The adapters:")));
-  assert.equal(note_.split("<br>").length - 1,
-    Object.keys(d.ADAPTER_URLS).filter((e) => e !== d.PAGE_OMIT).length,
+  assert.equal(note_.split("<br>").length - 1, Object.keys(d.ADAPTER_URLS).length,
     `one break for the label and one between each pair: ${note_}`);
   assert.ok(!note_.includes(" · "), "and no inline separator left over");
 });
@@ -2942,26 +2939,38 @@ test("fewer than two points is no chart at all", () => {
 
 
 
-test("PAGE_OMIT's engine reaches no column, no row and no chart — and is NAMED", () => {
-  // It used to be `SCATTER_OMIT`: off the one chart, and still holding a column in `Cost by engine`,
-  // a row in `Table layout` and a bucket in the CU table. An engine absent from the chart and
-  // present in every table reads as a rendering fault. The filter is now page-wide and lives in
-  // `selectRuns`, which is the one gate every render path passes.
-  const runs = [full("a-1.json", "spark"), full("b-2.json", d.PAGE_OMIT)];
+test("every engine reaches the page — iceberg is a column, a row and a dot", () => {
+  // TWO CONSTANTS USED TO DROP IT: `SCATTER_OMIT` (chart only, so it was absent from one figure and
+  // present in every table — the worst of the three states) and then `PAGE_OMIT` (page-wide). Both
+  // are gone. What they bought was SCALE against the old LINE mark, whose length ran off the plot at
+  // a 4x outlier; a dot occupies one point on a log axis, so the outlier costs a little axis and
+  // moves nothing else. This is the regression test for re-adding either by reflex.
+  const runs = [full("a-1.json", "spark"), full("b-2.json", "iceberg")];
   const { cols, html, skipped } = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), {});
-  assert.deepEqual(cols.map((c) => c.col), ["spark"], "no column for it");
-  const text = plain(html);
-  // Everywhere EXCEPT the note that names it. The note is the one place it is supposed to appear —
-  // so this cuts that paragraph out and asserts the rest of the page has never heard of it: no
-  // column header, no layout row, no caption, no dot label, no CU bucket.
-  const at = text.indexOf("record(s) not shown");
-  const rest = text.slice(0, at) + text.slice(text.indexOf("is not reported on this page", at));
-  assert.ok(!/iceberg/i.test(rest),
-    `no row, no caption, no dot: ${rest.match(/.{0,60}iceberg.{0,60}/i)}`);
-  // NAMED, not silently dropped — the same discipline the generation filter follows. A run this
-  // page holds and does not show has to say so, or it is indistinguishable from one nobody ran.
-  assert.deepEqual(skipped, [`b-2.json: ${d.PAGE_OMIT} is not reported on this page`]);
-  assert.ok(text.includes("1 record(s) not shown"), text.slice(0, 200));
+  assert.deepEqual(cols.map((c) => c.col).sort(), ["duckdb iceberg", "spark"], "a column each");
+  assert.deepEqual(skipped, [], "and nothing held back");
+  assert.ok(plain(html).includes("duckdb iceberg"), "named on the page, in its writer's spelling");
+  // ON THE CHART TOO, which is where the exclusion started. Its own hue, never falling through to
+  // `delta_rs`'s slot 1 — that is what `WRITER_HUE`'s sixth entry is for.
+  const p = (engine, name, cold, warm, cu) => ({
+    name, cu, n: 1, ms: { cold, warm }, members: [{ rec: lay(engine, 4, 24, { file: `${name}.json` }) }],
+  });
+  const svg = d.scatterFit([p("duckrun", "delta_rs", 25000, 4500, 1800),
+    p("spark", "spark writeHeavy", 45000, 6000, 3700),
+    p("iceberg", "duckdb iceberg", 100394, 8000, 8641)]);
+  const dots = [...svg.matchAll(/<circle class="dot c(\d)" cx="([\d.]+)" cy="[\d.]+" r="([\d.]+)"/g)]
+    .map((m) => ({ hue: +m[1], x: +m[2], r: +m[3] }));
+  assert.equal(dots.length, 3, "three dots, not two");
+  assert.equal(dots.filter((q) => q.hue === d.WRITER_HUE["duckdb iceberg"]).length, 1,
+    "and it wears its own hue");
+  // THE BIGGEST AND RIGHT-MOST, which is the honest picture: dearest and slowest, said out loud.
+  const ice = dots.find((q) => q.hue === d.WRITER_HUE["duckdb iceberg"]);
+  assert.ok(dots.every((q) => q === ice || (q.x < ice.x && q.r < ice.r)),
+    `iceberg is the far-right, biggest dot: ${JSON.stringify(dots)}`);
+  // AND IT DOES NOT FLATTEN THE OTHERS. The two remaining dots keep most of a decade between them,
+  // which is the property the line mark could not hold and the whole reason it is back.
+  const rest = dots.filter((q) => q !== ice).map((q) => q.x).sort((a, b) => a - b);
+  assert.ok(rest[1] - rest[0] > 120, `the others still spread: ${rest}`);
 });
 
 test("a layout with no warm pass is dropped from the chart, and COUNTED", () => {
@@ -3022,7 +3031,7 @@ test("every point is named and no two names collide", () => {
 test("a layout is one DOT: cold across, warm up, and its AREA is the CU", () => {
   // THE MARK IS A POINT AGAIN. Each layout was a segment from its warm ms to its cold ms at the
   // height of its CU — all three numbers in one mark, which read well at eleven layouts and hatched
-  // at sixteen, nine of them one writer at similar CU. A line is a WIDE mark; a dot is not.
+  // at seventeen, nine of them one writer at similar CU. A line is a WIDE mark; a dot is not.
   const p = (engine, name, cold, warm, cu) => ({
     name, n: 1, cu, ms: { cold, warm, hot: warm - 300 },
     members: [{ rec: lay(engine, 4, 24, { file: `${name}.json` }) }],
@@ -3083,7 +3092,7 @@ test("both axes are LOG, so an equal RATIO is an equal distance", () => {
 });
 
 test("duckrun labels its CHEAPEST and its FASTEST layout, and nothing else", () => {
-  // Nine of the sixteen layouts on this page are `delta_rs`, so labelling them all prints nine
+  // Nine of the seventeen layouts on this page are `delta_rs`, so labelling them all prints nine
   // `date, time · rg …` strings into one cluster — the crowding the dots were adopted to fix,
   // arriving back as text. TWO are what a reader is looking for, and they are NOT the same dot:
   // measured, the cheapest duckrun layout (1,569 CU) is the slowest of the nine on both tiers.

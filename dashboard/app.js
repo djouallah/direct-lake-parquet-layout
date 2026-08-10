@@ -151,26 +151,22 @@ export const STORAGE_PREFIX = "OneLake";
 // question from what ingesting it cost.
 export const NON_ENGINE_ROLES = new Set(["landing", "folder"]);
 
-/**
- * THE ENGINE THIS PAGE DOES NOT REPORT — every table, every column, every chart, page-wide.
- *
- * It replaces `SCATTER_OMIT`, which kept `iceberg` off the one chart while it still held a column in
- * *Cost by engine*, a row in *Table layout* and a bucket in the CU table. That split was the problem:
- * an engine absent from the chart and present in every table reads as a rendering fault, and the
- * chart's caption was the only place the page admitted to the omission.
- *
- * Why iceberg: its cold pass is 100,394 ms against 22,823-45,010 for everything else, so it sets the
- * scale of any chart it joins, and the layout behind that (1,172 row groups, 386 files) is not a
- * candidate anybody would ship — the leg is not ready, so the page stops presenting it as a peer.
- * The RECORDS are untouched: `history/` keeps every iceberg run, the ledger keeps its CU, and
- * `STACK`/`ENGINE_LABEL`/`ENGINE_FAMILY` keep their entries, so this is one constant to remove when
- * the leg is worth reporting again.
- *
- * A CONSTANT, never a computed "more than Nx the median" rule: an automatic outlier filter changes
- * which run it silently removes as records land, and this page's whole discipline is that a dropped
- * run is a NAMED run — `selectRuns` puts every one of these in the skipped list, with this reason.
- */
-export const PAGE_OMIT = "iceberg";
+// NO ENGINE IS OMITTED FROM THIS PAGE, and two constants that used to omit one are gone —
+// `SCATTER_OMIT` (chart only) and then `PAGE_OMIT` (page-wide), both for `iceberg`. `duckdb iceberg`
+// is a column, a layout row and a dot again, like every other engine.
+//
+// The history, so it is not re-litigated from one direction only. `SCATTER_OMIT` was the worst of
+// the three states: absent from the chart, present in every table, with the chart's caption the only
+// place the page admitted it. `PAGE_OMIT` made that consistent by removing it everywhere. What both
+// were buying was SCALE — its cold pass is 100,394 ms against 22,823-45,010 for everything else, and
+// with the LINE mark that meant a segment four times the next longest, squashing every other layout
+// into a fraction of the plot.
+//
+// THE MARK IS WHAT CHANGED. A dot occupies one point and both axes are log, so a 4x outlier costs a
+// little under a decade of axis and leaves every other dot where it was: the reason to exclude it
+// was a property of the segment, not of the engine. It plots as the biggest dot too (8,641 CU),
+// which is the honest picture — it is genuinely the dearest and slowest layout here, and a page
+// comparing four adapters should say so rather than quietly drop the one that loses.
 
 // Roles the teardown must have deleted. If one is still alive, that run's items are STILL ACCRUING and
 // its numbers are not a measurement of that run — they are a measurement of everything since.
@@ -347,21 +343,15 @@ export function drifting(rec) {
  * Skipped records are NAMED — a page that quietly ignores one is indistinguishable from a page that
  * never had it.
  *
- * THE `PAGE_OMIT` FILTER LIVES HERE, and nowhere else, because this is the one gate every render
- * path passes: `compose` calls it before the generation filter, before `columnsFor` and before the
- * `?record=` pin, so an omitted engine cannot reach a column, a chart, a layout row or the CU join
- * by any route. Dropping it in each renderer instead would be six filters that have to agree.
- * It is reported through the SAME `skipped` list as an incomplete record — a different reason for
- * the same fact, that the page holds a record it is not showing.
+ * NO ENGINE IS FILTERED HERE. An engine filter did live here (`PAGE_OMIT`, for `iceberg`) and this
+ * is where it would go again if one were ever wanted — `compose` calls this before the generation
+ * filter, before `columnsFor` and before the `?record=` pin, so it is the one gate every render path
+ * passes. Six filters in six renderers is the alternative, and they would have to agree.
  */
 export function selectRuns(records) {
   const runs = [], skipped = [];
   for (const rec of records || []) {
     if (!rec) continue;
-    if (rec.engine === PAGE_OMIT) {
-      skipped.push(`${rec._file || "?"}: ${PAGE_OMIT} is not reported on this page`);
-      continue;
-    }
     const why = incomplete(rec);
     if (why) { skipped.push(`${rec._file || "?"}: ${why}`); continue; }
     runs.push(rec);
@@ -1222,7 +1212,7 @@ export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = ""
   // thing, never a zero — the same rule `tipLines` follows when it omits a tier instead of dashing
   // it, and a segment run back to x=0 would read as "this layout answered instantly".
   //
-  // **NO CHART PASSES `x2` TODAY.** `scatterFit` drew the warm-to-cold segment until sixteen
+  // **NO CHART PASSES `x2` TODAY.** `scatterFit` drew the warm-to-cold segment until seventeen
   // layouts made the wide marks overlap; it is dots again. This is KEPT rather than deleted for the
   // same reason `WRITER_HUE` keeps a slot for a writer nothing plots: it costs one `NaN` check per
   // point, the occluder list and the label placer below are written around both marks, and removing
@@ -1670,11 +1660,11 @@ function spanM(values) {
  * Split out of `renderFit` so the omission is one named thing rather than a filter buried in a call
  * argument — the caption and the filter cannot drift apart if they are three lines from each other.
  *
- * THE ENGINE FILTER THAT USED TO LIVE HERE IS GONE, and it did not move — it grew. `SCATTER_OMIT`
- * kept `iceberg` off this chart alone while it still held columns, rows and a CU bucket everywhere
- * else; `PAGE_OMIT` now drops it from the page in `selectRuns`, so by the time points reach here
- * there is no such run to filter. What remains is the honest one: a layout that did not record a
- * measure this chart plots.
+ * THE ENGINE FILTER THAT USED TO LIVE HERE IS GONE. `SCATTER_OMIT` kept `iceberg` off this chart
+ * while it still held columns, rows and a CU bucket everywhere else; that grew into a page-wide
+ * `PAGE_OMIT`, and then both were dropped — a dot on a log axis survives a 4x outlier where the
+ * segment mark did not. What remains is the honest filter: a layout that did not record a measure
+ * this chart plots.
  */
 function plotted(pts, has) {
   const usable = (pts || []).filter(Boolean);
@@ -1788,12 +1778,12 @@ function layoutOf(members, table = DEFAULTS.table) {
 /**
  * The engine that labels only its BEST dots, named here rather than derived from a dot count.
  *
- * `duckrun` has written nine of the sixteen layouts on this page and every one of them is
+ * `duckrun` has written nine of the seventeen layouts on this page and every one of them is
  * `delta_rs` — one hue, one writer name, nine labels saying `date, time · rg …` in a cluster. That
  * is the crowding the dots were adopted to fix, arriving back as text. The two a reader is looking
  * for keep their names; the rest are a hue and a hover, and every one is a ranked row of the table.
  *
- * NAMED, NOT COMPUTED, and the distinction is the same one `PAGE_OMIT` rests on: "any engine with
+ * NAMED, NOT COMPUTED: "any engine with
  * more than N dots" would silently start suppressing spark's labels the day a fourth profile lands,
  * with nothing on the page saying it had. If another engine ever needs this, it is one more entry.
  */
@@ -1849,7 +1839,7 @@ function bestLabel(p, { cheapest, fastest }) {
  *
  * **THIS REPLACES THE LINE CHART, which drew each layout as a segment from its warm ms to its cold
  * ms at the height of its CU.** The segment carried all three numbers in one mark and read well at
- * eleven layouts. At sixteen — nine of them one writer, at similar CU — it stopped: a line is a WIDE
+ * eleven layouts. At seventeen — nine of them one writer, at similar CU — it stopped: a line is a WIDE
  * mark, it spans most of a decade on a log x, so nine of them overlap into a hatch that no hover
  * pulls apart. A dot occupies one point, and points separate.
  *
@@ -1865,15 +1855,15 @@ function bestLabel(p, { cheapest, fastest }) {
  *
  * THE COST, stated rather than discovered later: the cold/warm TRADE was the line's LENGTH and is
  * now a distance from the diagonal, which is a worse encoding of it. That is the price of separating
- * sixteen marks, and the ratio is still one line of every dot's hover.
+ * seventeen marks, and the ratio is still one line of every dot's hover.
  *
  * BOTH AXES LOG, which the pre-line version did not have. Cold spans 22,823-45,010 against warm at
  * 3,000-6,500, and a linear axis pinned every dot into a corner. Log is orthogonal to the mark.
  */
 export function scatterFit(pts) {
   // BOTH AXES ARE TIMES, so both are required — and the layouts this drops are COUNTED in the
-  // subtitle. There is no engine filter here any more: `PAGE_OMIT` removed `iceberg` from the page
-  // itself, upstream in `selectRuns`.
+  // subtitle. NO ENGINE IS FILTERED — `iceberg` plots like everything else, as the biggest and
+  // right-most dot, which is what it measured.
   const { rows, cut } = plotted(pts, (p) => p.ms && p.ms.cold && p.ms.warm);
   // TWO OF `LABEL_BEST_ONLY`'s LAYOUTS CARRY TEXT — the cheapest and the fastest, which are not the
   // same dot and on today's records are nearly opposites. See `bestDots`.
@@ -2013,7 +2003,7 @@ export function renderFit(groups, times, tiers, counts = {}) {
     //
     // STILL ONE CHART, but the mark is a DOT again and the three measures are on three channels:
     // cold across, warm up, CU as the area. The line chart that put warm and cold at the two ends of
-    // a segment read well at eleven layouts and hatched at sixteen — see `scatterFit`.
+    // a segment read well at eleven layouts and hatched at seventeen — see `scatterFit`.
     scatterFit(pts),
   ].filter(Boolean).join("\n");
 }
@@ -3299,10 +3289,8 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // paragraph, where the separator between two entries looked exactly like the separator inside one;
   // a reader scanning for "which adapter is dwh" had to parse the line to find out. Broken, each row
   // is one engine and the em dash only ever separates a name from its description.
-  // The engines this page REPORTS, which is why `PAGE_OMIT` is filtered out here too: an adapter
-  // listed in the methodology and absent from every table above it reads as a missing column.
   out.push(note("The adapters:<br>" + ENGINES
-    .filter((e) => e !== PAGE_OMIT && ADAPTER_URLS[e])
+    .filter((e) => ADAPTER_URLS[e])
     .map((e) => `[${STACK[e][0]}](${ADAPTER_URLS[e]}) — ${STACK[e][1]}`)
     .join("<br>")));
 
@@ -3330,13 +3318,12 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // the generation exclusions above.
   const skipped = opts.skipped || [];
   if (skipped.length) {
-    // TWO REASONS, ONE LIST. A record is held back either because it is partial or because its
-    // engine is not reported here (`PAGE_OMIT`) — different causes, the same fact for a reader: the
-    // page has a record it is not showing. Each entry carries its own reason, so the heading states
-    // both rather than the note claiming every one of them was incomplete.
+    // EVERY ENTRY CARRIES ITS OWN REASON, which is why the heading says "not shown" rather than
+    // naming one cause. Being incomplete is the only reason today; an engine filter has lived here
+    // before, and the wording does not have to change if one ever does again.
     out.push(note(`**${skipped.length} record(s) not shown** — a run has to be built ` +
       "and benchmarked to be comparable, and a partial one would render an empty column that reads " +
-      `as “this engine was free”; \`${PAGE_OMIT}\` is held back for a reason of its own: ` +
+      "as “this engine was free”: " +
       skipped.map((s) => {
         // `file: reason` — the file half links to the committed record so the reason can be
         // checked against what the run actually filed.

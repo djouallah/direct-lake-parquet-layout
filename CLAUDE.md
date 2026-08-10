@@ -1517,7 +1517,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   `.bar` rules went with them.
   **The dot replaced a LINE** — each layout was a segment from its warm ms to its cold ms at the
   height of its CU, all three numbers in one mark, with the cold/warm trade readable as the LENGTH.
-  That read well at eleven layouts and hatched at sixteen: a line is a WIDE mark spanning most of a
+  That read well at eleven layouts and hatched at seventeen: a line is a WIDE mark spanning most of a
   decade on a log x, and nine of them are `delta_rs` at similar CU. The accepted cost is that the
   trade is a distance from the diagonal again rather than a length; CU moved to the area, which is
   the channel that survives crowding.
@@ -1529,15 +1529,18 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   on both tiers (28,518 cold / 5,380 warm), while the fastest (21,050 / 3,652) costs two CU more. Each
   label says which pick it is, and a dot winning both is labelled once with both words. The rest are a
   hue, a hover and a ranked row of the table.
-  **`iceberg` IS OFF THE WHOLE PAGE** — `PAGE_OMIT`, filtered in `selectRuns`, so no column, no row,
-  no dot and no CU bucket anywhere. It replaced `SCATTER_OMIT`, which kept it off the one chart while
-  it still held a column in *Cost by engine* and a row in *Table layout* — an engine missing from the
-  chart and present in every table reads as a rendering fault. Every omitted record is NAMED in the
-  page's skipped list, `history/` is untouched, and it is one constant to delete when the leg is
-  ready. Note the knock-on to every count in this file and in `TODO.md`: **16 layout groups, not
-  17** — and all 16 are on the page complete, the `ETL_VCORES` filter dropping nothing today after
-  seven deliberate 8-core dispatches. A new sort key or row-group band re-opens that gap; `TODO.md`
-  has the recipe.
+  **NO ENGINE IS OMITTED — `SCATTER_OMIT` AND `PAGE_OMIT` ARE BOTH GONE.** The first kept `iceberg`
+  off the chart while it still held a column in *Cost by engine* and a row in *Table layout* (absent
+  from one figure, present in every table — the worst of the three states); the second made that
+  consistent page-wide; both are deleted and `duckdb iceberg` is a column, a layout row and a dot
+  again. What they bought was SCALE against the LINE mark, whose length ran off the plot at a 4x
+  outlier — its cold pass is 100,394 ms against 22,823-45,010. A DOT occupies one point on a log
+  axis, so the outlier costs a little axis and moves nothing else: the reason to exclude it was a
+  property of the segment, not of the engine. It plots as the biggest dot too (8,641 CU), which is
+  the honest picture — the dearest and slowest layout here, said out loud rather than dropped.
+  **17 layout groups**, all of them on the page complete: the `ETL_VCORES` filter drops nothing today
+  after seven deliberate 8-core dispatches. A new sort key or row-group band re-opens that gap;
+  `TODO.md` has the recipe.
   They were `Capacity units per parquet layout` and `Capacity units per engine build`, stacked,
   analytics first. **The reason is NOT that the build half stopped mattering** — it still carries
   the sharpest operational result here, **duckrun costs 1.8× at 64 cores for the same wall time**
