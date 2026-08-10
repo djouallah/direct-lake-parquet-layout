@@ -276,15 +276,30 @@ without a build, a token or a dispatch.
   the bottom half of the plot. Ticks come from mantissa sets, coarsest that still fills the axis —
   `[1,2,5]` yields a single tick over half a decade, and an axis with no numbers reads as a
   rendering failure rather than as a narrow range.
-- **`duckrun` LABELS ONLY ITS CHEAPEST LAYOUT. Everything else is labelled as before.** Nine of the
-  sixteen layouts are `delta_rs` — one hue, one writer name — so labelling them all prints nine
-  `date, time · rg …` strings into one cluster, which is the crowding the dots were adopted to fix
-  arriving back as text. `LABEL_BEST_ONLY` is a NAMED constant keyed on the ENGINE, never a computed
-  "any engine with more than N dots": the computed version would silently start suppressing spark's
-  labels the day a fourth profile landed. **Cheapest by CU**, which is the size channel, so the
-  labelled dot is also the smallest of its hue — and ties go to the table's own cheapest-first
-  order, so the pick cannot move between two renders of one document. The other eight are a hue and
-  a hover, and every one of them is still a ranked row of the table above.
+- **`duckrun` LABELS TWO LAYOUTS — its CHEAPEST and its FASTEST. Everything else is labelled as
+  before.** Nine of the layouts are `delta_rs` — one hue, one writer name — so labelling them all
+  prints nine `date, time · rg …` strings into one cluster, which is the crowding the dots were
+  adopted to fix arriving back as text. `LABEL_BEST_ONLY` is a NAMED constant keyed on the ENGINE,
+  never a computed "any engine with more than N dots": the computed version would silently start
+  suppressing spark's labels the day a fourth profile landed.
+  **THERE ARE TWO BECAUSE CHEAP AND FAST ARE NOT THE SAME LAYOUT — measured, they are nearly
+  opposites.** The cheapest duckrun layout reads 1,569 CU and is the SLOWEST of the nine on both
+  tiers (28,518 cold / 5,380 warm); the fastest (21,050 / 3,652) costs 1,571 — two CU more. One label
+  would have shown whichever half of that a reader did not need.
+  **`cheapest` is lowest analytics CU**, which is the size channel, so that dot is also the smallest
+  of its hue. **`fastest` is the lowest `cold + warm`** — the sum of the two axes it is plotted
+  against, so it is the dot nearest the bottom-left corner and the pick is verifiable by looking at
+  it. Same unit, so the sum needs no weighting, and it is a number a reader can add up from the
+  table. Cold is ~6x warm so the sum is cold-dominated; checked against the alternatives, lowest-cold
+  and the log-space distance from the origin pick the SAME dot today, so the simplest rank buys no
+  different answer. Only *lowest warm alone* differs, and that is a third question needing a third
+  label.
+  **Each label says WHICH pick it is** (`date, time · rg 2.0M (fastest)`) — two labels of one hue
+  reading the same kind of string would otherwise leave a reader unable to say which was which, and
+  the difference between them is the whole reason there are two. A dot winning both is labelled
+  ONCE, with both words. Ties go to the table's own cheapest-first order, so a pick cannot move
+  between two renders of one document. The rest are a hue and a hover, and every one of them is
+  still a ranked row of the table above.
 - **What a label SAYS depends on the writer.** The writer itself when that identifies the dot, which
   `uniqueName` decides — the three spark profiles. `dwh` has two configs and `delta_rs` nine, so
   what actually tells them apart takes its place: the sort key and the row group SIZE —

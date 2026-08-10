@@ -3082,32 +3082,46 @@ test("both axes are LOG, so an equal RATIO is an equal distance", () => {
   assert.ok([...narrow.matchAll(/<line class="axis"/g)].length >= 4, "and keeps its gridlines");
 });
 
-test("duckrun labels its CHEAPEST layout and nothing else; other writers keep their names", () => {
+test("duckrun labels its CHEAPEST and its FASTEST layout, and nothing else", () => {
   // Nine of the sixteen layouts on this page are `delta_rs`, so labelling them all prints nine
   // `date, time · rg …` strings into one cluster — the crowding the dots were adopted to fix,
-  // arriving back as text. The cheapest is the one a reader is looking for, so it keeps its name and
-  // the rest are a hue and a hover. A writer whose name IS unique is untouched.
+  // arriving back as text. TWO are what a reader is looking for, and they are NOT the same dot:
+  // measured, the cheapest duckrun layout (1,569 CU) is the slowest of the nine on both tiers.
+  // A writer whose name IS unique is untouched.
   const p = (rec, name, cold, warm, cu) => ({
     name, cu, n: 1, ms: { cold, warm }, members: [{ rec }],
   });
   const svg = d.scatterFit([
-    p(sortedBy(1, 9, ["date", "time"], { file: "a.json" }), "delta_rs", 25000, 4500, 1700),
-    p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 27000, 4200, 1500),
+    // cheapest by CU, and deliberately the SLOWEST — the real inversion, in miniature.
+    p(sortedBy(1, 9, ["date", "time"], { file: "a.json" }), "delta_rs", 28518, 5380, 1500),
+    // fastest on cold + warm, at a slightly higher CU.
+    p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 21050, 3652, 1571),
+    // neither: mid on both, so it stays unlabelled.
+    p(sortedBy(1, 72, ["date", "time"], { file: "d.json" }), "delta_rs", 24747, 4137, 1809),
     p(lay("dwh", 78, 90, { file: "c.json" }), "dwh", 33767, 1500, 2000),
   ]);
   const labs = [...svg.matchAll(/<text class="bar-caption"([^>]*)>([^<]+)</g)]
     .map((m) => ({ end: /text-anchor="end"/.test(m[1]), x: +/x="([\d.]+)"/.exec(m[1])[1], t: m[2] }))
     .filter((l) => !["cold ms", "warm ms"].includes(l.t) && !/^[\d,.]+$/.test(l.t));
   const texts = labs.map((l) => l.t).filter((t) => t !== "CU");
-  // THE CHEAPEST, BY CU. 1,500 beats 1,700 — and it is NOT the leftmost dot on the chart, which is
-  // what pins that this ranks on CU rather than on the cold axis it is plotted against.
-  // ROW GROUP SIZE, NOT THE COUNT: 143,980,961 rows over 24 row groups is 6.0M.
-  assert.ok(texts.includes("date, time, price · rg 6.0M"),
-    `the cheapest duckrun layout is named: ${texts}`);
-  assert.ok(!texts.includes("date, time · rg 16.0M"),
-    `and the dearer one is not: ${texts}`);
+  // EACH LABEL SAYS WHICH PICK IT IS. Two labels of one hue reading the same kind of string would
+  // leave a reader unable to say which was which, and the difference is the whole point of two.
+  // ROW GROUP SIZE, NOT THE COUNT: 143,980,961 rows over 9 row groups is 16.0M, over 24 is 6.0M.
+  assert.ok(texts.includes("date, time · rg 16.0M (cheapest)"), `the cheapest is named: ${texts}`);
+  assert.ok(texts.includes("date, time, price · rg 6.0M (fastest)"), `and the fastest: ${texts}`);
+  // RANKED ON CU, NOT ON THE AXES: the cheapest dot is the rightmost and highest one here, so a
+  // regression to ranking both labels on time would fail rather than agree by luck.
+  assert.ok(!texts.some((t) => /rg 2\.0M/.test(t)), `and nothing else of that writer: ${texts}`);
   assert.equal(texts.filter((t) => t === "delta_rs").length, 0, "never the bare writer name");
   assert.ok(texts.includes("dwh"), `a unique writer keeps its name: ${texts}`);
+  // ONE DOT WINNING BOTH IS LABELLED ONCE, with both words — never two labels on one mark.
+  const solo = d.scatterFit([
+    p(sortedBy(1, 9, ["date", "time"], { file: "a.json" }), "delta_rs", 21050, 3652, 1500),
+    p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 28518, 5380, 1900),
+    p(lay("dwh", 78, 90, { file: "c.json" }), "dwh", 33767, 1500, 2000),
+  ]);
+  assert.ok(/date, time · rg 16\.0M \(cheapest, fastest\)/.test(solo),
+    "one mark, one label, both words");
   // THE SAME CELLS THE TABLE BESIDE IT PRINTS — `keyCells`, so a dot and its row cannot describe one
   // parquet two different ways, and a change to either follows the other.
   const k = d.keyCells([{ rec: sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }) }]);

@@ -1786,12 +1786,12 @@ function layoutOf(members, table = DEFAULTS.table) {
 }
 
 /**
- * The engine that labels only its BEST dot, named here rather than derived from a dot count.
+ * The engine that labels only its BEST dots, named here rather than derived from a dot count.
  *
  * `duckrun` has written nine of the sixteen layouts on this page and every one of them is
  * `delta_rs` — one hue, one writer name, nine labels saying `date, time · rg …` in a cluster. That
- * is the crowding the dots were adopted to fix, arriving back as text. Its cheapest layout is the
- * one a reader is looking for, so that one keeps its name and the other eight are a hue and a hover.
+ * is the crowding the dots were adopted to fix, arriving back as text. The two a reader is looking
+ * for keep their names; the rest are a hue and a hover, and every one is a ranked row of the table.
  *
  * NAMED, NOT COMPUTED, and the distinction is the same one `PAGE_OMIT` rests on: "any engine with
  * more than N dots" would silently start suppressing spark's labels the day a fourth profile lands,
@@ -1802,6 +1802,47 @@ const LABEL_BEST_ONLY = "duckrun";
 /** Is this point one of `LABEL_BEST_ONLY`'s? Keyed on the ENGINE, which is what a dispatch names. */
 const bestOnly = (p) => ((p.members || [])[0] || {}).rec
   && p.members[0].rec.engine === LABEL_BEST_ONLY;
+
+/**
+ * The two layouts `LABEL_BEST_ONLY` labels, and WHY THERE ARE TWO: cheap and fast are not the same
+ * layout here, and on today's records they are very nearly opposites.
+ *
+ * `cheapest` is lowest analytics CU — the measure this project optimises for, and the chart's own
+ * size channel, so that dot is also the smallest of its hue. `fastest` is the lowest **cold + warm**,
+ * i.e. the sum of the two axes it is plotted against, so it is the dot nearest the bottom-left corner
+ * and a reader can verify the pick by looking at it.
+ *
+ * MEASURED, and worth stating because it is the finding the second label exists to show: the
+ * cheapest duckrun layout (1,569 CU) is the SLOWEST of the nine on both tiers (28,518 cold / 5,380
+ * warm), while the fastest (21,050 / 3,652) costs 1,571 — two CU more. One label would have shown
+ * whichever half of that a reader did not need.
+ *
+ * WHY THE SUM rather than something cleverer: cold and warm are the same unit, so it needs no
+ * weighting, and it is a number a reader can add up from the table. Cold is ~6x warm, so the sum is
+ * cold-dominated — checked against the alternatives, and today lowest-cold and the log-space
+ * distance from the origin both pick the SAME dot, so the simplest rank is not buying a different
+ * answer. Only "lowest warm alone" differs (a 1,682 CU layout), which is a third question and would
+ * need a third label.
+ *
+ * TIES AND OVERLAP: `pick` takes the first on a tie, which is the table's own cheapest-first order,
+ * so a render cannot move the pick; and when one dot wins both it is labelled ONCE, with both words.
+ */
+const pick = (rows, of) => (rows || []).filter((p) => Number.isFinite(of(p)) && of(p) > 0)
+  .reduce((a, b) => (a === null || of(b) < of(a) ? b : a), null);
+
+export function bestDots(rows) {
+  const mine = (rows || []).filter(bestOnly);
+  return {
+    cheapest: pick(mine, (p) => p.cu),
+    fastest: pick(mine, (p) => (p.ms || {}).cold + (p.ms || {}).warm),
+  };
+}
+
+/** `date, time · rg 2.0M (fastest)` — the layout, then which of the two picks it is. */
+function bestLabel(p, { cheapest, fastest }) {
+  const why = [p === cheapest ? "cheapest" : "", p === fastest ? "fastest" : ""].filter(Boolean);
+  return why.length ? `${layoutOf(p.members)} (${why.join(", ")})` : "";
+}
 
 /**
  * COLD AGAINST WARM, one dot per layout, sized by CU.
@@ -1834,29 +1875,31 @@ export function scatterFit(pts) {
   // subtitle. There is no engine filter here any more: `PAGE_OMIT` removed `iceberg` from the page
   // itself, upstream in `selectRuns`.
   const { rows, cut } = plotted(pts, (p) => p.ms && p.ms.cold && p.ms.warm);
-  // THE CHEAPEST OF `LABEL_BEST_ONLY`'s LAYOUTS — by CU, which is the size channel, so the labelled
-  // dot is also the smallest one of its hue. Ties go to the first, which is the table's own
-  // cheapest-first order, so the pick cannot move between two renders of one document.
-  const best = rows.filter(bestOnly)
-    .reduce((a, b) => (a === null || b.cu < a.cu ? b : a), null);
+  // TWO OF `LABEL_BEST_ONLY`'s LAYOUTS CARRY TEXT — the cheapest and the fastest, which are not the
+  // same dot and on today's records are nearly opposites. See `bestDots`.
+  const best = bestDots(rows);
   return scatterSvg("Cold against warm",
     "one dot per layout — cold ms across, warm ms up, both log; its AREA is the analytics CU it "
-    + `cost and its colour is the writer. ${LABEL_BEST_ONLY} labels only its cheapest layout`
+    + `cost and its colour is the writer. ${LABEL_BEST_ONLY} labels only its cheapest layout and `
+    + "its fastest (cold + warm)"
     + cutNote(cut),
     rows.map((p) => ({
       x: p.ms.cold, y: p.ms.warm, label: p.name, n: p.n,
-      // ONE WRITER, NINE DOTS: only the cheapest carries text. `uniqueName` would have given all
-      // nine the empty string anyway (the name separates nothing) and `id2` would then have printed
-      // nine layouts, which is the cluster this chart was rebuilt to avoid.
+      // ONE WRITER, NINE DOTS: only the two picks carry text. `uniqueName` would have given all nine
+      // the empty string anyway (the name separates nothing) and `id2` would then have printed nine
+      // layouts, which is the cluster this chart was rebuilt to avoid.
       id: bestOnly(p) ? "" : uniqueName(rows, p),
-      // The layout, for a dot whose writer name identifies nothing — `date, time · rg 2.0M`.
+      // The layout, for a dot whose writer name identifies nothing — `date, time · rg 2.0M`, plus
+      // WHICH PICK IT IS on the two that carry one. Two labels of one hue reading the same kind of
+      // string would otherwise leave a reader unable to say which was which, and the difference
+      // between them is the whole reason there are two.
       //
       // ROW GROUP SIZE, NOT THE COUNT, and the two cells come straight from `keyCells` so the label
       // and the table row directly above it are the SAME strings rather than two spellings of one
       // fact. A count is a number you have to divide the table by before it means anything; `2.0M`
       // is a segment size a reader can hold against VertiPaq's own, and it is what the dispatch
       // actually sets (`row_group_size`). It also stops the label moving when the row count does.
-      id2: bestOnly(p) ? (p === best ? layoutOf(p.members) : "")
+      id2: bestOnly(p) ? bestLabel(p, best)
         : (uniqueName(rows, p) ? "" : layoutOf(p.members)),
       tip: tipLines(p), hue: WRITER_HUE[p.name] || 1, c: p.cu,
     })), "cold ms", "CU", (v) => fmt(v, 0), "warm ms", modelNote(rows));

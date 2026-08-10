@@ -1521,10 +1521,14 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   decade on a log x, and nine of them are `delta_rs` at similar CU. The accepted cost is that the
   trade is a distance from the diagonal again rather than a length; CU moved to the area, which is
   the channel that survives crowding.
-  **`duckrun` LABELS ONLY ITS CHEAPEST LAYOUT** (`LABEL_BEST_ONLY`, cheapest by CU) — nine labels in
-  one cluster is the crowding the dots were adopted to fix, arriving back as text. Named, never a
-  computed "engine with more than N dots", which would silently start suppressing spark's labels the
-  day a fourth profile landed. The other eight dots are a hue, a hover and a ranked row of the table.
+  **`duckrun` LABELS TWO LAYOUTS — its CHEAPEST (by analytics CU) and its FASTEST (by `cold + warm`)**
+  (`LABEL_BEST_ONLY`) — nine labels in one cluster is the crowding the dots were adopted to fix,
+  arriving back as text. Named, never a computed "engine with more than N dots", which would silently
+  start suppressing spark's labels the day a fourth profile landed. **Two because cheap and fast are
+  nearly OPPOSITES here, measured**: the cheapest duckrun layout (1,569 CU) is the slowest of the nine
+  on both tiers (28,518 cold / 5,380 warm), while the fastest (21,050 / 3,652) costs two CU more. Each
+  label says which pick it is, and a dot winning both is labelled once with both words. The rest are a
+  hue, a hover and a ranked row of the table.
   **`iceberg` IS OFF THE WHOLE PAGE** — `PAGE_OMIT`, filtered in `selectRuns`, so no column, no row,
   no dot and no CU bucket anywhere. It replaced `SCATTER_OMIT`, which kept it off the one chart while
   it still held a column in *Cost by engine* and a row in *Table layout* — an engine missing from the
