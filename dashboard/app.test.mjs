@@ -1877,10 +1877,10 @@ test("excluding nearly everything says the newest run is the likely anomaly", ()
     gen("a-1.json", "duckrun", 143980961, { finishedHoursAgo: 96 }),
     gen("b-2.json", "spark", 143980961, { finishedHoursAgo: 72 }),
     gen("c-3.json", "dwh", 143980961, { finishedHoursAgo: 48 }),
-    gen("d-4.json", "iceberg", 7, { finishedHoursAgo: 24 }),          // the newest, and wrong
+    gen("d-4.json", "duckrun", 7, { finishedHoursAgo: 24 }),          // the newest, and wrong
   ];
   const { cols, html } = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), {});
-  assert.deepEqual(cols.map((c) => c.col), ["duckdb iceberg"]);
+  assert.deepEqual(cols.map((c) => c.col), ["duckrun"]);
   const text = plain(html);
   assert.ok(text.includes("3 of 4 runs were excluded"), text.slice(0, 200));
   assert.ok(text.includes("NEWEST run is the anomaly"));
@@ -2343,7 +2343,11 @@ test("the adapters are named and linked once, under the charts", () => {
   // dbt-duckrun, dbt-duckdb, dbt-fabricspark and dbt-fabric actually are.
   const out = render([full("a-1.json", "spark")], ledger({ OUT: 1.0, SEM: 2.0 }));
   for (const [engine, url] of Object.entries(d.ADAPTER_URLS)) {
-    assert.equal(out.split(`href="${url}"`).length - 1, 1, `${engine} linked exactly once`);
+    // AN ENGINE THE PAGE DOES NOT REPORT IS NOT ADVERTISED EITHER. `PAGE_OMIT` removes iceberg from
+    // every table above this note, and an adapter named here with no column anywhere reads as a
+    // missing column rather than as a deliberate omission.
+    assert.equal(out.split(`href="${url}"`).length - 1, engine === d.PAGE_OMIT ? 0 : 1,
+      `${engine} linked ${engine === d.PAGE_OMIT ? "never" : "exactly once"}`);
   }
   const text = plain(out);
   // NOT `text.includes("dbt-fabric")` — `dbt-fabricspark` contains it, so that assertion would be
@@ -2356,7 +2360,8 @@ test("the adapters are named and linked once, under the charts", () => {
   // ONE PER LINE — joined with `·`, the separator between two entries looked like the em dash inside
   // one, so four `name — what it is` pairs read as one wrapped run of text.
   const note_ = out.slice(out.indexOf("The adapters:"), out.indexOf("</p>", out.indexOf("The adapters:")));
-  assert.equal(note_.split("<br>").length - 1, Object.keys(d.ADAPTER_URLS).length,
+  assert.equal(note_.split("<br>").length - 1,
+    Object.keys(d.ADAPTER_URLS).filter((e) => e !== d.PAGE_OMIT).length,
     `one break for the label and one between each pair: ${note_}`);
   assert.ok(!note_.includes(" · "), "and no inline separator left over");
 });
@@ -2401,11 +2406,11 @@ test("a skipped record is named on the page, with its reason", () => {
   bad.benchmark = {};
   const { html } = d.compose([good, bad], ledger({ OUT: 1.0, SEM: 2.0 }), {});
   const text = plain(html);
-  assert.ok(text.includes("1 record(s) skipped as incomplete"));
+  assert.ok(text.includes("1 record(s) not shown"));
   assert.ok(text.includes("`b-2.json` — no benchmark timings — the query half did not run"),
     "the file and the reason, not only a count");
   assert.ok(text.includes("(+1 skipped)"), "and the footer counts it");
-  const at = html.indexOf("skipped as incomplete");
+  const at = html.indexOf("record(s) not shown");
   const before = html.slice(0, at);
   assert.ok(before.lastIndexOf("<details") <= before.lastIndexOf("</details>"),
     "visible, never folded — same rule as the generation exclusions");
@@ -2937,31 +2942,45 @@ test("fewer than two points is no chart at all", () => {
 
 
 
-test("iceberg is off the scatter, and the subtitle says so", () => {
-  // A ~4x outlier on BOTH axes set the scale for everyone else: 12 of 78 dot pairs overlapped with
-  // it in, 1 of 66 without. Dropped by a NAMED constant, never a computed "more than Nx the median"
-  // rule — an automatic filter silently changes which point it removes as records land, and a
-  // dropped run on this page is always a named run.
-  const p = (engine, name, cold, cu) => ({
-    name, cu, n: 1, ms: { cold }, members: [{ rec: lay(engine, 4, 24, { file: `${name}.json` }) }],
-  });
-  const svg = d.scatterFit([p("duckrun", "delta_rs", 25000, 1800),
-    p("spark", "spark writeHeavy", 45000, 3700),
-    p("iceberg", "duckdb iceberg", 100394, 8641)]);
-  assert.equal([...svg.matchAll(/<circle class="dot c\d"/g)].length, 2, "two dots, not three");
-  assert.equal([...svg.matchAll(/<title>([^<]+)/g)].filter((m) => /iceberg/.test(m[1])).length, 0);
-  const sub = /<span class="chart-sub">([^<]+)</.exec(svg)[1];
-  assert.ok(sub.includes("iceberg left out"), `the exclusion is stated: ${sub}`);
-  assert.ok(sub.includes("its cold pass 2x the slowest of these"), sub);
+test("PAGE_OMIT's engine reaches no column, no row and no chart — and is NAMED", () => {
+  // It used to be `SCATTER_OMIT`: off the one chart, and still holding a column in `Cost by engine`,
+  // a row in `Table layout` and a bucket in the CU table. An engine absent from the chart and
+  // present in every table reads as a rendering fault. The filter is now page-wide and lives in
+  // `selectRuns`, which is the one gate every render path passes.
+  const runs = [full("a-1.json", "spark"), full("b-2.json", d.PAGE_OMIT)];
+  const { cols, html, skipped } = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), {});
+  assert.deepEqual(cols.map((c) => c.col), ["spark"], "no column for it");
+  const text = plain(html);
+  // Everywhere EXCEPT the note that names it. The note is the one place it is supposed to appear —
+  // so this cuts that paragraph out and asserts the rest of the page has never heard of it: no
+  // column header, no layout row, no caption, no dot label, no CU bucket.
+  const at = text.indexOf("record(s) not shown");
+  const rest = text.slice(0, at) + text.slice(text.indexOf("is not reported on this page", at));
+  assert.ok(!/iceberg/i.test(rest),
+    `no row, no caption, no dot: ${rest.match(/.{0,60}iceberg.{0,60}/i)}`);
+  // NAMED, not silently dropped — the same discipline the generation filter follows. A run this
+  // page holds and does not show has to say so, or it is indistinguishable from one nobody ran.
+  assert.deepEqual(skipped, [`b-2.json: ${d.PAGE_OMIT} is not reported on this page`]);
+  assert.ok(text.includes("1 record(s) not shown"), text.slice(0, 200));
 });
 
-test("with nothing to exclude the subtitle claims no exclusion", () => {
-  const p = (engine, name, cold, cu) => ({
-    name, cu, n: 1, ms: { cold }, members: [{ rec: lay(engine, 4, 24, { file: `${name}.json` }) }],
+test("a layout with no warm pass is dropped from the chart, and COUNTED", () => {
+  // Both axes are query times, so a run missing one has nothing to put on the y axis. It is not
+  // plotted at zero — an unmeasured tier is an absent thing, and a dot on the axis would read as
+  // "its second visit was instant" — and it is never dropped quietly either.
+  const p = (engine, name, cold, warm, cu) => ({
+    name, cu, n: 1, ms: warm ? { cold, warm } : { cold },
+    members: [{ rec: lay(engine, 4, 24, { file: `${name}.json` }) }],
   });
-  const svg = d.scatterFit([p("duckrun", "delta_rs", 25000, 1800),
-    p("spark", "spark writeHeavy", 45000, 3700)]);
-  assert.ok(!/left out/.test(svg), "no caveat where nothing was cut");
+  const svg = d.scatterFit([p("duckrun", "delta_rs", 25000, 4500, 1800),
+    p("spark", "spark writeHeavy", 45000, 6000, 3700),
+    p("dwh", "dwh", 33767, 0, 2600)]);
+  assert.equal([...svg.matchAll(/<circle class="dot c\d"/g)].length, 2, "two dots, not three");
+  const sub = /<span class="chart-sub">([^<]+)</.exec(svg)[1];
+  assert.ok(sub.includes("1 layout not plotted, no warm pass measured"), sub);
+  const whole = d.scatterFit([p("duckrun", "delta_rs", 25000, 4500, 1800),
+    p("spark", "spark writeHeavy", 45000, 6000, 3700)]);
+  assert.ok(!/not plotted/.test(whole), "and no caveat where nothing was cut");
 });
 
 test("every point is named and no two names collide", () => {
@@ -3000,42 +3019,41 @@ test("every point is named and no two names collide", () => {
   }
 });
 
-test("a layout is one LINE on one shared time axis, warm end to cold end", () => {
-  // ONE AXIS, NEVER TWO. Both tiers are milliseconds, so a second scale would make the length —
-  // which is the entire reading — not a quantity. This replaced a second chart plotting cold
-  // against warm: same three numbers, one panel, and the transcode cost readable without
-  // subtracting anything.
-  const p = (engine, name, cold, warm) => ({
-    name, n: 1, cu: 2000, ms: { cold, warm, hot: warm - 300 },
+test("a layout is one DOT: cold across, warm up, and its AREA is the CU", () => {
+  // THE MARK IS A POINT AGAIN. Each layout was a segment from its warm ms to its cold ms at the
+  // height of its CU — all three numbers in one mark, which read well at eleven layouts and hatched
+  // at sixteen, nine of them one writer at similar CU. A line is a WIDE mark; a dot is not.
+  const p = (engine, name, cold, warm, cu) => ({
+    name, n: 1, cu, ms: { cold, warm, hot: warm - 300 },
     members: [{ rec: lay(engine, 4, 24, { file: `${name}.json` }) }],
   });
-  const svg = d.scatterFit([p("duckrun", "delta_rs", 25000, 4500), p("dwh", "dwh", 33767, 4330),
-    p("iceberg", "duckdb iceberg", 100394, 3646)]);
-  const seg = [...svg.matchAll(
-    /<line class="pair c\d" x1="([\d.]+)" y1="([\d.]+)" x2="([\d.]+)" y2="([\d.]+)"/g)];
-  assert.equal(seg.length, 2, "one line per layout, and iceberg is off it");
-  // NO END MARKERS. The length is the reading; two circles on it were a second grammar to learn
-  // before it could be read, which is what got this chart simplified.
-  assert.equal([...svg.matchAll(/<circle class="dot c\d"/g)].length, 0, "and no dots at all");
-  for (const [, x1, y1, x2, y2] of seg) {
-    assert.equal(y1, y2, "the line sits at ONE y — its length is a time, not a slope");
-    assert.ok(+x1 < +x2, "warm left, cold right: the second visit is always the cheap one");
-    // The shared domain reaches the warm end: scaling to `p.x` alone would run every line off the
-    // left of the plot, which is the failure that makes a span not a span.
-    assert.ok(+x1 > 62, `the warm end is inside the plot, not on the axis: ${x1}`);
-  }
-  assert.ok(/its cold pass 2x the slowest of these/.test(svg), "the exclusion is still stated");
+  const svg = d.scatterFit([p("duckrun", "delta_rs", 25000, 4500, 1500),
+    p("dwh", "dwh", 33767, 4330, 3000)]);
+  const dots = [...svg.matchAll(
+    /<circle class="dot c\d" cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"/g)]
+    .map((m) => ({ x: +m[1], y: +m[2], r: +m[3] }));
+  assert.equal(dots.length, 2, "one dot per layout");
+  assert.equal([...svg.matchAll(/<line class="pair c\d"/g)].length, 0, "and no segments at all");
+  // TWO TIME AXES, one per tier, which is the whole point of the shape: the trade the segment
+  // showed as a LENGTH is a distance from the diagonal here, and that is the accepted cost.
   const axes = [...svg.matchAll(
     /<text class="bar-caption"[^>]*>((?:cold|warm|hot) ms|query time \(ms\)|CUs?)</g)]
     .map((m2) => m2[1]).sort();
-  assert.deepEqual(axes, ["CUs", "query time (ms)"], `one time axis, not two: ${axes}`);
-  // NO SIZE KEY: with the dots gone there is nothing to size. Row group size is NOT lost — it stays
-  // a column of the table above and a line of every hover, which is why this looks at the legend
-  // text alone rather than at the whole document.
+  assert.deepEqual(axes, ["cold ms", "warm ms"], `cold across, warm up: ${axes}`);
+  // CU IS THE AREA — the measure this project optimises for, moved off the y axis onto the channel
+  // that survives crowding. Bigger CU, bigger dot, and the KEY says which quantity it is.
+  const dwh = dots.find((q) => q.x === Math.max(...dots.map((z) => z.x)));
+  const duck = dots.find((q) => q !== dwh);
+  assert.ok(dwh.r > duck.r, `3,000 CU draws bigger than 1,500: ${dwh.r} vs ${duck.r}`);
   const key = [...svg.matchAll(/<text class="bar-caption key"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  assert.ok(!key.some((t) => /row group size/.test(t)), `no key for an unencoded channel: ${key}`);
-  assert.ok(key.includes("delta_rs") && key.includes("dwh"), `but the writer key stays: ${key}`);
-  assert.ok(/row group size: /.test(svg), "and the size is still on every hover");
+  assert.ok(key.includes("CU"), `the size key names the channel: ${key}`);
+  assert.ok(!key.some((t) => /row group size/.test(t)),
+    `and no key for a channel nothing encodes any more: ${key}`);
+  // COLOUR STAYS THE WRITER — the legend, the layout rows and the table all name writers, and
+  // recolouring by engine would fold spark's three profiles into one hue while the table beside it
+  // kept them apart.
+  assert.ok(key.includes("delta_rs") && key.includes("dwh"), `the writer key stays: ${key}`);
+  assert.ok(/row group size: /.test(svg), "and row group size is still on every hover");
 });
 
 test("both axes are LOG, so an equal RATIO is an equal distance", () => {
@@ -3064,49 +3082,50 @@ test("both axes are LOG, so an equal RATIO is an equal distance", () => {
   assert.ok([...narrow.matchAll(/<line class="axis"/g)].length >= 4, "and keeps its gridlines");
 });
 
-test("a writer that names several layouts is labelled with the layout, at the cold end", () => {
-  // `delta_rs` is most of the lines, so its NAME separates nothing — it is in the legend, and what
-  // tells its lines apart is the sort key and the row group count. Both ends are free for such a
-  // line (no unique name means no label at the cold end), and the COLD end wins because that is
-  // where the eye already is: the cold ends are what the chart is ranked by and what spreads out.
-  // A writer whose name IS unique keeps the name, in the same place.
+test("duckrun labels its CHEAPEST layout and nothing else; other writers keep their names", () => {
+  // Nine of the sixteen layouts on this page are `delta_rs`, so labelling them all prints nine
+  // `date, time · rg …` strings into one cluster — the crowding the dots were adopted to fix,
+  // arriving back as text. The cheapest is the one a reader is looking for, so it keeps its name and
+  // the rest are a hue and a hover. A writer whose name IS unique is untouched.
   const p = (rec, name, cold, warm, cu) => ({
     name, cu, n: 1, ms: { cold, warm }, members: [{ rec }],
   });
   const svg = d.scatterFit([
-    p(sortedBy(1, 9, ["date", "time"], { file: "a.json" }), "delta_rs", 25000, 4500, 1500),
-    p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 27000, 4200, 1700),
+    p(sortedBy(1, 9, ["date", "time"], { file: "a.json" }), "delta_rs", 25000, 4500, 1700),
+    p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 27000, 4200, 1500),
     p(lay("dwh", 78, 90, { file: "c.json" }), "dwh", 33767, 1500, 2000),
   ]);
   const labs = [...svg.matchAll(/<text class="bar-caption"([^>]*)>([^<]+)</g)]
     .map((m) => ({ end: /text-anchor="end"/.test(m[1]), x: +/x="([\d.]+)"/.exec(m[1])[1], t: m[2] }))
-    .filter((l) => !["query time (ms)", "CUs"].includes(l.t));
-  const texts = labs.map((l) => l.t);
-  // ROW GROUP SIZE, NOT THE COUNT: 143,980,961 rows over 9 row groups is 16.0M, over 24 is 6.0M.
-  // A count is a number you have to divide the table by first; a size is what the dispatch sets.
-  assert.ok(texts.includes("date, time · rg 16.0M")
-    && texts.includes("date, time, price · rg 6.0M"), `the layout, not the writer: ${texts}`);
-  assert.ok(texts.includes("dwh"), `and a unique writer keeps its name: ${texts}`);
-  // THE SAME CELLS THE TABLE BESIDE IT PRINTS — `keyCells`, so a line and its row cannot describe
-  // one parquet two different ways, and a change to either follows the other.
-  const k = d.keyCells([{ rec: sortedBy(1, 9, ["date", "time"], { file: "a.json" }) }]);
-  assert.equal(`${k.ordering} · rg ${k.rgSize}`, "date, time · rg 16.0M");
-  // Anchored `start` and past its own line's cold end — printed rightward into the label gutter,
-  // never leftward back across the line it names.
-  const colds = [...svg.matchAll(/<line class="pair c\d" x1="[\d.]+" y1="[\d.]+" x2="([\d.]+)"/g)]
-    .map((m) => +m[1]);
+    .filter((l) => !["cold ms", "warm ms"].includes(l.t) && !/^[\d,.]+$/.test(l.t));
+  const texts = labs.map((l) => l.t).filter((t) => t !== "CU");
+  // THE CHEAPEST, BY CU. 1,500 beats 1,700 — and it is NOT the leftmost dot on the chart, which is
+  // what pins that this ranks on CU rather than on the cold axis it is plotted against.
+  // ROW GROUP SIZE, NOT THE COUNT: 143,980,961 rows over 24 row groups is 6.0M.
+  assert.ok(texts.includes("date, time, price · rg 6.0M"),
+    `the cheapest duckrun layout is named: ${texts}`);
+  assert.ok(!texts.includes("date, time · rg 16.0M"),
+    `and the dearer one is not: ${texts}`);
+  assert.equal(texts.filter((t) => t === "delta_rs").length, 0, "never the bare writer name");
+  assert.ok(texts.includes("dwh"), `a unique writer keeps its name: ${texts}`);
+  // THE SAME CELLS THE TABLE BESIDE IT PRINTS — `keyCells`, so a dot and its row cannot describe one
+  // parquet two different ways, and a change to either follows the other.
+  const k = d.keyCells([{ rec: sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }) }]);
+  assert.equal(`${k.ordering} · rg ${k.rgSize}`, "date, time, price · rg 6.0M");
+  // Anchored `start` and past its own dot — printed rightward into the label gutter, never leftward
+  // back across the mark it names.
+  const xs = [...svg.matchAll(/<circle class="dot c\d" cx="([\d.]+)"/g)].map((m) => +m[1]);
   for (const l of labs.filter((x) => /rg [\d.]+M$/.test(x.t))) {
     assert.ok(!l.end, `"${l.t}" reads rightward`);
-    assert.ok(colds.some((c) => l.x > c && l.x - c < 40),
-      `"${l.t}" at ${l.x} sits just past a cold end; colds ${colds}`);
+    assert.ok(xs.some((c) => l.x > c && l.x - c < 40),
+      `"${l.t}" at ${l.x} sits just past its dot; dots at ${xs}`);
   }
-  assert.equal(texts.filter((t) => t === "delta_rs").length, 0, "and the bare writer name is gone");
 
   // THE GUTTER IS ONLY RESERVED WHEN SOMETHING GOES IN IT. Widening the x axis unconditionally
   // squeezes the gaps a label has to find, and on a dense cluster of plain dots that made eleven
   // names that used to fit start colliding. A gutter with nothing in it is pure loss.
   const rightmost = (id2) => Math.max(...[...d.scatterSvg("t", "s",
-    [{ label: "a", x: 1000, y: 10, id2 }, { label: "b", x: 10000, y: 20 }], "query time (ms)")
+    [{ label: "a", x: 1000, y: 10, id2 }, { label: "b", x: 10000, y: 20 }], "cold ms")
     .matchAll(/<circle class="dot c\d" cx="([\d.]+)"/g)].map((m) => +m[1]));
   assert.ok(rightmost("") > 870, `no right-hand labels, no gutter: ${rightmost("")}`);
   assert.ok(rightmost("9 RG") < rightmost("") - 60,
@@ -3114,11 +3133,11 @@ test("a writer that names several layouts is labelled with the layout, at the co
 
   // WHEREVER IT LANDS, IT LANDS INSIDE THE PLOT. A name is never dropped, and the forcing fallback
   // flips side rather than running off the axis — the bounds-free version pushed one 25 units past
-  // the y axis and across an unrelated line.
-  const cramped = d.scatterFit([
-    p(sortedBy(1, 9, ["date", "time", "price"], { file: "a.json" }), "delta_rs", 25000, 4500, 1500),
-    p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 27000, 4600, 1700),
-  ]);
+  // the y axis and across an unrelated mark. Two labelled points at nearly the same place is the
+  // case that forces it, so this drives `scatterSvg` directly rather than through the CU rule above.
+  const cramped = d.scatterSvg("t", "s", [
+    { label: "a", x: 25000, y: 4500, id2: "date, time, price · rg 16.0M" },
+    { label: "b", x: 27000, y: 4600, id2: "date, time, price · rg 6.0M" }], "cold ms");
   const far = [...cramped.matchAll(/<text class="bar-caption" x="([\d.]+)"([^>]*)>([^<]+)</g)]
     .map((m) => ({ x: +m[1], end: /text-anchor="end"/.test(m[2]), t: m[3] }))
     .filter((l) => /rg [\d.]+M$/.test(l.t));

@@ -9,22 +9,26 @@ exercise cost. This file is what has not been done.
 
 ---
 
-## 2 of 17 layout groups are EXCLUDED from *Cost and speed by parquet layout*
+## 2 of 16 layout groups are EXCLUDED from *Cost and speed by parquet layout*
 
 **The `etl CU (8 vCores)` column is shown, and a layout with no run at that core count is dropped
 from the section entirely** — table and chart alike, with the count named in a note under the table.
-Fifteen rows survive today, all complete.
+Fourteen rows survive today, all complete.
 
 This replaced hiding the column while 7 of 17 rows could not fill it: a cost column that is mostly
 dashes reads as "the build was free" rather than "nobody measured it at that size". Dropping the row
-means every row that IS there is complete. **What it costs is the chart** — 15 lines instead of 17 —
+means every row that IS there is complete. **What it costs is the chart** — 14 dots instead of 16 —
 so two layouts' query timings leave a section they had every right to be in, for a build-cost
 reason. They are still in *Every run*.
 
 The filter is on MEMBERSHIP, not on the value: a layout built at 8 vCores whose CU the ledger has not
 read yet keeps its row and dashes that one cell. "Measured, not yet costed" is not "never built".
-No group is in that state today — all 17 carry analytics CU, so the 2 that are missing are missing a
+No group is in that state today — all 16 carry analytics CU, so the 2 that are missing are missing a
 BUILD, not a ledger read.
+
+**16, not 17 — `iceberg` left the dashboard entirely** (`PAGE_OMIT` in `dashboard/app.js`): its
+layout group was one of the kept rows, so the group count fell by one and the excluded count did not
+move. The runs are still in `history/`; the page just does not report that engine.
 
 *Cost and speed by parquet layout* reports build cost at ONE core count, because build cost tracks
 the machine and `layoutKey` does not carry `vcores` — a group holds runs from several machines and a
@@ -77,8 +81,8 @@ Three ways to close it, in rough order of preference:
 
 1. **Dispatch the two.** They rejoin the section as they land — no code change at all, and five
    of the original seven have already closed this way.
-2. **Leave them excluded.** The status quo, and defensible: fifteen complete rows say more than
-   seventeen part-empty ones, and the missing runs' query numbers are still in *Every run*.
+2. **Leave them excluded.** The status quo, and defensible: fourteen complete rows say more than
+   sixteen part-empty ones, and the missing runs' query numbers are still in *Every run*.
 3. **Lower `ETL_VCORES` coverage by re-pinning it.** Only worth it if the fleet's usual core count
    moves; the constant already has to be kept in step with the dispatch default by hand, and moving
    it to chase coverage would make the column mean whatever happens to be best populated.

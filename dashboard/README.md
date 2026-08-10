@@ -162,7 +162,7 @@ without a build, a token or a dispatch.
   Pages URL, because the offline copy is one loose file with no sibling to point at — and a 404 off
   a local disk looks like nothing happened at all. The build fails if that link ever stops matching.
 - **EVERY CHART AND TABLE COMES BEFORE EVERY PARAGRAPH, and the methodology is LAST.** The order is
-  *Cost and speed by layout* (its table, then its line chart), *Cost by engine*,
+  *Cost and speed by layout* (its table, then its scatter), *Cost by engine*,
   *Table layout*, *Input archive*,
   *Every run*, then *About these numbers* and the provenance line. `About these numbers` used to sit
   between the layout tables and the run table, so the last table on the page was below a screen of
@@ -212,10 +212,11 @@ without a build, a token or a dispatch.
   is the other half. It has a title and no commentary. Built from the same `martPoints` as the chart
   and the layout rows, so all three quote the same median.
   ⚠️ **A LAYOUT WITH NO RUN AT `ETL_VCORES` IS DROPPED FROM THE SECTION** — from the table and
-  from the chart, with the count named in a note under the table (7 of 17 today, all duckrun; nine
-  rows survive). The alternative was hiding the column while most rows could not fill it, and a cost
-  column that is mostly dashes reads as "the build was free" rather than "nobody measured it at that
-  size", and the `cores` column is what keeps that filter visible. **The cost is the chart**: 8 lines instead of 15, so seven layouts' query timings leave a
+  from the chart, with the count named in a note under the table (2 of 16 today, both duckrun;
+  fourteen rows survive). The alternative was hiding the column while most rows could not fill it, and
+  a cost column that is mostly dashes reads as "the build was free" rather than "nobody measured it at
+  that size", and the `cores` column is what keeps that filter visible. **The cost is the chart**: 14
+  dots instead of 16, so two layouts' query timings leave a
   section they had every right to be in, for a build-cost reason — they are still in *Every run*, and
   [TODO.md](../TODO.md) says what building them would take.
   The filter is on MEMBERSHIP, not on the value: a layout built at 8 whose CU the ledger has not read
@@ -237,84 +238,82 @@ without a build, a token or a dispatch.
   the DuckDB legs run in, so only `duckrun` and `iceberg` record `vcores`; spark's compute is the
   workspace Livy pool and dwh's is the warehouse, and neither reads the input. Filtering on the value
   alone would have emptied the column for two of the four engines rather than narrowing it.
-  **A layout nobody has built at that size is a DASH, never a blend and never a zero** — 7 of 17
-  groups today, all duckrun. **The nightly does NOT fill them in**, and a first version of this
-  note said it would: the nightly writes ONE layout (`date,time,price` at 2M) whose group already
-  has 8-core runs, while every dashed group is a sort key or row-group size it never builds.
-  Closing them is seven deliberate dispatches at `cores=8` — [TODO.md](../TODO.md) lists them with
-  the cost. `ETL_VCORES` is a constant that has to be kept in step with the dispatch default by
+  **A layout nobody has built at that size is a DASH, never a blend and never a zero** — 2 of 16
+  groups today, both duckrun and both DUID sorts. **The nightly does NOT fill them in**, and a first
+  version of this note said it would: the nightly writes ONE layout (`date,time,price` at 2M) whose
+  group already has 8-core runs, while every dashed group is a sort key or row-group size it never
+  builds. Closing them is two deliberate dispatches at `cores=8` — [TODO.md](../TODO.md) lists them
+  with the cost. `ETL_VCORES` is a constant that has to be kept in step with the dispatch default by
   hand.
-- **Under it, ONE LINE CHART where there were two scatters.** Each layout is a single horizontal
-  line: **warm ms at its left end, cold ms at its right, on one shared linear time axis**, at the
-  height of its analytics CU. **The LENGTH is what the cold transcode costs.** Same `martPoints` and
-  same `groupMid` as the table above, so the chart and the table cannot disagree about a number.
-  It replaced *CU against cold* stacked on *cold against warm*. Both of those plotted `cold ms` on
-  x, so a reader wanting all three numbers carried one between two panels — and the quantity worth
-  knowing was on neither: the first had no warm at all, the second had it as a distance from a
-  45-degree line nobody drew. A subtraction became a length.
-  **The ends carry no markers, and that is the second simplification, not an oversight.** A first
-  version drew a filled dot at cold and a hollow one at warm, sized by row-group size — which meant
-  learning two more encodings (which fill is which tier, what the area means) before the length
-  could be read at all. **There is no size channel now**: row-group size is a column of the table
-  directly above and a line of every hover, so nothing was lost from the page.
-  **One time axis is not a compromise, it is the correct encoding.** Both tiers are milliseconds,
-  and two scales for two measures of the same kind is the dual-axis mistake: a length spanning two
-  scales is not a quantity. Warm is always the LEFT end because it is always the smaller number.
-  **BOTH AXES ARE LOG, and on x that changes what a length MEANS — from a difference to a RATIO.**
-  That is the better quantity and the reason for it: "the cold pass is 6x the warm one" is a
-  property of the layout, where "18,000 ms slower" mostly tracks how big the query happened to be.
-  It also fixed real crowding — warm at 3,000–6,500 against cold at 20,000–37,000 pinned every warm
-  end into the left eighth of a linear plot, so the ends could not be compared with each other at
-  all; on log the lines span 84→882 instead of 107→820, and near-coincident pairs fell from four to
-  two. On y it un-squashes the cheap layouts, which sit within half a decade of each other.
+- **Under it, ONE SCATTER, and the mark is a DOT again.** Each layout is one dot: **cold ms across,
+  warm ms up, both axes log**, with **its AREA the analytics CU it cost** and **its colour the
+  writer**. Same `martPoints` and same `groupMid` as the table above, so the chart and the table
+  cannot disagree about a number.
+  **It replaced a LINE chart**, which drew each layout as a segment from its warm ms to its cold ms
+  at the height of its CU — all three numbers in one mark, and the cold/warm trade readable as the
+  segment's LENGTH. That read well at eleven layouts. At sixteen, nine of them one writer at similar
+  CU, it stopped: a line is a WIDE mark, it spans most of a decade on a log x, so nine of them
+  overlap into a hatch that no hover pulls apart. `opacity: .8` was already a mitigation for the
+  first two coincident pairs; it does not survive nine. A dot occupies one point, and points
+  separate.
+  **THE COST IS STATED RATHER THAN DISCOVERED LATER: the cold/warm trade is a distance from the
+  diagonal again, not a length.** That is a worse encoding of it, and it is the price of separating
+  sixteen marks. The ratio is still one line of every dot's hover, and `hot` with it.
+  **CU MOVED FROM THE Y AXIS TO THE AREA, which is a promotion.** It is the measure this project
+  optimises for, and area is the channel that survives crowding — a dot keeps its size wherever it
+  lands, while a y position is spent on separating marks. The size key names it (`CU`) and prints
+  three circles at the observed min, middle and max, area-scaled by the same function the dots use,
+  so the key cannot drift from the marks. Row-group size was the old size channel; it is a column of
+  the table directly above and a line of every hover, so nothing left the page.
+  **COLOUR STAYS THE WRITER, and recolouring by engine was considered and rejected**: the legend,
+  the layout rows and every table name writers, so hueing by engine would fold spark's three
+  profiles into one colour while the table beside it kept them apart.
+  **BOTH AXES ARE LOG.** Cold spans 22,823–45,010 against warm at 3,000–6,500, so a linear pair
+  pinned every dot into one corner; on log they spread. This is orthogonal to the mark — the line
+  chart had it too, and it is kept for the same reason.
   **`logScale` does NOT snap the bound out to whole decades**, for the same reason `niceScale` snaps
-  the step and not the bound one function above it: CU spans 1,332–3,769, so a 1,000–10,000 axis
-  would put every layout on the page in the bottom half. Ticks come from mantissa sets, coarsest
-  that still fills the axis — `[1,2,5]` yields a single tick over half a decade, and an axis with no
-  numbers reads as a rendering failure rather than as a narrow range.
-- **Every line is named at its COLD END, and what the name says depends on the writer.** The writer
-  itself when that identifies the line, which `uniqueName` decides — `dwh`, the three spark
-  profiles. `delta_rs` is most of the lines, so its name separates nothing; it is in the legend, and
-  what actually tells its lines apart takes its place: the sort key and the row group SIZE —
+  the step and not the bound one function above it: half a decade of spread would otherwise sit in
+  the bottom half of the plot. Ticks come from mantissa sets, coarsest that still fills the axis —
+  `[1,2,5]` yields a single tick over half a decade, and an axis with no numbers reads as a
+  rendering failure rather than as a narrow range.
+- **`duckrun` LABELS ONLY ITS CHEAPEST LAYOUT. Everything else is labelled as before.** Nine of the
+  sixteen layouts are `delta_rs` — one hue, one writer name — so labelling them all prints nine
+  `date, time · rg …` strings into one cluster, which is the crowding the dots were adopted to fix
+  arriving back as text. `LABEL_BEST_ONLY` is a NAMED constant keyed on the ENGINE, never a computed
+  "any engine with more than N dots": the computed version would silently start suppressing spark's
+  labels the day a fourth profile landed. **Cheapest by CU**, which is the size channel, so the
+  labelled dot is also the smallest of its hue — and ties go to the table's own cheapest-first
+  order, so the pick cannot move between two renders of one document. The other eight are a hue and
+  a hover, and every one of them is still a ranked row of the table above.
+- **What a label SAYS depends on the writer.** The writer itself when that identifies the dot, which
+  `uniqueName` decides — the three spark profiles. `dwh` has two configs and `delta_rs` nine, so
+  what actually tells them apart takes its place: the sort key and the row group SIZE —
   `date, time · rg 2.0M`. Both halves come from `keyCells`, which is what *Cost and speed by parquet
-  layout* prints in its own cells, so a line and the row beside it cannot describe one parquet two
+  layout* prints in its own cells, so a dot and the row beside it cannot describe one parquet two
   different ways and a change to either follows the other.
   **Size, not the count.** A count is a number you have to divide the table by before it means
   anything; `2.0M` is a segment size a reader can hold against VertiPaq's own, it is what the
   dispatch actually sets (`row_group_size`), and it does not move when the row count does.
   Either half is DROPPED when unmeasured rather than dashed — an unsorted layout reads `rg 5.3–7.6M`,
   not `— · rg 5.3–7.6M`. A label is not a column and has nothing to line up with.
-  **The cold end because that is where the eye already is**: the cold ends are what the chart is
-  ranked by and what spreads out, while the warm ends bunch toward the y axis. The warm end is the
-  FALLBACK — both ends are free on a line with no writer name, so a label that cannot fit beside the
-  cold end moves rather than being forced somewhere it overlaps. On the real records 10 of 11 sit
-  beside a cold end and 1 falls back; that one's line runs 8.5 units from its neighbour's, less than
-  a line of text, so both cannot sit on the same side of their own marks. A name is never dropped —
-  an overlapping one is recoverable by hovering, an absent one is the bug this was built to fix —
-  and `force()` flips side rather than running off the plot, which the bounds-free version did once,
-  25 units past the y axis and across an unrelated line.
+  **Placement is greedy over two rings of candidate offsets, and a name is never dropped.** `force()`
+  flips side rather than running off the plot, which the bounds-free version did once, 25 units past
+  the y axis and across an unrelated mark. An overlapping label is recoverable by hovering; an absent
+  one is the bug this was built to fix.
   **The x axis reserves a LABEL GUTTER on its high side (`padHi` 1.55), and only when something goes
-  in it.** Names read rightward from the cold end and the cold ends are the far right of the plot;
-  at the symmetric pad the rightmost had 22 units of room for a name needing 139. Widening the axis
-  moves every line left together — it cannot mislead, because the ticks come from the same scale.
-  Reserving it unconditionally is the part that had to be conditional: on a dense cluster of plain
-  dots, squeezing the x span squeezed the gaps a label has to find and eleven names that used to fit
-  started colliding. A gutter with nothing in it is pure loss.
-  **THE KNOWN COST OF DROPPING THE MARKERS: two layouts at nearly the same CU now overlap along
-  their whole length.** A dot marked one x, so two of them at the same height still sat apart; a
-  line spans most of the plot. On the real records four pairs land within 3 units of each other, all
-  `delta_rs`, i.e. the same hue. `.pair` is drawn at `opacity: .8` so an overlap composites darker
-  rather than reading as a single line — a mitigation, not a fix. If it ever misleads, the honest
-  levers are jittering y or going back to end markers, **not** dropping runs from the chart.
-  **`iceberg` is still off it (`SCATTER_OMIT`), and the shared axis makes that stronger** — its cold
-  pass is 124,036 ms against 20,000–37,000, so its line would be four times the next longest and
-  squash every other one into a fraction of the plot. A named constant, never a computed outlier
-  rule, and the subtitle says what was left out and says nothing when nothing was.
-  **A layout with no warm pass is still plotted, as a plain dot** — one shape per point, never both,
-  and unmeasured is an absent thing rather than a zero: a line run back to x=0 would read as "this
-  layout answered instantly". The axis reaching 0 on today's data is a *consequence* (the combined
-  span snaps `niceScale`'s step to 5,000), not a zero-baseline policy.
-  One `<title>` per layout, on the line itself — which is the mark a reader is pointing at.
+  in it.** Names read rightward from their dot and the dots this labels sit toward the right; at the
+  symmetric pad the rightmost had 22 units of room for a name needing 139. Widening the axis moves
+  every dot left together — it cannot mislead, because the ticks come from the same scale. Reserving
+  it unconditionally is the part that had to be conditional: on a dense cluster, squeezing the x
+  span squeezes the gaps a label has to find, and eleven names that used to fit started colliding.
+  A gutter with nothing in it is pure loss.
+- **A LAYOUT WITH NO WARM PASS IS NOT PLOTTED, AND IS COUNTED IN THE SUBTITLE.** Both axes are query
+  times, so a run missing one has nothing to put on y. It is never plotted at zero — an unmeasured
+  tier is an absent thing, and a dot on the axis would read as "its second visit was instant" — and
+  it is never dropped quietly either, which is `cutNote`'s whole job. That note says nothing when
+  nothing was cut.
+  One `<title>` per layout, on the dot itself — the mark a reader is pointing at — carrying the
+  whole table row, `hot` and row-group size included.
 - **THE TWO CU BAR CHARTS ARE DELETED, and what they drew is not.** They were
   `Capacity units per parquet layout` and `Capacity units per engine build`, stacked, analytics
   first. Removing them is not a judgement on the build half — that is still where the sharpest
@@ -325,11 +324,11 @@ without a build, a token or a dispatch.
   *Cost by engine*. A bar length is a worse way to read a number you can simply be told.
   What went with them: `chartSvg`, `barPath`, `groupRows`, the `.bar`/`.bar-label` rules and four
   unit tests about bar geometry. What did NOT: `spreadFor`, which the noise floor still uses, and
-  every grouping rule below, which now surfaces as table rows and as the line chart's marks.
+  every grouping rule below, which now surfaces as table rows and as the scatter's dots.
   **The no-loss claim is the thing to re-check before restoring one.** A test pins it — if either
   number ever stops being printed, a chart brought back for it is a different argument from the one
   that removed these.
-- **A LAYOUT GROUP IS ONE ROW, and the grouping is the same one the line chart plots.** Power BI
+- **A LAYOUT GROUP IS ONE ROW, and the grouping is the same one the scatter plots.** Power BI
   never sees the engine — it opens parquet through Direct Lake and transcodes row groups — so what a
   query costs belongs to what was WRITTEN, and the writer is metadata. The row is named for its
   writer; the `ordering` and `row group size` cells are what tell two rows of one writer apart.
@@ -359,7 +358,7 @@ without a build, a token or a dispatch.
   differ 2.8x (1,332 against 3,769), the sharpest experiment on the page; and NEE on and off produce
   the same layout, so the gap between them was never an NEE effect.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
-  speed by parquet layout*, the mart rows and the line chart alike, so the three cannot disagree. One
+  speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
   dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run
   30966983384 read 2,629.3 against 1,331.5/1,577.1/1,586.7 for byte-identical parquet, because its
   XMLA read billed 49s against ~33s and its refresh took 28.4s against ~8s — Fabric being busy, not
@@ -500,7 +499,7 @@ without a build, a token or a dispatch.
   and a degenerate ranking — composed here, this is the only place the tiers can be read across
   engines at all.
   **Per LAYOUT** in *Cost and speed by layout*, beside the CU, which is a group's median over its runs
-  — and the cold and warm medians are also the two ends of the line chart directly below it, same
+  — and the cold and warm medians are also the two axes of the scatter directly below it, same
   `martPoints`, same `groupMid`, so the chart and the table cannot disagree about a number.
   **Per RUN** in the sources table, which is what actually measured them: one dispatch, against one
   semantic model it had just deployed. They were columns of the mart's layout block and are not any
@@ -556,6 +555,25 @@ without a build, a token or a dispatch.
   this engine was free" rather than "nobody measured it". The skipped records are **listed by file
   and reason in the sources section**, visible and never folded — they used to be only a count in
   the live status line, which the offline copy does not even have.
+- **`iceberg` IS NOT REPORTED AT ALL — no column, no row, no dot, page-wide.** `PAGE_OMIT` in
+  `app.js`, filtered in `selectRuns`, which is the one gate every render path passes: the generation
+  filter, `columnsFor`, the CU join and the `?record=` pin all read what it returns, so an omitted
+  engine cannot reach the page by any route. Filtering in each renderer instead would be six filters
+  that have to agree.
+  **It replaced `SCATTER_OMIT`, which was chart-only** — iceberg was off the one chart while still
+  holding a column in *Cost by engine*, a row in *Table layout* and a bucket in the CU table, and
+  the chart's caption was the only place the page admitted to it. An engine missing from the chart
+  and present in every table reads as a rendering fault.
+  **Why: the leg is not ready.** Its cold pass is 100,394 ms against 22,823–45,010 for everything
+  else, so it sets the scale of any chart it joins, and the layout behind that (1,172 row groups over
+  386 files) is not one anybody would ship. **The RECORDS are untouched** — `history/` keeps every
+  iceberg run, the ledger keeps its CU, and `STACK`/`ENGINE_LABEL`/`ENGINE_FAMILY` keep their
+  entries — so this is one constant to delete when the leg is worth reporting again.
+  **NAMED, never silent**: every omitted record is listed by file and reason in the sources section,
+  through the same list an incomplete record uses. A page that quietly ignores a record is
+  indistinguishable from a page that never had it.
+  It also drops the adapter from *The adapters* note: an adapter named in the methodology with no
+  column anywhere above it reads as a missing column.
 - **A run that was never TORN DOWN still renders, with a caveat.** Its items are alive and Fabric
   keeps billing them, so its total creeps upward and is an upper bound on that run rather than a
   measurement of it. It was briefly rejected outright; the creep is small and a column that

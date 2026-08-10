@@ -151,6 +151,27 @@ export const STORAGE_PREFIX = "OneLake";
 // question from what ingesting it cost.
 export const NON_ENGINE_ROLES = new Set(["landing", "folder"]);
 
+/**
+ * THE ENGINE THIS PAGE DOES NOT REPORT — every table, every column, every chart, page-wide.
+ *
+ * It replaces `SCATTER_OMIT`, which kept `iceberg` off the one chart while it still held a column in
+ * *Cost by engine*, a row in *Table layout* and a bucket in the CU table. That split was the problem:
+ * an engine absent from the chart and present in every table reads as a rendering fault, and the
+ * chart's caption was the only place the page admitted to the omission.
+ *
+ * Why iceberg: its cold pass is 100,394 ms against 22,823-45,010 for everything else, so it sets the
+ * scale of any chart it joins, and the layout behind that (1,172 row groups, 386 files) is not a
+ * candidate anybody would ship — the leg is not ready, so the page stops presenting it as a peer.
+ * The RECORDS are untouched: `history/` keeps every iceberg run, the ledger keeps its CU, and
+ * `STACK`/`ENGINE_LABEL`/`ENGINE_FAMILY` keep their entries, so this is one constant to remove when
+ * the leg is worth reporting again.
+ *
+ * A CONSTANT, never a computed "more than Nx the median" rule: an automatic outlier filter changes
+ * which run it silently removes as records land, and this page's whole discipline is that a dropped
+ * run is a NAMED run — `selectRuns` puts every one of these in the skipped list, with this reason.
+ */
+export const PAGE_OMIT = "iceberg";
+
 // Roles the teardown must have deleted. If one is still alive, that run's items are STILL ACCRUING and
 // its numbers are not a measurement of that run — they are a measurement of everything since.
 export const DELETABLE_ROLES = new Set(["output", "dwh_src", "compute", "semantic_model"]);
@@ -325,11 +346,22 @@ export function drifting(rec) {
  * Every readable record that is a whole generation, oldest first, plus what was skipped and why.
  * Skipped records are NAMED — a page that quietly ignores one is indistinguishable from a page that
  * never had it.
+ *
+ * THE `PAGE_OMIT` FILTER LIVES HERE, and nowhere else, because this is the one gate every render
+ * path passes: `compose` calls it before the generation filter, before `columnsFor` and before the
+ * `?record=` pin, so an omitted engine cannot reach a column, a chart, a layout row or the CU join
+ * by any route. Dropping it in each renderer instead would be six filters that have to agree.
+ * It is reported through the SAME `skipped` list as an incomplete record — a different reason for
+ * the same fact, that the page holds a record it is not showing.
  */
 export function selectRuns(records) {
   const runs = [], skipped = [];
   for (const rec of records || []) {
     if (!rec) continue;
+    if (rec.engine === PAGE_OMIT) {
+      skipped.push(`${rec._file || "?"}: ${PAGE_OMIT} is not reported on this page`);
+      continue;
+    }
     const why = incomplete(rec);
     if (why) { skipped.push(`${rec._file || "?"}: ${why}`); continue; }
     runs.push(rec);
@@ -1185,10 +1217,16 @@ export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = ""
   // A POINT'S SECOND X, or NaN — and it changes the MARK, not just its decoration: a point with one
   // x is a dot, a point with two is the SEGMENT between them. One shape per point, never both.
   //
-  // The second x is OPTIONAL per point: a layout that recorded no warm pass draws its cold end as a
-  // plain dot rather than losing its row. Unmeasured is an absent thing, never a zero — the same
-  // rule `tipLines` follows when it omits a tier instead of dashing it, and a segment run back to
-  // x=0 would read as "this layout answered instantly".
+  // The second x is OPTIONAL per point: a caller plotting a span for some points and a single
+  // measure for others gets a segment and a dot, rather than losing a row. Unmeasured is an absent
+  // thing, never a zero — the same rule `tipLines` follows when it omits a tier instead of dashing
+  // it, and a segment run back to x=0 would read as "this layout answered instantly".
+  //
+  // **NO CHART PASSES `x2` TODAY.** `scatterFit` drew the warm-to-cold segment until sixteen
+  // layouts made the wide marks overlap; it is dots again. This is KEPT rather than deleted for the
+  // same reason `WRITER_HUE` keeps a slot for a writer nothing plots: it costs one `NaN` check per
+  // point, the occluder list and the label placer below are written around both marks, and removing
+  // it would make bringing the segment back a rewrite of those rather than one call-site argument.
   const x2 = (p) => (Number.isFinite(Number(p.x2)) && Number(p.x2) > 0 ? Number(p.x2) : NaN);
   const paired = rows.filter((p) => Number.isFinite(x2(p)));
   // TALLER THAN THE BARS, on purpose. It is drawn at the same 660-unit width so it lines up with the
@@ -1627,40 +1665,33 @@ function spanM(values) {
 }
 
 /**
- * The engine kept off the chart, and it is named here rather than detected.
- *
- * `iceberg`'s cold pass is 100,394 ms against 22,823-45,010 for everything else — so including it
- * sets the scale and the other twelve pile into one corner: 12 of 78 dot pairs overlapped with it
- * in, against 1 of 66 without. THE SHARED TIME AXIS MAKES THIS STRONGER, not weaker: warm sits an
- * order of magnitude below cold, so an iceberg line four times longer than the next would squash
- * every other line into a fraction of the plot and flatten the comparison the chart exists for. It
- * is not dropped for being inconvenient; 1,172 row groups is a layout nothing else on the page is
- * near, and its cost is already the top row of the table directly above.
- *
- * A CONSTANT, never a computed "more than Nx the median" rule: an automatic outlier filter changes
- * which point it silently removes as records land, and this page's whole discipline is that a
- * dropped run is a NAMED run. The subtitle says what was left out, and says nothing when nothing
- * was.
- */
-const SCATTER_OMIT = "iceberg";
-
-/**
- * The points the chart may plot: those carrying the measures it needs, minus `SCATTER_OMIT`.
+ * The points a chart may plot: those carrying the measures it needs.
  *
  * Split out of `renderFit` so the omission is one named thing rather than a filter buried in a call
  * argument — the caption and the filter cannot drift apart if they are three lines from each other.
+ *
+ * THE ENGINE FILTER THAT USED TO LIVE HERE IS GONE, and it did not move — it grew. `SCATTER_OMIT`
+ * kept `iceberg` off this chart alone while it still held columns, rows and a CU bucket everywhere
+ * else; `PAGE_OMIT` now drops it from the page in `selectRuns`, so by the time points reach here
+ * there is no such run to filter. What remains is the honest one: a layout that did not record a
+ * measure this chart plots.
  */
 function plotted(pts, has) {
-  const usable = (pts || []).filter(has);
-  const rows = usable.filter((p) =>
-    !(p.members || []).some(({ rec }) => (rec || {}).engine === SCATTER_OMIT));
+  const usable = (pts || []).filter(Boolean);
+  const rows = usable.filter(has);
   return { rows, cut: usable.length - rows.length };
 }
 
-/** The exclusion, said in the subtitle — and said nowhere when nothing was excluded. */
+/**
+ * The exclusion, said in the subtitle — and said nowhere when nothing was excluded.
+ *
+ * A LAYOUT WITH NO WARM PASS IS THE ONLY THING THIS COUNTS NOW. Both axes are query times, so a run
+ * missing one has nothing to put on it — and it must be counted rather than quietly absent, which is
+ * the same discipline `renderSources` follows for a dropped record. It is never plotted at zero: an
+ * unmeasured tier is an absent thing, and a dot on the axis would read as "it answered instantly".
+ */
 function cutNote(cut) {
-  return cut ? ` · ${SCATTER_OMIT} left out, ${cut > 1 ? `${cut} layouts, ` : ""}` +
-    "its cold pass 2x the slowest of these" : "";
+  return cut ? ` · ${cut} layout${cut > 1 ? "s" : ""} not plotted, no warm pass measured` : "";
 }
 
 /**
@@ -1754,31 +1785,81 @@ function layoutOf(members, table = DEFAULTS.table) {
   return bits.join(" · ") || producers(members);
 }
 
+/**
+ * The engine that labels only its BEST dot, named here rather than derived from a dot count.
+ *
+ * `duckrun` has written nine of the sixteen layouts on this page and every one of them is
+ * `delta_rs` — one hue, one writer name, nine labels saying `date, time · rg …` in a cluster. That
+ * is the crowding the dots were adopted to fix, arriving back as text. Its cheapest layout is the
+ * one a reader is looking for, so that one keeps its name and the other eight are a hue and a hover.
+ *
+ * NAMED, NOT COMPUTED, and the distinction is the same one `PAGE_OMIT` rests on: "any engine with
+ * more than N dots" would silently start suppressing spark's labels the day a fourth profile lands,
+ * with nothing on the page saying it had. If another engine ever needs this, it is one more entry.
+ */
+const LABEL_BEST_ONLY = "duckrun";
+
+/** Is this point one of `LABEL_BEST_ONLY`'s? Keyed on the ENGINE, which is what a dispatch names. */
+const bestOnly = (p) => ((p.members || [])[0] || {}).rec
+  && p.members[0].rec.engine === LABEL_BEST_ONLY;
+
+/**
+ * COLD AGAINST WARM, one dot per layout, sized by CU.
+ *
+ * **THIS REPLACES THE LINE CHART, which drew each layout as a segment from its warm ms to its cold
+ * ms at the height of its CU.** The segment carried all three numbers in one mark and read well at
+ * eleven layouts. At sixteen — nine of them one writer, at similar CU — it stopped: a line is a WIDE
+ * mark, it spans most of a decade on a log x, so nine of them overlap into a hatch that no hover
+ * pulls apart. A dot occupies one point, and points separate.
+ *
+ * WHAT MOVED, and each of the three is deliberate:
+ * - **CU is the AREA now, not the y axis.** It is the measure this project optimises for, and area
+ *   is the channel that survives crowding — a dot keeps its size wherever it lands, while a y
+ *   position is spent on separating marks. It also frees y for the second time measure.
+ * - **Warm is the y axis**, so the chart is cold against warm: what a first visit costs against what
+ *   every visit after it costs.
+ * - **Colour stays the WRITER.** The legend, the layout rows and the table all name writers, and
+ *   recolouring by engine would fold spark's three profiles into one hue while the table beside it
+ *   kept them apart.
+ *
+ * THE COST, stated rather than discovered later: the cold/warm TRADE was the line's LENGTH and is
+ * now a distance from the diagonal, which is a worse encoding of it. That is the price of separating
+ * sixteen marks, and the ratio is still one line of every dot's hover.
+ *
+ * BOTH AXES LOG, which the pre-line version did not have. Cold spans 22,823-45,010 against warm at
+ * 3,000-6,500, and a linear axis pinned every dot into a corner. Log is orthogonal to the mark.
+ */
 export function scatterFit(pts) {
-  // THE FILTER IS COLD ONLY, deliberately. Requiring warm here would silently change WHICH layouts
-  // are on the chart, and making the membership quiet is the one thing `cutNote` exists to prevent
-  // — a layout with no warm pass keeps its row and draws as a plain dot.
-  const { rows, cut } = plotted(pts, (p) => p.ms && p.ms.cold);
-  return scatterSvg("CU against query time",
-    "one line per layout, warm ms at its left end and cold ms at its right — "
-    + "on a log axis its length is how many times slower the cold pass is; "
-    + "CU up, also log" + cutNote(cut),
+  // BOTH AXES ARE TIMES, so both are required — and the layouts this drops are COUNTED in the
+  // subtitle. There is no engine filter here any more: `PAGE_OMIT` removed `iceberg` from the page
+  // itself, upstream in `selectRuns`.
+  const { rows, cut } = plotted(pts, (p) => p.ms && p.ms.cold && p.ms.warm);
+  // THE CHEAPEST OF `LABEL_BEST_ONLY`'s LAYOUTS — by CU, which is the size channel, so the labelled
+  // dot is also the smallest one of its hue. Ties go to the first, which is the table's own
+  // cheapest-first order, so the pick cannot move between two renders of one document.
+  const best = rows.filter(bestOnly)
+    .reduce((a, b) => (a === null || b.cu < a.cu ? b : a), null);
+  return scatterSvg("Cold against warm",
+    "one dot per layout — cold ms across, warm ms up, both log; its AREA is the analytics CU it "
+    + `cost and its colour is the writer. ${LABEL_BEST_ONLY} labels only its cheapest layout`
+    + cutNote(cut),
     rows.map((p) => ({
-      x: p.ms.cold, x2: p.ms.warm, y: p.cu, label: p.name, id: uniqueName(rows, p), n: p.n,
-      // The layout, for a writer whose name identifies nothing — `date, time · rg 2.0M`.
+      x: p.ms.cold, y: p.ms.warm, label: p.name, n: p.n,
+      // ONE WRITER, NINE DOTS: only the cheapest carries text. `uniqueName` would have given all
+      // nine the empty string anyway (the name separates nothing) and `id2` would then have printed
+      // nine layouts, which is the cluster this chart was rebuilt to avoid.
+      id: bestOnly(p) ? "" : uniqueName(rows, p),
+      // The layout, for a dot whose writer name identifies nothing — `date, time · rg 2.0M`.
       //
       // ROW GROUP SIZE, NOT THE COUNT, and the two cells come straight from `keyCells` so the label
       // and the table row directly above it are the SAME strings rather than two spellings of one
       // fact. A count is a number you have to divide the table by before it means anything; `2.0M`
       // is a segment size a reader can hold against VertiPaq's own, and it is what the dispatch
       // actually sets (`row_group_size`). It also stops the label moving when the row count does.
-      id2: uniqueName(rows, p) ? "" : layoutOf(p.members),
-      tip: tipLines(p), hue: WRITER_HUE[p.name] || 1,
-    })), "query time (ms)", "", undefined, "CUs", modelNote(rows));
-  // NO SIZE CHANNEL. The dots carried row-group size as their AREA; with the marks gone there is
-  // nothing to size, and putting it back as stroke width would be the third encoding this chart was
-  // simplified to remove. It is not lost: it is a column of the table directly above and a line of
-  // every segment's own hover.
+      id2: bestOnly(p) ? (p === best ? layoutOf(p.members) : "")
+        : (uniqueName(rows, p) ? "" : layoutOf(p.members)),
+      tip: tipLines(p), hue: WRITER_HUE[p.name] || 1, c: p.cu,
+    })), "cold ms", "CU", (v) => fmt(v, 0), "warm ms", modelNote(rows));
 }
 
 /** A group's rows-per-row-group as a NUMBER — the median across its members, for the colour ramp. */
@@ -1884,16 +1965,12 @@ export function renderFit(groups, times, tiers, counts = {}) {
       + `${ETL_VCORES} vCores, so there is no build cost to compare. Their query numbers are in `
       + `**Every run**. See \`TODO.md\` for what filling them would take.`) : "",
     // The same points as the table, plotted against each other. A ranked table cannot show whether
-    // two measures move TOGETHER, which is the one question `CU` and a time column side by side
-    // invite.
+    // two measures move TOGETHER, which is the one question a CU column and a time column side by
+    // side invite.
     //
-    // ONE CHART WHERE THERE WERE TWO. It was *CU against cold* stacked on *cold against warm*: both
-    // plotted `cold ms` on x, so the reader carried a number between two panels to get all three,
-    // and the thing worth knowing — what the cold transcode COSTS over the warm pass — was on
-    // neither. Both tiers now share one time axis and each layout is the LINE between them. Cold is
-    // still the tier with a mechanism connecting it to CU (it is the transcode, parquet into
-    // VertiPaq segments, which is what the CU is mostly buying); warm is what the transcode BUYS,
-    // and the line is that trade as one mark.
+    // STILL ONE CHART, but the mark is a DOT again and the three measures are on three channels:
+    // cold across, warm up, CU as the area. The line chart that put warm and cold at the two ends of
+    // a segment read well at eleven layouts and hatched at sixteen — see `scatterFit`.
     scatterFit(pts),
   ].filter(Boolean).join("\n");
 }
@@ -3179,8 +3256,10 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // paragraph, where the separator between two entries looked exactly like the separator inside one;
   // a reader scanning for "which adapter is dwh" had to parse the line to find out. Broken, each row
   // is one engine and the em dash only ever separates a name from its description.
+  // The engines this page REPORTS, which is why `PAGE_OMIT` is filtered out here too: an adapter
+  // listed in the methodology and absent from every table above it reads as a missing column.
   out.push(note("The adapters:<br>" + ENGINES
-    .filter((e) => ADAPTER_URLS[e])
+    .filter((e) => e !== PAGE_OMIT && ADAPTER_URLS[e])
     .map((e) => `[${STACK[e][0]}](${ADAPTER_URLS[e]}) — ${STACK[e][1]}`)
     .join("<br>")));
 
@@ -3208,9 +3287,13 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // the generation exclusions above.
   const skipped = opts.skipped || [];
   if (skipped.length) {
-    out.push(note(`**${skipped.length} record(s) skipped as incomplete** — a run has to be built ` +
+    // TWO REASONS, ONE LIST. A record is held back either because it is partial or because its
+    // engine is not reported here (`PAGE_OMIT`) — different causes, the same fact for a reader: the
+    // page has a record it is not showing. Each entry carries its own reason, so the heading states
+    // both rather than the note claiming every one of them was incomplete.
+    out.push(note(`**${skipped.length} record(s) not shown** — a run has to be built ` +
       "and benchmarked to be comparable, and a partial one would render an empty column that reads " +
-      "as “this engine was free”: " +
+      `as “this engine was free”; \`${PAGE_OMIT}\` is held back for a reason of its own: ` +
       skipped.map((s) => {
         // `file: reason` — the file half links to the committed record so the reason can be
         // checked against what the run actually filed.
@@ -3852,7 +3935,7 @@ export async function boot(doc = document, loc = location) {
       say(inline(`Live — read from \`${opts.repo}@${opts.ref}\` at ` +
         `${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC. ` +
         `Reload for new data; nothing needs republishing.` +
-        (skipped.length ? ` ${skipped.length} record(s) skipped as incomplete.` : "")));
+        (skipped.length ? ` ${skipped.length} record(s) not shown.` : "")));
     }
   } catch (ex) {
     // A page that fails has to say what it could not read, because every plausible cause — the API's

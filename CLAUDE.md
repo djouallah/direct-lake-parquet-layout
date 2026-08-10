@@ -1511,9 +1511,27 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   second read returns bigger numbers and `max()` takes them. "May still rise" on the page is DERIVED
   from `run.finished` being under two hours old — a property of the clock, not a flag written into a
   file that then has to be kept in step.
-- **THE TWO CU BAR CHARTS ARE DELETED. There is ONE chart on the page** — the line chart under
-  *Cost and speed by parquet layout*, one line per layout, warm ms to cold ms on a shared log axis
-  at the height of its CU. `chartSvg`, `barPath`, `groupRows` and the `.bar` rules went with them.
+- **THE TWO CU BAR CHARTS ARE DELETED. There is ONE chart on the page** — the SCATTER under
+  *Cost and speed by parquet layout*, one DOT per layout: cold ms across, warm ms up, both log, with
+  its AREA the analytics CU and its colour the writer. `chartSvg`, `barPath`, `groupRows` and the
+  `.bar` rules went with them.
+  **The dot replaced a LINE** — each layout was a segment from its warm ms to its cold ms at the
+  height of its CU, all three numbers in one mark, with the cold/warm trade readable as the LENGTH.
+  That read well at eleven layouts and hatched at sixteen: a line is a WIDE mark spanning most of a
+  decade on a log x, and nine of them are `delta_rs` at similar CU. The accepted cost is that the
+  trade is a distance from the diagonal again rather than a length; CU moved to the area, which is
+  the channel that survives crowding.
+  **`duckrun` LABELS ONLY ITS CHEAPEST LAYOUT** (`LABEL_BEST_ONLY`, cheapest by CU) — nine labels in
+  one cluster is the crowding the dots were adopted to fix, arriving back as text. Named, never a
+  computed "engine with more than N dots", which would silently start suppressing spark's labels the
+  day a fourth profile landed. The other eight dots are a hue, a hover and a ranked row of the table.
+  **`iceberg` IS OFF THE WHOLE PAGE** — `PAGE_OMIT`, filtered in `selectRuns`, so no column, no row,
+  no dot and no CU bucket anywhere. It replaced `SCATTER_OMIT`, which kept it off the one chart while
+  it still held a column in *Cost by engine* and a row in *Table layout* — an engine missing from the
+  chart and present in every table reads as a rendering fault. Every omitted record is NAMED in the
+  page's skipped list, `history/` is untouched, and it is one constant to delete when the leg is
+  ready. Note the knock-on to every count in this file and in `TODO.md`: **16 layout groups, not
+  17.**
   They were `Capacity units per parquet layout` and `Capacity units per engine build`, stacked,
   analytics first. **The reason is NOT that the build half stopped mattering** — it still carries
   the sharpest operational result here, **duckrun costs 1.8× at 64 cores for the same wall time**
@@ -1524,7 +1542,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   number you can be told. **That no-loss claim is what to re-check before restoring one** — a test
   pins it, and a chart brought back for a number no table carries is a different argument from the
   one that removed these. `spreadFor` survives; the noise floor uses it.
-  **The GROUPING survives too, and now surfaces as table rows and as the chart's lines.** Read the
+  **The GROUPING survives too, and now surfaces as table rows and as the chart's dots.** Read the
   rest of this bullet as describing a layout GROUP, not a bar.
   Power BI never sees the engine: it opens parquet
   through Direct Lake and transcodes row groups, so what a query costs belongs to what was WRITTEN
@@ -1640,7 +1658,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   a record predating the dispatch input has no key at all and would collide with an explicit `false` —
   so `columnsFor` checks for a collision and falls the whole engine back to the explicit spelling.
   Two identical column headers is the failure it prevents, and it is silent about why.
-  **The MART block's rows ARE the chart's lines** — same grouping, same members, same median — and every
+  **The MART block's rows ARE the chart's dots** — same grouping, same members, same median — and every
   other block stays one row per DECLARED writer. That split replaced "two directions onto the same
   rows", which held only while no writer produced two layouts: the mart block is the only one carrying
   CU and the query tiers, so it is the only one where a row spanning two shapes prints a number
