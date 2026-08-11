@@ -292,7 +292,9 @@ def test_nothing_touches_the_model_between_readiness_and_pass_1(monkeypatch):
 
     before = [q for _t, _n, q in xc.resolve_queries(None)]       # pass 1: no DUID yet
     after = [q for _t, _n, q in xc.resolve_queries("ERGT01")]    # pass 2+: the full suite
-    readiness = 'EVALUATE ROW("n", COUNTROWS(dim_calendar))'
+    # From SUITES, not a literal: the probe is per dataset now, and a second copy here would drift
+    # exactly the way the inline one in warm_up() did.
+    readiness = xc.SUITES["aemo"]["ready"]
 
     # readiness (one reframe + one probe), then pass 1, then the resolve — nothing in between.
     assert seen[:2] == ["REFRESH", readiness]

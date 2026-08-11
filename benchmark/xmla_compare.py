@@ -298,6 +298,7 @@ SUITES = {
         "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_summary[DUID], "m", [Total MWh]), '
                    '[m], DESC)',
         "quote": True,
+        "ready": 'EVALUATE ROW("n", COUNTROWS(dim_calendar))',
     },
     "nyc": {
         "queries": NYC_QUERIES,
@@ -305,8 +306,18 @@ SUITES = {
         "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_trips[PULocationID], '
                    '"m", [Total Trips]), [m], DESC)',
         "quote": False,
+        "ready": 'EVALUATE ROW("n", COUNTROWS(dim_date))',
     },
 }
+
+# EVERY DAX STRING IN THIS FILE IS REACHABLE FROM `SUITES`, and that is the invariant, not a
+# convenience. `warm_up`'s readiness probe and `top_key`'s resolver are DAX that never appears in
+# `queries`, so a test checking only the query list checks two thirds of the file — which is exactly
+# how a hardcoded `dim_calendar` reached an NYC model that has `dim_date`, and cost the whole
+# benchmark job to sixteen readiness retries. benchmark/test_templates.py now walks
+# queries + resolve + ready for BOTH datasets against their own templates. Any new DAX belongs in
+# this dict, not in a function body.
+DAX_KEYS = ("resolve", "ready")
 
 SUITE = SUITES[E.dataset()]
 QUERIES = SUITE["queries"]
@@ -388,10 +399,14 @@ def warm_up(conn, model, tries=16, delay=30):
     pre-warming the very control it would later be measured against. dim_calendar is a few thousand
     rows and proves the same thing: the model can reach its OneLake source.
 
+    WHICH dimension is per dataset — `dim_calendar` on aemo, `dim_date` on nyc — and it comes from
+    SUITES rather than a literal here. It was a literal, and on the NYC model it named a table that
+    does not exist, so warm-up burned its full 16x30s and the leg never ran a single query.
+
     The refresh is BEST-EFFORT and its failure is explicitly NOT a readiness signal — a model can be
     perfectly queryable while a refresh against it is rejected. Only the probe decides. Retrying the
     pair as one unit spent 16×30s and then skipped the leg entirely."""
-    probe = 'EVALUATE ROW("n", COUNTROWS(dim_calendar))'
+    probe = SUITE["ready"]
     for i in range(1, tries + 1):
         try:
             _refresh(conn, model, "full")   # (re)frame Direct Lake against the current Delta

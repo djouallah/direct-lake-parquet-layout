@@ -302,3 +302,69 @@ def test_the_aemo_suite_is_what_a_default_import_binds():
 
     assert xc.QUERIES is xc.AEMO_QUERIES
     assert os.environ.get("DATASET") in (None, "", "aemo")
+
+
+def _dax_strings(suite):
+    """EVERY DAX string a run will issue for one dataset — the query suite PLUS the readiness probe
+    and the ladder resolver.
+
+    The last two are the reason this helper exists. They live outside `queries`, so a test that
+    walked only the query list passed while `warm_up` probed `dim_calendar` against a model whose
+    date dimension is `dim_date` — the whole benchmark job spent its sixteen readiness retries and
+    ran no query at all. Nothing about that is visible in the query list."""
+    return ([(name, dax) for _tier, name, dax in suite["queries"]]
+            + [(k, suite[k]) for k in ("resolve", "ready")])
+
+
+def _assert_dax_resolves(bim_path, suite):
+    m = json.loads(_raw(bim_path))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    measures = {x["name"] for t in m["model"]["tables"] for x in t.get("measures", [])}
+    for name, dax in _dax_strings(suite):
+        for tbl, col in re.findall(r"\b(\w+)\[([^\]]+)\]", dax):
+            assert tbl in cols, f"{name}: unknown table {tbl!r}"
+            assert col in cols[tbl], f"{name}: {tbl} has no column {col!r}"
+        # A BARE table argument — `COUNTROWS(dim_calendar)`, `SUMX(fct_trips, ...)` — carries no
+        # brackets, so the pattern above cannot see it. That is not a gap in theory: the readiness
+        # probe is exactly this shape, and it named dim_calendar against a model whose date
+        # dimension is dim_date, which cost a whole benchmark job. The functions listed are the ones
+        # these suites actually use; a new one taking a TABLE argument belongs here.
+        for tbl in re.findall(
+                r"\b(?:COUNTROWS|SUMX|AVERAGEX|COUNTX|MAXX|MINX|ALL|ALLSELECTED"
+                r"|FILTER|DISTINCT)\s*\(\s*([A-Za-z_]\w*)\s*[,)]", dax):
+            assert tbl in cols, f"{name}: unknown table {tbl!r}"
+        # A bare [Name] is either a model measure or an EXTENSION COLUMN the query defined itself:
+        # SUMMARIZECOLUMNS(..., "MWh", [Total MWh]) introduces `[MWh]`, which TOPN then orders by.
+        local = set(re.findall(r'"([^"]+)"', dax))
+        for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
+            assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
+
+
+def test_every_aemo_dax_string_resolves_against_the_aemo_template():
+    """Queries, readiness probe and ladder resolver — all of them, against the AEMO model."""
+    import xmla_compare as xc
+    _assert_dax_resolves(DL, xc.SUITES["aemo"])
+
+
+def test_every_nyc_dax_string_resolves_against_the_nyc_template():
+    """The same, against the NYC model. Reads SUITES directly and sets nothing — see the note on
+    import-time binding in test_the_aemo_suite_is_what_a_default_import_binds."""
+    import xmla_compare as xc
+    _assert_dax_resolves(NYC, xc.SUITES["nyc"])
+
+
+def test_no_dax_hides_outside_the_suite_dict():
+    """A DAX literal in a function body is invisible to the two tests above.
+
+    That is not hypothetical — it is exactly what happened: `warm_up` carried
+    `COUNTROWS(dim_calendar)` inline, the NYC model has `dim_date`, and the benchmark job failed
+    after sixteen readiness retries having issued no measured query. So the rule is that every DAX
+    string lives in SUITES, and this is what enforces it."""
+    import xmla_compare as xc
+    src = pathlib.Path(xc.__file__).read_text(encoding="utf-8")
+    # Everything after the SUITES dict is function bodies. `EVALUATE` there means a DAX literal
+    # that no template test can reach.
+    body = src[src.index("DAX_KEYS = "):]
+    stray = [ln.strip() for ln in body.splitlines()
+             if "EVALUATE" in ln and not ln.strip().startswith("#")]
+    assert not stray, f"DAX outside SUITES, unreachable by the template tests: {stray}"
