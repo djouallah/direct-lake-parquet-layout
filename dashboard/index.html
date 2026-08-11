@@ -204,6 +204,9 @@ details.note p, details.note p.note { margin:.5rem 0 0; max-width:none; }
 .datasets strong.on { background:var(--head); color:var(--fg); border-color:var(--series);
   box-shadow: inset 0 0 0 1px var(--series); }
 .datasets .muted { color:var(--dim); }
+/* Two switches stacked (dataset, then source rows) read as one control block rather than as two
+   paragraphs — the 1.1rem gap between them is sized to separate a switch from the LEDE below it. */
+.datasets + .datasets { margin-top:-.75rem; }
 .tabs { margin:.9rem 0 .5rem; }
 .tabs > input { position:absolute; opacity:0; pointer-events:none; }
 .tab-nav { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .4rem; max-width:62rem; }

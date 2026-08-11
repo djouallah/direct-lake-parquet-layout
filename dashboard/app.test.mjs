@@ -1916,20 +1916,85 @@ test("the excluded runs are NAMED on the page, with their counts", () => {
   assert.ok(row.includes("-1"), `and the delta against current: ${row}`);
 });
 
-test("excluding nearly everything says the newest run is the likely anomaly", () => {
-  // Newest-wins cannot tell "the source changed" from "the newest run is broken". When almost
-  // everything is dropped, the page has to say which reading is more likely.
+test("a small newest run no longer evicts the whole history — biggest wins", () => {
+  // This is the case newest-wins got WRONG and the reason the default moved. A truncated newest run
+  // used to define the generation and drop every good one behind it; the largest generation is the
+  // one with the most data behind it and does not move when a small re-run lands.
   const runs = [
     gen("a-1.json", "duckrun", 143980961, { finishedHoursAgo: 96 }),
     gen("b-2.json", "spark", 143980961, { finishedHoursAgo: 72 }),
     gen("c-3.json", "dwh", 143980961, { finishedHoursAgo: 48 }),
     gen("d-4.json", "duckrun", 7, { finishedHoursAgo: 24 }),          // the newest, and wrong
   ];
+  const { cols, dropped } = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), {});
+  assert.deepEqual(cols.map((c) => c.col).sort(), ["dwh", "duckrun", "spark"].sort());
+  assert.deepEqual(dropped.map((x) => x.rows), [7], "only the odd one out goes");
+});
+
+test("excluding nearly everything says the generation-defining run is the likely anomaly", () => {
+  // The filter cannot tell "the source grew" from "this run double-loaded". When almost everything
+  // is dropped, the page has to say which reading is more likely — and now also that the other
+  // generation is one click away rather than another dispatch away.
+  const runs = [
+    gen("a-1.json", "duckrun", 143980961, { finishedHoursAgo: 96 }),
+    gen("b-2.json", "spark", 143980961, { finishedHoursAgo: 72 }),
+    gen("c-3.json", "dwh", 143980961, { finishedHoursAgo: 48 }),
+    gen("d-4.json", "duckrun", 999999999, { finishedHoursAgo: 24 }),  // the biggest, and wrong
+  ];
   const { cols, html } = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), {});
   assert.deepEqual(cols.map((c) => c.col), ["duckrun"]);
   const text = plain(html);
   assert.ok(text.includes("3 of 4 runs were excluded"), text.slice(0, 200));
-  assert.ok(text.includes("NEWEST run is the anomaly"));
+  assert.ok(text.includes("is the anomaly"), text.slice(0, 400));
+  // ...and the way out is named, because it now exists.
+  assert.ok(text.includes("source rows"), "the switch is offered");
+});
+
+test("the size switch appears only when there IS a choice, and defaults to the biggest", () => {
+  // aemo has ONE row count across all 79 of its runs, so a switch there is a control that cannot do
+  // anything. nyc grew 43.7M -> 592M and has two.
+  const one = [
+    gen("a-1.json", "duckrun", 143980961, { finishedHoursAgo: 72 }),
+    gen("b-2.json", "spark", 143980961, { finishedHoursAgo: 24 }),
+  ];
+  assert.equal(d.sizeLinks(d.sizeCounts(one), 143980961), "", "one generation, no switch");
+
+  const two = [...one, gen("c-3.json", "duckrun", 591729858, { finishedHoursAgo: 12 })];
+  const sizes = d.sizeCounts(two);
+  assert.deepEqual(sizes, [[591729858, 1], [143980961, 2]], "biggest first, with its run count");
+  const html = d.sizeLinks(sizes, 591729858);
+  assert.ok(/<strong class="on"[^>]*>592M/.test(html), `active is the biggest: ${html}`);
+  assert.ok(/<a href="\?rows=143980961">144M/.test(html), `the other is a link: ${html}`);
+  // ...and the whole page lands on the biggest without being asked.
+  const { cols, reference } = d.compose(two, ledger({ OUT: 1.0, SEM: 2.0 }), {});
+  assert.equal(reference, 591729858);
+  assert.deepEqual(cols.map((c) => c.col), ["duckrun"]);
+});
+
+test("?rows= pins a generation, and an unknown one falls back rather than emptying the page", () => {
+  const runs = [
+    gen("a-1.json", "duckrun", 143980961, { finishedHoursAgo: 72 }),
+    gen("b-2.json", "spark", 143980961, { finishedHoursAgo: 48 }),
+    gen("c-3.json", "duckrun", 591729858, { finishedHoursAgo: 12 }),
+  ];
+  const older = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), { rows: 143980961 });
+  assert.equal(older.reference, 143980961);
+  assert.deepEqual(older.cols.map((c) => c.col).sort(), ["duckrun", "spark"]);
+  // A stale link degrades to the default page, never to nothing — same rule as `?dataset=`.
+  const stale = d.compose(runs, ledger({ OUT: 1.0, SEM: 2.0 }), { rows: 12345 });
+  assert.equal(stale.reference, 591729858);
+  assert.equal(d.optsFromSearch("?rows=591729858").rows, 591729858);
+  assert.equal(d.optsFromSearch("?rows=abc").rows, null, "non-numeric is no preference");
+});
+
+test("the size switch carries the other params but NEVER across a dataset hop", () => {
+  const sizes = [[591729858, 4], [43734157, 6]];
+  const html = d.sizeLinks(sizes, 591729858, { dataset: "nyc", ref: "topic" });
+  assert.ok(/rows=43734157&dataset=nyc&ref=topic/.test(html), `carries dataset and ref: ${html}`);
+  // A taxi row count names no aemo generation, so the DATASET switch must not carry `rows` — the
+  // fallback would hide it (the page would render, just not the one the link described).
+  const ds = d.datasetLinks({ aemo: 79, nyc: 10 }, "nyc", { rows: 591729858, ref: "topic" });
+  assert.ok(!/rows=/.test(ds), `dataset links carry no rows: ${ds}`);
 });
 
 test("a pinned record bypasses the generation filter", () => {
@@ -2036,7 +2101,7 @@ test("the dispatch inputs are query params now", () => {
   // `?record=30776174056` is a link to one run's page. It used to be a workflow dispatch.
   assert.deepEqual(d.optsFromSearch("?record=30776174056&ref=topic&table=fct_scada"), {
     repo: d.DEFAULTS.repo, ref: "topic", dataset: "aemo", table: "fct_scada",
-    record: "30776174056",
+    record: "30776174056", rows: null,
   });
   assert.deepEqual(d.optsFromSearch(""), { ...d.DEFAULTS });
 });

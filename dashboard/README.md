@@ -103,13 +103,15 @@ without a build, a token or a dispatch.
 | `?ref=some-branch` | read `history/` from another branch |
 | `?repo=owner/name` | read another fork's records entirely |
 | `?table=fct_scada` | which table leads the layout section |
+| `?rows=43734157` | which source generation — one mart row count. Defaults to the biggest the dataset has |
 
 `?record=` used to be a workflow dispatch input. A link to one run's page is now a link.
 
 ### One dataset per page, always
 
-`?dataset=` is the only one of these with a visible control — a pill switch above the lede, one link
-per dataset with that dataset's record count beside it. Plain anchors, no JavaScript: it works with
+`?dataset=` and `?rows=` are the two with a visible control — pill switches above the lede, one link
+per dataset (or per generation) with its record count beside it. The `?rows=` switch renders **only
+where there is a choice**: aemo has one row count across all 79 of its runs, nyc has two. Plain anchors, no JavaScript: it works with
 scripts off, in print, and in the offline snapshot, which already inlines **both** datasets' records
 (`build.mjs` filters only `index.json`), so a query-param link re-renders the same file against the
 other dataset with no rebuild.
@@ -547,14 +549,19 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   already dropped anything that disagrees. It still fires for every other table. `rows per RG` is
   abbreviated (`13.1M`, `122.9K`) — that number spans four orders of magnitude across these engines
   and the ratio is the finding, not the twelve digits.
-- **THE PAGE SHOWS ONE SOURCE GENERATION, AND THE NEWEST RUN DEFINES IT.** `sameGeneration()` reads
-  the mart's `total_rows` from the latest record and drops every run that disagrees. The columns are
+- **THE PAGE SHOWS ONE SOURCE GENERATION, AND THE READER PICKS WHICH.** `sameGeneration()` keeps one
+  mart `total_rows` and drops every run that disagrees. The columns are
   different dispatches days apart and nothing else made them comparable: change the AEMO archive and
   an engine nobody has rebuilt keeps its column, with its numbers sitting beside engines built from
   different data — in the tables, and inside the chart's own bars.
-  **Newest wins, not the most common value.** Right after a genuine source change the old count is
-  still the majority, which is exactly the case this exists for; a mode would keep the stale
-  generation and drop the new run.
+  **The default is the BIGGEST generation, and `?rows=` overrides it.** It used to be the newest;
+  the newest-wins argument still holds and is not what changed — what changed is that the reader can
+  now choose, so the default stopped having to be the only answer. Biggest is the better landing
+  page: the archive only grows, so it has the most data behind it, and it does not move when someone
+  rebuilds an older slice to ask a question about it. Under newest-wins one small re-run flipped the
+  entire page.
+  **Never the most common value**, under either rule. Right after a genuine source change the old
+  count is still the majority; a mode would keep the stale generation and drop the new run.
   It runs **before `columnsFor`**, which matters twice: `columnsFor` takes the latest run per
   (engine, config), so filtering later would let a stale run hold a column, and `spreadFor` walks the
   whole array for the chart's marks, so filtering the array is what stops a group blending two

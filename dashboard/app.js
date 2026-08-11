@@ -69,6 +69,11 @@ export const DEFAULTS = {
   table: "fct_summary",
   // Render ONE run alone. A substring of the filename, so a run id or a date both work.
   record: "",
+  // WHICH SOURCE GENERATION — one mart row count. `null` is "no preference", which `sameGeneration`
+  // resolves to the BIGGEST the dataset has; `?rows=` pins one. It is null rather than a number
+  // because the answer is per dataset and only knowable from the records — nyc has 43,734,157 and
+  // 591,729,858, aemo has one count across all 79 of its runs and therefore no switch at all.
+  rows: null,
 };
 
 export const SERVER = "https://github.com";
@@ -152,6 +157,56 @@ export function datasetLinks(counts = {}, active = DEFAULTS.dataset, opts = {}) 
     return `<a href="?${qs}">${label}</a>`;
   });
   return `<p class="datasets"><span class="muted">dataset</span>${links.join("")}</p>`;
+}
+
+/**
+ * `591,729,858` -> `592M`, `43,734,157` -> `43.7M`. Row counts are the switch's labels and they are
+ * nine digits long.
+ *
+ * Three significant figures, so the decimal appears only where it distinguishes: a flat `fmt(…, 0)`
+ * printed the taxi pair as `592M` and **`44M`**, and 43.7M is the number every note, commit message
+ * and conversation about that generation uses.
+ */
+function shortRows(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "?";
+  const unit = v >= 1e9 ? [1e9, "B"] : v >= 1e6 ? [1e6, "M"] : v >= 1e3 ? [1e3, "K"] : [1, ""];
+  const s = v / unit[0];
+  return `${fmt(s, s >= 100 || unit[0] === 1 ? 0 : 1)}${unit[1]}`;
+}
+
+/**
+ * The SOURCE GENERATION switch — `592M · 4` / `43.7M · 6`, biggest first, active one marked.
+ *
+ * **Empty when the dataset has fewer than two generations, which is the normal case.** aemo has one
+ * row count across all 79 of its runs, so nothing renders there; nyc grew from 3 months to 41 and
+ * has two. A switch offering one option is a control that cannot do anything.
+ *
+ * `sameGeneration` has always dropped the runs that disagree — this makes the thing it dropped
+ * REACHABLE. Before, seeing the older generation meant pinning one of its runs with `?record=`,
+ * which renders a single column and no comparison; the whole 43.7M experiment became unreadable the
+ * moment one 592M run landed.
+ *
+ * **`rows` is NOT carried across a dataset switch**, exactly as `table` is not: a taxi row count
+ * names no aemo generation, so carrying it would land every dataset hop on a `?rows=` its records
+ * cannot satisfy. `sameGeneration` falls back rather than emptying the page, so the failure is
+ * invisible — which is the reason to not create it here.
+ */
+export function sizeLinks(sizes = [], active = null, opts = {}) {
+  if (!Array.isArray(sizes) || sizes.length < 2) return "";
+  const carry = [];
+  const ds = opts.dataset;
+  if (ds && ds !== DEFAULTS.dataset) carry.push(`dataset=${encodeURIComponent(ds)}`);
+  for (const k of ["repo", "ref", "record"]) {
+    const v = opts[k];
+    if (v && v !== DEFAULTS[k]) carry.push(`${k}=${encodeURIComponent(v)}`);
+  }
+  const links = sizes.map(([rows, n]) => {
+    const label = `${esc(shortRows(rows))} <span class="muted">· ${fmt(n, 0)}</span>`;
+    if (rows === active) return `<strong class="on" aria-current="page">${label}</strong>`;
+    return `<a href="?${[`rows=${rows}`, ...carry].join("&")}">${label}</a>`;
+  });
+  return `<p class="datasets"><span class="muted">source rows</span>${links.join("")}</p>`;
 }
 
 /**
@@ -690,35 +745,64 @@ export function martRows(rec, table = DEFAULTS.table) {
 }
 
 /**
- * ONE SOURCE GENERATION — the newest run defines it, and every run that disagrees is dropped.
+ * How many runs each source GENERATION has, as `[rows, count]` biggest first.
+ *
+ * A generation is one mart row count. Counted AFTER `selectRuns` (so the count beside each link is
+ * how many runs that generation actually renders) and BEFORE `sameGeneration` (so both generations
+ * are visible at all) — a reader deciding whether to click needs to know what is on the other side.
+ *
+ * That differs from `datasetCounts`, which is deliberately pre-completeness-filter, and the reason
+ * is what each answers: a dataset count separates "nothing has ever been measured" from "measured
+ * but not comparable", while both sides of THIS switch are known to hold complete runs.
+ */
+export function sizeCounts(runs, table = DEFAULTS.table) {
+  const seen = new Map();
+  for (const rec of runs || []) {
+    const rows = martRows(rec, table);
+    if (rows === null) continue;
+    seen.set(rows, (seen.get(rows) || 0) + 1);
+  }
+  return [...seen.entries()].sort((a, b) => b[0] - a[0]);
+}
+
+/**
+ * ONE SOURCE GENERATION — every run that disagrees about the mart's row count is dropped.
  *
  * The page's columns are different dispatches, days apart, and NOTHING made them comparable. If the
- * AEMO archive changes, an engine that has not been rebuilt since keeps its column, and its numbers
- * sit beside engines built from different data — in the same table, and inside the chart's bars.
- * The reference is the mart's `total_rows` from the LATEST record, because the source may
- * legitimately change and when it does the newest run is right: everything built before it is a
- * different experiment, not a slower one.
+ * archive changes, an engine that has not been rebuilt since keeps its column, and its numbers sit
+ * beside engines built from different data — in the same table, and inside the chart's bars.
  *
- * **Newest wins, NOT the most common value**, and that is the whole point rather than a shortcut.
- * Right after a genuine source change the old count is still the majority, which is precisely the
- * case this exists to handle — a mode would keep the stale generation and drop the new run.
+ * **THE DEFAULT IS THE BIGGEST GENERATION, and `want` overrides it.** It used to be the NEWEST, on
+ * the argument that a source change makes everything before it a different experiment rather than a
+ * slower one. That argument still holds and is not what changed; what changed is that the reader can
+ * now CHOOSE (`sizeLinks`, `?rows=`), so the default no longer has to be the only answer — and given
+ * a choice, biggest is the better landing page: the archive only grows, so it is the generation with
+ * the most data behind it, and it does not move when someone rebuilds an older slice to answer a
+ * question about it. Newest-wins would flip the whole page to 43.7M rows the moment a single small
+ * re-run landed, which is exactly the surprise the switch exists to remove.
  *
- * The failure mode that buys: **if the newest run is itself the anomaly, it excludes all the good
- * history.** Inherent to newest-wins — a bad run and a real source change look identical from here —
- * and survivable only because it is LOUD (`renderSources` names every excluded run and its count, so
- * "10 of 11 excluded" is unmistakable) and because the next good run reverses it.
+ * **Never the most common value**, under either rule. Right after a genuine source change the old
+ * count is still the majority, so a mode would keep the stale generation and drop the new run.
+ *
+ * The failure mode: **if the biggest generation is itself an anomaly** — a duplicated month, a
+ * doubled load — it becomes the default and excludes the good history. Survivable for the same two
+ * reasons newest-wins was: it is LOUD (`renderSources` names every excluded run and its count, so
+ * "10 of 11 excluded" is unmistakable), and now also because the switch offers the other generation
+ * one click away rather than requiring another dispatch to reverse it.
  *
  * Two things it deliberately does not do. A run with NO recorded count is **kept**: unmeasured is a
  * different claim from different, the same distinction `layoutKey` makes by keying `null` to a bar of
  * its own. And with no reference anywhere it filters **nothing** — a record set where nobody recorded
  * `total_rows` must render whole rather than vanish.
  */
-export function sameGeneration(runs, table = DEFAULTS.table) {
-  let reference = null;
-  // `runs` arrives oldest-first from `selectRuns`, so the last one carrying a count is the newest.
-  for (let i = runs.length - 1; i >= 0 && reference === null; i--) {
-    reference = martRows(runs[i], table);
-  }
+export function sameGeneration(runs, table = DEFAULTS.table, want = null) {
+  const sizes = sizeCounts(runs, table);
+  // An asked-for generation that no run has falls back to the default rather than emptying the page:
+  // this is a reader-supplied URL, and a stale `?rows=` link should degrade to the current page
+  // instead of to nothing. Same rule as `?dataset=`.
+  const reference = (want !== null && sizes.some(([r]) => r === want))
+    ? want
+    : (sizes.length ? sizes[0][0] : null);
   if (reference === null) return { runs, dropped: [], reference: null };
   const kept = [], dropped = [];
   for (const rec of runs) {
@@ -2529,21 +2613,25 @@ export function renderSources(cols, entries, ledger, repo, now = null, gen = {})
         d.rows === null || gen.reference == null ? DASH
           : (d.rows > gen.reference ? "+" : "") + fmt(d.rows - gen.reference, 0),
       ])));
-    out.push(note("**The newest run defines the current source**, and a run whose mart row count " +
-      "disagrees with it was built from different data — a different experiment, not a slower one, " +
+    out.push(note("**The page shows one source generation at a time**, and a run whose mart row " +
+      "count disagrees was built from different data — a different experiment, not a slower one, " +
       "so it is dropped rather than ranked beside the others. It is excluded from the tables, from " +
-      "both charts, and from the means and ranges those charts draw. The current count is " +
-      `**${gen.reference == null ? "—" : fmt(gen.reference, 0)}**. ` +
-      "A run that recorded no count at all is KEPT, because unmeasured is a different claim from " +
+      "both charts, and from the means and ranges those charts draw. The count shown is " +
+      `**${gen.reference == null ? "—" : fmt(gen.reference, 0)}**` +
+      ((gen.sizes || []).length > 1
+        ? ", the largest this dataset has; the **source rows** switch at the top of the page "
+          + "reaches the others."
+        : ".") +
+      " A run that recorded no count at all is KEPT, because unmeasured is a different claim from " +
       "different." +
       // The one reading that would be wrong, stated where it can be seen rather than only in the
-      // docs. Newest-wins cannot distinguish "the source changed" from "the newest run is broken",
-      // and this is the shape that tells you which.
+      // docs. The filter cannot distinguish "the source grew" from "this run double-loaded", and
+      // this is the shape that tells you which.
       (dropped.length > cols.length
         ? ` **Note that ${dropped.length} of ${total} runs were excluded** — when nearly everything ` +
-          "is dropped, the more likely reading is that the NEWEST run is the anomaly rather than " +
-          "that every earlier one is. Check it before trusting this page; the next good run reverses " +
-          "the exclusion on its own."
+          "is dropped, the more likely reading is that the run defining this generation is the " +
+          "anomaly rather than that every other one is. Check it before trusting this page, and " +
+          "use the switch to read the other generation."
         : "")));
   }
   return out.join("\n");
@@ -3533,6 +3621,10 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // The switch renders from the SAME value `compose` filtered on, so the marked link and the
   // content can never disagree about which dataset is on screen.
   const out = [datasetLinks(opts.datasetCounts, dataset, opts),
+    // Under the dataset switch, and only when the dataset HAS two generations. Same rule as above:
+    // it renders from `opts.reference`, the value `sameGeneration` actually filtered on, so a
+    // fallback from a stale `?rows=` marks the link the page really shows.
+    sizeLinks(opts.sizes, opts.reference, opts),
                pageLede(cols, { table: martTable, dataset })];
 
   // EVERY run maps to its column, not just the one the column was named after: the chart's mean is
@@ -3612,7 +3704,7 @@ export function renderPage(cols, runs, ledger, opts = {}) {
 
   out.push(renderSources(cols, anaEntries, ledger, repo, now,
     { dropped: opts.dropped, reference: opts.reference, table: martTable, ref: opts.ref,
-      times, counts }));
+      sizes: opts.sizes, times, counts }));
   // A record that is not a whole generation — a failed run that never benchmarked, a build half
   // that never reported — is skipped, and NAMED HERE with its reason. It used to be only a count in
   // the live status line, which the offline copy does not even have: a page that quietly ignores a
@@ -3758,11 +3850,13 @@ export function compose(records, ledgerDoc, opts = {}) {
   // per (engine, config), so filtering afterwards would let a stale-generation run hold a column; and
   // `spreadFor` walks this whole array to build the chart's bars and ranges, so filtering the array
   // is what stops a mean blending two generations. Both come free from filtering here.
-  const { runs, dropped, reference } = sameGeneration(whole, opts.table || DEFAULTS.table);
+  const martTable = opts.table || DEFAULTS.table;
+  const sizes = sizeCounts(whole, martTable);
+  const { runs, dropped, reference } = sameGeneration(whole, martTable, opts.rows);
   const cols = columnsFor(runs);
   return {
-    html: renderPage(cols, runs, ledger, { ...opts, dropped, reference, skipped }),
-    skipped, cols, dropped,
+    html: renderPage(cols, runs, ledger, { ...opts, dropped, reference, skipped, sizes }),
+    skipped, cols, dropped, sizes, reference,
   };
 }
 
@@ -3828,6 +3922,11 @@ export function optsFromSearch(search) {
     // the table's name. `?table=` still wins, for asking an odd question of another shared table.
     table: p.get("table") || DATASET_TABLE[dataset] || DEFAULTS.table,
     record: p.get("record") || DEFAULTS.record,
+    // `?rows=` pins the SOURCE GENERATION — one mart row count. `null` means "no preference", which
+    // `sameGeneration` reads as its default (the biggest). A non-numeric or unknown value also lands
+    // on the default rather than emptying the page; see `sameGeneration`.
+    rows: /^\d+$/.test((p.get("rows") || "").trim())
+      ? Number((p.get("rows") || "").trim()) : null,
   };
 }
 

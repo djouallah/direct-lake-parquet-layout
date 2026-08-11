@@ -1835,14 +1835,31 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   carrying one fact. When the engines disagree the heading says so and the column returns.
   **For the MART that branch is now unreachable, and the signal MOVED** — see the generation filter
   below. It still fires for every other table, where nothing filters on the count.
-- **THE PAGE SHOWS ONE SOURCE GENERATION, DEFINED BY THE NEWEST RUN.** `sameGeneration()` takes the
-  mart's `total_rows` from the latest record and DROPS every run that disagrees. The columns are
+- **THE PAGE SHOWS ONE SOURCE GENERATION, AND THE READER CAN NOW PICK WHICH.** `sameGeneration()`
+  keeps one mart `total_rows` and DROPS every run that disagrees. The columns are
   different dispatches days apart and nothing else made them comparable: if the AEMO archive changes,
   an engine nobody has rebuilt keeps its column and its numbers sit beside engines built from
   different data, in the tables and inside the chart's own groups.
-  **Newest wins, NOT the most common value**, and that is the point rather than a shortcut — right
-  after a genuine source change the old count is still the majority, which is exactly the case this
-  handles; a mode would keep the stale generation and drop the new run.
+  **THE DEFAULT IS THE BIGGEST GENERATION, NOT THE NEWEST — this REVERSES what this file used to
+  say.** The newest-wins argument (a source change makes everything before it a different experiment
+  rather than a slower one) still holds and is not what changed; what changed is that
+  `sizeLinks`/`?rows=` let the reader CHOOSE, so the default no longer has to be the only answer.
+  Given a choice, biggest is the better landing page: the archive only grows, so it is the generation
+  with the most data behind it, and it does not move when someone rebuilds an older slice to ask a
+  question about it. Under newest-wins a single small re-run flipped the whole page — pinned by
+  `a small newest run no longer evicts the whole history`.
+  **Never the most common value**, under either rule — right after a genuine source change the old
+  count is still the majority, so a mode would keep the stale generation and drop the new run.
+  **THE SWITCH RENDERS ONLY WHERE THERE IS A CHOICE, which today means nyc alone.** aemo has ONE row
+  count across all 79 of its runs; nyc grew 3 months → 41 and has 43,734,157 and 591,729,858. Two
+  entries, biggest first, each with the number of runs it renders — counted AFTER `selectRuns` (so
+  the number is what you get) and BEFORE `sameGeneration` (so both sides are visible at all). That
+  differs from `datasetCounts`, which is deliberately pre-completeness-filter, and the reason is what
+  each answers: a dataset count separates "never measured" from "measured but not comparable", while
+  both sides of this switch are known to hold complete runs.
+  **`rows` is NOT carried across a dataset hop**, exactly as `table` is not — a taxi row count names
+  no aemo generation, and `sameGeneration` falling back rather than emptying the page would make that
+  failure invisible. Pinned by a test on both switches.
   **It runs BEFORE `columnsFor`, and the order is load-bearing twice.** `columnsFor` takes the latest
   run per (engine, config), so filtering after it would let a stale run hold a column; and
   `spreadFor` walks the whole `runs` array for the groups and ranges, so filtering the array is
@@ -1856,10 +1873,13 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   claim from different — the same distinction `layoutKey` makes by keying `null` to its own bar), and
   with no reference anywhere **nothing** is filtered rather than everything vanishing. `?record=`
   bypasses it entirely, because pinning a run means asking for that run.
-  **The failure mode, stated on the page as well as here:** newest-wins cannot tell "the source
-  changed" from "the newest run is broken", so a bad newest run excludes all the good history. That is
-  survivable only because it is loud — the note calls out `N of M runs were excluded` and says the
-  newest is then the likelier anomaly — and because the next good run reverses it on its own.
+  **The failure mode, stated on the page as well as here:** the filter cannot tell "the source grew"
+  from "this run double-loaded", so an anomalously LARGE run becomes the default and excludes all the
+  good history. Survivable for the same reason newest-wins was — the note calls out `N of M runs were
+  excluded` and says the generation-defining run is then the likelier anomaly — and now also because
+  the switch reaches the other generation in one click instead of needing another dispatch. Note the
+  exposure MOVED rather than closed: newest-wins was vulnerable to a small bad run, biggest-wins to a
+  large one.
 - **THE SECONDS GET NO CHART. Do not add one back** — and this is exactly why they are a table ROW
   and nothing more. The page carries ONE chart and its subject is capacity units against query time,
   the measures it leads with and can defend. A second, drawn from billed operation seconds that SUM
