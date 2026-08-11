@@ -166,10 +166,10 @@
     sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
               else env_var('DUCKDB_SORT_BY', 'auto').split(','))
              if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
-    max_row_group_size=(env_var('DUCKDB_ROW_GROUP_SIZE', '16000000') | int
-                        if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
-    target_file_size_mb=(env_var('DUCKDB_FILE_SIZE_MB', '1024') | int
-                         if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
+                        else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
+    target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'
+                         else env_var('DUCKDB_FILE_SIZE_MB', 'auto') | int),
     schema='mart'
 ) }}
 

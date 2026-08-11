@@ -99,10 +99,10 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
     sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
               else env_var('DUCKDB_SORT_BY', 'auto').split(','))
              if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
-    max_row_group_size=(env_var('DUCKDB_ROW_GROUP_SIZE', '16000000') | int
-                        if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
-    target_file_size_mb=(env_var('DUCKDB_FILE_SIZE_MB', '1024') | int
-                         if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
+                        else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
+    target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'
+                         else env_var('DUCKDB_FILE_SIZE_MB', 'auto') | int),
     pre_hook="SET VARIABLE nyc_yellow_paths = (SELECT COALESCE(NULLIF(list('{{ get_parquet_archive_path() }}' || archive_path), []), ['']) FROM (SELECT archive_path FROM {{ ref('stg_parquet_archive_log') }} WHERE source_type = 'yellow'{% if is_incremental() %} AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }}){% endif %} ORDER BY archive_path))"
 ) }}
 

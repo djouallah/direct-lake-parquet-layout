@@ -721,6 +721,10 @@ def _nonbaseline(var, baseline):
     if os.environ.get("DUCKDB_SORTED") != "true":
         return None
     v = (os.environ.get(var) or "").strip()
+    # `auto` is recorded EXPLICITLY, never folded into the baseline: it is a different layout from
+    # any pinned geometry — duckrun's estimator sizes the write rather than the dispatch — so it
+    # must open its own dashboard column instead of joining the column of whatever integer it
+    # happens not to equal.
     return v if v and v != baseline else None
 
 

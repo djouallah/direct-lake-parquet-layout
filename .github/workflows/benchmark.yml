@@ -136,18 +136,13 @@ on:
       # duckrun failing mid-write with the build already paid for. It is not silently substituted:
       # a run that quietly measured a different layout than the form described is the failure this
       # whole field was reshaped to prevent (run 31158671699).
-      # `auto` is duckrun's OWN picker — it profiles the data and chooses the key — and it is the
-      # default because it is the thing worth measuring: an explicit key is a hypothesis about what
-      # the queries need, while auto is what a user gets without one. It costs a profiling pass on
-      # the write, which is a real and expected ETL cost rather than a defect.
-      #
-      # Blank still means NO sort. Anything else is a comma-separated column list, and `plan`
-      # refuses one naming columns the selected dataset's mart does not have — which `auto` is
-      # exempt from, being a mode rather than a key.
+      # These three are IGNORED while `duckrun_auto` is on, which it is by default — duckrun picks
+      # the key and sizes the geometry itself then. They are what a dispatch reaches for to pin a
+      # SPECIFIC layout, which is how every group on the layout chart was filled.
       sort_by:
-        description: "duckrun: sort the mart by — `auto` to let duckrun pick, blank for no sort"
+        description: "duckrun: sort the mart by — blank for no sort (ignored if duckrun auto)"
         type: string
-        default: "auto"
+        default: "date,time,price"
       # 2M, not 16M. 16M was spark `readHeavyForPBI`'s measured segment size (9 x 16.0M on this
       # table) and VertiPaq's ceiling, i.e. the largest segment Direct Lake would take whole. 2M is
       # the other end of that trade: ~72 row groups instead of ~9, so a query that touches a narrow
@@ -192,6 +187,25 @@ on:
       # be a genuinely one-way door on a warehouse that outlived its run; none does.
       dwh_vorder:
         description: "dwh V-Order"
+        type: boolean
+        default: true
+      # DUCKRUN PICKS ITS OWN LAYOUT, and this is ON by default — it is what a user gets without a
+      # hypothesis about their queries, so it is the thing a benchmark should measure first.
+      #
+      # It covers BOTH knobs, by two different mechanisms, and the difference is worth knowing:
+      #   sort      duckrun's `sort_by='auto'` REALLY profiles the staged relation and chooses
+      #             columns (engine.auto_sort_cols), logging what it picked. It can also decide
+      #             nothing pays off and write unsorted.
+      #   geometry  there is NO `auto` for row groups — `_geometry_config` takes positive integers
+      #             or nothing — so "duckrun sizes it" means the config is OMITTED and delta_rs's
+      #             own estimator sizes the write. Same outcome, different route.
+      #
+      # Turning it OFF is what makes `sort_by` / `row_group_size` / `file_size_mb` above take
+      # effect, which is how a specific layout gets pinned and how every group on the layout chart
+      # was filled. The three carry `auto` through the env when it is on, so one spelling means
+      # "duckrun decides" for all of them and no knob can be half-applied.
+      duckrun_auto:
+        description: "duckrun auto — pick the sort and row-group size automatically"
         type: boolean
         default: true
 
@@ -314,10 +328,21 @@ env:
   #
   # `row_group_size` and `sort_by` are free text and are VALIDATED IN `plan`, not here: a typo would
   # otherwise reach duckrun as a string and fail mid-write, after the legs have spent capacity.
-  DUCKDB_SORT_BY: ${{ github.event_name == 'schedule' && 'auto' || inputs.sort_by }}
-  DUCKDB_SORTED: ${{ (github.event_name == 'schedule' && 'auto' || inputs.sort_by) != '' && 'true' || 'false' }}
-  DUCKDB_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
-  DUCKDB_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '1024' || inputs.file_size_mb }}
+  # `auto` on all three when duckrun_auto is on — ONE spelling meaning "duckrun decides", so no
+  # knob can be half-applied. It is a sentinel VALUE rather than an empty string on purpose:
+  # `<cond> && '' || <other>` reads the empty string as FALSY in a GitHub expression and silently
+  # yields <other>, which would apply the pinned geometry to a run that asked for auto.
+  #
+  # `duckrun_auto` defaults true, so on a `schedule` — where the inputs context is EMPTY and
+  # dispatch defaults do NOT apply — the scheduled literal is the auto branch.
+  DUCKDB_SORT_BY: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+    || inputs.sort_by }}
+  DUCKDB_SORTED: ${{ ((github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+    || inputs.sort_by) != '' && 'true' || 'false' }}
+  DUCKDB_ROW_GROUP_SIZE: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+    || inputs.row_group_size }}
+  DUCKDB_FILE_SIZE_MB: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+    || inputs.file_size_mb }}
   BENCH_ENGINES: ${{ github.event_name == 'schedule' && 'duckrun' || inputs.engines }}
   BENCH_RUNS: ${{ github.event_name == 'schedule' && '6' || inputs.runs }}
   BENCH_THINK_SECONDS: ${{ github.event_name == 'schedule' && '4' || inputs.think_seconds }}
@@ -363,7 +388,9 @@ jobs:
           # meant reading the workflow file at that SHA. `_init()` skips an empty value, so a blank
           # `sort_by` (no sort) correctly records no key rather than an empty string. These are the
           # INTENT; `layout.config` is what was measured, and the dashboard groups on that.
-          RUNIN_SORT_BY: ${{ github.event_name == 'schedule' && 'auto' || inputs.sort_by }}
+          RUNIN_DUCKRUN_AUTO: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto)
+            && 'true' || 'false' }}
+          RUNIN_SORT_BY: ${{ github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by }}
           RUNIN_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
           RUNIN_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '1024' || inputs.file_size_mb }}
           RUNIN_SKIP_DOWNLOAD: ${{ github.event_name == 'schedule' && 'true'
@@ -465,8 +492,10 @@ jobs:
       - id: p
         env:
           ENGINES: ${{ github.event_name == 'schedule' && 'duckrun' || inputs.engines }}
-          ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
-          SORT_BY: ${{ github.event_name == 'schedule' && 'auto' || inputs.sort_by }}
+          ROW_GROUP_SIZE: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+            || inputs.row_group_size }}
+          SORT_BY: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+            || inputs.sort_by }}
         run: |
           python3 - >> "$GITHUB_OUTPUT" <<'EOF'
           import json, os, re, sys
@@ -474,8 +503,10 @@ jobs:
           # typo and a leg that dies mid-write with capacity already spent. `plan` is free and runs
           # before every paid job, which is why the check lives here rather than in the model.
           rg = (os.environ.get("ROW_GROUP_SIZE") or "").strip()
-          if not rg.isdigit() or int(rg) < 1:
-              sys.exit(f"row_group_size must be a positive integer, got {rg!r}")
+          # `auto` means duckrun sizes the write (the config is omitted and delta_rs's estimator
+          # decides), so there is no integer to validate.
+          if rg.lower() != "auto" and (not rg.isdigit() or int(rg) < 1):
+              sys.exit(f"row_group_size must be a positive integer or 'auto', got {rg!r}")
           # BLANK IS LEGAL AND MEANS NO SORT — it is the only way to ask for one now that the
           # `sorted` checkbox is gone, so rejecting it here would make an unsorted run undispatchable.
           # Anything NON-blank must be well formed: plain identifiers, comma separated. A name that
