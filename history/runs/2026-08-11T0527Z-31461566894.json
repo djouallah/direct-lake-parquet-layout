@@ -1,0 +1,30 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "false",
+  "build": "false",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "90",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "false",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "run": {
+  "finished": "2026-08-11T05:27:00+00:00",
+  "id": "31461566894",
+  "sha": "f218d971aa607d4112cb5b11d2002ad6623fb754",
+  "started": "2026-08-11T05:25:11+00:00",
+  "url": "https://github.com/djouallah/fabric-dbt-benchmark/actions/runs/31461566894"
+ },
+ "schema": 1
+}
