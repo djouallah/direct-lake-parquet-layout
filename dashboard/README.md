@@ -98,12 +98,38 @@ without a build, a token or a dispatch.
 
 | | |
 |---|---|
+| `?dataset=nyc` | which dataset the page is about — `aemo` (default) or `nyc`. Carries its mart with it |
 | `?record=30776174056` | render one run alone — a substring of the record's filename, so a run id or a date both work |
 | `?ref=some-branch` | read `history/` from another branch |
 | `?repo=owner/name` | read another fork's records entirely |
 | `?table=fct_scada` | which table leads the layout section |
 
 `?record=` used to be a workflow dispatch input. A link to one run's page is now a link.
+
+### One dataset per page, always
+
+`?dataset=` is the only one of these with a visible control — a pill switch above the lede, one link
+per dataset with that dataset's record count beside it. Plain anchors, no JavaScript: it works with
+scripts off, in print, and in the offline snapshot, which already inlines **both** datasets' records
+(`build.mjs` filters only `index.json`), so a query-param link re-renders the same file against the
+other dataset with no rebuild.
+
+**No block ever shows both datasets at once, and that is not a stylistic call.** The marts are
+different tables — `fct_summary` and `fct_trips` — so CU, ms, MB and row counts are not comparable
+across them. The page already refuses this on its own: `benchTotals` sums only the queries **every**
+column carries, and the two suites share no query name, so a merged page would silently produce no
+cold/warm/hot column anywhere. The switch navigates between two complete pages; the contrast between
+datasets is something a reader draws by flipping it.
+
+The **count** beside each name is deliberately taken BEFORE the completeness filter — it answers
+"how many records does this dataset have", not "how many survived". It is also the page's only
+sample-size signal: every other number renders as confidently at n=2 as at n=20.
+
+Three sentences used to hardcode AEMO and were rendered unchanged on a taxi page — the lede's
+archive wording, the input fold's landing item, and the scope caveat under *Analysis*. They read
+from `DATASET_INFO` now. `renderEncodings` was worse: it read one global column list, so the taxi
+encodings table came out EMPTY and the "column names this page cannot resolve" caveat fired to
+explain it — a confident wrong answer about Fabric column mapping. It takes the dataset now.
 
 ## The page
 

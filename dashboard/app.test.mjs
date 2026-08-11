@@ -2636,7 +2636,9 @@ test("with nothing measured twice, every verdict is `no repeat` and the page say
 test("the section states its scope, and the counts are DERIVED", () => {
   // One dataset, one query suite, one capacity — the caveat that qualifies every number under it.
   const text = plain(analysis(render(repeated(), REPEAT)));
-  assert.ok(text.includes("One dataset, one query suite, one capacity"), text.slice(0, 300));
+  // The caveat NAMES the dataset now — it was written when there was one and read as though the
+  // repo had only one, which is exactly what it must not imply with a switch at the top of the page.
+  assert.ok(text.includes("One dataset (AEMO), one query suite, one capacity"), text.slice(0, 300));
   assert.ok(text.includes("3 run(s) across 2 configuration(s) of 2 engine(s)"), text.slice(0, 300));
   // The row count is a fact about the DATA, so it is derived from the records when the caller passes
   // no generation reference — `render()` does not, and the sentence must still be complete.
@@ -3551,4 +3553,108 @@ test("a dot's hover is its whole table row, sort key included", () => {
   assert.ok(!tip.some((l) => l.startsWith("dictionary")), tip.join(" | "));
   // ONE HOVER PER LAYOUT, on the line itself, which is the mark a reader is pointing at.
   assert.equal((d.scatterFit(pts).match(/<title>/g) || []).length, pts.length);
+});
+
+// ------------------------------------------------------------------ the dataset switch
+//
+// `?dataset=` shipped with NO UI, which made the page AEMO-only in practice and filtered the taxi
+// records out in silence — the page said neither thing. These pin the control and, more
+// importantly, the three sentences the switch made reachable: they were written when there was one
+// dataset and hardcoded it, so a taxi reader was shown AEMO prose and an empty encodings table with
+// a confident wrong explanation attached.
+
+test("the switch names every dataset, marks the active one, and counts the records", () => {
+  const html = d.datasetLinks({ aemo: 85, nyc: 7 }, "nyc");
+  const text = plain(html);
+  assert.ok(text.includes("AEMO"), text);
+  assert.ok(text.includes("NYC taxi"), text);
+  // The COUNT is the page's only sample-size signal: every other number renders as confidently at
+  // n=2 as at n=20, so a reader deciding whether to click has to be told what they are clicking to.
+  assert.ok(text.includes("85") && text.includes("7"), text);
+  // Active is not a link, so it cannot be clicked to nowhere, and carries aria-current.
+  assert.ok(/<strong class="on" aria-current="page">/.test(html), html);
+  assert.ok(html.includes('href="?dataset=aemo'), html);
+  assert.ok(!html.includes('href="?dataset=nyc'), html);
+});
+
+test("the switch carries the other params but NEVER the table", () => {
+  const html = d.datasetLinks({ aemo: 1, nyc: 1 }, "aemo",
+    { repo: "o/r", ref: "topic", record: "123", table: "fct_summary" });
+  // `table` is the mart of the dataset being LEFT. Carrying it would point the new page at a table
+  // the other dataset does not have, which resolves to nothing; `optsFromSearch` derives the right
+  // one from `?dataset=` instead. Parsed rather than substring-matched — `href=` ends in `ref=`.
+  assert.deepEqual(linkParams(html), ["dataset", "record", "ref", "repo"]);
+  assert.ok(html.includes("repo=o%2Fr"), html);
+});
+
+/** The query params of the one link in a switcher, parsed — `href=` contains `ref=` as a
+ *  substring, so a naive includes() check passes for the wrong reason. */
+function linkParams(html) {
+  const href = (html.match(/href="\?([^"]*)"/) || [null, ""])[1];
+  return [...new URLSearchParams(href).keys()].sort();
+}
+
+test("the switch omits a param left at its default, so a plain link stays plain", () => {
+  const html = d.datasetLinks({ aemo: 1, nyc: 1 }, "aemo",
+    { repo: d.DEFAULTS.repo, ref: d.DEFAULTS.ref });
+  assert.deepEqual(linkParams(html), ["dataset"]);
+});
+
+test("renderEncodings names THIS dataset's columns, not the module default", () => {
+  // The defect this fixes: it read the module-level MART_COLUMNS (aemo's), so on a taxi page no
+  // column matched, the table came out empty, and every layout fell into the `unnamed` branch —
+  // whose message blames Fabric column mapping. A wrong explanation is worse than none.
+  const enc = (cols) => Object.fromEntries(cols.map((c) => [c, { encodings: ["PLAIN"], type: "X" }]));
+  const groups = [["k", [{ rec: { engine: "duckrun",
+    layout: { encodings: { duckrun: enc(["fare_amount", "PULocationID", "store_and_fwd_flag"]) },
+      stats: { duckrun: { fct_trips: { num_files: 1, num_row_groups: 1 } } } } } }]]];
+  const html = d.renderEncodings(groups, "fct_trips", "nyc");
+  const text = plain(html);
+  assert.ok(text.includes("fare_amount"), text.slice(0, 400));
+  assert.ok(text.includes("PULocationID"), text.slice(0, 400));
+  assert.ok(!/cannot resolve/.test(text), "the column-mapping caveat must not fire on a name list mismatch");
+});
+
+test("each dataset's page carries its OWN archive wording and landing item", () => {
+  const mk = (file, dataset) => {
+    const r = full(file, "duckrun");
+    r.inputs = { ...(r.inputs || {}), dataset };
+    r.layout = { ...(r.layout || {}),
+      landing: { item: dataset === "nyc" ? "dbt_nyc_landing" : "dbt_landing",
+        files: 10, size_mb: 5000, folders: { x: { files: 10, size_mb: 5000 } } } };
+    return r;
+  };
+  const recs = [mk("a.json", "aemo"), mk("b.json", "nyc")];
+  const aemo = d.compose(recs, {}, { dataset: "aemo" }).html;
+  const nyc = d.compose(recs, {}, { dataset: "nyc", table: "fct_trips" }).html;
+
+  assert.ok(aemo.includes("raw AEMO CSV"), "aemo lede");
+  assert.ok(!aemo.includes("raw TLC parquet"), "aemo must not claim parquet");
+  assert.ok(nyc.includes("raw TLC parquet"), "nyc lede");
+  assert.ok(!nyc.includes("raw AEMO CSV"), "nyc must not claim AEMO CSV");
+
+  assert.ok(aemo.includes("dbt_landing/Files") && !aemo.includes("dbt_nyc_landing/Files"));
+  assert.ok(nyc.includes("dbt_nyc_landing/Files"));
+});
+
+test("compose counts records BEFORE the completeness filter", () => {
+  // The count answers "how many does this dataset have", not "how many survived" — a dataset whose
+  // records are all incomplete must still show a non-zero count, or the switch reads as though
+  // nothing was ever dispatched against it.
+  const bare = { _file: "z.json", engine: "duckrun", inputs: { dataset: "nyc" },
+    run: { id: "z", started: "2026-08-11T00:00:00Z" } };
+  const html = d.compose([full("a.json", "duckrun"), bare], {}, { dataset: "aemo" }).html;
+  assert.ok(plain(html).includes("NYC taxi"), "the other dataset is still offered");
+  assert.ok(/NYC taxi[^0-9]*1/.test(plain(html)), plain(html).slice(0, 200));
+});
+
+test("a dataset with records but none complete says so, not 'never measured'", () => {
+  // Reachable in ONE CLICK now. The two states look identical to a reader and mean opposite things.
+  const bare = { _file: "z.json", engine: "duckrun", inputs: { dataset: "nyc" },
+    run: { id: "z", started: "2026-08-11T00:00:00Z" } };
+  const text = plain(d.compose([bare], {}, { dataset: "nyc", table: "fct_trips" }).html);
+  assert.ok(text.includes("No complete `nyc` runs yet"), text.slice(0, 300));
+  assert.ok(!text.includes("No run records in `history/runs/`"), "that claim is false here");
+  // ...and the genuinely empty repo keeps the original message.
+  assert.ok(plain(d.compose([], {}, {}).html).includes("No run records in `history/runs/`"));
 });

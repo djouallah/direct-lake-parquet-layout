@@ -190,6 +190,20 @@ details.note p, details.note p.note { margin:.5rem 0 0; max-width:none; }
    browser with scripts disabled behave identically. Every panel stays in the DOM (tests and
    ctrl-F see everything); only display toggles. The nth-of-type rules below pair input k with
    panel k and label k, enumerated to 12 — `renderLayouts` falls back to stacked blocks past that. */
+/* The dataset switch. Pills, matching `.tab-nav` exactly, because it IS the same kind of control —
+   pick one of N — and the only reason it is links rather than the CSS-only tab strip is that the two
+   datasets are separate PAGES: nothing on this page may show both at once, and a tab strip would
+   have to render both bodies into one DOM. Anchors also survive scripts-off, print and the offline
+   snapshot without a line of JS. */
+.datasets { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center;
+  margin:0 0 1.1rem; max-width:62rem; font-size:.8rem; }
+.datasets a, .datasets strong { padding:.26rem .8rem; border:1px solid var(--line);
+  border-radius:999px; font-size:.8rem; text-decoration:none; color:var(--dim); font-weight:400;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.datasets a:hover { color:var(--fg); border-color:var(--dim); }
+.datasets strong.on { background:var(--head); color:var(--fg); border-color:var(--series);
+  box-shadow: inset 0 0 0 1px var(--series); }
+.datasets .muted { color:var(--dim); }
 .tabs { margin:.9rem 0 .5rem; }
 .tabs > input { position:absolute; opacity:0; pointer-events:none; }
 .tab-nav { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .4rem; max-width:62rem; }

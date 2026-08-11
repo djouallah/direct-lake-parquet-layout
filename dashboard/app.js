@@ -78,6 +78,27 @@ export const SERVER = "https://github.com";
 // of one of the other shared tables.
 export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips" };
 
+/**
+ * The per-dataset facts the PROSE needs, kept beside `DATASET_TABLE` rather than in a registry of
+ * their own — there is one dataset dimension on this page and it should have one home.
+ *
+ * These exist because three sentences were written when there was one dataset and hardcoded it:
+ * the lede called the archive "raw AEMO CSV" (taxi is parquet), the input fold named
+ * `dbt_landing/Files` (taxi lands in `dbt_nyc_landing`), and both were rendered, unchanged, on a
+ * `?dataset=nyc` page. A wrong sentence is worse than a missing one, because nothing about it looks
+ * wrong.
+ *
+ * `label` is what a reader calls the dataset, NOT the key — `nyc` is a directory name.
+ */
+export const DATASET_INFO = {
+  aemo: { label: "AEMO", archive: "raw AEMO CSV", landing: "dbt_landing" },
+  nyc: { label: "NYC taxi", archive: "raw TLC parquet", landing: "dbt_nyc_landing" },
+};
+
+export function datasetInfo(dataset) {
+  return DATASET_INFO[dataset] || DATASET_INFO[DEFAULTS.dataset];
+}
+
 // The encodings block names columns explicitly rather than reading Object.keys, so it needs the
 // mart's column list per dataset. `cutoff` is aemo-only and derived; `file` is on both marts but is
 // the incremental key rather than data, so neither is worth a column on a page about encodings.
@@ -92,6 +113,46 @@ export const DATASET_MART_COLUMNS = {
         "payment_type", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount",
         "improvement_surcharge", "total_amount", "pickup_date", "file"],
 };
+
+/**
+ * The dataset switch: one link per dataset, the active one marked.
+ *
+ * PLAIN ANCHORS, no JavaScript state. Every other knob on this page is a query param
+ * (`?record=`, `?ref=`, `?repo=`, `?table=`) and the render path is a pure string function, so a
+ * link is the only control that keeps both properties — it works with scripts off, it survives
+ * ctrl-F and print, and it works unchanged in the OFFLINE snapshot, which already inlines both
+ * datasets' records (`build.mjs` filters only `index.json`).
+ *
+ * It exists because `?dataset=` shipped with no UI at all, which made the page AEMO-only in
+ * practice and filtered the taxi records out in silence. Nothing on the page said either thing.
+ *
+ * The COUNT beside each name is the number of records that dataset has BEFORE `selectRuns` drops
+ * incomplete ones — a reader landing on a dataset with seven records should be told that is all
+ * there is, because every other number on the page is presented with the same confidence at n=2 as
+ * at n=20. It is the only sample-size signal this page has.
+ *
+ * `table` is deliberately NOT carried across: it is the mart of the dataset being left, and
+ * `optsFromSearch` derives the right one from `?dataset=`. Carrying it would point the new page at
+ * the other dataset's table, which resolves to nothing.
+ */
+export function datasetLinks(counts = {}, active = DEFAULTS.dataset, opts = {}) {
+  const names = Object.keys(DATASET_TABLE);
+  if (names.length < 2) return "";
+  const carry = [];
+  for (const k of ["repo", "ref", "record"]) {
+    const v = opts[k];
+    if (v && v !== DEFAULTS[k]) carry.push(`${k}=${encodeURIComponent(v)}`);
+  }
+  const links = names.map((ds) => {
+    const info = datasetInfo(ds);
+    const n = counts[ds];
+    const label = esc(info.label) + (Number.isFinite(n) ? ` <span class="muted">· ${fmt(n, 0)}</span>` : "");
+    if (ds === active) return `<strong class="on" aria-current="page">${label}</strong>`;
+    const qs = [`dataset=${encodeURIComponent(ds)}`, ...carry].join("&");
+    return `<a href="?${qs}">${label}</a>`;
+  });
+  return `<p class="datasets"><span class="muted">dataset</span>${links.join("")}</p>`;
+}
 
 /**
  * Which dataset a record describes.
@@ -2420,7 +2481,8 @@ export function landingBlocks(cols) {
     .filter(([, d]) => Object.keys(d).length);
 }
 
-export function renderInput(cols) {
+export function renderInput(cols, dataset = DEFAULTS.dataset) {
+  const info = datasetInfo(dataset);
   const have = landingBlocks(cols);
   if (!have.length) return "";
   const latest = have[have.length - 1][1];
@@ -2441,10 +2503,10 @@ export function renderInput(cols) {
           `amounts of work.`)
       : "",
     fold("what this table is",
-      "The landed AEMO archive `stats.py` listed in `dbt_landing/Files` — **one copy, read by " +
-      "every engine**, so this is not per column. Every other number on this page is about what came " +
-      "OUT; this is what went in, and it is what makes a duration or a CU total mean anything. It " +
-      "moves only when a dispatch runs with `skip_download` off."),
+      `The landed ${info.label} archive \`stats.py\` listed in \`${info.landing}/Files\` — ` +
+      "**one copy, read by every engine**, so this is not per column. Every other number on this " +
+      "page is about what came OUT; this is what went in, and it is what makes a duration or a CU " +
+      "total mean anything. It moves only when a dispatch runs with `skip_download` off."),
   ].filter(Boolean).join("\n");
 }
 
@@ -2521,7 +2583,8 @@ export function renderInput(cols) {
  */
 export const MART_COLUMNS = DATASET_MART_COLUMNS.aemo;
 
-export function renderEncodings(groups, martTable = DEFAULTS.table) {
+export function renderEncodings(groups, martTable = DEFAULTS.table,
+                                dataset = DEFAULTS.dataset) {
   const cols = [];
   for (const [, members] of groups || []) {
     let enc = null;
@@ -2541,9 +2604,13 @@ export function renderEncodings(groups, martTable = DEFAULTS.table) {
   // Truncated in the MIDDLE, never the tail: a layout's name ends in its row-group count, which is
   // what tells two bars sharing a label apart.
   const short = (n) => n.length <= 34 ? n : `${n.slice(0, 17)}…${n.slice(-15)}`;
-  // ONLY a column this page can name. Declared order, not `Object.keys()` — see MART_COLUMNS.
-  const known = new Set(MART_COLUMNS);
-  const names = MART_COLUMNS.filter((n) => cols.some((c) => c.enc[n]));
+  // ONLY a column this page can name, and PER DATASET — `fct_summary` and `fct_trips` share no
+  // column name, so reading one global list rendered an empty table on the other dataset's page and
+  // then explained it with the column-mapping caveat below, which is a different failure entirely.
+  // Declared order, not `Object.keys()` — see DATASET_MART_COLUMNS.
+  const listed = DATASET_MART_COLUMNS[dataset] || MART_COLUMNS;
+  const known = new Set(listed);
+  const names = listed.filter((n) => cols.some((c) => c.enc[n]));
   // A layout whose footer named NOTHING we recognise contributed only physical names — a
   // column-mapped table read by a duckrun older than 0.4.47, which resolves them. Say which one,
   // because dropping the rows silently would leave that engine as a column of dashes and an
@@ -3062,10 +3129,16 @@ export function renderAnalysis(cols, entries, groups, times, ctx = {}) {
     scope.push(dates[0] === dates[dates.length - 1] ? `on ${dates[0]}`
       : `between ${dates[0]} and ${dates[dates.length - 1]}`);
   }
-  out.push(note("**One dataset, one query suite, one capacity.** Everything below describes this " +
-    `project and nothing wider — ${scope.join(", ")}, on a single Fabric capacity. A different data ` +
-    "shape, cardinality or query mix could reorder every row here, and none of it has been tried on " +
-    "a second workload. Read these as findings about this benchmark, not about the engines."));
+  // NAMES the dataset. The sentence was written when there was one and read as though the repo had
+  // only one — which is now exactly what it must not imply, since the other is one click away and
+  // was added precisely because a second workload can reorder these rows. The claim itself is
+  // unchanged and still true PER PAGE: one dataset, one suite, one capacity.
+  const dsLabel = datasetInfo(ctx.dataset || DEFAULTS.dataset).label;
+  out.push(note(`**One dataset (${esc(dsLabel)}), one query suite, one capacity.** Everything ` +
+    `below describes this project and nothing wider — ${scope.join(", ")}, on a single Fabric ` +
+    "capacity. A different data shape, cardinality or query mix could reorder every row here — " +
+    "the dataset switch at the top of the page is the other workload, and it is a separate page " +
+    "for that reason. Read these as findings about this benchmark, not about the engines."));
 
   const floorBits = MEASURES.filter((m) => floors[m])
     .map((m) => `${m === "etl" || m === "analytics" ? `${m} CU` : m} ${fmt(floors[m].rel * 100, 1)}%`);
@@ -3248,7 +3321,7 @@ export function pageLede(cols, opts = {}) {
   const gb = Number(land.size_mb) / 1000;
   const files = Number(land.files);
   const input = Number.isFinite(gb) && gb > 0
-    ? `**${fmt(gb, 0)} GB** of raw AEMO CSV` +
+    ? `**${fmt(gb, 0)} GB** of ${datasetInfo(opts.dataset || DEFAULTS.dataset).archive}` +
       (Number.isFinite(files) && files > 0 ? ` (**${fmt(files, 0)} files**)` : "")
     : "";
 
@@ -3317,7 +3390,11 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // of furniture between the reader and the first table. The `<h3>` sections now hang off that
   // `<h1>`, which skips a heading level; the alternative is promoting eight `<h3>`s to `<h2>` to
   // reinstate a level nothing needs.
-  const out = [pageLede(cols, { table: martTable })];
+  const dataset = opts.dataset || DEFAULTS.dataset;
+  // The switch renders from the SAME value `compose` filtered on, so the marked link and the
+  // content can never disagree about which dataset is on screen.
+  const out = [datasetLinks(opts.datasetCounts, dataset, opts),
+               pageLede(cols, { table: martTable, dataset })];
 
   // EVERY run maps to its column, not just the one the column was named after: the chart's mean is
   // over an engine's whole history at that configuration, and matching on the chosen record's filename
@@ -3386,12 +3463,12 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   out.push(renderLayouts(cols, groups, times, counts, martTable));
   // Straight after the SHAPE of the parquet: this is the other half of what was written, and the
   // half that shape could not explain.
-  out.push(renderEncodings(groups, martTable));
+  out.push(renderEncodings(groups, martTable, dataset));
 
   // WHAT WENT IN, then the per-run table, then the prose. Every TABLE the page has comes before every
   // paragraph about them: a reader arrives for the numbers, and `About these numbers` sat between the
   // layout tables and the run table pushing the last one below a screen of methodology.
-  out.push(renderInput(cols));
+  out.push(renderInput(cols, dataset));
 
   out.push(renderSources(cols, anaEntries, ledger, repo, now,
     { dropped: opts.dropped, reference: opts.reference, table: martTable, ref: opts.ref,
@@ -3423,7 +3500,7 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // reader has seen what they are verdicts ON. It sits ABOVE the methodology because it carries
   // tables, and every table on this page comes before every paragraph.
   out.push(renderAnalysis(cols, anaEntries, groups, times,
-    { runs, ledger, keyOf, table: martTable, counts, reference: opts.reference }));
+    { runs, ledger, keyOf, table: martTable, counts, reference: opts.reference, dataset }));
   // FOOTNOTES, LAST — after every chart and every table. This block explains the measure rather than
   // reporting one, so it belongs where a reader goes looking for it rather than in the middle of the
   // page they came for.
@@ -3469,7 +3546,23 @@ export function renderPage(cols, runs, ledger, opts = {}) {
  * dashboard's only failure mode that is not a network one, and it is always the same: nothing has been
  * measured yet.
  */
-export function renderEmpty(repo = DEFAULTS.repo) {
+export function renderEmpty(repo = DEFAULTS.repo, dataset = null, held = 0) {
+  // TWO DIFFERENT EMPTY STATES, and conflating them was reachable in one click once the dataset
+  // switch existed: "this repo has never been measured" and "this DATASET has records but none of
+  // them is complete" look identical to a reader and mean opposite things. `held` is the count
+  // BEFORE the completeness filter, so it distinguishes them.
+  if (dataset && held) {
+    // The dataset HAS records; none survived the completeness filter. Saying "no run records in
+    // history/runs/" here would be flatly false, and it is the sentence a reader would act on.
+    return [
+      "<h2>Capacity units</h2>",
+      para(`**No complete \`${esc(dataset)}\` runs yet.** The dataset has **${fmt(held, 0)}** ` +
+        "record(s), but a run has to have both BUILT and been BENCHMARKED to appear here, and none " +
+        "of those has. Switch datasets above, or dispatch a run that does both."),
+      para(`Dispatch **Benchmark** ([${repo}](${SERVER}/${repo}/actions)) with ` +
+        `\`dataset=${esc(dataset)}\`, leaving both \`build\` and \`benchmark\` ticked.`),
+    ].join("\n");
+  }
   return [
     "<h2>Capacity units</h2>",
     para("**No run records in `history/runs/`.** This page renders what a run filed and what the " +
@@ -3489,8 +3582,23 @@ export function renderEmpty(repo = DEFAULTS.repo) {
  */
 export function compose(records, ledgerDoc, opts = {}) {
   const ledger = normaliseLedger(ledgerDoc);
-  const { runs: whole, skipped } = selectRuns(records, opts.dataset || DEFAULTS.dataset);
-  if (!whole.length) return { html: renderEmpty(opts.repo || DEFAULTS.repo), skipped, cols: [] };
+  const dataset = opts.dataset || DEFAULTS.dataset;
+  // BEFORE `selectRuns`, on purpose: the switch reports how many records a dataset HAS, not how
+  // many survived the completeness filter. A reader deciding whether to click needs the first.
+  const datasetCounts = {};
+  for (const ds of Object.keys(DATASET_TABLE)) datasetCounts[ds] = 0;
+  for (const rec of records || []) {
+    if (!rec) continue;
+    const ds = datasetOf(rec);
+    if (ds in datasetCounts) datasetCounts[ds] += 1;
+  }
+  opts = { ...opts, dataset, datasetCounts };
+  const { runs: whole, skipped } = selectRuns(records, dataset);
+  if (!whole.length) {
+    return { html: datasetLinks(datasetCounts, dataset, opts)
+      + renderEmpty(opts.repo || DEFAULTS.repo, dataset, datasetCounts[dataset] || 0),
+      skipped, cols: [] };
+  }
   const pick = (opts.record || "").trim();
   if (pick) {
     // Pinning a run means asking for THAT run, so the generation filter does not apply — the whole
