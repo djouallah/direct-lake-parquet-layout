@@ -1723,9 +1723,20 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   neither measured. `sortLabelOf` PRINTS, prefers the DECLARED key, and falls back to the bare word
   **`auto`** rather than the resolved list: the list is duckrun's answer, not the dispatch's
   question, and four columns across a cell whose neighbours read `V-Order` and `—` is the whole
-  column width spent on something nobody asked for. `sortLabels` then drops `auto` from a group that
-  also holds a named key — they share a row *because* they resolved to the same columns, so the name
-  already describes both, which is why the aemo rows are unchanged by any of this.
+  column width spent on something nobody asked for.
+  **AN `auto` RUN GETS ITS OWN LAYOUT ROW, and this is the ONE place `layoutKey` separates two runs
+  whose parquet matches.** `sortElement` prefixes the resolved columns with `auto:`, so the picker's
+  runs never merge into a hand-dispatched row that resolved the same way. The reason is that
+  comparing them IS the question: on aemo the picker answers `date,time`, which five dispatches also
+  declared by hand, so a merged row averaged the picker's three runs into theirs and neither `auto`
+  nor its cost was readable anywhere on the page. Split, aemo reads
+  `auto · 5.8–7.6M · 777–778 MB · 3` beside `date, time · 6.0M · 778–779 MB · 5` — which is the
+  finding (the picker matches the hand key on that mart) stated as two rows instead of hidden in one.
+  Two weaker versions were tried first and both failed the same way, by making that question
+  unanswerable: dropping `auto` where a declared key existed hid the picker's aemo runs completely,
+  and printing `auto / date, time` put two spellings in one cell above numbers that were their mean.
+  The resolved columns stay IN the key — `auto:` is a PREFIX, never a replacement — because the
+  picker answers per dataset and two auto runs that resolved differently must not merge.
   **Build CU stays keyed per COLUMN** — `Cost by engine` — because there the writer and the
   compute it was given are the entire subject.
   What forced the layout keying: duckrun at 64 cores and at 32 wrote 4 files and 27 row groups either

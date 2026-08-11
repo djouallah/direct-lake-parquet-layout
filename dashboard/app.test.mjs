@@ -526,13 +526,17 @@ test("an `auto` run PRINTS `auto` and is still GROUPED by the columns it resolve
   assert.equal(d.layoutGroups([{ rec: a }, { rec: b }]).length, 2,
     "two resolutions, two bars — the label is not the key");
 
-  // A group holding BOTH spellings prints BOTH. Suppressing `auto` where a declared key exists was
-  // tried and reverted: aemo's three auto runs all resolve to `date,time`, which five hand-dispatched
-  // runs also declared, so every aemo row read `date, time` and the page could not say the picker
-  // had ever run on that dataset at all.
-  const mixed = [{ rec: auto }, { rec: sortedBy(4, 25, ["date", "time"]) }];
-  assert.equal(d.keyCells(mixed).ordering, "auto / date, time");
-  assert.equal(d.layoutLabel(mixed), "by auto / date, time · 25 RG");
+  // AN AUTO RUN GETS ITS OWN ROW even when a hand-dispatched run resolved to the same columns —
+  // the one place `layoutKey` separates two runs whose parquet matches, because comparing them IS
+  // the question. Live on aemo: the picker answers `date,time`, which five dispatches also declared
+  // by hand. Merged, the picker's three runs were averaged into the hand key's row and neither
+  // "auto" nor its cost was readable; two spellings in one cell (`auto / date, time`) was the same
+  // defect wearing a label. Split, they sit side by side with their own geometry, MB and CU.
+  const hand = sortedBy(4, 25, ["date", "time"], { file: "h.json" });
+  assert.notEqual(JSON.stringify(d.layoutKey(auto)), JSON.stringify(d.layoutKey(hand)));
+  const two = d.layoutGroups([{ rec: auto }, { rec: hand }]);
+  assert.equal(two.length, 2, "one auto row, one declared row");
+  assert.deepEqual(two.map(([, ms]) => d.keyCells(ms).ordering).sort(), ["auto", "date, time"]);
 });
 
 test("the caption says which columns a sorted bar is ordered by, row groups only", () => {

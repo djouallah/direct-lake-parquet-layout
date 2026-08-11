@@ -858,7 +858,29 @@ export function sameGeneration(runs, table = DEFAULTS.table, want = null) {
 export function layoutKey(rec, table = DEFAULTS.table) {
   const d = martStats(rec, table);
   if (d.num_row_groups === undefined || d.num_row_groups === null) return null;
-  return [vorderOf(rec, table), layoutBand(d.num_row_groups), sortKeyOf(rec, table), rec.engine];
+  return [vorderOf(rec, table), layoutBand(d.num_row_groups), sortElement(rec, table), rec.engine];
+}
+
+/**
+ * The sort element of `layoutKey` — the resolved columns, and separately whether the PICKER chose
+ * them.
+ *
+ * **An `auto` run gets its own row even when a hand-dispatched run resolved to the same columns**,
+ * which is the one place this key deliberately separates two runs whose parquet matches. The reason
+ * is that comparing them IS the question: on aemo the picker answers `date,time`, which five
+ * dispatches also declared by hand, so merging them averaged the picker's three runs into the hand
+ * key's row and there was no way to read what auto had cost or saved. The two rows now sit next to
+ * each other with their own measured geometry, MB and CU, which is the comparison — and if they
+ * really are identical, two rows reading the same numbers says that far better than one row can.
+ *
+ * The resolved columns stay IN the key, so this is not "auto is one bucket": duckrun's picker
+ * answers per dataset (`pickup_date, VendorID, …` on taxi against `date, time` on aemo), and two
+ * auto runs that resolved differently must not merge. `auto:` is a prefix on the columns, never a
+ * replacement for them.
+ */
+function sortElement(rec, table = DEFAULTS.table) {
+  const key = sortKeyOf(rec, table);
+  return sortLabelOf(rec, table) === "auto" ? `auto:${key}` : key;
 }
 
 /**
@@ -974,19 +996,19 @@ export function sortKeyOf(rec, table = DEFAULTS.table) {
  * picker also ran — the declaration is what the dispatcher chose.
  */
 /**
- * The sort labels to PRINT for a group — every distinct spelling its members used, `auto` included.
+ * The sort labels to PRINT for a group — every distinct spelling its members used.
  *
- * **`auto` IS NOT DROPPED FROM A MIXED GROUP, and that was tried the other way for one commit.** A
- * group's members all wrote the same resolved key (that key is the grouping element), so when one
- * run declared `date,time` and another asked for `auto` and the picker answered `date,time`, the
- * named label does describe both — and on that reasoning `auto` was suppressed wherever a declared
- * key existed. What that cost: **aemo's three auto runs became invisible.** They all resolve to
- * `date,time`, which five hand-dispatched runs also declared, so every aemo row read `date, time`
- * and the page could not say the picker had ever run on that dataset. A reader asking "what does
- * duckrun choose on aemo?" got no answer from a page that had measured it three times.
+ * **Normally exactly one**, because `sortElement` puts the auto/declared distinction IN
+ * `layoutKey`: an auto run and a hand-dispatched run that resolved to the same columns are two
+ * groups, so neither the `auto / date, time` cell nor a suppressed `auto` can arise. The join
+ * survives only for the unmeasured-layout fallback, which groups by COLUMN and can genuinely hold
+ * several keys.
  *
- * So a mixed group prints `auto / date, time`, using the `/` this function already joins several
- * values with. It says what it is: these runs wrote one layout, and they were dispatched two ways.
+ * Two things were tried before the key was split, both wrong in the same direction — they made the
+ * page unable to answer "what does duckrun's picker choose, and what does it cost?". Suppressing
+ * `auto` wherever a declared key existed hid aemo's three picker runs entirely, since they all
+ * resolve to `date,time` and five dispatches declared exactly that. Printing both put two spellings
+ * in one cell over a row whose numbers were the two averaged together.
  */
 function sortLabels(members, table) {
   return [...new Set((members || []).map(({ rec }) => sortLabelOf(rec, table))

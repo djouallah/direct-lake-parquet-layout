@@ -421,8 +421,12 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   not merge. `sortLabelOf` prints, and an `auto` run's cell reads just **`auto`**: the resolved list
   is duckrun's answer rather than the dispatch's question, and on the taxi mart it is four columns
   wide (`pickup_date, VendorID, store_and_fwd_flag, payment_type`) in a cell whose neighbours read
-  `V-Order` and `—`. `sortLabels` drops `auto` from a group that also holds a declared key, since
-  sharing a row means they resolved to the same columns and the name covers both.
+  `V-Order` and `—`.
+  **An `auto` run also gets its own ROW** — `sortElement` prefixes the key with `auto:`, the one
+  place `layoutKey` separates two runs whose parquet matches. Comparing the picker against a hand key
+  is the question, and on aemo they resolve identically (`date,time`), so merging them averaged the
+  picker's runs into the hand row and left neither readable. Split, aemo prints
+  `auto · 5.8–7.6M · 777–778 MB · 3` beside `date, time · 6.0M · 778–779 MB · 5`.
   **It groups RUNS, not columns, and that distinction is load-bearing.** A column is
   `(engine, config)`, so two of its runs can write different parquet — `duckrun·64c+sorted` wrote
   3 files / 26 row groups under an explicit `sort_by=['date','time','DUID']` and 4 files / 25 under
