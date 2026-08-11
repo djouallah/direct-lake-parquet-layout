@@ -101,17 +101,6 @@ daily_summary AS (
   GROUP BY ALL
 )
 
--- NO TRAILING `ORDER BY` — and its removal is the fairness invariant being satisfied, not
--- broken. The rule was always "all three trees or none": the sort reaches no stored table on any
--- engine (this SQL is a merge SOURCE everywhere), so its only real effect was cost, and having it
--- on two legs and not the third meant two legs paying for nothing in a benchmark that compares
--- their cost. Parity by deletion was always the other way to satisfy it.
---
--- What tipped it: `sort_by` now defaults to `auto`, so duckrun PROFILES the data and picks the
--- write's sort key. A trailing ORDER BY in the model source is exactly the confound that makes
--- such a measurement unreadable — the layout would owe something to the model text and something
--- to the picker, with no way to say which. Deleting it from all three keeps the legs equal AND
--- leaves the write as the only thing that orders anything.
 SELECT
   date,
   time,
@@ -125,3 +114,4 @@ SELECT
     COALESCE((SELECT MAX(CAST(SETTLEMENTDATE AS TIMESTAMP)) FROM {{ ref('fct_scada_today') }}), CAST('1900-01-01' AS TIMESTAMP))
   ) AS cutoff
 FROM daily_summary
+ORDER BY date

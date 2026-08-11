@@ -132,17 +132,6 @@ daily_summary AS (
   GROUP BY s.[DATE], DATEPART(HOUR, s.SETTLEMENTDATE) * 100 + DATEPART(MINUTE, s.SETTLEMENTDATE), s.DUID
 )
 
--- NO TRAILING `ORDER BY` — and its removal is the fairness invariant being satisfied, not
--- broken. The rule was always "all three trees or none": the sort reaches no stored table on any
--- engine (this SQL is a merge SOURCE everywhere), so its only real effect was cost, and having it
--- on two legs and not the third meant two legs paying for nothing in a benchmark that compares
--- their cost. Parity by deletion was always the other way to satisfy it.
---
--- What tipped it: `sort_by` now defaults to `auto`, so duckrun PROFILES the data and picks the
--- write's sort key. A trailing ORDER BY in the model source is exactly the confound that makes
--- such a measurement unreadable — the layout would owe something to the model text and something
--- to the picker, with no way to say which. Deleting it from all three keeps the legs equal AND
--- leaves the write as the only thing that orders anything.
 SELECT
   [date],
   [time],
@@ -153,3 +142,11 @@ SELECT
   -- populated) to avoid a schema change that would force a DROP here.
   (SELECT cutoff FROM cutoff_calc) AS cutoff
 FROM daily_summary
+-- Parity with the duckdb and spark copies, which both end with the same sort. It makes NO claim
+-- about physical layout: this SQL is a merge SOURCE on all three engines, so nothing about the
+-- ordering reaches the stored table. It is here so the three legs pay the same cost — deleting it
+-- from one tree is a fairness regression, not a cleanup. Lands in the outer SELECT of a Fabric
+-- CTAS (dbt-fabric builds `CREATE TABLE <temp> AS <model sql>` and merges from that relation, it
+-- does NOT wrap this in `MERGE ... USING (<sql>)`), so the derived-table ORDER BY restriction
+-- does not apply here.
+ORDER BY [date]
