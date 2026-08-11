@@ -1,0 +1,1087 @@
+{
+ "benchmark": {
+  "analysis": {
+   "cold_column_cost": {
+    "nyc_dwh": {
+     "columns": {
+      "distance": 2030.1,
+      "dolocation": 1712.8,
+      "fare": 1042.1,
+      "paytype": 175.8,
+      "pickup": 76306.6,
+      "pulocation": 1577.8,
+      "ratecode": 198.5,
+      "storefwd": 956.0
+     },
+     "rowcount_overhead_ms": 578.7
+    }
+   },
+   "ranking": {
+    "COLD": [
+     {
+      "engine": "dwh",
+      "query_wins": 21,
+      "rank": 1,
+      "total_ms": 100008.4,
+      "x_fastest": 1.0
+     }
+    ],
+    "HOT": [
+     {
+      "engine": "dwh",
+      "query_wins": 23,
+      "rank": 1,
+      "total_ms": 4483.5,
+      "x_fastest": 1.0
+     }
+    ],
+    "WARM": [
+     {
+      "engine": "dwh",
+      "query_wins": 23,
+      "rank": 1,
+      "total_ms": 6436.2,
+      "x_fastest": 1.0
+     }
+    ]
+   }
+  },
+  "deploy": {
+   "deployed": {
+    "dwh": {
+     "folder": "benchmark",
+     "item_id": "68d16fca-4fc9-4b44-b937-92ab24d425f2",
+     "model": "nyc_dwh",
+     "previous_item_id": null,
+     "seconds": 55.3
+    }
+   },
+   "failed": {}
+  },
+  "engines": {
+   "dwh": {
+    "guid": "a46d804e-befb-41e2-bc38-8a396a5cbd95",
+    "item": "dbt_nyc_dwh",
+    "kind": "warehouses",
+    "writer": "warehouse"
+   }
+  },
+  "ladder": {
+   "nyc_dwh": {
+    "label": "busiest pickup zone",
+    "value": "237"
+   }
+  },
+  "run": {
+   "date": "2026-08-11T10:24:52.524553+00:00",
+   "duckrun_version": "0.4.48",
+   "inputs": {
+    "engines": "dwh",
+    "gap_seconds": 600,
+    "runs": 6,
+    "think_seconds": 4
+   },
+   "run_id": "31481598655",
+   "sha": "3dc9193fbfbaa4bbe85bc8920f8391d2772ba706",
+   "workspace": "testing"
+  },
+  "timings": {
+   "nyc_dwh": {
+    "borough_x_year": {
+     "all_hot_ms": [
+      214.34902300001113,
+      138.43984699997236,
+      184.51295900001696,
+      144.71097099999497
+     ],
+     "cold_ms": 2017.937259000007,
+     "hot_median_ms": 164.61196500000597,
+     "hot_spread_pct": 46.11400878425576,
+     "ms_by_pass": {
+      "1": 2017.937259000007,
+      "2": 139.7374969999987,
+      "3": 214.34902300001113,
+      "4": 138.43984699997236,
+      "5": 184.51295900001696,
+      "6": 144.71097099999497
+     },
+     "rows": 32,
+     "tier": "composite",
+     "warm_ms": 139.7374969999987
+    },
+    "dow_x_borough": {
+     "all_hot_ms": [
+      211.13857099999223,
+      135.73786400002064,
+      151.37919500000407,
+      142.20237400002134
+     ],
+     "cold_ms": 749.3627829999809,
+     "hot_median_ms": 146.7907845000127,
+     "hot_spread_pct": 51.36610398043418,
+     "ms_by_pass": {
+      "1": 749.3627829999809,
+      "2": 134.2759899999919,
+      "3": 211.13857099999223,
+      "4": 135.73786400002064,
+      "5": 151.37919500000407,
+      "6": 142.20237400002134
+     },
+     "rows": 56,
+     "tier": "composite",
+     "warm_ms": 134.2759899999919
+    },
+    "filtered_manhattan_2019_by_zone": {
+     "all_hot_ms": [
+      217.27755899996737,
+      142.87354099997174,
+      163.0056249999825,
+      144.44326399996044
+     ],
+     "cold_ms": 272.76240699995924,
+     "hot_median_ms": 153.72444449997147,
+     "hot_spread_pct": 48.40090217402571,
+     "ms_by_pass": {
+      "1": 272.76240699995924,
+      "2": 135.45547500001476,
+      "3": 217.27755899996737,
+      "4": 142.87354099997174,
+      "5": 163.0056249999825,
+      "6": 144.44326399996044
+     },
+     "rows": 0,
+     "tier": "composite",
+     "warm_ms": 135.45547500001476
+    },
+    "narrow_one_measure": {
+     "all_hot_ms": [
+      151.90136999996184,
+      139.11657599999216,
+      165.69098400009352,
+      156.73210399995696
+     ],
+     "cold_ms": 264.53500899998517,
+     "hot_median_ms": 154.3167369999594,
+     "hot_spread_pct": 17.220690714908226,
+     "ms_by_pass": {
+      "1": 264.53500899998517,
+      "2": 138.44293700003618,
+      "3": 151.90136999996184,
+      "4": 139.11657599999216,
+      "5": 165.69098400009352,
+      "6": 156.73210399995696
+     },
+     "rows": 4,
+     "tier": "composite",
+     "warm_ms": 138.44293700003618
+    },
+    "paytype_x_borough": {
+     "all_hot_ms": [
+      142.3145800000043,
+      140.98738500001673,
+      182.34094100000675,
+      140.2967430000217
+     ],
+     "cold_ms": 1493.3338580000282,
+     "hot_median_ms": 141.6509825000105,
+     "hot_spread_pct": 29.68154350781289,
+     "ms_by_pass": {
+      "1": 1493.3338580000282,
+      "2": 142.3211229999879,
+      "3": 142.3145800000043,
+      "4": 140.98738500001673,
+      "5": 182.34094100000675,
+      "6": 140.2967430000217
+     },
+     "rows": 40,
+     "tier": "composite",
+     "warm_ms": 142.3211229999879
+    },
+    "probe_distance": {
+     "all_hot_ms": [
+      216.36033900000484,
+      132.28524300006939,
+      182.67561799996201,
+      146.53896599998006
+     ],
+     "cold_ms": 2608.7879199999975,
+     "hot_median_ms": 164.60729199997104,
+     "hot_spread_pct": 51.076167391144644,
+     "ms_by_pass": {
+      "1": 2608.7879199999975,
+      "2": 152.85423099999207,
+      "3": 216.36033900000484,
+      "4": 132.28524300006939,
+      "5": 182.67561799996201,
+      "6": 146.53896599998006
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 152.85423099999207
+    },
+    "probe_dolocation": {
+     "all_hot_ms": [
+      161.70320200001242,
+      128.95411399995282,
+      578.4600599999976,
+      138.65840100004334
+     ],
+     "cold_ms": 2291.546390999997,
+     "hot_median_ms": 150.18080150002788,
+     "hot_spread_pct": 299.3098595228641,
+     "ms_by_pass": {
+      "1": 2291.546390999997,
+      "2": 134.95473699998684,
+      "3": 161.70320200001242,
+      "4": 128.95411399995282,
+      "5": 578.4600599999976,
+      "6": 138.65840100004334
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 134.95473699998684
+    },
+    "probe_fare": {
+     "all_hot_ms": [
+      202.24107899997534,
+      130.15824299998258,
+      151.9970069999772,
+      373.0876920000128
+     ],
+     "cold_ms": 1620.767029999996,
+     "hot_median_ms": 177.11904299997627,
+     "hot_spread_pct": 137.15603070419863,
+     "ms_by_pass": {
+      "1": 1620.767029999996,
+      "2": 148.7250860000131,
+      "3": 202.24107899997534,
+      "4": 130.15824299998258,
+      "5": 151.9970069999772,
+      "6": 373.0876920000128
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 148.7250860000131
+    },
+    "probe_paytype": {
+     "all_hot_ms": [
+      135.01394600001504,
+      129.9695719999363,
+      131.99692499995308,
+      222.936433999962
+     ],
+     "cold_ms": 754.519283999997,
+     "hot_median_ms": 133.50543549998406,
+     "hot_spread_pct": 69.63526365189587,
+     "ms_by_pass": {
+      "1": 754.519283999997,
+      "2": 130.46168299996452,
+      "3": 135.01394600001504,
+      "4": 129.9695719999363,
+      "5": 131.99692499995308,
+      "6": 222.936433999962
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 130.46168299996452
+    },
+    "probe_pickup": {
+     "all_hot_ms": [
+      139.41810000000032,
+      132.13121199999023,
+      146.91052099999524,
+      3133.0832069999133
+     ],
+     "cold_ms": 76885.329934,
+     "hot_median_ms": 143.16431049999778,
+     "hot_spread_pct": 2096.1592903421065,
+     "ms_by_pass": {
+      "1": 76885.329934,
+      "2": 136.1057199999891,
+      "3": 139.41810000000032,
+      "4": 132.13121199999023,
+      "5": 146.91052099999524,
+      "6": 3133.0832069999133
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 136.1057199999891
+    },
+    "probe_pulocation": {
+     "all_hot_ms": [
+      146.27450800003317,
+      145.99697599999217,
+      130.1402600000756,
+      138.5315750000018
+     ],
+     "cold_ms": 2156.4897070000197,
+     "hot_median_ms": 142.26427549999698,
+     "hot_spread_pct": 11.34103972571659,
+     "ms_by_pass": {
+      "1": 2156.4897070000197,
+      "2": 131.05548599997974,
+      "3": 146.27450800003317,
+      "4": 145.99697599999217,
+      "5": 130.1402600000756,
+      "6": 138.5315750000018
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 131.05548599997974
+    },
+    "probe_ratecode": {
+     "all_hot_ms": [
+      132.71789499998476,
+      134.08803800007263,
+      142.2988900000064,
+      207.03335700000025
+     ],
+     "cold_ms": 777.1996060000106,
+     "hot_median_ms": 138.1934640000395,
+     "hot_spread_pct": 53.776394229465325,
+     "ms_by_pass": {
+      "1": 777.1996060000106,
+      "2": 127.6332850000017,
+      "3": 132.71789499998476,
+      "4": 134.08803800007263,
+      "5": 142.2988900000064,
+      "6": 207.03335700000025
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 127.6332850000017
+    },
+    "probe_rowcount": {
+     "all_hot_ms": [
+      163.43193099999098,
+      131.84943299995666,
+      126.00714600000629,
+      548.9933290000408
+     ],
+     "cold_ms": 578.6971890000245,
+     "hot_median_ms": 147.64068199997382,
+     "hot_spread_pct": 286.4970394813738,
+     "ms_by_pass": {
+      "1": 578.6971890000245,
+      "2": 144.2381779999664,
+      "3": 163.43193099999098,
+      "4": 131.84943299995666,
+      "5": 126.00714600000629,
+      "6": 548.9933290000408
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 144.2381779999664
+    },
+    "probe_storefwd": {
+     "all_hot_ms": [
+      152.9225059999817,
+      146.9082610000214,
+      159.3531380000286,
+      140.3216710000379
+     ],
+     "cold_ms": 1534.707004000012,
+     "hot_median_ms": 149.91538350000155,
+     "hot_spread_pct": 12.694805933635557,
+     "ms_by_pass": {
+      "1": 1534.707004000012,
+      "2": 144.6610070000247,
+      "3": 152.9225059999817,
+      "4": 146.9082610000214,
+      "5": 159.3531380000286,
+      "6": 140.3216710000379
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 144.6610070000247
+    },
+    "raw_archive_log": {
+     "all_hot_ms": [
+      485.2371489999996,
+      143.69081799998185,
+      306.74262100001215,
+      137.94052999992346
+     ],
+     "cold_ms": 198.23737800004437,
+     "hot_median_ms": 225.216719499997,
+     "hot_spread_pct": 154.20552247235835,
+     "ms_by_pass": {
+      "1": 198.23737800004437,
+      "2": 135.35690800000566,
+      "3": 485.2371489999996,
+      "4": 143.69081799998185,
+      "5": 306.74262100001215,
+      "6": 137.94052999992346
+     },
+     "rows": 2,
+     "tier": "raw",
+     "warm_ms": 135.35690800000566
+    },
+    "scalar_weighted_full_scan": {
+     "all_hot_ms": [
+      140.62956800000848,
+      164.07789899994896,
+      148.8586350000105,
+      148.09457599994857
+     ],
+     "cold_ms": 235.0353140000152,
+     "hot_median_ms": 148.47660549997954,
+     "hot_spread_pct": 15.792609833031044,
+     "ms_by_pass": {
+      "1": 235.0353140000152,
+      "2": 1059.3805610000118,
+      "3": 140.62956800000848,
+      "4": 164.07789899994896,
+      "5": 148.8586350000105,
+      "6": 148.09457599994857
+     },
+     "rows": 1,
+     "tier": "composite",
+     "warm_ms": 1059.3805610000118
+    },
+    "sel_1mo": {
+     "all_hot_ms": [
+      598.7231139999949,
+      144.08202200002052,
+      224.26739200000156,
+      146.9453079999994
+     ],
+     "cold_ms": 308.5645030000137,
+     "hot_median_ms": 185.60635000000048,
+     "hot_spread_pct": 244.949104381382,
+     "ms_by_pass": {
+      "1": 308.5645030000137,
+      "2": 134.81259800005319,
+      "3": 598.7231139999949,
+      "4": 144.08202200002052,
+      "5": 224.26739200000156,
+      "6": 146.9453079999994
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 134.81259800005319
+    },
+    "sel_1yr": {
+     "all_hot_ms": [
+      200.4842910000093,
+      155.98593400000027,
+      185.83558800003175,
+      228.85475500004304
+     ],
+     "cold_ms": 638.9006119999863,
+     "hot_median_ms": 193.15993950002053,
+     "hot_spread_pct": 37.7246033461483,
+     "ms_by_pass": {
+      "1": 638.9006119999863,
+      "2": 137.2225819999926,
+      "3": 200.4842910000093,
+      "4": 155.98593400000027,
+      "5": 185.83558800003175,
+      "6": 228.85475500004304
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 137.2225819999926
+    },
+    "sel_1zone": {
+     "all_hot_ms": [
+      1293.6300159999519,
+      200.23813399996016,
+      158.10325099994316,
+      140.5071549999093
+     ],
+     "hot_median_ms": 179.17069249995166,
+     "hot_spread_pct": 643.5889960074546,
+     "ms_by_pass": {
+      "2": 1049.2335389999994,
+      "3": 1293.6300159999519,
+      "4": 200.23813399996016,
+      "5": 158.10325099994316,
+      "6": 140.5071549999093
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 1049.2335389999994
+    },
+    "sel_1zone_1mo": {
+     "all_hot_ms": [
+      164.46878800002196,
+      155.5061270000806,
+      139.05118499997116,
+      146.92276899995704
+     ],
+     "hot_median_ms": 151.21444800001882,
+     "hot_spread_pct": 16.808977803528165,
+     "ms_by_pass": {
+      "2": 306.8289599999616,
+      "3": 164.46878800002196,
+      "4": 155.5061270000806,
+      "5": 139.05118499997116,
+      "6": 146.92276899995704
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 306.8289599999616
+    },
+    "topn_zone_by_fare": {
+     "all_hot_ms": [
+      207.78830300002937,
+      143.2526759999746,
+      488.52559499994186,
+      142.48811300001307
+     ],
+     "cold_ms": 647.2709669999972,
+     "hot_median_ms": 175.520489500002,
+     "hot_spread_pct": 197.14933737119327,
+     "ms_by_pass": {
+      "1": 647.2709669999972,
+      "2": 204.66855000000805,
+      "3": 207.78830300002937,
+      "4": 143.2526759999746,
+      "5": 488.52559499994186,
+      "6": 142.48811300001307
+     },
+     "rows": 50,
+     "tier": "composite",
+     "warm_ms": 204.66855000000805
+    },
+    "wide_all_measures": {
+     "all_hot_ms": [
+      137.0658859999594,
+      145.52794799999447,
+      432.0656700000427,
+      163.6117960000547
+     ],
+     "cold_ms": 2330.5251250000083,
+     "hot_median_ms": 154.5698720000246,
+     "hot_spread_pct": 190.85205944922848,
+     "ms_by_pass": {
+      "1": 2330.5251250000083,
+      "2": 544.5064479999928,
+      "3": 137.0658859999594,
+      "4": 145.52794799999447,
+      "5": 432.0656700000427,
+      "6": 163.6117960000547
+     },
+     "rows": 4,
+     "tier": "composite",
+     "warm_ms": 544.5064479999928
+    },
+    "zone_x_month": {
+     "all_hot_ms": [
+      939.7109569999884,
+      953.3363670000199,
+      972.3509030000059,
+      975.2635780000674
+     ],
+     "cold_ms": 1643.8840030000392,
+     "hot_median_ms": 962.8436350000129,
+     "hot_spread_pct": 3.6924605104834565,
+     "ms_by_pass": {
+      "1": 1643.8840030000392,
+      "2": 923.2300189999592,
+      "3": 939.7109569999884,
+      "4": 953.3363670000199,
+      "5": 972.3509030000059,
+      "6": 975.2635780000674
+     },
+     "rows": 10718,
+     "tier": "composite",
+     "warm_ms": 923.2300189999592
+    }
+   }
+  },
+  "top_duid": {
+   "nyc_dwh": "237"
+  }
+ },
+ "dbt": {
+  "dwh": {
+   "adapter": {
+    "name": "dbt-fabric",
+    "version": "1.11.0"
+   }
+  }
+ },
+ "engine": "dwh",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "1A27C39C-566C-4323-8394-43E869A894EB": {
+   "at": "2026-08-11T10:21:13+00:00",
+   "created": true,
+   "deleted": "2026-08-11T10:38:47+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_dwh_src",
+   "role": "dwh_src"
+  },
+  "68D16FCA-4FC9-4B44-B937-92AB24D425F2": {
+   "created": true,
+   "deleted": "2026-08-11T10:38:52+00:00",
+   "engine": "dwh",
+   "kind": "SemanticModel",
+   "name": "nyc_dwh",
+   "replaced": null,
+   "role": "semantic_model"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-11T10:20:44+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "A46D804E-BEFB-41E2-BC38-8A396A5CBD95": {
+   "at": "2026-08-11T10:21:04+00:00",
+   "created": true,
+   "deleted": "2026-08-11T10:38:49+00:00",
+   "kind": "Warehouse",
+   "name": "dbt_nyc_dwh",
+   "role": "output"
+  },
+  "C8D2A513-076A-4A61-8952-AD37F9B2E6D7": {
+   "at": "2026-08-11T10:20:13+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_nyc_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-11T10:20:09+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  },
+  "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
+   "at": "2026-08-11T10:20:11+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_landing",
+   "role": "landing"
+  }
+ },
+ "layout": {
+  "config": {
+   "dwh": {
+    "vorder": "true"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "dwh": {
+    "DOLocationID": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 570.99,
+     "type": "INT32"
+    },
+    "PULocationID": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 553.38,
+     "type": "INT32"
+    },
+    "RatecodeID": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.33,
+     "type": "INT32"
+    },
+    "VendorID": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 17.41,
+     "type": "INT32"
+    },
+    "extra": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.42,
+     "type": "DOUBLE"
+    },
+    "fare_amount": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 159.21,
+     "type": "DOUBLE"
+    },
+    "file": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.83,
+     "type": "BYTE_ARRAY"
+    },
+    "improvement_surcharge": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.03,
+     "type": "DOUBLE"
+    },
+    "mta_tax": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.36,
+     "type": "DOUBLE"
+    },
+    "passenger_count": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.35,
+     "type": "INT32"
+    },
+    "payment_type": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.35,
+     "type": "INT32"
+    },
+    "pickup_date": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 28.25,
+     "type": "INT32"
+    },
+    "store_and_fwd_flag": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 25.6,
+     "type": "BYTE_ARRAY"
+    },
+    "tip_amount": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 85.01,
+     "type": "DOUBLE"
+    },
+    "tolls_amount": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.4,
+     "type": "DOUBLE"
+    },
+    "total_amount": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 251.33,
+     "type": "DOUBLE"
+    },
+    "tpep_dropoff_datetime": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2113.69,
+     "type": "INT64"
+    },
+    "tpep_pickup_datetime": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2083.41,
+     "type": "INT64"
+    },
+    "trip_distance": {
+     "chunks": 339,
+     "dict_pages": 339,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 668.63,
+     "type": "DOUBLE"
+    }
+   }
+  },
+  "engines": {
+   "dwh": {
+    "guid": "a46d804e-befb-41e2-bc38-8a396a5cbd95",
+    "item": "dbt_nyc_dwh",
+    "kind": "warehouses",
+    "writer": "warehouse"
+   }
+  },
+  "landing": {
+   "files": 43,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/yellow": {
+     "files": 41,
+     "size_mb": 6783.08
+    },
+    "parquet_raw/zone": {
+     "files": 1,
+     "size_mb": 0.01
+    }
+   },
+   "guid": "f7f0ab6f-2c5f-4d48-bdad-7517f2545e54",
+   "item": "dbt_nyc_landing",
+   "size_mb": 6783.09
+  },
+  "ordering": {
+   "dwh": {
+    "columns": {
+     "DOLocationID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "PULocationID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "RatecodeID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "VendorID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "extra": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "fare_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "file": {
+      "rg_overlap_pct": 60.7,
+      "rgs": 339
+     },
+     "improvement_surcharge": {
+      "rg_overlap_pct": 4.7,
+      "rgs": 339
+     },
+     "mta_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "passenger_count": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "payment_type": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "pickup_date": {
+      "rg_overlap_pct": 87.9,
+      "rgs": 339
+     },
+     "store_and_fwd_flag": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "tip_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "tolls_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "total_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     },
+     "tpep_dropoff_datetime": {
+      "rg_overlap_pct": 93.8,
+      "rgs": 339
+     },
+     "tpep_pickup_datetime": {
+      "rg_overlap_pct": 90.2,
+      "rgs": 339
+     },
+     "trip_distance": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 339
+     }
+    },
+    "table": "mart.fct_trips",
+    "vorder_enabled": true
+   }
+  },
+  "run": {
+   "dataset": "nyc",
+   "id": "31481598655",
+   "sha": "3dc9193fbfbaa4bbe85bc8920f8391d2772ba706",
+   "written": "2026-08-11T10:24:18.930467+00:00"
+  },
+  "stats": {
+   "dwh": {
+    "dim_date": {
+     "avg_row_group": 5844.0,
+     "compression": "UNCOMPRESSED",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.03,
+     "total_rows": 5844,
+     "vorder": false
+    },
+    "dim_zone": {
+     "avg_row_group": 265.0,
+     "compression": "UNCOMPRESSED",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.01,
+     "total_rows": 265,
+     "vorder": false
+    },
+    "fct_trips": {
+     "avg_row_group": 1745515.8,
+     "compression": "UNCOMPRESSED",
+     "num_files": 339,
+     "num_row_groups": 339,
+     "schema": "mart",
+     "size_mb": 6565.43,
+     "total_rows": 591729858,
+     "vorder": false
+    },
+    "stg_parquet_archive_log": {
+     "avg_row_group": 42.0,
+     "compression": "UNCOMPRESSED",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.01,
+     "total_rows": 42,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_parquet_archive_log",
+   "dim_date",
+   "dim_zone",
+   "fct_trips"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-11T10:39:06+00:00",
+  "id": "31481598655",
+  "sha": "3dc9193fbfbaa4bbe85bc8920f8391d2772ba706",
+  "started": "2026-08-11T10:18:22+00:00",
+  "url": "https://github.com/djouallah/fabric-dbt-benchmark/actions/runs/31481598655"
+ },
+ "schema": 1
+}
