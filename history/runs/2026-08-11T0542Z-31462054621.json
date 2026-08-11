@@ -1,0 +1,53 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "false",
+  "build": "false",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "38",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "false",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "C8D2A513-076A-4A61-8952-AD37F9B2E6D7": {
+   "at": "2026-08-11T05:36:24+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_nyc_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-11T05:35:57+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  },
+  "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
+   "at": "2026-08-11T05:36:22+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_landing",
+   "role": "landing"
+  }
+ },
+ "run": {
+  "finished": "2026-08-11T05:42:54+00:00",
+  "id": "31462054621",
+  "sha": "0973b93e95f7fd85141013f847ad57fd1edf8d21",
+  "started": "2026-08-11T05:33:55+00:00",
+  "url": "https://github.com/djouallah/fabric-dbt-benchmark/actions/runs/31462054621"
+ },
+ "schema": 1
+}
