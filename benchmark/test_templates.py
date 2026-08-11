@@ -268,27 +268,37 @@ def test_the_nyc_dax_suite_only_names_things_the_template_has():
 
     This is the check that would otherwise fail at QUERY time, one query at a time, in the most
     expensive job in the workflow — and a suite where every query errors still produces a report
-    shaped like a result. `probe_rowcount` last among the probes is pinned in test_verdicts.py."""
-    os.environ["DATASET"] = "nyc"
-    for mod in ("engines", "xmla_compare"):
-        sys.modules.pop(mod, None)
-    try:
-        import xmla_compare as xc
-        m = json.loads(_raw(NYC))
-        tables = {t["name"] for t in m["model"]["tables"]}
-        cols = {(t["name"], c["name"]) for t in m["model"]["tables"] for c in t["columns"]}
-        measures = {x["name"] for t in m["model"]["tables"] for x in t.get("measures", [])}
-        for _tier, name, dax in xc.NYC_QUERIES:
-            for tbl, col in re.findall(r"(\w+)\[([^\]]+)\]", dax):
-                assert tbl in tables, f"{name}: no table {tbl}"
-                assert (tbl, col) in cols, f"{name}: {tbl} has no column {col}"
-            # A bare [Name] is either a model measure or an EXTENSION COLUMN the query defined
-            # itself — SUMMARIZECOLUMNS(..., "Fare", [Total Fare]) introduces `[Fare]`, which TOPN
-            # then orders by. Every such name arrives as a double-quoted literal in the same query.
-            local = set(re.findall(r'"([^"]+)"', dax))
-            for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
-                assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
-    finally:
-        os.environ.pop("DATASET", None)
-        for mod in ("engines", "xmla_compare"):
-            sys.modules.pop(mod, None)
+    shaped like a result. `probe_rowcount` last among the probes is pinned in test_verdicts.py.
+
+    IT READS `NYC_QUERIES` DIRECTLY AND SETS NOTHING. `xmla_compare.QUERIES` and `stats.MART` bind
+    the dataset at IMPORT time, so a test that sets DATASET and re-imports leaks into whatever the
+    collector loads next — which is exactly what an earlier version of this test did: it turned the
+    AEMO copy of this assertion and two of test_sort_key's green locally and red on CI, purely on
+    collection order. The per-dataset query lists are plain module constants, so neither the env nor
+    sys.modules has to be touched to read one."""
+    import xmla_compare as xc
+
+    m = json.loads(_raw(NYC))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    measures = {x["name"] for t in m["model"]["tables"] for x in t.get("measures", [])}
+
+    for _tier, name, dax in xc.NYC_QUERIES:
+        for tbl, col in re.findall(r"(\w+)\[([^\]]+)\]", dax):
+            assert tbl in cols, f"{name}: unknown table {tbl!r}"
+            assert col in cols[tbl], f"{name}: {tbl} has no column {col!r}"
+        # A bare [Name] is either a model measure or an EXTENSION COLUMN the query defined itself —
+        # SUMMARIZECOLUMNS(..., "Fare", [Total Fare]) introduces `[Fare]`, which TOPN then orders by.
+        local = set(re.findall(r'"([^"]+)"', dax))
+        for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
+            assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
+
+
+def test_the_aemo_suite_is_what_a_default_import_binds():
+    """`xmla_compare.QUERIES` is the suite the process will actually run, bound once at import from
+    DATASET. Nothing in this suite sets that variable, so a default import must bind AEMO — and if
+    some future test starts leaking it, this is the assertion that says so instead of three
+    unrelated files going red on collection order."""
+    import xmla_compare as xc
+
+    assert xc.QUERIES is xc.AEMO_QUERIES
+    assert os.environ.get("DATASET") in (None, "", "aemo")
