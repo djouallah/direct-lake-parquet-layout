@@ -1,0 +1,559 @@
+{
+ "benchmark": {
+  "analysis": {
+   "cold_column_cost": {},
+   "ranking": {}
+  },
+  "deploy": {
+   "deployed": {
+    "duckrun": {
+     "folder": "benchmark",
+     "item_id": "608cc40a-1c7a-42aa-b864-c239230523dc",
+     "model": "nyc_duckrun",
+     "previous_item_id": null,
+     "seconds": 55.6
+    }
+   },
+   "failed": {}
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "4ae2046c-35aa-4284-8d1d-605e17b6a284",
+    "item": "dbt_nyc_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "run": {
+   "date": "2026-08-11T00:34:11.064260+00:00",
+   "duckrun_version": "0.4.48",
+   "inputs": {
+    "engines": "duckrun",
+    "gap_seconds": 600,
+    "runs": 6,
+    "think_seconds": 4
+   },
+   "run_id": "31445985164",
+   "sha": "311b89ebe0e422f6b54dfb99f483e0dcda4673bd",
+   "workspace": "testing"
+  }
+ },
+ "dbt": {
+  "duckrun": {
+   "sort_by": {
+    "fct_trips": [
+     "pickup_date",
+     "PULocationID"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "3",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "false",
+  "sort_by": "pickup_date,PULocationID",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "2D311060-7BFD-4ADE-885F-2393B30A0848": {
+   "at": "2026-08-11T00:32:40+00:00",
+   "created": true,
+   "deleted": "2026-08-11T00:45:25+00:00",
+   "engine": "duckrun",
+   "kind": "Notebook",
+   "name": "dbt-duckrun-046c83e9",
+   "role": "compute"
+  },
+  "4AE2046C-35AA-4284-8D1D-605E17B6A284": {
+   "at": "2026-08-11T00:28:43+00:00",
+   "created": true,
+   "deleted": "2026-08-11T00:45:26+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_delta",
+   "role": "output"
+  },
+  "608CC40A-1C7A-42AA-B864-C239230523DC": {
+   "created": true,
+   "deleted": "2026-08-11T00:45:29+00:00",
+   "engine": "duckrun",
+   "kind": "SemanticModel",
+   "name": "nyc_duckrun",
+   "replaced": null,
+   "role": "semantic_model"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-11T00:28:35+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-11T00:27:21+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  },
+  "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
+   "at": "2026-08-11T00:27:30+00:00",
+   "created": true,
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_landing",
+   "role": "landing"
+  }
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": null,
+    "row_group_size": "2000000",
+    "sorted": "true",
+    "vcores": "8"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "duckrun": {
+    "DOLocationID": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 46.22,
+     "type": "INT32"
+    },
+    "PULocationID": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.12,
+     "type": "INT32"
+    },
+    "RatecodeID": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.71,
+     "type": "INT32"
+    },
+    "VendorID": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 5.35,
+     "type": "INT32"
+    },
+    "extra": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 6.33,
+     "type": "DOUBLE"
+    },
+    "fare_amount": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 52.27,
+     "type": "DOUBLE"
+    },
+    "file": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "improvement_surcharge": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "DOUBLE"
+    },
+    "mta_tax": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.3,
+     "type": "DOUBLE"
+    },
+    "passenger_count": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 14.67,
+     "type": "INT32"
+    },
+    "payment_type": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 5.78,
+     "type": "INT32"
+    },
+    "pickup_date": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "INT32"
+    },
+    "store_and_fwd_flag": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 6.16,
+     "type": "BYTE_ARRAY"
+    },
+    "tip_amount": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 38.85,
+     "type": "DOUBLE"
+    },
+    "tolls_amount": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.0,
+     "type": "DOUBLE"
+    },
+    "total_amount": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 66.65,
+     "type": "DOUBLE"
+    },
+    "tpep_dropoff_datetime": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 142.31,
+     "type": "INT64"
+    },
+    "tpep_pickup_datetime": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 142.17,
+     "type": "INT64"
+    },
+    "trip_distance": {
+     "chunks": 22,
+     "dict_pages": 22,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 62.86,
+     "type": "DOUBLE"
+    }
+   }
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "4ae2046c-35aa-4284-8d1d-605e17b6a284",
+    "item": "dbt_nyc_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "landing": {
+   "files": 6,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.0
+    },
+    "duckrun_remote": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/yellow": {
+     "files": 3,
+     "size_mb": 496.4
+    },
+    "parquet_raw/zone": {
+     "files": 1,
+     "size_mb": 0.01
+    }
+   },
+   "guid": "f7f0ab6f-2c5f-4d48-bdad-7517f2545e54",
+   "item": "dbt_nyc_landing",
+   "size_mb": 496.41
+  },
+  "ordering": {
+   "duckrun": {
+    "columns": {
+     "DOLocationID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 3757506
+     },
+     "PULocationID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 2446
+     },
+     "RatecodeID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 123384
+     },
+     "VendorID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 1773036
+     },
+     "extra": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 1006003
+     },
+     "fare_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 3827583
+     },
+     "file": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 22,
+      "runs": 1
+     },
+     "improvement_surcharge": {
+      "rg_overlap_pct": 4.8,
+      "rgs": 22,
+      "runs": 3
+     },
+     "mta_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 18984
+     },
+     "passenger_count": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 1936895
+     },
+     "payment_type": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 1861696
+     },
+     "pickup_date": {
+      "rg_overlap_pct": 9.5,
+      "rgs": 22,
+      "runs": 11
+     },
+     "store_and_fwd_flag": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 1812174
+     },
+     "tip_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 2379469
+     },
+     "tolls_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 199978
+     },
+     "total_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 3934344
+     },
+     "tpep_dropoff_datetime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 3996429
+     },
+     "tpep_pickup_datetime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 3996388
+     },
+     "trip_distance": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 22,
+      "runs": 3957445
+     }
+    },
+    "sample": {
+     "file": "part-00000-74b4a5c2-b40a-4e01-9db1-25d463155a29-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.fct_trips",
+    "vorder_files": {
+     "files": 1,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "nyc",
+   "id": "31445985164",
+   "sha": "311b89ebe0e422f6b54dfb99f483e0dcda4673bd",
+   "written": "2026-08-11T00:33:34.531807+00:00"
+  },
+  "stats": {
+   "duckrun": {
+    "dim_date": {
+     "avg_row_group": 5844.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.03,
+     "total_rows": 5844,
+     "vorder": false
+    },
+    "dim_zone": {
+     "avg_row_group": 265.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.01,
+     "total_rows": 265,
+     "vorder": false
+    },
+    "fct_trips": {
+     "avg_row_group": 1987916.2,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 22,
+     "schema": "mart",
+     "size_mb": 594.83,
+     "total_rows": 43734157,
+     "vorder": false
+    },
+    "stg_parquet_archive_log": {
+     "avg_row_group": 4.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.0,
+     "total_rows": 4,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_parquet_archive_log",
+   "dim_date",
+   "dim_zone",
+   "fct_trips"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-11T00:45:44+00:00",
+  "id": "31445985164",
+  "sha": "311b89ebe0e422f6b54dfb99f483e0dcda4673bd",
+  "started": "2026-08-11T00:25:32+00:00",
+  "url": "https://github.com/djouallah/fabric-dbt-benchmark/actions/runs/31445985164"
+ },
+ "schema": 1
+}
