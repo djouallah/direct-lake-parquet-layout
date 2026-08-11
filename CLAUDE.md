@@ -1662,9 +1662,13 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   arriving back as text. Named, never a computed "engine with more than N dots", which would silently
   start suppressing spark's labels the day a fourth profile landed. **Two because cheap and fast are
   nearly OPPOSITES here, measured**: the cheapest duckrun layout (1,569 CU) is the slowest of the nine
-  on both tiers (28,518 cold / 5,380 warm), while the fastest (21,050 / 3,652) costs two CU more. Each
-  label says which pick it is, and a dot winning both is labelled once with both words. The rest are a
-  hue, a hover and a ranked row of the table.
+  on both tiers (28,518 cold / 5,380 warm), while the fastest (21,050 / 3,652) costs two CU more.
+  **THE LABEL IS THE LAYOUT AND NOTHING ELSE — the `(cheapest)` / `(fastest)` suffix is GONE.** It was
+  meant to say why two dots out of nine carry text, and read instead as a verdict on the dot; worse,
+  on a dot winning both it printed `(cheapest, fastest)`, which claims to be the cheapest and fastest
+  layout on the CHART when it is only the best of ONE writer's. The caption under the chart states
+  the rule, which is where an explanation of the labelling belongs. A dot winning both is still
+  labelled once. The rest are a hue, a hover and a ranked row of the table.
   **NO ENGINE IS OMITTED — `SCATTER_OMIT` AND `PAGE_OMIT` ARE BOTH GONE.** The first kept `iceberg`
   off the chart while it still held a column in *Cost by engine* and a row in *Table layout* (absent
   from one figure, present in every table — the worst of the three states); the second made that

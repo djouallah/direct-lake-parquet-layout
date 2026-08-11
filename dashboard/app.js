@@ -2047,10 +2047,18 @@ export function bestDots(rows) {
   };
 }
 
-/** `date, time · rg 2.0M (fastest)` — the layout, then which of the two picks it is. */
+/**
+ * `date, time · rg 2.0M` — the layout, for whichever of `LABEL_BEST_ONLY`'s two picks this is.
+ *
+ * **The `(cheapest, fastest)` suffix is deliberately GONE.** It was there to say why these two dots
+ * out of nine carry text, but on the chart it read as a verdict on the dot rather than as the reason
+ * for the label — and `(cheapest, fastest)` on a single dot, when one layout wins both, reads as a
+ * claim that it is the cheapest and fastest layout on the chart, across every engine. It is not; it
+ * is only the best of ONE writer's. The caption under the chart already states the rule, which is
+ * where an explanation of the labelling belongs.
+ */
 function bestLabel(p, { cheapest, fastest }, martTable = DEFAULTS.table) {
-  const why = [p === cheapest ? "cheapest" : "", p === fastest ? "fastest" : ""].filter(Boolean);
-  return why.length ? `${layoutOf(p.members, martTable)} (${why.join(", ")})` : "";
+  return p === cheapest || p === fastest ? layoutOf(p.members, martTable) : "";
 }
 
 /**

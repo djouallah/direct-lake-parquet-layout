@@ -335,10 +335,13 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   and the log-space distance from the origin pick the SAME dot today, so the simplest rank buys no
   different answer. Only *lowest warm alone* differs, and that is a third question needing a third
   label.
-  **Each label says WHICH pick it is** (`date, time · rg 2.0M (fastest)`) — two labels of one hue
-  reading the same kind of string would otherwise leave a reader unable to say which was which, and
-  the difference between them is the whole reason there are two. A dot winning both is labelled
-  ONCE, with both words. Ties go to the table's own cheapest-first order, so a pick cannot move
+  **The label is the LAYOUT and nothing else** (`date, time · rg 2.0M`). It carried a
+  `(cheapest)` / `(fastest)` suffix naming which pick it was; that read as a verdict on the dot
+  rather than as the reason it carries text at all, and on a dot winning both it printed
+  `(cheapest, fastest)` — which claims to be the cheapest and fastest layout on the whole chart when
+  it is only the best of one writer's. The caption states the rule instead. The two labels are still
+  distinguishable, by the layouts they name, which is what a reader came for. A dot winning both is
+  labelled ONCE. Ties go to the table's own cheapest-first order, so a pick cannot move
   between two renders of one document. The rest are a hue and a hover, and every one of them is
   still a ranked row of the table above.
 - **EVERY LABELLED DOT CARRIES ITS LAYOUT, and its writer's name as well when that name identifies

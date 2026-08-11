@@ -3291,24 +3291,27 @@ test("duckrun labels its CHEAPEST and its FASTEST layout, and nothing else", () 
     .map((m) => ({ end: /text-anchor="end"/.test(m[1]), x: +/x="([\d.]+)"/.exec(m[1])[1], t: m[2] }))
     .filter((l) => !["cold ms", "warm ms"].includes(l.t) && !/^[\d,.]+$/.test(l.t));
   const texts = labs.map((l) => l.t).filter((t) => t !== "CU");
-  // EACH LABEL SAYS WHICH PICK IT IS. Two labels of one hue reading the same kind of string would
-  // leave a reader unable to say which was which, and the difference is the whole point of two.
+  // THE LABEL IS THE LAYOUT AND NOTHING ELSE — no `(cheapest)` / `(fastest)` suffix. It read as a
+  // verdict on the dot rather than as the reason it carries text, and on a dot that wins both it
+  // claimed to be the cheapest and fastest layout on the CHART when it is only the best of one
+  // writer's. The caption states the rule; the label names the layout.
   // ROW GROUP SIZE, NOT THE COUNT: 143,980,961 rows over 9 row groups is 16.0M, over 24 is 6.0M.
-  assert.ok(texts.includes("date, time · rg 16.0M (cheapest)"), `the cheapest is named: ${texts}`);
-  assert.ok(texts.includes("date, time, price · rg 6.0M (fastest)"), `and the fastest: ${texts}`);
+  assert.ok(texts.includes("date, time · rg 16.0M"), `the cheapest is named: ${texts}`);
+  assert.ok(texts.includes("date, time, price · rg 6.0M"), `and the fastest: ${texts}`);
+  assert.ok(!texts.some((t) => /\((cheapest|fastest)/.test(t)), `no verdict suffix: ${texts}`);
   // RANKED ON CU, NOT ON THE AXES: the cheapest dot is the rightmost and highest one here, so a
   // regression to ranking both labels on time would fail rather than agree by luck.
   assert.ok(!texts.some((t) => /rg 2\.0M/.test(t)), `and nothing else of that writer: ${texts}`);
   assert.equal(texts.filter((t) => t === "delta_rs").length, 0, "never the bare writer name");
   assert.ok(texts.includes("dwh"), `a unique writer keeps its name: ${texts}`);
-  // ONE DOT WINNING BOTH IS LABELLED ONCE, with both words — never two labels on one mark.
+  // ONE DOT WINNING BOTH IS LABELLED ONCE — never two labels stacked on one mark.
   const solo = d.scatterFit([
     p(sortedBy(1, 9, ["date", "time"], { file: "a.json" }), "delta_rs", 21050, 3652, 1500),
     p(sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }), "delta_rs", 28518, 5380, 1900),
     p(lay("dwh", 78, 90, { file: "c.json" }), "dwh", 33767, 1500, 2000),
   ]);
-  assert.ok(/date, time · rg 16\.0M \(cheapest, fastest\)/.test(solo),
-    "one mark, one label, both words");
+  assert.equal([...solo.matchAll(/>date, time · rg 16\.0M</g)].length, 1,
+    "one mark, one label");
   // THE SAME CELLS THE TABLE BESIDE IT PRINTS — `keyCells`, so a dot and its row cannot describe one
   // parquet two different ways, and a change to either follows the other.
   const k = d.keyCells([{ rec: sortedBy(1, 24, ["date", "time", "price"], { file: "b.json" }) }]);
@@ -3316,7 +3319,7 @@ test("duckrun labels its CHEAPEST and its FASTEST layout, and nothing else", () 
   // Beside its own dot — the placer prefers the right of the mark and falls back to its left rather
   // than dropping a name, so what is pinned is PROXIMITY, not the side.
   const xs = [...svg.matchAll(/<circle class="dot c\d" cx="([\d.]+)"/g)].map((m) => +m[1]);
-  for (const l of labs.filter((x) => /\((cheapest|fastest)\)$/.test(x.t))) {
+  for (const l of labs.filter((x) => /· rg /.test(x.t))) {
     assert.ok(xs.some((c) => Math.abs(l.x - c) < 60),
       `"${l.t}" at ${l.x} sits beside a dot; dots at ${xs}`);
   }
