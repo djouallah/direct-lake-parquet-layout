@@ -1,0 +1,128 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": "auto",
+    "row_group_size": "auto",
+    "sorted": "true",
+    "vcores": "8"
+   },
+   "dwh": {
+    "vorder": "true"
+   },
+   "iceberg": {
+    "vcores": "8"
+   },
+   "spark": {
+    "native_execution_engine": "true",
+    "resource_profile": "writeHeavy"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "engines": {
+   "duckrun": {
+    "guid": null,
+    "item": "dbt_nyc_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   },
+   "dwh": {
+    "guid": null,
+    "item": "dbt_nyc_dwh",
+    "kind": "warehouses",
+    "writer": "warehouse"
+   },
+   "iceberg": {
+    "guid": null,
+    "item": "dbt_nyc_iceberg",
+    "kind": "lakehouses",
+    "writer": "duckdb (iceberg)"
+   },
+   "spark": {
+    "guid": null,
+    "item": "dbt_nyc_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "landing": {
+   "files": 7,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.0
+    },
+    "duckrun_remote": {
+     "files": 2,
+     "size_mb": 0.01
+    },
+    "parquet_raw/yellow": {
+     "files": 3,
+     "size_mb": 496.4
+    },
+    "parquet_raw/zone": {
+     "files": 1,
+     "size_mb": 0.01
+    }
+   },
+   "guid": "f7f0ab6f-2c5f-4d48-bdad-7517f2545e54",
+   "item": "dbt_nyc_landing",
+   "size_mb": 496.42
+  },
+  "run": {
+   "dataset": "nyc",
+   "id": "31455658494",
+   "sha": "be6967fd4611bd03a123668e55a864c4ed8a3cfd",
+   "written": "2026-08-11T03:33:28.374544+00:00"
+  },
+  "stats": {
+   "duckrun": {},
+   "dwh": {},
+   "iceberg": {},
+   "spark": {}
+  },
+  "tables": [
+   "stg_parquet_archive_log",
+   "dim_date",
+   "dim_zone",
+   "fct_trips"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-11T03:34:10+00:00",
+  "id": "31455658494",
+  "sha": "be6967fd4611bd03a123668e55a864c4ed8a3cfd",
+  "started": "2026-08-11T03:31:46+00:00",
+  "url": "https://github.com/djouallah/fabric-dbt-benchmark/actions/runs/31455658494"
+ },
+ "schema": 1
+}
