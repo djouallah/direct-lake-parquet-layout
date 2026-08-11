@@ -2034,9 +2034,11 @@ test("selectRuns keeps one dataset and NAMES what it dropped", () => {
 
   const aemo = d.selectRuns(recs, "aemo");
   assert.deepEqual(aemo.runs.map((r) => r._file), ["a.json", "b.json"]);
-  // Named, not silently dropped — a page that quietly ignores a record is indistinguishable from
-  // one that never had it.
-  assert.ok(aemo.skipped.some((s) => s.includes("c.json") && s.includes("nyc")));
+  // NOT in `skipped`. That list is defects — it renders under "a run has to be built and
+  // benchmarked to be comparable" — and the other dataset's records are not defective, they are on
+  // the other page. Naming them there printed 89 lines of `dataset aemo, not nyc` under a reason
+  // that was not the reason. The switcher's per-dataset count is where that number belongs.
+  assert.deepEqual(aemo.skipped, []);
 
   const nyc = d.selectRuns(recs, "nyc");
   assert.deepEqual(nyc.runs.map((r) => r._file), ["c.json"]);

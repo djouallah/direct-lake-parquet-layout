@@ -125,6 +125,14 @@ The **count** beside each name is deliberately taken BEFORE the completeness fil
 "how many records does this dataset have", not "how many survived". It is also the page's only
 sample-size signal: every other number renders as confidently at n=2 as at n=20.
 
+That count is also the ONLY place the other dataset's records are reported. `selectRuns` drops them
+without adding them to `skipped`, because that list is defects — it renders under *"a run has to be
+built and benchmarked to be comparable"* — and a record belonging to the other dataset is not
+defective, it is on the other page. Naming them there put **89 lines** of `dataset aemo, not nyc`
+under a heading giving a reason that was not the reason, which reads as 89 broken runs. The taxi
+page's note went from 89 entries to 4, and those four are real: `no output item`, `no benchmark
+timings`.
+
 Three sentences used to hardcode AEMO and were rendered unchanged on a taxi page — the lede's
 archive wording, the input fold's landing item, and the scope caveat under *Analysis*. They read
 from `DATASET_INFO` now. `renderEncodings` was worse: it read one global column list, so the taxi

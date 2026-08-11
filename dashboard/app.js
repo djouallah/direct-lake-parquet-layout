@@ -468,12 +468,20 @@ export function selectRuns(records, dataset = DEFAULTS.dataset) {
   const want = dataset || DEFAULTS.dataset;
   for (const rec of records || []) {
     if (!rec) continue;
-    // THE DATASET FILTER, and it is here rather than in six renderers for the reason stated above:
-    // this is the one gate every render path passes, including the `?record=` pin. It is also why
-    // it comes BEFORE `incomplete` — a record from the other dataset is not a defective record, and
-    // listing it as "skipped: no benchmark" would read as a problem with this page's own history.
+    // THE DATASET FILTER, and it is here rather than in six renderers because this is the one gate
+    // every render path passes, including the `?record=` pin.
+    //
+    // IT DOES NOT REPORT WHAT IT DROPS, and that is the point. `skipped` is a list of DEFECTS —
+    // every entry is printed under "a run has to be built and benchmarked to be comparable" — and a
+    // record belonging to the other dataset is not defective, it is on the other page. Naming them
+    // there put 89 lines of `dataset aemo, not nyc` under a heading giving a reason that was not
+    // the reason, which reads as 89 broken runs.
+    //
+    // The honest count is already on the page and is a better one: the switcher prints how many
+    // records each dataset HAS, taken before this filter, so nothing is hidden — it is reported
+    // where it means something instead of where it looks like an error.
     const ds = datasetOf(rec);
-    if (ds !== want) { skipped.push(`${rec._file || "?"}: dataset ${ds}, not ${want}`); continue; }
+    if (ds !== want) continue;
     const why = incomplete(rec);
     if (why) { skipped.push(`${rec._file || "?"}: ${why}`); continue; }
     runs.push(rec);
