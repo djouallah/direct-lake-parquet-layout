@@ -477,7 +477,14 @@ jobs:
   plan:
     name: plan the legs
     needs: checks
-    if: github.event_name == 'schedule' || inputs.build
+    # ...or when a DOWNLOAD is wanted. `land` needs this job, so gating it on `build` alone made a
+    # land-only dispatch inexpressible: `build: false` skipped `plan`, which skipped `land`, and the
+    # run went green having fetched nothing. That is the shape of failure this repo cares most about
+    # — a job that reports success for work it never did. Extending the archive is a real errand
+    # (the taxi archive sat at three months for exactly this reason) and it should not have to buy a
+    # build to get one. `plan` is free, so running it for a land-only dispatch costs nothing; the
+    # BUILD matrices carry their own `inputs.build` now rather than inheriting this gate.
+    if: github.event_name == 'schedule' || inputs.build || !inputs.skip_download
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -664,7 +671,11 @@ jobs:
     needs: [plan, land]
     # `!= '[]'` because a dispatch may select neither DuckDB engine, and an empty `include:` is a
     # workflow error rather than a skipped job.
-    if: needs.plan.outputs.fabric != '[]'
+    # `inputs.build` is checked HERE now, not inherited from `plan` — `plan` also runs for a
+    # land-only dispatch, so its having run no longer implies a build was asked for. The schedule
+    # clause is not optional: on that event the `inputs` context is EMPTY, so `inputs.build` is
+    # falsy and the nightly would build nothing while reporting success.
+    if: (github.event_name == 'schedule' || inputs.build) && needs.plan.outputs.fabric != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     strategy:
@@ -712,7 +723,9 @@ jobs:
   server:
     name: fabric-server ${{ matrix.engine }}
     needs: [plan, land]
-    if: needs.plan.outputs.server != '[]'
+    # Same as `fabric` above: `inputs.build` here, and the schedule clause because that event has no
+    # `inputs` context at all.
+    if: (github.event_name == 'schedule' || inputs.build) && needs.plan.outputs.server != '[]'
     runs-on: ubuntu-latest
     # Backlog-draining spark runs (1024-file folds) reach ~40 min; leave room for one retry.
     timeout-minutes: 60
