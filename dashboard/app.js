@@ -2509,16 +2509,62 @@ export function landingBlocks(cols) {
     .filter(([, d]) => Object.keys(d).length);
 }
 
+/** duckrun's `run_python` round-trip, which lives in the landing lakehouse's `Files` but is not
+ *  archive. `stats.py` skips it when listing; this is the same name, applied on READ so the records
+ *  written before it did are corrected too. */
+export const NOT_ARCHIVE = "duckrun_remote";
+
+/**
+ * `{files, mb, folders}` for one landing block — the archive ONLY.
+ *
+ * Recomputed from the folders rather than trusting the block's own `files`/`size_mb`, because every
+ * record written before `stats.py` learned to skip `duckrun_remote` counts two scratch files as
+ * input. Two in 8,401 is invisible on AEMO; two in seven is a third of the taxi archive.
+ *
+ * Falls back to the recorded totals when a record carries no folder breakdown at all — an older
+ * shape, where the totals are the only thing there is.
+ */
+export function archiveTotals(land) {
+  const folders = Object.entries((land || {}).folders || {})
+    .filter(([name]) => name !== NOT_ARCHIVE && !name.startsWith(`${NOT_ARCHIVE}/`));
+  if (!folders.length) {
+    return { files: Number((land || {}).files), mb: Number((land || {}).size_mb), folders: [] };
+  }
+  return {
+    files: folders.reduce((a, [, f]) => a + (Number(f.files) || 0), 0),
+    mb: folders.reduce((a, [, f]) => a + (Number(f.size_mb) || 0), 0),
+    folders,
+  };
+}
+
+/**
+ * `170 GB` / `496 MB` — the archive's size, in a unit that survives it being small.
+ *
+ * It printed `fmt(gb, 0)` unconditionally, which is right for AEMO's 170 GB and reads **`0 GB`**
+ * for a 496 MB one. A zero where there is half a gigabyte is not a rounding nicety: it says the
+ * input was nothing, which is the one thing this figure exists to deny.
+ */
+export function archiveSize(mb) {
+  const n = Number(mb);
+  if (!Number.isFinite(n) || n <= 0) return "";
+  // `stats.py` stores bytes/1048576, so this is MiB; /1000 is what agrees on sight with the MB
+  // column in `Input archive` on this same page.
+  return n >= 1000 ? `${fmt(n / 1000, 0)} GB` : `${fmt(n, 0)} MB`;
+}
+
 export function renderInput(cols, dataset = DEFAULTS.dataset) {
   const info = datasetInfo(dataset);
   const have = landingBlocks(cols);
   if (!have.length) return "";
   const latest = have[have.length - 1][1];
   const folders = latest.folders || {};
-  const rows = Object.entries(folders)
+  // THE ARCHIVE ONLY — `duckrun_remote` is duckrun's own round-trip and is dropped here as well as
+  // from the total, so the rows and the total agree and neither counts scratch as input.
+  const arch = archiveTotals(latest);
+  const rows = arch.folders
     .sort((a, b) => (b[1].size_mb || 0) - (a[1].size_mb || 0))
     .map(([name, f]) => [`\`${name}\``, fmt(f.files || 0, 0), fmt(f.size_mb || 0, 2)]);
-  rows.push([`**total**`, `**${fmt(latest.files || 0, 0)}**`, `**${fmt(latest.size_mb || 0, 2)}**`]);
+  rows.push([`**total**`, `**${fmt(arch.files || 0, 0)}**`, `**${fmt(arch.mb || 0, 2)}**`]);
   const differ = [...new Set(have.map(([, d]) => round1(d.size_mb || 0)))].sort((a, b) => a - b);
   return [
     "<h3>Input archive</h3>",
@@ -3346,11 +3392,11 @@ export function pageLede(cols, opts = {}) {
   if (!n) return "";
 
   const land = (landingBlocks(cols).pop() || ["", {}])[1];
-  const gb = Number(land.size_mb) / 1000;
-  const files = Number(land.files);
-  const input = Number.isFinite(gb) && gb > 0
-    ? `**${fmt(gb, 0)} GB** of ${datasetInfo(opts.dataset || DEFAULTS.dataset).archive}` +
-      (Number.isFinite(files) && files > 0 ? ` (**${fmt(files, 0)} files**)` : "")
+  const arch = archiveTotals(land);
+  const size = archiveSize(arch.mb);
+  const input = size
+    ? `**${size}** of ${datasetInfo(opts.dataset || DEFAULTS.dataset).archive}` +
+      (Number.isFinite(arch.files) && arch.files > 0 ? ` (**${fmt(arch.files, 0)} files**)` : "")
     : "";
 
   const withTables = cols.filter(({ rec }) => tableNames(rec).length);

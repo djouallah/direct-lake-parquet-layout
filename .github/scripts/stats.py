@@ -113,6 +113,11 @@ MART = SPEC["mart"]
 # fraction OF THE ROWS READ, so the windows have to be the same size for the numbers to be one
 # measurement. 4M is small enough to stay minutes on the slowest item and large enough that a
 # high-cardinality column cannot look clustered by luck.
+# Written into the landing lakehouse's `Files` by duckrun, not by this project: `run_python`
+# round-trips its result and log through `Files/duckrun_remote/`. `landing_stats` skips it — see the
+# note there — because the landing block answers "how much data went IN" and this is neither.
+NOT_ARCHIVE = "duckrun_remote"
+
 ORDERING_SAMPLE_ROWS = 4_000_000
 
 # The get_stats() detail carried per table (see stats_for) and how each column is rendered.
@@ -189,11 +194,21 @@ def landing_stats():
         for batch in obstore.list(store):
             for o in batch:
                 path, n = o["path"], int(o["size"] or 0)
+                # The directory holding the file: `csv_raw/<source>` or `parquet_raw/<source>` for
+                # the archive, `(root)` for the archive log that sits beside it.
+                folder = path.rsplit("/", 1)[0] if "/" in path else "(root)"
+                # NOT ARCHIVE. `Files/duckrun_remote/` is duckrun's own `run_python` round-trip —
+                # the result and log files the notebook writes back, two per run — so counting it
+                # as landed input overstates both the file count and the bytes that went IN.
+                #
+                # It was invisible while there was one dataset: 2 files against AEMO's 8,401. On the
+                # taxi archive at `download_limit=3` it is 2 of 7, i.e. the page reported nearly a
+                # third of the input as data that is not input. Same defect either way; only one of
+                # them was legible.
+                if folder == NOT_ARCHIVE or folder.startswith(NOT_ARCHIVE + "/"):
+                    continue
                 files += 1
                 size += n
-                # The directory holding the file: `csv_raw/<source>` for the archive,
-                # `(root)` for the archive log parquet that sits beside it.
-                folder = path.rsplit("/", 1)[0] if "/" in path else "(root)"
                 f = folders.setdefault(folder, {"files": 0, "size_mb": 0.0})
                 f["files"] += 1
                 f["size_mb"] += n / 1048576

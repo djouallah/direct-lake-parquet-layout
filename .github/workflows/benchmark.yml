@@ -542,8 +542,14 @@ jobs:
               sys.exit(f"sort_by names {strays}, which are not columns of {ds}'s "
                        f"{spec['mart']}. Known: {sorted(known)}. "
                        f"This dataset's usual key is {spec['sort_by']!r}.")
-          sys.stderr.write(f"dataset={ds} mart={spec['mart']} "
-                           f"row_group_size={int(rg):,} rows, "
+          # `int(rg)` UNCONDITIONALLY was the bug. The check above correctly exempts `auto`
+          # from being an integer, and then this line parsed it anyway and killed the job with
+          # `invalid literal for int() with base 10: 'auto'`. `plan` is a `needs:` gate, so
+          # every dispatch died before `land` — and it died in the one job whose whole purpose
+          # is to catch bad input for free. Guarded once, into a variable, so the branch that
+          # validates and the branch that PRINTS cannot drift apart again.
+          rg_says = "auto (duckrun sizes it)" if rg.lower() == "auto" else f"{int(rg):,} rows"
+          sys.stderr.write(f"dataset={ds} mart={spec['mart']} row_group_size={rg_says}, "
                            f"sort_by={'auto (duckrun picks)' if auto else (cols or 'none (unsorted)')}\n")
           # THE dwh PIN IS EXACT, AND THAT IS THE GUARD RATHER THAN A PREFERENCE. This was
           # `dbt-fabric-samdebruyn`, a fork whose ONLY reason to exist here was that it had moved to

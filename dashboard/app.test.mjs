@@ -1038,20 +1038,30 @@ test("incomplete records are skipped by the loader and named", () => {
 test("the input archive is one table, not a column per engine", () => {
   // dbt_landing holds ONE copy of the CSVs and every engine reads the same bytes.
   const landing = {
-    files: 8338, size_mb: 170491.40,
+    // The recorded totals INCLUDE the scratch folder, because `stats.py` counted it when these
+    // records were written. The table derives its own from the archive folders, so they differ —
+    // which is the point of the next assertion.
+    files: 5594, size_mb: 170385.81,
     folders: {
       "csv_raw/daily": { files: 3042, size_mb: 170004.56 },
       "csv_raw/price_today": { files: 2550, size_mb: 381.24 },
+      // duckrun's `run_python` round-trip. It lives under the landing lakehouse's `Files` but it is
+      // not input — two files per run, invisible against AEMO's 8,401 and a THIRD of the taxi
+      // archive at `download_limit=3`, which is how it was finally noticed.
+      duckrun_remote: { files: 2, size_mb: 0.01 },
     },
   };
   const runs = [full("a-1.json", "duckrun", { landing }), full("b-2.json", "spark", { landing })];
   const out = render(runs, ledger({ OUT: 1.0, SEM: 2.0 }));
   const block = plain(out.split("Input archive")[1].split("<h3")[0]);
   assert.ok(block.includes("folder") && block.includes("size MB"));
-  assert.ok(!block.includes("duckrun") && !block.includes("spark"), "no engine column");
+  assert.ok(!block.includes("duckrun_remote"), "duckrun's round-trip is not archive");
+  assert.ok(!block.includes("spark"), "no engine column");
   assert.ok(block.includes("csv_raw/daily") && block.includes("170,004.56"));
-  assert.ok(block.includes("**8,338**") && block.includes("**170,491.40**"));
-  assert.equal(block.split("170,491.40").length - 1, 1, "the total is stated once, not per engine");
+  // The total is the ARCHIVE's, summed from the folders shown — so it agrees with the rows above
+  // it, and excludes the scratch the record's own `files`/`size_mb` still count.
+  assert.ok(block.includes("**5,592**") && block.includes("**170,385.80**"), block);
+  assert.equal(block.split("170,385.80").length - 1, 1, "the total is stated once, not per engine");
 });
 
 test("a changed archive between runs is stated, not averaged", () => {
@@ -3720,4 +3730,33 @@ test("the chart chain reads THIS dataset's mart, not the module default", () => 
     .map((m) => m[1]);
   const writer = labels.filter((t) => t === "spark");
   assert.ok(writer.length <= 1, `the writer name is printed twice: ${labels.join(" / ")}`);
+});
+
+test("the archive size never rounds half a gigabyte to `0 GB`", () => {
+  // THE BUG THIS PINS, reported off the rendered taxi page: the lede printed `fmt(gb, 0)`
+  // unconditionally. That is right for AEMO's 170 GB and reads **`0 GB`** for a 496 MB archive —
+  // and a zero where there is half a gigabyte does not read as rounding, it reads as "there was no
+  // input", which is the one thing this figure exists to deny.
+  assert.equal(d.archiveSize(170491), "170 GB");
+  assert.equal(d.archiveSize(496.42), "496 MB");
+  assert.equal(d.archiveSize(999), "999 MB");
+  assert.equal(d.archiveSize(1000), "1 GB");
+  // Nothing measured is an absent clause, never a zero — the rule the rest of the lede follows.
+  assert.equal(d.archiveSize(0), "");
+  assert.equal(d.archiveSize(undefined), "");
+});
+
+test("archiveTotals excludes duckrun's round-trip and falls back when there are no folders", () => {
+  const t = d.archiveTotals({ files: 7, size_mb: 496.42, folders: {
+    "parquet_raw/yellow": { files: 3, size_mb: 496.4 },
+    "parquet_raw/zone": { files: 1, size_mb: 0.01 },
+    "(root)": { files: 1, size_mb: 0.0 },
+    duckrun_remote: { files: 2, size_mb: 0.01 },
+  } });
+  // 7 files was the reported figure and only 5 are archive — the other two are duckrun's scratch.
+  assert.equal(t.files, 5);
+  assert.ok(Math.abs(t.mb - 496.41) < 0.001, `${t.mb}`);
+  assert.ok(!t.folders.some(([n]) => n === "duckrun_remote"));
+  // An older record shape carries totals and no breakdown; those totals are all there is.
+  assert.deepEqual(d.archiveTotals({ files: 12, size_mb: 34 }), { files: 12, mb: 34, folders: [] });
 });
