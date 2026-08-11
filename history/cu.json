@@ -621,9 +621,9 @@
    "OneLake Write via Redirect": 331.867
   },
   "4FBE4130-1717-4FC9-A985-3FB7B4A13067": {
-   "OneLake Iterative Read via Proxy": 987.632,
+   "OneLake Iterative Read via Proxy": 990.071,
    "OneLake Other Operations": 7.894,
-   "OneLake Other Operations Via Redirect": 58.666,
+   "OneLake Other Operations Via Redirect": 58.739,
    "OneLake Read via Proxy": 101.806,
    "OneLake Write via Proxy": 811.537,
    "OneLake Write via Redirect": 1958.029
@@ -1871,10 +1871,10 @@
    "XMLA Read Operation": 1844.944
   },
   "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
-   "OneLake Iterative Read via Proxy": 77.56,
-   "OneLake Other Operations": 0.354,
-   "OneLake Other Operations Via Redirect": 2.153,
-   "OneLake Read via Proxy": 1.622,
+   "OneLake Iterative Read via Proxy": 80.65,
+   "OneLake Other Operations": 0.416,
+   "OneLake Other Operations Via Redirect": 2.226,
+   "OneLake Read via Proxy": 1.654,
    "OneLake Write via Proxy": 86.828,
    "OneLake Write via Redirect": 26.179
   },
@@ -2927,6 +2927,14 @@
    "since": "2026-08-02T21:00:00",
    "timed": 341,
    "unfound": 5
+  },
+  {
+   "at": "2026-08-11T05:43:33+00:00",
+   "changed": 6,
+   "items": 341,
+   "since": "2026-08-02T21:00:00",
+   "timed": 341,
+   "unfound": 6
   }
  ],
  "schema": 2,
@@ -3530,9 +3538,9 @@
    "OneLake Write via Redirect": 0.031
   },
   "4FBE4130-1717-4FC9-A985-3FB7B4A13067": {
-   "OneLake Iterative Read via Proxy": 4.906,
+   "OneLake Iterative Read via Proxy": 4.92,
    "OneLake Other Operations": 0.408,
-   "OneLake Other Operations Via Redirect": 3.553,
+   "OneLake Other Operations Via Redirect": 3.56,
    "OneLake Read via Proxy": 4.358,
    "OneLake Write via Proxy": 0.941,
    "OneLake Write via Redirect": 2.021
@@ -4764,10 +4772,10 @@
    "XMLA Read Operation": 40.446
   },
   "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
-   "OneLake Iterative Read via Proxy": 0.415,
-   "OneLake Other Operations": 0.021,
-   "OneLake Other Operations Via Redirect": 0.16,
-   "OneLake Read via Proxy": 0.094,
+   "OneLake Iterative Read via Proxy": 0.434,
+   "OneLake Other Operations": 0.024,
+   "OneLake Other Operations Via Redirect": 0.167,
+   "OneLake Read via Proxy": 0.097,
    "OneLake Write via Proxy": 0.078,
    "OneLake Write via Redirect": 0.021
   },
@@ -4833,5 +4841,5 @@
    "OneLake Write via Redirect": 0.033
   }
  },
- "updated": "2026-08-11T05:31:25+00:00"
+ "updated": "2026-08-11T05:43:33+00:00"
 }
