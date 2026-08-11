@@ -403,8 +403,14 @@ jobs:
       DATASET: aemo
     steps:
       - uses: actions/checkout@v4
+      # 3.12, NOT the 3.11 every other free job uses, and the reason is the gating check below: it
+      # runs `dbt parse --target dwh`, so this job INSTALLS THE ADAPTER, and dbt-fabric 1.10.1+
+      # requires >= 3.12. On 3.11 pip cannot take the pin and silently resolves an older PYODBC
+      # build instead — which then fails at profile load with `'driver' is a required property`,
+      # because this image has no ODBC driver and the modern profile has no `driver:` key to give
+      # it. That is the exact trap `plan` refuses a loosened pin to prevent; it applies here now.
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
+        with: {python-version: "3.12"}
       - run: pip install pytest "duckrun>=0.4.36"
       - name: pytest the record, the teardown, the benchmark and the render layer
         run: python -m pytest .github/scripts/ benchmark/ cu/ -q
@@ -418,7 +424,11 @@ jobs:
       # AND test sets plus every node's fqn. All four adapters install without credentials and parse
       # touches no network, so this costs seconds and no capacity — and it is what CLAUDE.md has
       # always said to do by hand after a gating change, run automatically instead.
-      - run: pip install dbt-core dbt-duckdb duckrun dbt-fabric dbt-fabricspark
+      # EXACT pins for dbt-fabric, matching what `plan` asserts and the `server` leg installs — a
+      # bare name resolves a pyodbc build (see the note on the Python version above). duckrun brings
+      # dbt-duckdb, so both DuckDB targets come with it.
+      - run: |
+          pip install "dbt-fabric==1.11.0" "dbt-core==1.11.10" "dbt-adapters==1.23.0"                       dbt-fabricspark
       - name: every (dataset, target) enables exactly the right models and tests
         run: python .github/scripts/check_gating.py
 
