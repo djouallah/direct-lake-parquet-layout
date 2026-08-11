@@ -974,26 +974,23 @@ export function sortKeyOf(rec, table = DEFAULTS.table) {
  * picker also ran — the declaration is what the dispatcher chose.
  */
 /**
- * The sort labels to PRINT for a group — deduped, and with `auto` dropped when any member names the
- * columns.
+ * The sort labels to PRINT for a group — every distinct spelling its members used, `auto` included.
  *
- * A group's members all wrote the SAME resolved key, because that key is the grouping element
- * (`layoutKey[2]`). So when one run declared `date,time` and another asked for `auto` and the picker
- * answered `date,time`, they share a row and a named label describes both. Printing
- * `auto / date, time` there spends the cell on how the two dispatches were SPELLED, which is not
- * what a table about parquet is for.
+ * **`auto` IS NOT DROPPED FROM A MIXED GROUP, and that was tried the other way for one commit.** A
+ * group's members all wrote the same resolved key (that key is the grouping element), so when one
+ * run declared `date,time` and another asked for `auto` and the picker answered `date,time`, the
+ * named label does describe both — and on that reasoning `auto` was suppressed wherever a declared
+ * key existed. What that cost: **aemo's three auto runs became invisible.** They all resolve to
+ * `date,time`, which five hand-dispatched runs also declared, so every aemo row read `date, time`
+ * and the page could not say the picker had ever run on that dataset. A reader asking "what does
+ * duckrun choose on aemo?" got no answer from a page that had measured it three times.
  *
- * `auto` survives only when nothing in the group names a key — the taxi case, and the whole point.
- *
- * One acknowledged edge: the unmeasured-layout fallback groups by COLUMN rather than by `layoutKey`,
- * so its members can genuinely differ in key and dropping `auto` there omits one of several. That
- * path has no measured layout to describe in the first place.
+ * So a mixed group prints `auto / date, time`, using the `/` this function already joins several
+ * values with. It says what it is: these runs wrote one layout, and they were dispatched two ways.
  */
 function sortLabels(members, table) {
-  const all = [...new Set((members || []).map(({ rec }) => sortLabelOf(rec, table))
+  return [...new Set((members || []).map(({ rec }) => sortLabelOf(rec, table))
     .filter((s) => typeof s === "string"))];
-  const named = all.filter((s) => s !== "auto");
-  return named.length ? named : all;
 }
 
 export function sortLabelOf(rec, table = DEFAULTS.table) {

@@ -526,13 +526,13 @@ test("an `auto` run PRINTS `auto` and is still GROUPED by the columns it resolve
   assert.equal(d.layoutGroups([{ rec: a }, { rec: b }]).length, 2,
     "two resolutions, two bars — the label is not the key");
 
-  // A group holding BOTH spellings prints the named one alone: they share a row precisely because
-  // they resolved to the same key, so the name describes the `auto` run too and `auto / date, time`
-  // would spend the cell on how two dispatches were worded. This is live on aemo — runs
-  // 30809945203 and 30814168910 asked for auto and got `date,time`, the key other runs declared.
+  // A group holding BOTH spellings prints BOTH. Suppressing `auto` where a declared key exists was
+  // tried and reverted: aemo's three auto runs all resolve to `date,time`, which five hand-dispatched
+  // runs also declared, so every aemo row read `date, time` and the page could not say the picker
+  // had ever run on that dataset at all.
   const mixed = [{ rec: auto }, { rec: sortedBy(4, 25, ["date", "time"]) }];
-  assert.equal(d.keyCells(mixed).ordering, "date, time");
-  assert.equal(d.layoutLabel(mixed), "by date, time · 25 RG");
+  assert.equal(d.keyCells(mixed).ordering, "auto / date, time");
+  assert.equal(d.layoutLabel(mixed), "by auto / date, time · 25 RG");
 });
 
 test("the caption says which columns a sorted bar is ordered by, row groups only", () => {
