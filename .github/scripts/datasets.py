@@ -7,10 +7,12 @@ Two datasets run through this project, selected by the DATASET env var (a dispat
   nyc    NYC TLC yellow taxi. Parquet in, 4 models, mart.fct_trips under layout test — 17 columns
          of which four sit at 97-99% single-value and two are Zipfian on Manhattan and the airports.
 
-They exist as a PAIR, and the pairing is the experiment. V-Order is an encoding pass — this repo
-measured that it does not reorder rows — so it acts on column count x categorical skew. aemo has
-neither and nyc has both, on the same four engines with the same layout knobs, so "does V-Order do
-anything, and on what kind of data" stops being one dataset's anecdote.
+They exist as a PAIR, and the pairing is the experiment — it is what turned a wrong conclusion
+into a right one. V-Order reorders rows AND re-encodes them, so what it is worth depends on the
+SURFACE: column count x categorical skew. aemo has neither and nyc has both, and measuring only
+aemo produced "V-Order does not reorder rows", which is false — see the retraction in CLAUDE.md.
+Same instrument, same code, two datasets: 3,371x fewer runs on the most repetitive taxi column
+against nothing at all on fct_summary.
 
 WHY THIS FILE EXISTS AT ALL. The Fabric item names were hardcoded in three places that had to agree
 by convention: provision.py (which CREATES them), stats.py (which READS them) and

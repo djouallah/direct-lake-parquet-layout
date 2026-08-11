@@ -3,8 +3,8 @@
 --
 -- WHY A WIDE RAW FACT AND NOT AN AGGREGATE. The whole reason this dataset exists is that
 -- fct_summary is five narrow columns on a regular 5-minute grid, which is close to the worst
--- possible surface for V-Order: an encoding pass acts on column count x categorical skew, and that
--- table has neither. Here there are 17 columns, of which RatecodeID, store_and_fwd_flag,
+-- possible surface for V-Order: what it is worth tracks column count x categorical skew, and that
+-- table has neither. Measured here it reorders by up to 3,371x; there, not at all. Here there are 17 columns, of which RatecodeID, store_and_fwd_flag,
 -- payment_type and VendorID sit at 97-99% single-value and the two LocationIDs are Zipfian on
 -- Manhattan and the airports. Summarising this into a mart would throw away the only property
 -- being measured.

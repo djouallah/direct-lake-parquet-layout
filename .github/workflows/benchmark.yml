@@ -105,9 +105,10 @@ on:
       #
       # The two are a PAIR, not a menu. aemo is 143M rows of five narrow columns on a regular
       # 5-minute grid (near-uniform); nyc is 17 columns with four categoricals at 97-99%
-      # single-value and two Zipfian zone ids. V-Order is an encoding pass, so it acts on column
-      # count x categorical skew — running both is what turns a V-Order result into a finding
-      # rather than one dataset's anecdote.
+      # single-value and two Zipfian zone ids. What V-Order is worth depends on that SURFACE —
+      # column count x categorical skew — not on row count, which is why measuring only the bigger,
+      # narrower table concluded it does nothing. Running both is what makes a V-Order result a
+      # finding rather than one dataset's anecdote.
       dataset:
         description: "dataset — aemo (uniform) or nyc (skewed)"
         type: choice

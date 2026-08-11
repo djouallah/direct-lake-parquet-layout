@@ -4,9 +4,10 @@ Sibling of download_aemo.py, same shape and the same watermark idiom (an archive
 Files root, so a re-run only fetches what is new), retargeted at a source that is already parquet.
 
 WHY THIS DATASET EXISTS HERE. The V-Order result rested on `mart.fct_summary`: 143M rows of five
-narrow columns on a perfectly regular 5-minute x DUID grid. V-Order is an ENCODING pass — this repo
-measured that it does not reorder rows — so it acts on column count x categorical skew, and that
-table supplies neither. Yellow taxi supplies both: 17 columns after the core subset, `RatecodeID` /
+narrow columns on a perfectly regular 5-minute x DUID grid, which showed no row reordering at all —
+and that was read as a fact about V-Order rather than about the table. It is a fact about the
+table: what V-Order is worth depends on the SURFACE, column count x categorical skew, and
+fct_summary supplies neither. Measured on this dataset it reorders by up to 3,371x. Yellow taxi supplies both: 17 columns after the core subset, `RatecodeID` /
 `store_and_fwd_flag` / `payment_type` / `VendorID` at 97-99% single-value, and the two LocationIDs
 Zipfian on Manhattan and the airports. AEMO is then the near-uniform arm of the same experiment.
 

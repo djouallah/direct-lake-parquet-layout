@@ -8,7 +8,7 @@ models:
 
       It is a RAW fact rather than an aggregate on purpose. The reason this dataset exists is that
       fct_summary is five narrow columns on a regular 5-minute grid, which is close to the worst
-      possible surface for V-Order: an encoding pass acts on column count x categorical skew, and
+      possible surface for V-Order: what it is worth tracks column count x categorical skew, and
       that table has neither. Here there are 17 columns, of which RatecodeID, store_and_fwd_flag,
       payment_type and VendorID sit at 97-99% single-value and the two LocationIDs are Zipfian on
       Manhattan and the airports. Summarising would throw away the only property being measured.

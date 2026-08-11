@@ -54,8 +54,9 @@ export const DEFAULTS = {
   // WHICH DATASET THE PAGE IS ABOUT. Two run through this project — `aemo` (143M rows of five
   // narrow columns on a regular 5-minute grid, near-uniform) and `nyc` (17 columns, four
   // categoricals at 97-99% single-value, two Zipfian zone ids). They are a PAIR: V-Order is an
-  // encoding pass, so it acts on column count x categorical skew, and running both is what makes a
-  // V-Order result a finding rather than one dataset's anecdote.
+  // What V-Order is worth depends on that SURFACE — column count x categorical skew — not on row
+  // count, so running both is what makes a V-Order result a finding rather than one dataset's
+  // anecdote.
   //
   // They must never share a page. Every number here is per-column and per-layout-group, and nothing
   // in those keys carries the dataset — so a taxi run would become "the latest duckrun record",

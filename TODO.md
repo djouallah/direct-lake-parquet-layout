@@ -9,10 +9,38 @@ exercise cost. This file is what has not been done.
 
 ---
 
+## Does dwh's V-Order move its parquet? Genuinely open, and one dispatch away
+
+`layout.ordering.dwh` reads 100% row-group overlap on every column but `cutoff`, and CLAUDE.md read
+that as agreeing with the spark finding that V-Order does not reorder rows. **That finding is
+retracted** — it was measured on `fct_summary`, which has no surface to reorder — so the dwh reading
+agrees with nothing. Both engines were measured on the one table that could not show an effect.
+
+The taxi pair settled it for spark (3,371x on the most repetitive column). The same experiment
+answers dwh, and nothing about it is new work:
+
+```bash
+gh workflow run Benchmark -f dataset=nyc -f engines=dwh -f skip_download=true -f dwh_vorder=true
+# wait for it to finish — SERIAL, see below
+gh workflow run Benchmark -f dataset=nyc -f engines=dwh -f skip_download=true -f dwh_vorder=false
+```
+
+Then diff `layout.ordering.dwh.columns` between the two records. Note the warehouse writes no
+`add.tags.VORDER`, so `vorder_files` is absent there by design and
+`layout.ordering.dwh.vorder_enabled` (the `sys.databases` readback) is what says which arm a run is.
+
+⚠️ `dwh_vorder=false` runs an IRREVERSIBLE `ALTER DATABASE CURRENT SET VORDER = OFF`. That is safe
+only because the teardown deletes the warehouse at the end of every run — do not lift this onto one
+that outlives its dispatch.
+
+---
+
 ## The NYC dataset has never been dispatched
 
-Everything is in place and verified offline; **no leg has spent a minute of capacity on it.** Until
-one has, treat the numbers below as untested rather than wrong.
+Three runs have now happened — 31447430982 (duckrun), 31450956154 (spark `readHeavyForPBI`) and
+31451599140 (spark `writeHeavy`) — all green end to end, and the second and third are the pair that
+overturned this repo's V-Order conclusion. What is still untried: **iceberg and dwh have never built
+this dataset**, and no run has drained more than three months.
 
 ### The first dispatch, and it should be small
 
@@ -34,7 +62,7 @@ Three months is minutes of download and a few million rows. What to read afterwa
 Then the same dispatch with `-f skip_download=true` to confirm the incremental path is a no-op, and
 only then a real drain.
 
-### ⚠️ Whether 2011-2016 carries `PULocationID` is UNVERIFIED
+### RESOLVED: 2011 carries `PULocationID`
 
 The archive is documented as 2011-onward because TLC republished all history as parquet and only two
 schema eras exist — pre-2011 (lat/lon) and 2011-onward (zone ids). **That was read from a
@@ -42,10 +70,10 @@ third-party importer's schema list, not from the files**, and this machine could
 CloudFront to check. If TLC did not backfill zone ids into 2011-2016, those months lack
 `PULocationID`/`DOLocationID`.
 
-**It fails safely and loudly**, which is why it was shipped rather than blocked on: the downloader
-reads each file's footer and REFUSES a month missing any core column, logging what it dropped.
-Nothing is landed that the models cannot read. So the worst case is a smaller archive than the
-16 years advertised, visible in the `land` log on the first real drain.
+**Answered by run 31445985164**: 2011-01, 2011-02 and 2011-03 all landed with ZERO refused,
+43,734,157 rows between them. TLC did backfill the zone ids, so the 2011-onward archive is real and
+the ~1.5B row figure stands. The land-time guard is still the thing that would catch a later month
+drifting, and it costs nothing to leave in.
 
 If most of 2011-2016 is refused, the honest fix is `NYC_START=2017-01` (an env var the downloader
 already reads) plus a line here saying so. The row count drops to ~700M, still 5× `fct_summary`.

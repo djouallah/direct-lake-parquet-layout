@@ -14,9 +14,11 @@ There are **two datasets**, chosen with the `DATASET` env var (`aemo` | `nyc`, d
 | out | `mart.fct_summary` — 143M rows, **5 narrow columns**, regular 5-min x DUID grid | `mart.fct_trips` — ~1.5B rows, **17 columns** |
 | shape | near-uniform | four categoricals at 97-99% one value, two Zipfian zone ids |
 
-The pairing is the point. Fabric's V-Order is an *encoding* pass, so what it can do depends
-on column count and categorical skew — one uniform dataset and one skewed one is what makes
-a layout result a finding rather than an anecdote.
+The pairing is the point, and it has already earned itself. What Fabric's V-Order is worth
+depends on the **surface** — column count times categorical skew — not on row count. Measured
+on `fct_summary` it appeared to do no row reordering at all; measured on `fct_trips`, same code
+and same instrument, it reorders the most repetitive column by **3,371x**. One dataset would
+have given the wrong answer with a straight face.
 
 ```bash
 dbt build --target duckrun  # DuckDB executes, delta-rs writes Delta Lake   (default; runs offline)

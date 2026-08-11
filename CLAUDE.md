@@ -27,12 +27,19 @@ together.
 | skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian |
 | items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … |
 
-**Why the second one exists.** The V-Order result rested on `fct_summary` and drew two objections:
-the data is too small, and the sort key happened to match the query. Both land. V-Order is an
-**encoding** pass — this repo measured that it does not reorder rows, see the `layout.ordering`
-bullet — so it acts on *column count × categorical skew*, and `fct_summary` supplies neither. Taxi
-supplies both, on the same four engines with the same layout knobs. The pair is the experiment: one
-uniform arm, one skewed arm. A V-Order finding on one dataset is an anecdote.
+**Why the second one exists, and it has already paid for itself.** The V-Order result rested on
+`fct_summary` and drew two objections: the data is too small, and the sort key happened to match the
+query. Both land. What V-Order is worth tracks *column count × categorical skew* — the SURFACE, not
+the row count — and `fct_summary` supplies neither. Taxi supplies both, on the same four engines
+with the same layout knobs.
+
+**The pair immediately overturned this file's own conclusion.** `fct_summary` showed no row
+reordering, and that was written down as "V-ORDER DOES NOT REORDER THE ROWS" — a statement about
+V-Order inferred from one table that had nothing to reorder. On `fct_trips`, same instrument and
+same code, it reorders the most repetitive column **3,371×**. See the retraction in the
+`layout.ordering` bullet. That is what one dataset costs: not a missing data point, a confident
+wrong answer. It also answers the "too small" objection precisely — `fct_summary` is 143M rows
+against taxi's 43.7M here, three times bigger, and shows nothing.
 
 Contoso (`djouallah/duckrun tests/parquet_layout/contoso`) was the original ask and was rejected on
 the user's own criterion: SQLBI's generator with engineered weight distributions is synthetic, which
@@ -665,12 +672,48 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   two swap. A near-unique column (`mw`, `price`) is the built-in control: it cannot drop below ~100%
   unless the file really was reordered, so a run where every column falls together is measuring
   something real rather than low cardinality.
-  **MEASURED ANSWER: V-ORDER DOES NOT REORDER THE ROWS. It is an encoding pass here, worth ~16% of
-  the file size and nothing else.** Two spark dispatches an hour apart on identical data, differing
-  only in resource profile — 31129088830 (`readHeavyForPBI`, 12 files, 1,059 MB, 12/12 files tagged
-  `VORDER`) against 31131727297 (`writeHeavy`, 13 files, 1,260 MB, 0/13 tagged) — put the physical
-  row order within measurement noise of each other on every column, with the un-V-Ordered run
-  slightly MORE clustered on three of them:
+  **RETRACTED: "V-ORDER DOES NOT REORDER THE ROWS." IT REORDERS THEM MASSIVELY — ON DATA THAT HAS
+  ANYTHING TO REORDER.** The AEMO pair below is real and its numbers stand; what was wrong was
+  reading it as a statement about V-Order rather than about `fct_summary`. That table is FIVE narrow
+  columns on a regular 5-minute × DUID grid — `date` already contiguous from the model's own
+  trailing `ORDER BY`, `mw` and `price` near-unique — so there was almost nothing a reordering pass
+  could grip. Measuring "no effect" there and concluding "no effect" was the error.
+
+  **THE NYC TAXI PAIR SAYS THE OPPOSITE, ON THE SAME INSTRUMENT.** Two spark dispatches, identical
+  data, only the resource profile differing — 31450956154 (`readHeavyForPBI`, 5 files, 427.6 MB,
+  5/5 tagged `VORDER`) against 31451599140 (`writeHeavy`, 9 files, 667 MB, 0/9 tagged). Runs per 4M
+  sampled rows, `writeHeavy` → `readHeavyForPBI`:
+
+  | column | `writeHeavy` | `readHeavyForPBI` | fewer runs |
+  |---|---:|---:|---:|
+  | `passenger_count` | 1,368,511 | 406 | 3,371× |
+  | `payment_type` | 1,910,869 | 594 | 3,217× |
+  | `VendorID` | 745,411 | 2,993 | 249× |
+  | `RatecodeID` | 138,083 | 572 | 241× |
+  | `store_and_fwd_flag` | 789,472 | 3,611 | 219× |
+  | `extra` | 84,155 | 820 | 103× |
+  | `tolls_amount` | 232,382 | 4,756 | 49× |
+  | `fare_amount` | 3,857,025 | 112,540 | 34× |
+  | `total_amount` | 3,927,807 | 233,688 | 17× |
+  | `trip_distance` | 3,944,677 | 1,788,756 | 2.2× |
+  | `PULocationID` | 3,719,752 | 2,920,898 | 1.3× |
+  | `tpep_pickup_datetime` | 3,996,210 | 3,991,701 | 1.0× |
+
+  Read the ORDER of that table, not just the sizes: it falls off exactly as an encoding-driven sort
+  predicts. The 97-99% single-value categoricals move by two to three orders of magnitude, the
+  moderately repetitive numerics by one to two, and the near-unique pickup timestamp does not move
+  at all. A writer shuffling rows at random could not produce that gradient, and neither could
+  measurement noise. Size drops 36% against AEMO's 16%.
+
+  **So the rule is: V-Order's row reordering is real, and what it is worth depends on the SURFACE —
+  column count × categorical skew — not on the row count.** That is also the answer to "the data is
+  too small": AEMO's `fct_summary` is 143M rows, three times the taxi table used here, and shows
+  nothing. Small SURFACE, not small table.
+
+  The AEMO pair, kept because its numbers are still correct for that table and because it is the
+  control that makes the taxi result legible — 31129088830 (`readHeavyForPBI`, 12 files, 1,059 MB,
+  12/12 tagged) against 31131727297 (`writeHeavy`, 13 files, 1,260 MB, 0/13 tagged), physical row
+  order within noise on every column, the un-V-Ordered run slightly MORE clustered on three:
 
   | column | `readHeavyForPBI` runs | `writeHeavy` runs |
   |---|---:|---:|
@@ -680,9 +723,12 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   | `DUID` | 3,977,201 (99.43%) | 3,978,804 (99.47%) |
   | `mw` | 3,997,905 (99.95%) | 3,996,712 (99.92%) |
 
-  So the V-Order documentation's "row reordering" is not observable in the parquet Fabric writes
-  here, while the tag, the table property and a 16% size drop all say the feature genuinely engaged.
-  Do not explain a V-Order CU result by row order — the rows are in the same order either way.
+  So on `fct_summary` the documentation's "row reordering" is not observable, while the tag, the
+  table property and a 16% size drop all say the feature engaged. **Do not generalise that to
+  V-Order** — it is a fact about a five-column table whose sort key was already applied by the
+  model. On `fct_trips` the same measurement, same code, same instrument, reads 3,371× on the most
+  repetitive column. Before explaining any V-Order result by "the rows are in the same order", check
+  which dataset it came from.
   What IS clustered is `date`, in BOTH runs equally: ~45,000-row runs against ~49,600 rows per date,
   i.e. each date contiguous. That is the model's own trailing `ORDER BY date` reaching the merge
   source, not the writer — which is exactly the confound this pair was run to separate, and the
@@ -737,8 +783,12 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   backfilled from the model at each run's SHA. The check is `typeof === "boolean"`, not truthiness: a
   real `false` (someone ran the `ALTER`) has to beat a `vorder: true`.
   One thing this does NOT claim: that dwh's V-Order changes its parquet measurably here. Its
-  `rg_overlap_pct` is 100% on every column but `cutoff`, which is consistent with the measured spark
-  finding that V-Order does not reorder rows. That is the same open question, not a new one.
+  `rg_overlap_pct` is 100% on every column but `cutoff` — which was read as agreeing with the spark
+  finding that V-Order does not reorder rows. That finding is RETRACTED and scoped to `fct_summary`
+  (see the `layout.ordering` bullet), so this agrees with nothing: both engines were measured on the
+  one table with no surface to reorder. **Whether dwh's V-Order moves its parquet is now genuinely
+  open, and answerable** — a `dataset=nyc engines=dwh` pair with `dwh_vorder` on and off is the same
+  experiment the spark pair just ran.
 - **`dwh_vorder` IS A DISPATCH INPUT, ON BY DEFAULT — and the `ALTER` being irreversible is not the
   objection it looks like.** Ticking it off runs `ALTER DATABASE CURRENT SET VORDER = OFF` **before**
   the build (V-Order only affects files written after it; there is no retrofit short of a rewrite),
