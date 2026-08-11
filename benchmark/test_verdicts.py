@@ -206,7 +206,9 @@ def test_a_disagreeing_top_duid_is_a_note_not_fatal():
                top_duid={FAST: "ERGT01", MID: "BW01"})
     errs, notes = rs.verify_ranking(rep, rr.compute_analysis(rep))
     assert errs == []
-    assert any("different DUIDs" in n for n in notes)
+    # The wording is now dataset-neutral and reads the label out of the report — "top
+    # DUID" on aemo, "busiest pickup zone" on nyc — so match the invariant part.
+    assert any("a different top DUID per engine" in n for n in notes)
 
 
 # ----------------------------------------------------------------- the session's shape
@@ -283,7 +285,7 @@ def test_nothing_touches_the_model_between_readiness_and_pass_1(monkeypatch):
     monkeypatch.setattr(xc, "open_conn", lambda *a, **k: FakeConn())
     monkeypatch.setattr(xc, "_refresh", lambda *a, **k: seen.append("REFRESH"))
     monkeypatch.setattr(xc, "run_query", lambda conn, dax: (seen.append(dax), (1.0, 1))[1])
-    monkeypatch.setattr(xc, "top_duid", lambda conn: (seen.append("TOP_DUID"), "ERGT01")[1])
+    monkeypatch.setattr(xc, "top_key", lambda conn: (seen.append("TOP_DUID"), "ERGT01")[1])
 
     res, td = xc.bench_model("ws", "aemo_duckrun", "tok", 3, None)
     assert td == "ERGT01"
@@ -332,7 +334,7 @@ def test_think_time_pauses_between_queries_and_is_not_measured(monkeypatch):
     monkeypatch.setattr(xc, "open_conn", lambda *a, **k: FakeConn())
     monkeypatch.setattr(xc, "_refresh", lambda *a, **k: None)
     monkeypatch.setattr(xc, "run_query", fake_query)
-    monkeypatch.setattr(xc, "top_duid", lambda conn: "ERGT01")
+    monkeypatch.setattr(xc, "top_key", lambda conn: "ERGT01")
     monkeypatch.setattr(xc.time, "sleep", lambda s: (slept.append(s), order.append("T"))[0])
 
     res, _td = xc.bench_model("ws", "aemo_duckrun", "tok", 2, "ERGT01", think_seconds=4)
@@ -357,7 +359,7 @@ def test_think_time_of_zero_sleeps_not_at_all(monkeypatch):
     monkeypatch.setattr(xc, "open_conn", lambda *a, **k: FakeConn())
     monkeypatch.setattr(xc, "_refresh", lambda *a, **k: None)
     monkeypatch.setattr(xc, "run_query", lambda conn, dax: (7.0, 1))
-    monkeypatch.setattr(xc, "top_duid", lambda conn: "ERGT01")
+    monkeypatch.setattr(xc, "top_key", lambda conn: "ERGT01")
     monkeypatch.setattr(xc.time, "sleep", lambda s: slept.append(s))
     xc.bench_model("ws", "aemo_duckrun", "tok", 2, "ERGT01", think_seconds=0)
     assert slept == []

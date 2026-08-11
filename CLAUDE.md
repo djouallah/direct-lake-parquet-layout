@@ -1,13 +1,68 @@
 # Working in this repo
 
-One dbt project, four engines (`duckrun`, `iceberg`, `dwh`, `spark`), one landed copy of the
-data. The thesis is *the engine doesn't matter, the output does* — so the models are written
-per dialect (`models/duckdb`, `models/dwh`, `models/spark`, gated by `+enabled` in
+One dbt project, four engines (`duckrun`, `iceberg`, `dwh`, `spark`), **two datasets**, one landed
+copy of each. The thesis is *the engine doesn't matter, the output does* — so the models are written
+per dialect (`models/<dataset>/duckdb`, `.../dwh`, `.../spark`, gated by `+enabled` in
 `dbt_project.yml`) and every leg runs `dbt build`, so each engine writes and tests its own output
 in one DAG walk. `stats.py` reads all four items through Delta on OneLake and puts every shared table
 side by side — it is the only cross-engine check there is, and it is **no longer part of the build**:
 it is the dispatch-only `layout` job, because it costs ~10 minutes to report something that
 only changes when the tables are rewritten.
+
+## TWO DATASETS, AND THEY ARE A PAIR RATHER THAN A MENU
+
+`DATASET` is a dispatch input (`aemo` | `nyc`, default `aemo`) and reaches everything from one
+workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list, mart,
+mart columns, default sort key, downloader. **It is the single source for names that provision.py
+CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would notice, with
+two it silently records the other dataset's layout under this run's id. `benchmark/engines.py`
+carries a deliberate copy (that directory must stay deletable) and `test_datasets.py` pins the two
+together.
+
+| | `aemo` | `nyc` |
+|---|---|---|
+| source | ragged CSV from nemweb | monthly parquet from TLC's CDN |
+| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` |
+| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** |
+| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian |
+| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … |
+
+**Why the second one exists.** The V-Order result rested on `fct_summary` and drew two objections:
+the data is too small, and the sort key happened to match the query. Both land. V-Order is an
+**encoding** pass — this repo measured that it does not reorder rows, see the `layout.ordering`
+bullet — so it acts on *column count × categorical skew*, and `fct_summary` supplies neither. Taxi
+supplies both, on the same four engines with the same layout knobs. The pair is the experiment: one
+uniform arm, one skewed arm. A V-Order finding on one dataset is an anecdote.
+
+Contoso (`djouallah/duckrun tests/parquet_layout/contoso`) was the original ask and was rejected on
+the user's own criterion: SQLBI's generator with engineered weight distributions is synthetic, which
+is the "too generic" objection wearing a different hat.
+
+**THE GATING RULES ARE IN `dbt_project.yml` AND THERE ARE THREE.** Read them there before touching
+an `+enabled`; the short form is: nothing on the `aemo_electricity` key ever (a generic test's fqn is
+the fqn of its **yml file**, which is why the patch files moved under `models/<dataset>/` and why
+that move *fixed* the documented folder-key trap rather than working around it); **both axes in one
+`+enabled` on the dialect key**, because the value is a scalar and a deeper folder key clobbers a
+shallower one — splitting them parses, runs, and builds the WRONG DATASET with nothing red; and
+always `env_var('DATASET', 'aemo')` with the default.
+
+**A `DATASET` TYPO IS THE WORST FAILURE THIS PROJECT HAS.** It makes every gate false, so
+`dbt build` reports "Nothing to do" and **exits 0** — the leg goes green having built nothing, the
+teardown deletes an empty lakehouse, and the run records the layout of nothing. Four guards, all
+free: the input is a `choice`; `datasets.selected()` refuses an unknown name and **deliberately does
+not strip whitespace**, because dbt's `env_var` does not either and `'nyc '` would otherwise pass
+here and still disable everything; `plan` validates; and `.github/scripts/check_gating.py` runs the
+whole (dataset × target) matrix through `dbt parse` in the free `checks` job, asserting the enabled
+model **and test** sets plus every fqn.
+
+**`sort_by` is NOT dataset-neutral.** Its form default is the AEMO key, so a `dataset: nyc` dispatch
+must pass its own (or blank it). `plan` REFUSES a key naming columns the selected dataset's mart does
+not have — it does not substitute, because a run that quietly measured a layout other than the one
+the form described is the failure that reshaped that field.
+
+**The page shows ONE dataset at a time**, `?dataset=nyc` to switch, and it carries its mart with it.
+Absence in a record means `aemo` — every record committed before the input existed was an AEMO build.
+`selectRuns` filters and NAMES what it dropped.
 
 **The test suite covers the mart and nothing else** — `fct_summary`, `dim_duid`, `dim_calendar`.
 The facts and the staging view carry descriptions, no assertions: the grain and
@@ -15,10 +70,20 @@ files-processed tests over `fct_price`/`fct_scada` were deleted deliberately, so
 is now only visible where it surfaces in the summary. Adding a test on a fact model is a reversal
 of that decision, not an oversight being corrected.
 
-**And `tests/` is written per dialect, exactly like `models/`** — `tests/duckdb`, `tests/dwh`,
-`tests/spark`, each holding the same two singular tests in its own SQL, with `data_tests` in
-`dbt_project.yml` enabling one folder per target. All four engines therefore run the same six
-assertions (two singular, four generic) against the output they just wrote.
+**And `tests/` is written per dataset AND per dialect, exactly like `models/`** —
+`tests/aemo/{duckdb,dwh,spark}`, `tests/nyc/{duckdb,dwh,spark}`, each holding that dataset's
+singular tests in its own SQL, with `data_tests` in `dbt_project.yml` enabling one folder per
+(dataset, target). All four engines therefore run the same assertions against the output they just
+wrote: **six on aemo** (two singular, four generic), **five on nyc** (one singular, four generic).
+
+**`fct_trips` has NO grain assertion and cannot have one** — TLC trip records carry no natural
+unique key, duplicate trips being a documented feature of the source. Its one singular test,
+`assert_fct_trips_matches_archive_log`, reconciles each month's stored row count against the count
+the downloader read from that file's parquet footer, so it catches a doubled month, a truncated one
+and a month landed but never built. **It reads TWO tables**, a knowing exception to the
+one-table rule: the archive log is not a source that can change shape, it is the manifest of what
+this pipeline itself landed, and without the join there is no assertion available on that table at
+all.
 
 **Put the gate on the folder key, never on `aemo_electricity`.** This was a live bug: a generic
 test declared in `models/_*.yml` gets fqn `['aemo_electricity', '<test_name>']` — no folder
@@ -128,7 +193,25 @@ away.
 
 ## Incremental write strategies are per engine, and not interchangeable
 
-**Nothing writes with `append` any more, and nothing should go back to it.** Append has no
+⚠️ **ONE MODEL WRITES WITH `append` AND IT IS `nyc`'s `fct_trips` ON THE DUCKDB PAIR.** The rule
+below is otherwise intact and everything it says about append is still true; the exception exists
+because on that dataset nothing else is EXPRESSIBLE, not because the rule was relaxed. Read the
+model header for the full chain — the short form: TLC has no natural unique key, so the only
+candidate is the FILE and the source is 3M rows per file; **duckrun refuses a `unique_key` its
+source is not unique on**, and the refusal covers both write paths (`engine.assert_source_unique`
+guards the delta-rs merge AND the routed insert-only anti-join — verified against `merge` +
+`do_nothing` and against `insert`, each raising on the first real incremental file); a surrogate row
+id is free in DuckDB and Spark and impossible in Fabric Warehouse, so its VALUES would differ on one
+engine in a project claiming the four outputs are one table; and `delete+insert` on duckrun is a
+fenced full-table overwrite, which already killed the process at 143M rows. **spark and dwh keep a
+real per-file guard** (`skip_matched_step`, `delete+insert` on `[file]`), so only the DuckDB pair
+gives it up, and iceberg follows duckrun rather than keeping a merge of its own because the standing
+rule for that tree is byte-identical model code. What bounds the exposure: the teardown means there
+is no cross-run incremental state to race over, and
+`assert_fct_trips_matches_archive_log` is the detector. Do not "fix" this back into a keyed write —
+it does not run.
+
+**Nothing else writes with `append`, and nothing should go back to it.** Append has no
 write-time key check, so the only thing preventing duplicate rows was the *file selection* —
 `new_source_files` on dwh, `spark_new_files` on spark, the `SET VARIABLE` pre-hook on duckdb.
 That list is computed **before** the write. Two overlapping runs (a re-dispatch, a `dbt retry`

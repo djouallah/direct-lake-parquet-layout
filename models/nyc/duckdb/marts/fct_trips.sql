@@ -72,15 +72,23 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 
 {#-- The sort and geometry knobs are the SAME dispatch inputs the AEMO mart reads, so a layout
      question can be asked of either dataset with one workflow. The env default below is
-     NYC-shaped: pickup time first (every composite query groups or filters on the date
-     relationship), then PULocationID (the widest skewed categorical, and the ladder's filter).
-     The plan job substitutes this dataset's default when the sort_by input is left at the other
-     dataset's -- a well-formed column name that does not exist here would otherwise die mid-write
-     with the capacity already spent. --#}
+     NYC-shaped: pickup_date first (every composite query groups or filters THROUGH the date
+     relationship, and a date is far lower cardinality than the timestamp, so it RLEs where the
+     timestamp would not), then PULocationID (the widest skewed categorical, and what the
+     selectivity ladder filters on). The plan job REFUSES a sort_by naming columns this dataset's
+     mart does not have -- which is what a dispatch gets by leaving the field at the other
+     dataset's key -- rather than substituting, because a run that quietly measured a layout other
+     than the one the form described is the failure that reshaped that field. --#}
+-- pickup_date IS A STORED COLUMN AND IT IS NOT THE month_key MISTAKE. Direct Lake cannot relate a
+-- DATETIME column to a DATE dimension key, and it has no calculated columns to bridge one, so a
+-- date dimension is only reachable if the fact carries a DATE. month_key was rejected because
+-- NOTHING read it — no model, no test, no macro, no semantic model; this one is read by the
+-- relationship every date-grouped query in the suite traverses, and it is one narrow column whose
+-- values are near-contiguous under the default sort, so it costs little and RLEs well.
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
-    sort_by=(env_var('DUCKDB_SORT_BY', 'tpep_pickup_datetime,PULocationID').split(',')
+    sort_by=(env_var('DUCKDB_SORT_BY', 'pickup_date,PULocationID').split(',')
              if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(env_var('DUCKDB_ROW_GROUP_SIZE', '16000000') | int
                         if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
@@ -109,6 +117,7 @@ SELECT
   {%- for name in cols %}
   CAST({{ name }} AS {{ nyc_trip_type(name, 'duckdb') }}) AS {{ name }},
   {%- endfor %}
+  CAST(tpep_pickup_datetime AS DATE) AS pickup_date,
   {{ parse_filename('filename') }} AS file
 FROM trips
 {% else %}

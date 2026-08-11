@@ -57,7 +57,9 @@ orchestration shape alive to serve it meant two answers to the same question).
 
 Env in:
   BENCH_ENGINES  — exactly ONE engine label. More than one is an error, not a comparison.
-  BENCH_TOP_DUID — optional; pins the DUID the hot_only ladder filters on instead of resolving it.
+  BENCH_TOP_DUID — optional; pins the value the hot_only ladder filters on instead of resolving
+                   it from the data. Named for AEMO's DUID, which is what it pinned when there
+                   was one dataset; on nyc it pins the pickup zone. See SUITES.
                    Unset is fine: every engine holds the same rows, so each job resolves the same
                    DUID, and the value is recorded per model for the render layer to check.
   PBI_WORKSPACE  — workspace *display name* (XMLA data source uses the name, not the id)
@@ -106,9 +108,10 @@ import report  # noqa: E402
 #   composite  — realistic multi-column workloads over the mart.
 #   raw        — one query per RAW landing table, so every table in the model is measured and none
 #                is dead weight. `raw_scada_mw` is the heaviest measurement here.
-#   hot_only   — selectivity ladder on the sort-key column. "{duid}" is filled at runtime with the
-#                top DUID by MWh, and unless BENCH_TOP_DUID is pinned that resolve happens after
-#                pass 1, so these join the session from pass 2 and have no cold number.
+#   hot_only   — selectivity ladder on the sort-key column. "{key}" is filled at runtime with the
+#                busiest value of that column (see SUITES), and unless BENCH_TOP_DUID is pinned
+#                that resolve happens after pass 1 — so these join the session from pass 2 and
+#                have no cold number.
 #
 # ORDER IS LOAD-BEARING, in one specific way: `probe_rowcount` must stay LAST among the probes.
 # render_summary's marginal-column-cost table is `probe_<col>` minus `probe_rowcount`, and that
@@ -119,7 +122,7 @@ import report  # noqa: E402
 # Every table, column and measure referenced below exists in BOTH templates — benchmark/
 # test_templates.py asserts the two semantic surfaces are identical, and that identity is what makes
 # one suite portable across every engine's model — they are structurally identical by construction.
-QUERIES = [
+AEMO_QUERIES = [
     # --- Tier 1: per-column probes (rowcount LAST — see the note above) ---
     ("probe", "probe_mw",       'EVALUATE ROW("x", SUM(fct_summary[mw]))'),
     ("probe", "probe_price",    'EVALUATE ROW("x", SUM(fct_summary[price]))'),
@@ -188,21 +191,139 @@ QUERIES = [
      'dim_calendar[year] = 2024, dim_calendar[month] = 6))'),
     ("hot_only", "sel_1duid",
      'EVALUATE ROW("r", CALCULATE(SUMX(fct_summary, fct_summary[mw] * fct_summary[price]), '
-     'fct_summary[DUID] = "{duid}"))'),
+     'fct_summary[DUID] = {key}))'),
     ("hot_only", "sel_1duid_1mo",
      'EVALUATE ROW("r", CALCULATE(SUMX(fct_summary, fct_summary[mw] * fct_summary[price]), '
-     'fct_summary[DUID] = "{duid}", dim_calendar[year] = 2024, dim_calendar[month] = 6))'),
+     'fct_summary[DUID] = {key}, dim_calendar[year] = 2024, dim_calendar[month] = 6))'),
 ]
 
-def resolve_queries(top_duid):
-    """Fill the "{duid}" placeholder in the hot_only ladder with the actual top DUID. If no top
-    DUID could be resolved, drop the DUID-dependent ladder queries rather than run a broken filter."""
+# ---------------------------------------------------------------------------- the NYC taxi suite
+#
+# THE SAME SHAPE, NOT THE SAME QUERIES — and the shape is what makes the two datasets comparable.
+# Probes first with `probe_rowcount` LAST, then composites over the star, then one query per raw
+# table, then a hot-only selectivity ladder. Read the AEMO block above for why each tier exists;
+# everything said there applies here unchanged.
+#
+# What differs is what the columns ARE, and that is the point of the dataset. AEMO's mart is five
+# narrow columns on a regular grid; this one has 17, of which store_and_fwd_flag, RatecodeID,
+# payment_type and VendorID sit at 97-99% single-value and the two LocationIDs are Zipfian. The
+# probe tier is therefore where the interesting result lives: a per-column cold cost on a 99%
+# single-value string is exactly what an encoding pass should move, and fct_summary had nothing of
+# the kind to measure.
+#
+# The probes cover the skewed categoricals and both ends of the width range, NOT all 17. Every probe
+# is paid for in every pass of every engine, and a column whose cold cost nobody would read is
+# capacity spent for nothing.
+NYC_QUERIES = [
+    # --- Tier 1: per-column probes (rowcount LAST — see the note above) ---
+    ("probe", "probe_fare",       'EVALUATE ROW("x", SUM(fct_trips[fare_amount]))'),
+    ("probe", "probe_distance",   'EVALUATE ROW("x", SUM(fct_trips[trip_distance]))'),
+    ("probe", "probe_pulocation", 'EVALUATE ROW("x", DISTINCTCOUNT(fct_trips[PULocationID]))'),
+    ("probe", "probe_dolocation", 'EVALUATE ROW("x", DISTINCTCOUNT(fct_trips[DOLocationID]))'),
+    ("probe", "probe_paytype",    'EVALUATE ROW("x", DISTINCTCOUNT(fct_trips[payment_type]))'),
+    # The two most extreme columns in the table, and the reason this dataset exists: ~99% one value
+    # and ~97% one value. If V-Order does what an encoding pass should, it does it here.
+    ("probe", "probe_storefwd",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_trips[store_and_fwd_flag]))'),
+    ("probe", "probe_ratecode",   'EVALUATE ROW("x", DISTINCTCOUNT(fct_trips[RatecodeID]))'),
+    ("probe", "probe_pickup",
+     'EVALUATE ROW("x", COUNTROWS(VALUES(fct_trips[tpep_pickup_datetime])))'),
+    ("probe", "probe_rowcount",   'EVALUATE ROW("x", COUNTROWS(fct_trips))'),
+    # --- Tier 2: composite workloads over the star ---
+    ("composite", "borough_x_year",
+     'EVALUATE SUMMARIZECOLUMNS(dim_zone[Borough], dim_date[year], '
+     '"Fare", [Total Fare], "Trips", [Total Trips], "Dist", [Avg Distance])'),
+    ("composite", "paytype_x_borough",
+     'EVALUATE SUMMARIZECOLUMNS(fct_trips[payment_type], dim_zone[Borough], '
+     '"Fare", [Total Fare], "Tips", [Total Tips])'),
+    ("composite", "dow_x_borough",
+     'EVALUATE SUMMARIZECOLUMNS(dim_date[day_of_week], dim_zone[Borough], '
+     '"Trips", [Total Trips], "Fare", [Total Fare])'),
+    ("composite", "zone_x_month",
+     'EVALUATE SUMMARIZECOLUMNS(dim_zone[Zone], dim_date[year], dim_date[month], '
+     '"Fare", [Total Fare])'),
+    ("composite", "filtered_manhattan_2019_by_zone",
+     'EVALUATE CALCULATETABLE('
+     'SUMMARIZECOLUMNS(dim_zone[Zone], "Fare", [Total Fare], "Trips", [Total Trips]), '
+     'dim_zone[Borough] = "Manhattan", dim_date[year] = 2019)'),
+    ("composite", "scalar_weighted_full_scan",
+     'EVALUATE ROW('
+     '"TipRate", DIVIDE(SUMX(fct_trips, fct_trips[tip_amount]), '
+     'SUMX(fct_trips, fct_trips[fare_amount])), '
+     '"DistinctZones", DISTINCTCOUNT(fct_trips[PULocationID]), '
+     '"Rows", COUNTROWS(fct_trips))'),
+    ("composite", "topn_zone_by_fare",
+     'EVALUATE TOPN(50, SUMMARIZECOLUMNS(dim_zone[Zone], dim_date[year], '
+     '"Fare", [Total Fare]), [Fare], DESC)'),
+    # Column-width at fixed shape — cold scaling with the number of columns touched.
+    ("composite", "wide_all_measures",
+     'EVALUATE SUMMARIZECOLUMNS(dim_date[year], "a", [Total Fare], "b", [Total Amount], '
+     '"c", [Total Tips], "d", [Total Passengers], "e", [Avg Distance])'),
+    ("composite", "narrow_one_measure",
+     'EVALUATE SUMMARIZECOLUMNS(dim_date[year], "a", [Total Fare])'),
+    # --- Tier 3: the RAW table. NYC has ONE where AEMO has five — the star is four tables, not
+    #     eight, so this tier is correspondingly smaller rather than padded out to match.
+    ("raw", "raw_archive_log",
+     'EVALUATE SUMMARIZECOLUMNS(stg_parquet_archive_log[source_type], '
+     '"Files", [Archive Files], "Rows", [Archive Source Rows])'),
+    # --- Tier 4: selectivity ladder (SUMX lifts work above the XMLA noise floor) ---
+    ("hot_only", "sel_1yr",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_trips, '
+     'fct_trips[trip_distance] * fct_trips[fare_amount]), dim_date[year] = 2019))'),
+    ("hot_only", "sel_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_trips, '
+     'fct_trips[trip_distance] * fct_trips[fare_amount]), '
+     'dim_date[year] = 2019, dim_date[month] = 6))'),
+    ("hot_only", "sel_1zone",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_trips, '
+     'fct_trips[trip_distance] * fct_trips[fare_amount]), '
+     'fct_trips[PULocationID] = {key}))'),
+    ("hot_only", "sel_1zone_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_trips, '
+     'fct_trips[trip_distance] * fct_trips[fare_amount]), '
+     'fct_trips[PULocationID] = {key}, dim_date[year] = 2019, dim_date[month] = 6))'),
+]
+
+# The ladder's filter value is resolved from the data AFTER pass 1, per dataset. Three things per
+# suite: the queries, the DAX that finds the busiest key, and what to CALL it in the log and the
+# report — because "top DUID: 132" on a taxi run is exactly the quiet mislabel this repo is against.
+#
+# `quote` is not decoration. AEMO's DUID is a string and must be quoted into the filter; NYC's
+# LocationID is an integer and must NOT be, or the filter compares an int column to text and matches
+# nothing — silently, and as a very fast query, which this benchmark would read as a result.
+SUITES = {
+    "aemo": {
+        "queries": AEMO_QUERIES,
+        "label": "top DUID",
+        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_summary[DUID], "m", [Total MWh]), '
+                   '[m], DESC)',
+        "quote": True,
+    },
+    "nyc": {
+        "queries": NYC_QUERIES,
+        "label": "busiest pickup zone",
+        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_trips[PULocationID], '
+                   '"m", [Total Trips]), [m], DESC)',
+        "quote": False,
+    },
+}
+
+SUITE = SUITES[E.dataset()]
+QUERIES = SUITE["queries"]
+
+
+def resolve_queries(key):
+    """Fill the ladder's "{key}" placeholder with the resolved value.
+
+    If nothing could be resolved, DROP the key-dependent ladder queries rather than run a broken
+    filter — a filter matching nothing is a very fast query, and a fast query is precisely what this
+    benchmark reads as a result."""
     out = []
     for tier, name, dax in QUERIES:
-        if "{duid}" in dax:
-            if not top_duid:
+        if "{key}" in dax:
+            if key is None or key == "":
                 continue
-            dax = dax.replace("{duid}", top_duid)
+            dax = dax.replace("{key}", '"' + str(key) + '"' if SUITE["quote"] else str(key))
         out.append((tier, name, dax))
     return out
 
@@ -319,12 +440,11 @@ def run_scalar(conn, dax):
     return None
 
 
-def top_duid(conn):
-    """The DUID with the largest Total MWh — used to fill the hot_only selectivity ladder.
-    Same underlying data in every engine, so every job resolves the same DUID."""
-    v = run_scalar(conn,
-                   'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_summary[DUID], "m", [Total MWh]), '
-                   '[m], DESC)')
+def top_key(conn):
+    """The busiest value of this dataset's ladder column — the DUID with the largest Total MWh on
+    aemo, the pickup zone with the most trips on nyc. Same underlying data in every engine, so every
+    job resolves the same value and the ladder rows stay comparable across a run."""
+    v = run_scalar(conn, SUITE["resolve"])
     return None if v is None else str(v)
 
 
@@ -398,9 +518,9 @@ def bench_model(workspace, model, token, runs, pinned_duid=None, think_seconds=0
             if p == 1 and not td:
                 # Only now — this transcodes DUID and mw, which probe_duid and probe_mw measure.
                 # Free at this point, because pass 1 has already touched both.
-                td = top_duid(conn)
+                td = top_key(conn)
                 queries = resolve_queries(td)
-                print(f"  top DUID resolved after the cold pass: {td} "
+                print(f"  {SUITE['label']} resolved after the cold pass: {td} "
                       f"— the ladder joins from pass 2 ({len(queries)} queries)", flush=True)
     finally:
         conn.Close()
@@ -454,7 +574,11 @@ def main():
     if res is None:
         sys.exit(f"[{engine}] {model!r} never became queryable — nothing measured.")
     _write_timings(model, res)
-    report.merge({"top_duid": {model: td}})
+    # `top_duid` is the historical key and every committed report carries it, so it stays.
+    # `ladder` is the honest one: the same value with the label this dataset calls it by, so a
+    # taxi run's report does not print "top DUID: 132". render_summary prefers `ladder`.
+    report.merge({"top_duid": {model: td},
+                  "ladder": {model: {"label": SUITE["label"], "value": td}}})
     print(f"\n[{engine}] measured {len(res)} queries over {runs} passes "
           f"-> {os.environ.get('RUN_REPORT', 'run_report.json')}")
 

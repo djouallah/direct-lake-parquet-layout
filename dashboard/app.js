@@ -82,7 +82,7 @@ export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips" };
 // the incremental key rather than data, so neither is worth a column on a page about encodings.
 export const DATASET_MART_COLUMNS = {
   aemo: ["date", "time", "DUID", "mw", "price", "cutoff"],
-  nyc: ["tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID",
+  nyc: ["pickup_date", "tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID",
         "VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "passenger_count",
         "trip_distance", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount",
         "improvement_surcharge", "total_amount"],

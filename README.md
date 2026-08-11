@@ -1,8 +1,22 @@
-# AEMO on four engines — one dbt project, switch the profile
+# Two datasets on four engines — one dbt project, switch the profile
 
-An **educational** dbt project that runs the *same* Australian electricity-market (AEMO NEM)
-pipeline on **four execution engines**. You pick the engine by switching the dbt **target** —
-the model DAG, the `ref()` graph, and the tests are identical no matter which one you run.
+An **educational** dbt project that runs the *same* pipeline on **four execution engines**.
+You pick the engine by switching the dbt **target** — the model DAG, the `ref()` graph, and
+the tests are identical no matter which one you run.
+
+There are **two datasets**, chosen with the `DATASET` env var (`aemo` | `nyc`, default
+`aemo`), and they are a pair rather than a menu:
+
+| | `aemo` | `nyc` |
+|---|---|---|
+| what | Australian electricity market (AEMO NEM) | NYC TLC yellow-taxi trips |
+| in | ragged CSV from nemweb | monthly parquet from TLC's CDN |
+| out | `mart.fct_summary` — 143M rows, **5 narrow columns**, regular 5-min x DUID grid | `mart.fct_trips` — ~1.5B rows, **17 columns** |
+| shape | near-uniform | four categoricals at 97-99% one value, two Zipfian zone ids |
+
+The pairing is the point. Fabric's V-Order is an *encoding* pass, so what it can do depends
+on column count and categorical skew — one uniform dataset and one skewed one is what makes
+a layout result a finding rather than an anecdote.
 
 ```bash
 dbt build --target duckrun  # DuckDB executes, delta-rs writes Delta Lake   (default; runs offline)
@@ -20,10 +34,10 @@ two have their **own SQL dialects** (Fabric Warehouse T-SQL, Spark SQL), so they
 
 ```
                        ┌── duckrun  ─┐
-   models/duckdb/  ────┤             │  same DuckDB SQL, two engines
+   models/<ds>/duckdb/ ┤             │  same DuckDB SQL, two engines
                        └── iceberg  ─┘
-   models/dwh/     ────── dwh          T-SQL port (OPENROWSET, TRY_CAST, [brackets])
-   models/spark/   ────── spark        Spark SQL port (read_files, MERGE)
+   models/<ds>/dwh/  ──── dwh          T-SQL port (OPENROWSET, TRY_CAST, [brackets])
+   models/<ds>/spark/ ─── spark        Spark SQL port (path datasource, MERGE)
 ```
 
 ## How one project serves four engines
@@ -35,10 +49,15 @@ two have their **own SQL dialects** (Fabric Warehouse T-SQL, Spark SQL), so they
 
   | target | `type` | enabled folder |
   |---|---|---|
-  | `duckrun` | `duckrun` | `models/duckdb` |
-  | `iceberg` | `duckdb` | `models/duckdb` |
-  | `dwh` | `fabric` | `models/dwh` |
-  | `spark` | `fabricspark` | `models/spark` |
+  | `duckrun` | `duckrun` | `models/<dataset>/duckdb` |
+  | `iceberg` | `duckdb` | `models/<dataset>/duckdb` |
+  | `dwh` | `fabric` | `models/<dataset>/dwh` |
+  | `spark` | `fabricspark` | `models/<dataset>/spark` |
+
+  > The dataset is the OTHER axis of the same gate. Both conditions live in ONE `+enabled` on the
+  > dialect key — `+enabled` is a scalar, so splitting them across nesting levels silently builds
+  > the wrong dataset. `python .github/scripts/check_gating.py` runs the whole matrix through
+  > `dbt parse` and asserts it, in seconds, with no credentials.
 
   > `iceberg` and `duckrun` both belong to the DuckDB family but have **different** adapter
   > `type`s, and `iceberg`/`ducklake`-style engines report `type: duckdb`. Where the two DuckDB

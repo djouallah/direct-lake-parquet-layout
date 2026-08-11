@@ -29,6 +29,26 @@ except Exception:
 OUT = []
 
 
+
+def _ladder_label(rep):
+    """What this run's dataset CALLS the hot-only ladder's filter value — "top DUID" on aemo,
+    "busiest pickup zone" on nyc. Read from the report rather than hardcoded, because the render
+    layer is a pure JSON -> markdown function and must be able to re-render a past run's artifact
+    years later without knowing which dataset produced it. Falls back to the AEMO wording, which is
+    what every report written before the second dataset carries."""
+    for v in (rep.get("ladder") or {}).values():
+        if (v or {}).get("label"):
+            return v["label"]
+    return "top DUID"
+
+
+def _ladder_values(rep):
+    """{model: value} for the ladder filter. Prefers the labelled `ladder` block and falls back to
+    the historical `top_duid` one, so a report from either era renders."""
+    lad = {m: (v or {}).get("value") for m, v in (rep.get("ladder") or {}).items()}
+    return {k: v for k, v in (lad or rep.get("top_duid") or {}).items() if v}
+
+
 def w(line=""):
     OUT.append(line)
 
@@ -85,11 +105,11 @@ def s1_header(rep):
     # Each engine is measured in its OWN CI job, so each resolves the hot_only ladder's DUID
     # independently. Same rows everywhere means the same answer — but that is an expectation, and an
     # unnoticed disagreement would make `sel_1duid*` compare two different filters across engines.
-    tds = {k: v for k, v in (rep.get("top_duid") or {}).items() if v}
+    tds = _ladder_values(rep)
     if len(set(tds.values())) > 1:
-        w("- ⚠ **the hot-only ladder filtered a DIFFERENT DUID per engine** — "
+        w(f"- ⚠ **the hot-only ladder filtered a DIFFERENT {_ladder_label(rep)} per engine** — "
           + ", ".join(f"`{lbl(m)}`→`{d}`" for m, d in sorted(tds.items()))
-          + ". The `sel_1duid*` rows are not comparable; pin `BENCH_TOP_DUID` and re-run.")
+          + ". The `sel_1*` ladder rows are not comparable; pin `BENCH_TOP_DUID` and re-run.")
         w()
 
 
@@ -242,11 +262,11 @@ def verify_ranking(rep, analysis):
     """
     errs, notes = [], []
 
-    tds = {k: v for k, v in (rep.get("top_duid") or {}).items() if v}
+    tds = _ladder_values(rep)
     if len(set(tds.values())) > 1:
-        notes.append("the hot-only ladder used different DUIDs per engine ("
+        notes.append(f"the hot-only ladder used a different {_ladder_label(rep)} per engine ("
                      + ", ".join(f"{lbl(m)}={d}" for m, d in sorted(tds.items()))
-                     + ") — sel_1duid* is not comparable; pin BENCH_TOP_DUID")
+                     + ") — the sel_1* rows are not comparable; pin BENCH_TOP_DUID")
 
     for metric, key, _sk in rr.METRICS:
         ranking = analysis.get("ranking", {}).get(metric) or []

@@ -23,6 +23,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 
 import pytest
 
@@ -180,9 +181,114 @@ def test_deploy_passes_warehouse_for_a_warehouse_and_lakehouse_otherwise():
         "warehouse": "dbt_dwh", "mode": "direct_lake"}
 
 
-def test_there_is_exactly_one_template():
-    """One `.bim` for four engines. Four adapters is the variable; the semantic model is not. A
-    second template reintroduces the lockstep problem that made the one DAX suite silently
-    non-comparable across engines."""
+def test_there_is_exactly_one_template_per_dataset():
+    """One `.bim` per DATASET, and within a run one `.bim` for four engines.
+
+    The invariant this guards has not moved: four adapters is the variable, the semantic model is
+    not, and a second template for the SAME data reintroduces the lockstep problem that once made
+    the one DAX suite silently non-comparable across engines (`fct_summary_dq`, the DirectQuery
+    copy, is the case in point). Two templates over two different datasets are not that: they are
+    never deployed in the same run, they share no query, and `deploy_models.TEMPLATES` maps exactly
+    one to each dataset.
+
+    So the assertion is that the set of templates is exactly the set of datasets — no orphan
+    `.SemanticModel` folder, and no dataset whose template is missing. The second half matters most:
+    a missing template is what would silently deploy the other dataset's model over this dataset's
+    lakehouse, and `deploy_models.template()` refuses precisely because of it."""
+    import deploy_models as D
     bims = sorted(pathlib.Path(HERE).glob("*.SemanticModel/model.bim"))
-    assert [b.parent.name for b in bims] == ["fct_summary.SemanticModel"]
+    assert sorted(b.parent.name for b in bims) == sorted(D.TEMPLATES.values())
+
+
+# ------------------------------------------------------------------ the NYC taxi template
+#
+# The same guards, against the second dataset's `.bim`. They are spelled out rather than
+# parameterised over both files on purpose: the two templates describe different stars, so the
+# EXPECTED table/schema map and the relationship rules are genuinely different data, and a
+# parameterised version would have to carry both maps anyway — with the loop hiding which one
+# failed.
+
+NYC = os.path.join(HERE, "fct_trips.SemanticModel", "model.bim")
+
+NYC_EXPECTED = {"stg_parquet_archive_log": "landing",
+                "dim_date": "mart",
+                "dim_zone": "mart",
+                "fct_trips": "mart"}
+
+
+def test_nyc_template_carries_every_shared_table():
+    assert set(_parts(NYC)) == set(NYC_EXPECTED)
+
+
+def test_nyc_template_table_set_matches_the_dataset_registry():
+    """Same guard as the AEMO one: if a model is added or renamed in the registry and not here, the
+    benchmark quietly stops covering it."""
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"nyc":\s*\{.*?"tables":\s*\[(.*?)\]', src, re.S)
+    assert block, "could not find the nyc dataset's tables in datasets.py"
+    assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(_parts(NYC))
+
+
+def test_nyc_template_is_direct_lake_and_repointable():
+    """Direct Lake, or deploy() skips the reframe and the model serves nothing; and a OneLake
+    reference to rewrite, or `deploy(lakehouse=...)` raises for every lakehouse engine."""
+    assert _is_directlake_bim(_raw(NYC))
+    assert _ONELAKE_REF.search(_raw(NYC).decode("utf-8"))
+
+
+def test_nyc_template_reads_the_real_tables_in_the_real_schemas():
+    assert _parts(NYC) == {t: ("direct" + "Lake", schema, t) for t, schema in NYC_EXPECTED.items()}
+
+
+def test_nyc_relationships_point_at_columns_that_exist():
+    m = json.loads(_raw(NYC))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    for r in m["model"]["relationships"]:
+        assert r["fromColumn"] in cols[r["fromTable"]], f"{r['name']}: bad fromColumn"
+        assert r["toColumn"] in cols[r["toTable"]], f"{r['name']}: bad toColumn"
+
+
+def test_only_the_nyc_mart_relies_on_referential_integrity():
+    """`relyOnReferentialIntegrity` permits an INNER join, which silently drops rows whose key is
+    missing from the dimension. Same rule as the AEMO template: only the MART's relationships may
+    set it. Here every relationship happens to be the mart's, so the assertion is that nothing
+    else has crept in — a relationship from a dimension or the archive log would be a modelling
+    mistake before it was an RI one."""
+    m = json.loads(_raw(NYC))
+    for r in m["model"]["relationships"]:
+        if r.get("relyOnReferentialIntegrity"):
+            assert r["fromTable"] == "fct_trips", f"{r['name']} is not the mart's"
+
+
+def test_the_nyc_dax_suite_only_names_things_the_template_has():
+    """Every table, column and measure the NYC suite references must exist in the NYC template.
+
+    This is the check that would otherwise fail at QUERY time, one query at a time, in the most
+    expensive job in the workflow — and a suite where every query errors still produces a report
+    shaped like a result. `probe_rowcount` last among the probes is pinned in test_verdicts.py."""
+    os.environ["DATASET"] = "nyc"
+    for mod in ("engines", "xmla_compare"):
+        sys.modules.pop(mod, None)
+    try:
+        import xmla_compare as xc
+        m = json.loads(_raw(NYC))
+        tables = {t["name"] for t in m["model"]["tables"]}
+        cols = {(t["name"], c["name"]) for t in m["model"]["tables"] for c in t["columns"]}
+        measures = {x["name"] for t in m["model"]["tables"] for x in t.get("measures", [])}
+        for _tier, name, dax in xc.NYC_QUERIES:
+            for tbl, col in re.findall(r"(\w+)\[([^\]]+)\]", dax):
+                assert tbl in tables, f"{name}: no table {tbl}"
+                assert (tbl, col) in cols, f"{name}: {tbl} has no column {col}"
+            # A bare [Name] is either a model measure or an EXTENSION COLUMN the query defined
+            # itself — SUMMARIZECOLUMNS(..., "Fare", [Total Fare]) introduces `[Fare]`, which TOPN
+            # then orders by. Every such name arrives as a double-quoted literal in the same query.
+            local = set(re.findall(r'"([^"]+)"', dax))
+            for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
+                assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
+    finally:
+        os.environ.pop("DATASET", None)
+        for mod in ("engines", "xmla_compare"):
+            sys.modules.pop(mod, None)

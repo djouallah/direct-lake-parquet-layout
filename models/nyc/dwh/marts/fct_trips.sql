@@ -6,6 +6,17 @@
     schema='mart'
 ) }}
 
+{#-- pickup_date IS A STORED COLUMN AND IT IS NOT THE month_key MISTAKE. Direct Lake cannot
+     relate a DATETIME column to a DATE dimension key, and it has no calculated columns to bridge
+     one, so a date dimension is only reachable if the fact carries a DATE. month_key was rejected
+     because NOTHING read it — no model, no test, no macro, no semantic model; this one is read by
+     the relationship every date-grouped query in the suite traverses, and it is one narrow column
+     whose values are near-contiguous under the default sort, so it costs little and RLEs well.
+
+     A JINJA comment, and BELOW the config, like every other note in this tree: dbt-fabric wraps a
+     model in EXEC('create view ... as <sql>') and a leading `--` block collapses onto the SELECT.
+     The duckdb and spark copies carry the same note as plain `--`, which is safe there. --#}
+
 {#-- The wide raw fact — this dataset's MART, the table under layout test. See the duckdb copy's
      header for why it is a raw fact and not an aggregate.
 
@@ -45,6 +56,7 @@ SELECT
   {%- for name in cols %}
   TRY_CAST([{{ name }}] AS {{ nyc_trip_type(name, 'fabric') }}) AS [{{ name }}],
   {%- endfor %}
+  TRY_CAST([tpep_pickup_datetime] AS DATE) AS [pickup_date],
   {{ parse_filename('src.filepath()') }} AS [file]
 FROM {{ openrowset_parquet_files(new_files) }} AS src
 {#-- Dedup guard, rendered ONLY on the wildcard fallback: T-SQL rejects filepath(N) when the BULK

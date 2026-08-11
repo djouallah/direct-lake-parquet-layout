@@ -9,23 +9,94 @@ exercise cost. This file is what has not been done.
 
 ---
 
-## Nothing is open.
+## The NYC dataset has never been dispatched
 
-**All 17 layout groups are on *Cost and speed by parquet layout*, complete** — every one has a run at
-`cores=8`, so none is dropped by the `ETL_VCORES` filter, and every one carries analytics CU. The
-section that used to open this file (7 of 17 excluded, then 4, then 2) is closed by dispatch, not by
-a code change.
+Everything is in place and verified offline; **no leg has spent a minute of capacity on it.** Until
+one has, treat the numbers below as untested rather than wrong.
 
-Two things worth keeping, because the next new layout re-opens the same work.
+### The first dispatch, and it should be small
+
+```bash
+gh workflow run Benchmark -f dataset=nyc -f engines=duckrun -f cores=8 \
+   -f skip_download=false -f download_limit=3 -f sort_by=pickup_date,PULocationID
+```
+
+Three months is minutes of download and a few million rows. What to read afterwards, in order:
+
+1. **The `land` step's log.** Every `REFUSED <month>` line is a month whose parquet schema lacks a
+   core column — see the next item, which is the one open question in the whole change.
+2. **`layout.ordering.duckrun.columns` in the run record.** `runs` on `store_and_fwd_flag` and
+   `RatecodeID` is the measurement this dataset exists for: those columns are ~99% and ~97% one
+   value, which is the RLE surface `fct_summary` never had.
+3. **`assert_fct_trips_matches_archive_log`.** It is the only assertion on that table and the only
+   detector for a doubled month on the DuckDB pair, which write with `append`.
+
+Then the same dispatch with `-f skip_download=true` to confirm the incremental path is a no-op, and
+only then a real drain.
+
+### ⚠️ Whether 2011-2016 carries `PULocationID` is UNVERIFIED
+
+The archive is documented as 2011-onward because TLC republished all history as parquet and only two
+schema eras exist — pre-2011 (lat/lon) and 2011-onward (zone ids). **That was read from a
+third-party importer's schema list, not from the files**, and this machine could not reach
+CloudFront to check. If TLC did not backfill zone ids into 2011-2016, those months lack
+`PULocationID`/`DOLocationID`.
+
+**It fails safely and loudly**, which is why it was shipped rather than blocked on: the downloader
+reads each file's footer and REFUSES a month missing any core column, logging what it dropped.
+Nothing is landed that the models cannot read. So the worst case is a smaller archive than the
+16 years advertised, visible in the `land` log on the first real drain.
+
+If most of 2011-2016 is refused, the honest fix is `NYC_START=2017-01` (an env var the downloader
+already reads) plus a line here saying so. The row count drops to ~700M, still 5× `fct_summary`.
+
+### The benchmark half has never run either
+
+`benchmark/fct_trips.SemanticModel` and the NYC DAX suite are written and pinned by tests — the
+suite's every table, column and measure is asserted to exist in the template — but no model has been
+deployed and no query has run. `deploy_models.template()` refuses a dataset whose `.bim` is missing,
+so the failure mode is a refusal rather than a report shaped like a result; that guard has not been
+exercised against a real deploy.
+
+Scout it the way the AEMO half is scouted, which costs minutes rather than an hour:
+
+```bash
+gh workflow run Benchmark -f dataset=nyc -f engines=duckrun -f build=false \
+   -f runs=3 -f think_seconds=0 -f gap_seconds=0
+```
+
+### One dataset at a time, and the serial rule is unchanged
+
+**Two `Benchmark` runs must never overlap**, and separate Fabric items per dataset make it *look*
+safe to run an aemo and an nyc dispatch together. It is not: one capacity, throttling, two quietly
+inflated sets of numbers. See the invariant in [CLAUDE.md](CLAUDE.md); the loop below serialises
+against any live run, not just its own.
+
+```bash
+for ds in aemo nyc; do
+  while gh run list --workflow Benchmark --limit 20 \
+        --json status -q '.[].status' | grep -qE 'in_progress|queued|pending'; do sleep 60; done
+  gh workflow run Benchmark -f dataset="$ds" -f engines=duckrun -f cores=8
+  sleep 30
+done
+```
+
+---
+
+## The AEMO layout groups are complete, and stay that way
+
+All 17 groups are on *Cost and speed by parquet layout* with a run at `cores=8`, so none is dropped
+by the `ETL_VCORES` filter. Nothing is open there. Two things worth keeping, because a new layout
+re-opens the same work.
 
 ### How a layout group gets onto that section
 
 *Cost and speed by parquet layout* reports build cost at ONE core count (`ETL_VCORES`, `8`), because
-build cost tracks the machine and `layoutKey` does not carry `vcores` — a group holds runs from
-several machines and a median over them describes none of them (measured: one duckrun layout reads
-**9,986 CU at 8 vCores against 22,547 blended** across 8/16/32/64). **A group with no run at that
-size leaves the section entirely**, table and chart alike, with the count named in a note under the
-table. So a layout dispatched only at 64 cores is measured and invisible.
+build cost tracks the machine and `layoutKey` does not carry `vcores` — a group holding runs from
+several machines has a median describing none of them (measured: one duckrun layout reads **9,986 CU
+at 8 vCores against 22,547 blended** across 8/16/32/64). **A group with no run at that size leaves
+the section entirely**, table and chart alike, with the count named in a note under the table. So a
+layout dispatched only at 64 cores is measured and invisible.
 
 A group is keyed on `(V-Order, band of the row-group count, sort columns, engine)`, so a NEW sort key
 or a row-group count in a new power-of-two band opens a group of its own. Filling it is one dispatch:
@@ -35,41 +106,13 @@ gh workflow run Benchmark -f engines=duckrun -f cores=8 \
    -f sort_by=<columns> -f row_group_size=<rows>
 ```
 
-`row_group_size` is derived — `143,980,961 ÷ the row groups you want`. That held exactly for every
-one of the seven runs that closed this item: `6000000` → 24 RG, `2000000` → 72, `1000000` → 144.
+`row_group_size` is derived — `<mart rows> ÷ the row groups you want`. That held exactly for all
+seven runs that closed this item on aemo: `6000000` → 24 RG, `2000000` → 72, `1000000` → 144.
 
-**⚠️ The nightly does NOT fill these in.** It builds one layout — `sort_by=date,time,price` at
-`row_group_size=2000000`, 72 row groups — and that group already has 8-core runs. Every other group
-needs a deliberate dispatch.
-
-### Running several — SERIALLY, and there is no other way
-
-**Two `Benchmark` runs must never overlap** (see the invariant in CLAUDE.md: shared capacity gets
-throttled, which inflates both runs' numbers silently, and `ensure()` reuses an output item by name
-so two duckrun runs would build into one `mart.fct_summary`). The concurrency group is per REF, so it
-does not stop `--ref other-branch` — nothing enforces this but the operator.
-
-The queue cannot be pre-loaded either: `cancel-in-progress: false` allows one running plus **one**
-pending, and a third dispatch evicts the queued one rather than stacking.
-
-So chain them. Dispatch, wait for that run to finish, dispatch the next:
-
-```bash
-# one "sort_by:row_group_size" per layout
-for spec in "date,time,DUID:6000000" "date,DUID,time:6000000"; do
-  # never dispatch while anything is live — this is the serialisation
-  while gh run list --workflow Benchmark --limit 20 \
-        --json status -q '.[].status' | grep -qE 'in_progress|queued|pending'; do sleep 60; done
-  gh workflow run Benchmark -f engines=duckrun -f cores=8 \
-     -f sort_by="${spec%%:*}" -f row_group_size="${spec##*:}"
-  sleep 30                                   # let the run register before the next poll
-done
-```
-
-The `while` is the important line, not the `for`: it waits on ANY live Benchmark run, so the loop
-serialises against a nightly or a hand dispatch too, not just against itself. Budget ~1–1.5 h per
-iteration — an 8-vCore build is cheaper in CU than a 64-core one but slower on the clock — and
-~10,000 CU each.
+**⚠️ The nightly does NOT fill these in.** It builds one layout — `aemo`, `sort_by=date,time,price`
+at `row_group_size=2000000`, 72 row groups — and that group already has 8-core runs. Every other
+group needs a deliberate dispatch, and **the nyc groups are all empty**, since nothing has been
+dispatched there at all.
 
 ### What closed it
 
@@ -85,5 +128,4 @@ Seven dispatches at `cores=8`, each landing in the band it was aimed at:
 | `date,DUID,time` | `6000000` | 31303975708 | 24 |
 | `date,time,DUID` | `6000000` | 31308163981 | 24 |
 
-The eighth — `iceberg`'s — needed no dispatch: it already had an 8-core run. That engine spent a
-few hours off the dashboard entirely and is back, so the count is 17.
+The eighth — `iceberg`'s — needed no dispatch: it already had an 8-core run.

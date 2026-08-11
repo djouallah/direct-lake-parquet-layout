@@ -66,20 +66,21 @@ DATASETS = {
                   "spark": "dbt_nyc_spark", "dwh": "dbt_nyc_dwh"},
         "tables": ["stg_parquet_archive_log", "dim_date", "dim_zone", "fct_trips"],
         "mart": "fct_trips",
-        # The 17 core columns plus the derived `file`. Mirrors macros/nyc_trip_columns.sql, and
+        # The 17 core columns plus the two DERIVED ones — `pickup_date` (the date dimension's
+        # join key; Direct Lake cannot relate a datetime to a date) and `file`. Mirrors macros/nyc_trip_columns.sql, and
         # `.github/scripts/test_nyc_columns.py` asserts it does.
         "mart_columns": ["VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime",
                          "passenger_count", "trip_distance", "RatecodeID", "store_and_fwd_flag",
                          "PULocationID", "DOLocationID", "payment_type", "fare_amount", "extra",
                          "mta_tax", "tip_amount", "tolls_amount", "improvement_surcharge",
-                         "total_amount", "file"],
+                         "total_amount", "pickup_date", "file"],
         # Pickup time first: every composite query groups or filters through the date relationship.
         # PULocationID second: the widest skewed categorical, and what the selectivity ladder
         # filters on. This is the model's own env_var() fallback and what `plan` NAMES in its error
         # when a dispatch leaves `sort_by` at the other dataset's key — `plan` refuses rather than
         # substituting, because a run that quietly measured a layout other than the one the form
         # described is exactly the failure that reshaped that field.
-        "sort_by": "tpep_pickup_datetime,PULocationID",
+        "sort_by": "pickup_date,PULocationID",
         "download": "download_nyc_taxi.py",
         "model_prefix": "nyc_",
     },

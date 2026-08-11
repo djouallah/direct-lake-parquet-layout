@@ -25,6 +25,12 @@
 {%- set cols = nyc_trip_columns() -%}
 {%- set yellow_root = get_parquet_archive_path() ~ '/yellow' -%}
 
+-- pickup_date IS A STORED COLUMN AND IT IS NOT THE month_key MISTAKE. Direct Lake cannot relate a
+-- DATETIME column to a DATE dimension key, and it has no calculated columns to bridge one, so a
+-- date dimension is only reachable if the fact carries a DATE. month_key was rejected because
+-- NOTHING read it — no model, no test, no macro, no semantic model; this one is read by the
+-- relationship every date-grouped query in the suite traverses, and it is one narrow column whose
+-- values are near-contiguous under the default sort, so it costs little and RLEs well.
 {{ config(
     materialized='incremental',
     incremental_strategy='merge',
@@ -47,6 +53,7 @@ SELECT
   {%- for name in cols %}
   CAST(t.{{ name }} AS {{ nyc_trip_type(name, 'fabricspark') }}) AS {{ name }},
   {%- endfor %}
+  CAST(t.tpep_pickup_datetime AS DATE) AS pickup_date,
   {{ parse_filename('t._metadata.file_name') }} AS file
 FROM parquet.`{{ yellow_root }}{% if is_incremental() %}/{{ '{' ~ new_files | join(',') ~ '}' }}{% endif %}` AS t
 {% endif %}
