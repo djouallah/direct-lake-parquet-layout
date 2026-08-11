@@ -389,6 +389,18 @@ jobs:
     name: offline checks (free)
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # THE OFFLINE SUITE IS ABOUT THE CODE, NOT ABOUT THIS DISPATCH, so it is pinned to `aemo` and
+    # does NOT inherit the workflow-level DATASET. That is not a workaround, it is the only correct
+    # setting: `xmla_compare.QUERIES` and `stats.MART` bind the dataset at IMPORT time, so one
+    # process can only hold one of them, and a suite whose assertions changed with the dispatch
+    # would be green or red for reasons that have nothing to do with the commit under test. Every
+    # NYC-specific assertion reads its own constants directly (NYC_QUERIES, the nyc `.bim`, the
+    # registry) precisely so it needs no import-time binding.
+    #
+    # `check_gating.py` below is unaffected either way — it sets DATASET itself, per cell, and runs
+    # the whole (dataset x target) matrix. That is where a dispatch's dataset IS exercised.
+    env:
+      DATASET: aemo
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
