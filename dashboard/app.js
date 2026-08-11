@@ -869,6 +869,61 @@ export function sortKeyOf(rec, table = DEFAULTS.table) {
 }
 
 /**
+ * WHAT TO PRINT for a run's sort — `auto` when the dispatch asked duckrun to pick, the column list
+ * when the dispatch named one. Same shape as `sortKeyOf` otherwise (`false` unsorted, `true` sorted
+ * but unnamed).
+ *
+ * **THIS IS THE LABEL AND `sortKeyOf` IS THE KEY, and they must not be merged.** Grouping has to stay
+ * on the RESOLVED columns: duckrun's picker answers per dataset — `pickup_date, VendorID,
+ * store_and_fwd_flag, payment_type` on the taxi mart — so two `auto` runs can write genuinely
+ * different parquet, and keying them both to the string `auto` would pour two layouts into one row
+ * and print a median neither of them measured. That is the exact defect `layoutGroups` was fixed for
+ * once already.
+ *
+ * What the label buys is the reverse trade: the resolved list is duckrun's ANSWER, not the
+ * dispatch's question, and spelling four columns across the `ordering` cell of a table whose other
+ * rows read `V-Order` and `—` spends the column's whole width on something the reader did not ask
+ * for. `auto` is the input that produced it; the columns are still in the record, and still what the
+ * rows are separated by.
+ *
+ * A declared key WINS over a resolved one, so a run that named its columns prints them even if a
+ * picker also ran — the declaration is what the dispatcher chose.
+ */
+/**
+ * The sort labels to PRINT for a group — deduped, and with `auto` dropped when any member names the
+ * columns.
+ *
+ * A group's members all wrote the SAME resolved key, because that key is the grouping element
+ * (`layoutKey[2]`). So when one run declared `date,time` and another asked for `auto` and the picker
+ * answered `date,time`, they share a row and a named label describes both. Printing
+ * `auto / date, time` there spends the cell on how the two dispatches were SPELLED, which is not
+ * what a table about parquet is for.
+ *
+ * `auto` survives only when nothing in the group names a key — the taxi case, and the whole point.
+ *
+ * One acknowledged edge: the unmeasured-layout fallback groups by COLUMN rather than by `layoutKey`,
+ * so its members can genuinely differ in key and dropping `auto` there omits one of several. That
+ * path has no measured layout to describe in the first place.
+ */
+function sortLabels(members, table) {
+  const all = [...new Set((members || []).map(({ rec }) => sortLabelOf(rec, table))
+    .filter((s) => typeof s === "string"))];
+  const named = all.filter((s) => s !== "auto");
+  return named.length ? named : all;
+}
+
+export function sortLabelOf(rec, table = DEFAULTS.table) {
+  const engine = (rec || {}).engine || "?";
+  const cfg = (((rec || {}).layout || {}).config || {})[engine] || {};
+  if (!cfg.sorted) return false;
+  const dbt = ((rec || {}).dbt || {})[engine] || {};
+  const declared = (dbt.sort_by || {})[table];
+  if (Array.isArray(declared) && declared.length) return declared.join(",");
+  const auto = (dbt.sort_by_auto || {})[table];
+  return Array.isArray(auto) && auto.length ? "auto" : true;
+}
+
+/**
  * Did this run's writer V-Order the parquet? `layout.ordering.<engine>.vorder_enabled` when the run
  * recorded it, else the `vorder` detail column.
  *
@@ -966,8 +1021,9 @@ export function layoutLabel(members, table = DEFAULTS.table) {
   // dedup only matters for the unmeasured-column fallback, where members are grouped by column.
   // STRINGS ONLY — `true` means the run sorted by something it did not write down, and the label
   // already says `sorted`, so there is nothing to add and nothing to invent.
-  const sorts = [...new Set(members.map(({ rec }) => sortKeyOf(rec, table))
-    .filter((s) => typeof s === "string"))];
+  // `sortLabels` for the same reason the table uses it: `by auto` names the knob, and the resolved
+  // columns keep the caption's own bars apart without being spelled across a dot label.
+  const sorts = sortLabels(members, table);
   if (sorts.length) bits.push(`by ${sorts.join(" / ").split(",").join(", ")}`);
   for (const [field, unit] of [["num_row_groups", "RG"]]) {
     const v = rng(field);
@@ -2076,13 +2132,14 @@ function martSize(members, table = DEFAULTS.table) {
 
 export function keyCells(members, table = DEFAULTS.table) {
   const stats = (members || []).map(({ rec }) => martStats(rec, table));
-  const sorts = [...new Set((members || []).map(({ rec }) => sortKeyOf(rec, table))
-    .filter((s) => typeof s === "string"))];
+  // `sortLabels`, NOT `sortKeyOf` — an `auto` run prints `auto`, which is the knob that was turned;
+  // the resolved columns still SEPARATE the rows, they just do not fill the cell. See sortLabelOf.
+  const sorts = sortLabels(members, table);
   const bits = [];
   if ((members || []).some(({ rec }) => vorderOf(rec, table))) bits.push("V-Order");
   if (sorts.length) bits.push(sorts.join(" / ").split(",").join(", "));
   // Sorted by something the record does not name — say that, never invent a key.
-  else if ((members || []).some(({ rec }) => sortKeyOf(rec, table) === true)) bits.push("sorted");
+  else if ((members || []).some(({ rec }) => sortLabelOf(rec, table) === true)) bits.push("sorted");
   return {
     ordering: bits.join(" · ") || DASH,
     dict: dictCell(members),
@@ -3667,7 +3724,12 @@ export function compose(records, ledgerDoc, opts = {}) {
     const ds = datasetOf(rec);
     if (ds in datasetCounts) datasetCounts[ds] += 1;
   }
-  opts = { ...opts, dataset, datasetCounts };
+  // The mart FOLLOWS the dataset unless `?table=` overrode it. `optsFromSearch` already pairs them,
+  // so on the page this changes nothing — it closes the gap for every OTHER caller (`build.mjs`, a
+  // test, a script), where `{dataset: "nyc"}` alone used to fall through to aemo's `fct_summary` and
+  // render a taxi page whose layout columns all dashed out and whose sort keys read `sorted`. That
+  // is the wrong-mart failure being SILENT, which is the only reason it is worth a line here.
+  opts = { ...opts, dataset, datasetCounts, table: opts.table || DATASET_TABLE[dataset] };
   const { runs: whole, skipped } = selectRuns(records, dataset);
   if (!whole.length) {
     return { html: datasetLinks(datasetCounts, dataset, opts)

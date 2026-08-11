@@ -499,6 +499,42 @@ test("the sort key comes off the RECORD, in either spelling, and is never guesse
     .map(({ rec }) => JSON.stringify(d.layoutKey(rec)))).size, 3);
 });
 
+test("an `auto` run PRINTS `auto` and is still GROUPED by the columns it resolved to", () => {
+  // The label and the key are deliberately different functions. A dispatch that asked duckrun to
+  // pick should read `auto` — that is the knob that was turned, and the resolved list is duckrun's
+  // answer, four columns wide on the taxi mart (`pickup_date, VendorID, store_and_fwd_flag,
+  // payment_type`) in a cell whose neighbours read `V-Order` and `—`.
+  const auto = sortedBy(4, 25, ["date", "time"], { spelling: "sort_by_auto" });
+  assert.equal(d.sortLabelOf(auto), "auto");
+  assert.equal(d.keyCells([{ rec: auto }]).ordering, "auto");
+  assert.equal(d.layoutLabel([{ rec: auto }]), "by auto · 25 RG");
+  // A DECLARED key still spells itself out — the dispatcher named those columns.
+  assert.equal(d.sortLabelOf(sortedBy(4, 25, ["date", "time"])), "date,time");
+  assert.equal(d.keyCells([{ rec: sortedBy(4, 25, ["date", "time"]) }]).ordering, "date, time");
+  // ...and a declaration BEATS a resolution, so a record carrying both prints what was asked for.
+  const both = sortedBy(4, 25, ["date", "time"]);
+  both.dbt.duckrun.sort_by_auto = { fct_summary: ["date", "time", "DUID"] };
+  assert.equal(d.sortLabelOf(both), "date,time");
+
+  // THE GROUPING MUST NOT FOLLOW THE LABEL. duckrun's picker answers per dataset, so two `auto` runs
+  // can write genuinely different parquet; keying them both to the string `auto` would pour two
+  // layouts into one row and print a median neither measured.
+  const a = sortedBy(4, 25, ["date", "time"], { spelling: "sort_by_auto", file: "a-1.json" });
+  const b = sortedBy(4, 25, ["date", "time", "DUID"], { spelling: "sort_by_auto", file: "b-2.json" });
+  assert.equal(d.sortLabelOf(a), d.sortLabelOf(b), "same label");
+  assert.notEqual(d.layoutKey(a)[2], d.layoutKey(b)[2], "different key");
+  assert.equal(d.layoutGroups([{ rec: a }, { rec: b }]).length, 2,
+    "two resolutions, two bars — the label is not the key");
+
+  // A group holding BOTH spellings prints the named one alone: they share a row precisely because
+  // they resolved to the same key, so the name describes the `auto` run too and `auto / date, time`
+  // would spend the cell on how two dispatches were worded. This is live on aemo — runs
+  // 30809945203 and 30814168910 asked for auto and got `date,time`, the key other runs declared.
+  const mixed = [{ rec: auto }, { rec: sortedBy(4, 25, ["date", "time"]) }];
+  assert.equal(d.keyCells(mixed).ordering, "date, time");
+  assert.equal(d.layoutLabel(mixed), "by date, time · 25 RG");
+});
+
 test("the caption says which columns a sorted bar is ordered by, row groups only", () => {
   // Files are not printed at all: segments are what drive Direct Lake's cost, and the file BAND
   // still separates bars without being said.

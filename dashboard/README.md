@@ -411,6 +411,13 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   since. Two spellings are read, both legitimate: `dbt.<engine>.sort_by` is what the run DECLARED
   (`stats.py`), `dbt.<engine>.sort_by_auto` what duckrun's picker RESOLVED (`fabric_run.py`'s log
   scrape, the only witness for an `'auto'` run).
+  **What is GROUPED and what is PRINTED differ, on purpose.** `sortKeyOf` groups on the resolved
+  columns — the picker answers per dataset, so two `auto` runs can write different parquet and must
+  not merge. `sortLabelOf` prints, and an `auto` run's cell reads just **`auto`**: the resolved list
+  is duckrun's answer rather than the dispatch's question, and on the taxi mart it is four columns
+  wide (`pickup_date, VendorID, store_and_fwd_flag, payment_type`) in a cell whose neighbours read
+  `V-Order` and `—`. `sortLabels` drops `auto` from a group that also holds a declared key, since
+  sharing a row means they resolved to the same columns and the name covers both.
   **It groups RUNS, not columns, and that distinction is load-bearing.** A column is
   `(engine, config)`, so two of its runs can write different parquet — `duckrun·64c+sorted` wrote
   3 files / 26 row groups under an explicit `sort_by=['date','time','DUID']` and 4 files / 25 under

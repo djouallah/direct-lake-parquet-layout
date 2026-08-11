@@ -1710,7 +1710,19 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   unsorted run nor any named sort, and it adds no columns to say, because the label already says
   `sorted`. The five records predating `declared_sort_key()` were **backfilled** from the model at
   the SHA each ran; the two `'auto'` ones were deliberately left alone, their scrape being the better
-  source. **Build CU stays keyed per COLUMN** — `Cost by engine` — because there the writer and the
+  source.
+  **THE LABEL AND THE KEY ARE NOW TWO FUNCTIONS, AND MERGING THEM BACK IS THE BUG.** `sortKeyOf`
+  GROUPS and reads either spelling — unchanged, and it must keep reading `sort_by_auto`, because
+  duckrun's picker answers **per dataset** (`pickup_date, VendorID, store_and_fwd_flag, payment_type`
+  on the taxi mart against `date, time` on aemo's) so two `auto` runs can write genuinely different
+  parquet; keying both to the string `auto` would pour two layouts into one row and print a median
+  neither measured. `sortLabelOf` PRINTS, prefers the DECLARED key, and falls back to the bare word
+  **`auto`** rather than the resolved list: the list is duckrun's answer, not the dispatch's
+  question, and four columns across a cell whose neighbours read `V-Order` and `—` is the whole
+  column width spent on something nobody asked for. `sortLabels` then drops `auto` from a group that
+  also holds a named key — they share a row *because* they resolved to the same columns, so the name
+  already describes both, which is why the aemo rows are unchanged by any of this.
+  **Build CU stays keyed per COLUMN** — `Cost by engine` — because there the writer and the
   compute it was given are the entire subject.
   What forced the layout keying: duckrun at 64 cores and at 32 wrote 4 files and 27 row groups either
   way, so two entries 50% apart was not a comparison — it was one layout measured twice, presented as
