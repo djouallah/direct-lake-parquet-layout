@@ -222,11 +222,20 @@ def test_probe_rowcount_runs_last_among_the_probes():
     Reorder the probes and that table silently starts measuring something else — no error, no
     missing column, just wrong numbers. Hence a test rather than a comment."""
     import xmla_compare as xc
-    probes = [name for tier, name, _dax in xc.QUERIES if tier == "probe"]
-    assert probes[-1] == "probe_rowcount", probes
-    # and every column the decomposition subtracts it from is measured before it
-    for col in rr._PROBE_COLS:
-        assert probes.index(f"probe_{col}") < probes.index("probe_rowcount")
+
+    # BOTH suites, not just the one this process bound: the invariant is a property of every
+    # dataset's session, and a suite added later must not be able to break it unnoticed.
+    for ds, suite in xc.SUITES.items():
+        probes = [name for tier, name, _dax in suite["queries"] if tier == "probe"]
+        assert probes[-1] == "probe_rowcount", f"{ds}: {probes}"
+        # ...and every column the decomposition subtracts it from is measured before it. The column
+        # list is DERIVED from the probe names now (render_report.probe_columns) rather than being a
+        # constant, so this checks the derivation against the suite it came from instead of against
+        # a third hardcoded copy — which is what let a taxi report print five empty AEMO columns.
+        measured = {n: {} for n in probes}
+        for col in rr.probe_columns(measured):
+            assert probes.index(f"probe_{col}") < probes.index("probe_rowcount")
+        assert "rowcount" not in rr.probe_columns(measured)
 
 
 def test_the_pass_number_is_the_tier():

@@ -162,7 +162,7 @@ def s3_cold_decomp(rep, analysis, models):
     w("| column | " + " | ".join(f"{lbl(m)} ms" for m in models) + " |")
     w("|:--|" + "--:|" * len(models))
     cost_by_col = {}  # col -> [cost per engine] for the observations below
-    for col in rr._PROBE_COLS:
+    for col in rr.report_probe_columns(cc):
         cells = []
         for m in models:
             cost = cc.get(m, {}).get("columns", {}).get(col)

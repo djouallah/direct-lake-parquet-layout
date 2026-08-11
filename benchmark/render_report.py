@@ -32,7 +32,34 @@ try:
 except Exception:
     pass
 
-_PROBE_COLS = ["mw", "price", "duid", "date", "time"]     # probe_<col> minus probe_rowcount
+def probe_columns(timings_for_model):
+    """The columns the marginal-cost table has rows for: every `probe_<col>` this run MEASURED,
+    except the `probe_rowcount` control, in the order the session issued them.
+
+    DERIVED FROM THE TIMINGS, never a constant. It was
+    `["mw", "price", "duid", "date", "time"]` — the AEMO mart's columns — which on a taxi run
+    printed five empty rows for columns that do not exist and no row for the nine that do. The
+    render layer is a pure JSON -> markdown function whose whole job is to re-render any past run's
+    artifact, including one from a dataset it has never heard of; a hardcoded column list is a
+    second, silent claim about which dataset produced the report.
+
+    Dict order is the session order, which is the suite order, which is what makes the subtraction
+    below mean "one more column": each probe is the first query to touch its column and
+    probe_rowcount runs last among them."""
+    return [n[len("probe_"):] for n in timings_for_model
+            if n.startswith("probe_") and n != "probe_rowcount"]
+
+
+def report_probe_columns(cold_column_cost):
+    """The union of every model's measured columns, first-seen order preserved. Rendering reads
+    this rather than one model's, so an engine that failed a probe leaves a gap in its own column
+    instead of dropping the row for everybody."""
+    out = []
+    for entry in cold_column_cost.values():
+        for col in (entry.get("columns") or {}):
+            if col not in out:
+                out.append(col)
+    return out
 
 # The three measured metrics, in report order: (label, per-query value key, per-query spread key).
 #
@@ -174,7 +201,7 @@ def compute_analysis(rep):
         if base is None:
             continue
         row = {}
-        for col in _PROBE_COLS:
+        for col in probe_columns(timings[m]):
             v = timings[m].get(f"probe_{col}", {}).get("cold_ms")
             if v is not None:
                 row[col] = round(v - base, 1)
@@ -297,7 +324,7 @@ def _cold_cost_table(cc):
            "`probe_rowcount` runs last among the probes so it is ~pure overhead.</sub>", "",
            "| column | " + " | ".join(_short(m) for m in models) + " |",
            "|:--|" + "--:|" * len(models)]
-    for col in _PROBE_COLS:
+    for col in report_probe_columns(cc):
         cells = " | ".join(_fmt(cc[m]["columns"].get(col)) for m in models)
         out.append(f"| `{col}` | {cells} |")
     out.append("| _rowcount overhead_ | "
