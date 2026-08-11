@@ -3658,3 +3658,64 @@ test("a dataset with records but none complete says so, not 'never measured'", (
   // ...and the genuinely empty repo keeps the original message.
   assert.ok(plain(d.compose([], {}, {}).html).includes("No run records in `history/runs/`"));
 });
+
+test("dot AREA is proportional to CU from zero, so equal CU draws equal dots", () => {
+  // THE BUG THIS PINS, found by looking at the rendered taxi page: the scale used to normalise to
+  // the OBSERVED RANGE, so the smallest CU always got the smallest dot and the largest the largest,
+  // however close the two numbers were. A page whose CU spanned 439..567 — a 1.29x difference —
+  // drew a 6.8x difference in area. That is the bubble lie the area-scaling was chosen to avoid,
+  // arriving through the domain instead of the radius, and it gets WORSE as the real spread narrows.
+  const radii = (cus) => {
+    const svg = d.scatterSvg("t", "s",
+      cus.map((c, i) => ({ ...pt(`p${i}`, 1000 * (i + 1), 1000 * (i + 1)), c })), "cold ms", "CU");
+    // Plot marks only — the size key draws swatches with the same scale and would double-count.
+    return [...svg.matchAll(/<circle class="dot c\d"[^>]*\br="([\d.]+)"/g)].map((m) => +m[1]);
+  };
+  const areaRatio = (r) => (Math.max(...r) ** 2) / (Math.min(...r) ** 2);
+
+  // A NARROW range must render narrow. This is the case that was wrong.
+  const narrow = radii([439, 503, 567]);
+  assert.equal(narrow.length, 3);
+  assert.ok(Math.abs(areaRatio(narrow) - 567 / 439) < 0.02,
+    `area ratio ${areaRatio(narrow).toFixed(2)} should equal the value ratio 1.29`);
+
+  // A WIDE range is unchanged in practice — the old scale happened to be about right here, which is
+  // why this went unnoticed until a second dataset produced a narrow one.
+  const wide = radii([1331, 4986, 8641]);
+  assert.ok(Math.abs(areaRatio(wide) - 8641 / 1331) < 0.05,
+    `area ratio ${areaRatio(wide).toFixed(2)} should equal the value ratio 6.49`);
+
+  // Equal values, equal dots — the property range-normalisation cannot have.
+  const flat = radii([500, 500, 500]);
+  assert.equal(new Set(flat.map((r) => r.toFixed(2))).size, 1, `${flat}`);
+});
+
+test("the chart chain reads THIS dataset's mart, not the module default", () => {
+  // THE BUG THIS PINS, found by looking at the rendered taxi page: `keyCells` and `layoutOf` both
+  // default their table argument to `DEFAULTS.table` — aemo's `fct_summary` — and four call sites in
+  // the chart chain dropped it. On a taxi page they therefore looked up a table that dataset does
+  // not have, so the headline table's `ordering`, `row group size` and `MB` columns were ALL dashes,
+  // the tooltips lost their shape lines, and `layoutOf` fell through to its `producers()` fallback —
+  // which printed the writer's name a SECOND time where the layout should have been.
+  //
+  // Every one of those is silent: a dash reads as "not measured" and a duplicated label reads as a
+  // rendering quirk, so nothing about the page looked wrong.
+  const rec = lay("spark", 5, 5, { file: "n.json", mb: 428, vorder: true });
+  // Re-point the record at fct_trips, which is what makes this the cross-dataset case.
+  const st = rec.layout.stats.spark;
+  st.fct_trips = { ...st.fct_summary, size_mb: 428, num_row_groups: 5, avg_row_group: 8_746_831 };
+  delete st.fct_summary;
+  rec.layout.tables = ["fct_trips"];
+
+  const groups = d.layoutGroups([{ col: "spark", rec, qid: "0", cu: 439, etl: 1 }], "fct_trips");
+  const times = { 0: { cold: 1000, warm: 500 } };
+  const html = d.renderFit(groups, times, ["cold", "warm"], {}, "fct_trips");
+
+  assert.ok(html.includes("8.7M"), "row group size must come from the dataset's own mart");
+  assert.ok(html.includes("428"), "MB must too");
+  // ...and the label must carry the SHAPE, never the writer name twice.
+  const labels = [...html.matchAll(/<text class="(?!bar-caption key)[^"]*"[^>]*>([^<]+)<\/text>/g)]
+    .map((m) => m[1]);
+  const writer = labels.filter((t) => t === "spark");
+  assert.ok(writer.length <= 1, `the writer name is printed twice: ${labels.join(" / ")}`);
+});

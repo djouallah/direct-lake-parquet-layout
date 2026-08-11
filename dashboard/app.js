@@ -1468,19 +1468,35 @@ export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = ""
     placed.push(box(t, x, y, anchor));
     return { x, y, anchor };
   };
-  // SIZE CARRIES THE ROW GROUP SIZE, and it is scaled by AREA — `r = sqrt(lerp(rMin², rMax²))`.
-  // Scaling the RADIUS instead is the classic bubble lie: the eye reads the disc, and a disc whose
-  // radius doubled has four times the area, so a 9x value would look ~80x. Range 5..13 units: wide
-  // enough to rank by eye, tight enough that the biggest dot does not swallow its neighbours in a
-  // cluster this dense. Defined before the loop that calls `label`, which is what `hits` needs it
-  // for — a label must not be placed under a dot, and the dots are no longer all one size.
-  const cs = rows.map((p) => Number(p.c)).filter((v) => Number.isFinite(v));
+  // SIZE CARRIES THE CU, SCALED BY AREA FROM ZERO — `r = R_MAX * sqrt(v / max)`.
+  //
+  // Area, not radius, for the usual reason: the eye reads the disc, so a doubled radius reads as
+  // four times the value. But that was never the bug here — this scale used to normalise to the
+  // OBSERVED RANGE (`t = (v - lo) / (hi - lo)`, lerped between R_MIN² and R_MAX²), which makes the
+  // smallest dot R_MIN and the largest R_MAX no matter how close the two values are. On a page
+  // whose CU spans 1,331..8,641 that reads about right by luck. On one spanning 439..567 it drew a
+  // 29% difference as a 6.8x difference in area — the same bubble lie, arriving through the domain
+  // instead of the radius, and the more dangerous form because it gets WORSE as the real spread
+  // gets smaller.
+  //
+  // Zero-based means a dot's area is proportional to its value outright: equal CU draws equal dots,
+  // and the ratio between any two discs IS the ratio between their numbers. The cost is that a
+  // narrow-range page now draws dots of nearly the same size — which is the honest picture of a
+  // narrow range, and the caption plus the size key say what the numbers are.
+  //
+  // R_MAX 13 units is unchanged, so the biggest dot on every existing page is exactly where it was.
+  // There is no R_MIN: a floor is the range-normalisation bug in miniature, and CU is strictly
+  // positive here so nothing collapses to invisibility. Defined before the loop that calls `label`,
+  // which is what `hits` needs it for — a label must not be placed under a dot.
+  const cs = rows.map((p) => Number(p.c)).filter((v) => Number.isFinite(v) && v > 0);
   const cLo = cs.length ? Math.min(...cs) : 0, cHi = cs.length ? Math.max(...cs) : 0;
-  const R_MIN = 5, R_MAX = 13;
+  const R_MAX = 13, R_DEFAULT = 9;
   const rad = (v) => {
-    if (!Number.isFinite(Number(v)) || cHi === cLo) return (R_MIN + R_MAX) / 2;
-    const t = (Number(v) - cLo) / (cHi - cLo);
-    return Math.sqrt(R_MIN * R_MIN + t * (R_MAX * R_MAX - R_MIN * R_MIN));
+    const n = Number(v);
+    // Nothing to scale against — one value, or none — so every dot is the same size rather than
+    // arbitrarily the largest. A single-dot chart carries its number in the caption, not the disc.
+    if (!Number.isFinite(n) || n <= 0 || !cHi) return R_DEFAULT;
+    return R_MAX * Math.sqrt(n / cHi);
   };
   // WHAT A LABEL MAY NOT BE PRINTED ON — a dot's disc, or a segment's whole length. A name across a
   // 3px hued line is the one collision a reader cannot undo by hovering. Precomputed rather than
@@ -1551,6 +1567,10 @@ export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = ""
     const sy = ly + 26;
     out.push(`<text class="bar-caption key" x="${L}" y="${sy + 4}">${esc(legend)}</text>`);
     let sx = L + 8 + legend.length * 5.15;
+    // The key spans the OBSERVED range still, because those are the numbers on the page — but the
+    // sizes it draws now come from the zero-based scale, so two nearby values draw two nearly
+    // identical swatches. That is the point: the key shows what the eye is being asked to compare,
+    // and if the swatches look alike the dots do too.
     for (const v of [cLo, (cLo + cHi) / 2, cHi]) {
       const r = rad(v);
       out.push(`<circle class="key swatch c0" cx="${(sx + R_MAX).toFixed(1)}" cy="${sy}" ` +
@@ -1821,8 +1841,8 @@ function cutNote(cut) {
  * is OMITTED rather than dashed: a dash is a column that must line up with its neighbours, and
  * nothing here lines up with anything.
  */
-function tipLines(p) {
-  const k = keyCells(p.members);
+function tipLines(p, martTable = DEFAULTS.table) {
+  const k = keyCells(p.members, martTable);
   const out = [p.name];
   const say = (label, v) => { if (v && v !== DASH) out.push(`${label}: ${v}`); };
   say("ordering", k.ordering);
@@ -1964,9 +1984,9 @@ export function bestDots(rows) {
 }
 
 /** `date, time · rg 2.0M (fastest)` — the layout, then which of the two picks it is. */
-function bestLabel(p, { cheapest, fastest }) {
+function bestLabel(p, { cheapest, fastest }, martTable = DEFAULTS.table) {
   const why = [p === cheapest ? "cheapest" : "", p === fastest ? "fastest" : ""].filter(Boolean);
-  return why.length ? `${layoutOf(p.members)} (${why.join(", ")})` : "";
+  return why.length ? `${layoutOf(p.members, martTable)} (${why.join(", ")})` : "";
 }
 
 /**
@@ -1995,7 +2015,7 @@ function bestLabel(p, { cheapest, fastest }) {
  * BOTH AXES LOG, which the pre-line version did not have. Cold spans 22,823-45,010 against warm at
  * 3,000-6,500, and a linear axis pinned every dot into a corner. Log is orthogonal to the mark.
  */
-export function scatterFit(pts) {
+export function scatterFit(pts, martTable = DEFAULTS.table) {
   // BOTH AXES ARE TIMES, so both are required — and the layouts this drops are COUNTED in the
   // subtitle. NO ENGINE IS FILTERED — `iceberg` plots like everything else, as the biggest and
   // right-most dot, which is what it measured.
@@ -2031,8 +2051,8 @@ export function scatterFit(pts) {
       // its name now, which is the V-Order flag and the segment size in the same words `keyCells`
       // prints. A writer that cannot express a sort simply has no sort half to show — spark and
       // iceberg are `rg` only, and that absence is itself the comparison against duckrun's sorts.
-      id2: bestOnly(p) ? bestLabel(p, best) : layoutOf(p.members),
-      tip: tipLines(p), hue: WRITER_HUE[p.name] || 1, c: p.cu,
+      id2: bestOnly(p) ? bestLabel(p, best, martTable) : layoutOf(p.members, martTable),
+      tip: tipLines(p, martTable), hue: WRITER_HUE[p.name] || 1, c: p.cu,
     })), "cold ms", "CU", (v) => fmt(v, 0), "warm ms", modelNote(rows));
 }
 
@@ -2081,7 +2101,7 @@ export function keyCells(members, table = DEFAULTS.table) {
  *
  * Same `martPoints` as the bars and the layout rows, so all three quote the same median.
  */
-export function renderFit(groups, times, tiers, counts = {}) {
+export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULTS.table) {
   const measured = martPoints(groups, times).filter((p) => p.cu > 0);
   // A LAYOUT NOBODY BUILT AT `ETL_VCORES` LEAVES THE SECTION, rather than sitting in it with a dash.
   // The alternative was hiding the `etl CU` column while 7 of 17 rows could not fill it, and a cost
@@ -2107,7 +2127,7 @@ export function renderFit(groups, times, tiers, counts = {}) {
     // scatter disagree.
     // The table stays directly beneath, unchanged and complete, which is what the labels, the
     // hovers and every caption point back into.
-    scatterFit(pts),
+    scatterFit(pts, martTable),
     // THE KEY IS PRINTED, not just grouped on. Six rows reading `duckrun sorted` with nothing to
     // tell them apart is a table asking the reader to trust a grouping it will not show. `ordering`
     // and `row group size` ARE `layoutKey` (the engine is already in the label) — the key bands the
@@ -2137,7 +2157,7 @@ export function renderFit(groups, times, tiers, counts = {}) {
       ["left", "left", "left", "right", "right", "right", "right", "right", "right",
         ...cols.map(() => "right")],
       pts.map((p) => {
-        const k = keyCells(p.members);
+        const k = keyCells(p.members, martTable);
         return [p.name, k.ordering, k.dict, k.rgSize, k.mb, String(p.n), p.cores,
           p.etl ? fmt(p.etl, 0) : DASH, fmt(p.cu, 0),
           ...cols.map((l) => (p.ms[l] ? fmt(p.ms[l], 0) : DASH))];
@@ -3442,7 +3462,8 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // figure you can simply be told. NOTHING WAS LOST FROM THE PAGE, only from the ink: check that
   // claim before restoring one, because a chart restored for a number no table carries is a
   // different argument from the one that removed these.
-  out.push(renderFit(groups, times, TIERS.map(([l]) => l).filter((l) => l in counts), counts));
+  out.push(renderFit(groups, times, TIERS.map(([l]) => l).filter((l) => l in counts), counts,
+    martTable));
 
   // The one place the ADAPTERS are named and linked. The chart does not caption them because the
   // column name already implies the adapter — this line is where that implication resolves.
