@@ -1,0 +1,113 @@
+{
+ "dbt": {
+  "duckrun": {
+   "sort_by": {
+    "fct_trips": [
+     "pickup_date",
+     "PULocationID"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "3",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "false",
+  "sort_by": "pickup_date,PULocationID",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": null,
+    "row_group_size": "2000000",
+    "sorted": "true",
+    "vcores": "8"
+   },
+   "dwh": {
+    "vorder": "true"
+   },
+   "iceberg": {
+    "vcores": "8"
+   },
+   "spark": {
+    "native_execution_engine": "true",
+    "resource_profile": "writeHeavy"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "engines": {
+   "duckrun": {
+    "guid": null,
+    "item": "dbt_nyc_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   },
+   "dwh": {
+    "guid": null,
+    "item": "dbt_nyc_dwh",
+    "kind": "warehouses",
+    "writer": "warehouse"
+   },
+   "iceberg": {
+    "guid": null,
+    "item": "dbt_nyc_iceberg",
+    "kind": "lakehouses",
+    "writer": "duckdb (iceberg)"
+   },
+   "spark": {
+    "guid": null,
+    "item": "dbt_nyc_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "run": {
+   "dataset": "nyc",
+   "id": "31445000462",
+   "sha": "8c8bbcb93e9558782b20116a514e906d6a80e3be",
+   "written": "2026-08-11T00:09:54.801416+00:00"
+  },
+  "stats": {
+   "duckrun": {},
+   "dwh": {},
+   "iceberg": {},
+   "spark": {}
+  },
+  "tables": [
+   "stg_parquet_archive_log",
+   "dim_date",
+   "dim_zone",
+   "fct_trips"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-11T00:10:38+00:00",
+  "id": "31445000462",
+  "sha": "8c8bbcb93e9558782b20116a514e906d6a80e3be",
+  "started": "2026-08-11T00:09:01+00:00",
+  "url": "https://github.com/djouallah/fabric-dbt-benchmark/actions/runs/31445000462"
+ },
+ "schema": 1
+}
