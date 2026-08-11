@@ -82,10 +82,14 @@ export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips" };
 // the incremental key rather than data, so neither is worth a column on a page about encodings.
 export const DATASET_MART_COLUMNS = {
   aemo: ["date", "time", "DUID", "mw", "price", "cutoff"],
-  nyc: ["pickup_date", "tpep_pickup_datetime", "tpep_dropoff_datetime", "PULocationID", "DOLocationID",
-        "VendorID", "RatecodeID", "store_and_fwd_flag", "payment_type", "passenger_count",
-        "trip_distance", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount",
-        "improvement_surcharge", "total_amount"],
+  // fct_trips' own select list, in its own order — the 17 source columns plus the two derived
+  // ones. `file` IS listed, unlike aemo where the mart has no such column: it is a real stored
+  // column here, stats.py profiles its encoding, and a page that omitted it would hide the one
+  // column the incremental write keys on.
+  nyc: ["VendorID", "tpep_pickup_datetime", "tpep_dropoff_datetime", "passenger_count",
+        "trip_distance", "RatecodeID", "store_and_fwd_flag", "PULocationID", "DOLocationID",
+        "payment_type", "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount",
+        "improvement_surcharge", "total_amount", "pickup_date", "file"],
 };
 
 /**

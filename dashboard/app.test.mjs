@@ -2894,26 +2894,34 @@ test("MART_COLUMNS is the model's own select list, in its own order", () => {
   assert.deepEqual(d.MART_COLUMNS, ["date", "time", "DUID", "mw", "price", "cutoff"]);
 });
 
-test("MART_COLUMNS covers every column stats.py has actually recorded", async () => {
-  // THE DRIFT GUARD, and the cost of hardcoding the list: a new model column would silently not
+test("every dataset's column list covers what stats.py actually recorded", async () => {
+  // THE DRIFT GUARD, and the cost of hardcoding the lists: a new model column would silently not
   // appear in the encoding table. Checked against real recorded data rather than by parsing SQL —
   // `history/` holds what `stats.py` read out of the footers, and the duckdb engines write no column
   // mapping, so their names ARE the logical ones. Skips when nothing has been profiled yet.
+  //
+  // PER DATASET, because a record's columns are its OWN mart's. It was one global list, and the
+  // first taxi record turned it red with nineteen "missing" columns that belong to a different
+  // table entirely — which is the check working, just not yet able to say so.
   const fs = await import("node:fs");
-  let seen = new Set(), any = false;
+  const seen = {};        // dataset -> Set(column)
   const dir = "history/runs";
   if (!fs.existsSync(dir)) return;
   for (const f of fs.readdirSync(dir).filter((n) => n.endsWith(".json") && n !== "index.json")) {
     const rec = JSON.parse(fs.readFileSync(`${dir}/${f}`, "utf8"));
     const e = ((rec.layout || {}).encodings || {})[rec.engine];
     if (!e || !["duckrun", "iceberg", "spark"].includes(rec.engine)) continue;
-    any = true;
-    for (const c of Object.keys(e)) seen.add(c);
+    const ds = d.datasetOf(rec);
+    (seen[ds] = seen[ds] || new Set());
+    for (const c of Object.keys(e)) seen[ds].add(c);
   }
-  if (!any) return;
-  const missing = [...seen].filter((c) => !d.MART_COLUMNS.includes(c));
-  assert.deepEqual(missing, [],
-    `stats.py recorded column(s) MART_COLUMNS does not list, so the page silently hides them: ${missing}`);
+  for (const [ds, cols] of Object.entries(seen)) {
+    const known = d.DATASET_MART_COLUMNS[ds];
+    assert.ok(known, `a record claims dataset ${ds}, which has no column list`);
+    const missing = [...cols].filter((c) => !known.includes(c));
+    assert.deepEqual(missing, [],
+      `${ds}: stats.py recorded column(s) the page does not list, so it silently hides them: ${missing}`);
+  }
 });
 
 test("row group size is rows per group in millions, ranged when the group differs", () => {

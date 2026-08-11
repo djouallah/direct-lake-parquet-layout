@@ -104,8 +104,19 @@ def test_the_declared_key_comes_from_the_env_the_model_reads(stats, monkeypatch)
     assert stats.declared_sort_key() == {"fct_summary": ["date", "time"]}
     monkeypatch.setenv("DUCKDB_SORT_BY", "date, time, DUID")     # spaces are the dispatch's problem
     assert stats.declared_sort_key() == {"fct_summary": ["date", "time", "DUID"]}
+    # `auto` is duckrun's own picker and DECLARES NO COLUMNS — it names none, and what it
+    # resolved to is recorded separately, from fabric_run.py's log scrape, as
+    # `dbt.<engine>.sort_by_auto`. Returning the literal "auto" here would caption the
+    # dashboard's sort `by auto`, which is worse than the absence: absent, the page reads the
+    # run as sorted with an unrecorded key and says exactly that.
+    monkeypatch.setenv("DUCKDB_SORT_BY", "auto")
+    assert stats.declared_sort_key() == {}
+    monkeypatch.setenv("DUCKDB_SORT_BY", "AUTO")     # duckrun compares case-insensitively
+    assert stats.declared_sort_key() == {}
+    # ...and with the var unset the fallback must still be the MODEL's own env_var default,
+    # which is `auto` now — a stale literal here would record a key the write never used.
     monkeypatch.delenv("DUCKDB_SORT_BY")
-    assert stats.declared_sort_key() == {"fct_summary": ["date", "time", "price"]}, (
+    assert stats.declared_sort_key() == {}, (
         "must equal the model's own env_var default, or a hand run records a key it did not write")
 
 

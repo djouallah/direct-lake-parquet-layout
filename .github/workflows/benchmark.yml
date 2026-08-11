@@ -136,10 +136,18 @@ on:
       # duckrun failing mid-write with the build already paid for. It is not silently substituted:
       # a run that quietly measured a different layout than the form described is the failure this
       # whole field was reshaped to prevent (run 31158671699).
+      # `auto` is duckrun's OWN picker — it profiles the data and chooses the key — and it is the
+      # default because it is the thing worth measuring: an explicit key is a hypothesis about what
+      # the queries need, while auto is what a user gets without one. It costs a profiling pass on
+      # the write, which is a real and expected ETL cost rather than a defect.
+      #
+      # Blank still means NO sort. Anything else is a comma-separated column list, and `plan`
+      # refuses one naming columns the selected dataset's mart does not have — which `auto` is
+      # exempt from, being a mode rather than a key.
       sort_by:
-        description: "duckrun: sort the mart by — blank for no sort; must match the dataset"
+        description: "duckrun: sort the mart by — `auto` to let duckrun pick, blank for no sort"
         type: string
-        default: "date,time,price"
+        default: "auto"
       # 2M, not 16M. 16M was spark `readHeavyForPBI`'s measured segment size (9 x 16.0M on this
       # table) and VertiPaq's ceiling, i.e. the largest segment Direct Lake would take whole. 2M is
       # the other end of that trade: ~72 row groups instead of ~9, so a query that touches a narrow
@@ -306,8 +314,8 @@ env:
   #
   # `row_group_size` and `sort_by` are free text and are VALIDATED IN `plan`, not here: a typo would
   # otherwise reach duckrun as a string and fail mid-write, after the legs have spent capacity.
-  DUCKDB_SORT_BY: ${{ github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by }}
-  DUCKDB_SORTED: ${{ (github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by) != '' && 'true' || 'false' }}
+  DUCKDB_SORT_BY: ${{ github.event_name == 'schedule' && 'auto' || inputs.sort_by }}
+  DUCKDB_SORTED: ${{ (github.event_name == 'schedule' && 'auto' || inputs.sort_by) != '' && 'true' || 'false' }}
   DUCKDB_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
   DUCKDB_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '1024' || inputs.file_size_mb }}
   BENCH_ENGINES: ${{ github.event_name == 'schedule' && 'duckrun' || inputs.engines }}
@@ -355,7 +363,7 @@ jobs:
           # meant reading the workflow file at that SHA. `_init()` skips an empty value, so a blank
           # `sort_by` (no sort) correctly records no key rather than an empty string. These are the
           # INTENT; `layout.config` is what was measured, and the dashboard groups on that.
-          RUNIN_SORT_BY: ${{ github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by }}
+          RUNIN_SORT_BY: ${{ github.event_name == 'schedule' && 'auto' || inputs.sort_by }}
           RUNIN_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
           RUNIN_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '1024' || inputs.file_size_mb }}
           RUNIN_SKIP_DOWNLOAD: ${{ github.event_name == 'schedule' && 'true'
@@ -458,7 +466,7 @@ jobs:
         env:
           ENGINES: ${{ github.event_name == 'schedule' && 'duckrun' || inputs.engines }}
           ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
-          SORT_BY: ${{ github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by }}
+          SORT_BY: ${{ github.event_name == 'schedule' && 'auto' || inputs.sort_by }}
         run: |
           python3 - >> "$GITHUB_OUTPUT" <<'EOF'
           import json, os, re, sys
@@ -476,8 +484,12 @@ jobs:
           # quoting, injection) — and it catches whitespace-only, which would otherwise read as
           # "sorted" to the workflow env while giving the model no usable key.
           raw = os.environ.get("SORT_BY") or ""
-          cols = [c.strip() for c in raw.split(",") if c.strip()]
-          if raw.strip() and not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", c) for c in cols):
+          # `auto` is duckrun's picker, not a key: it names no column, so the shape and column
+          # checks below do not apply to it. Compared case-insensitively because duckrun does.
+          auto = raw.strip().lower() == "auto"
+          cols = [] if auto else [c.strip() for c in raw.split(",") if c.strip()]
+          if raw.strip() and not auto and not all(
+                  re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", c) for c in cols):
               sys.exit(f"sort_by must be comma-separated column names, got {raw!r}")
           if raw and not raw.strip():
               sys.exit(f"sort_by is whitespace, which reads as sorted but names no column; "
@@ -500,7 +512,7 @@ jobs:
                        f"This dataset's usual key is {spec['sort_by']!r}.")
           sys.stderr.write(f"dataset={ds} mart={spec['mart']} "
                            f"row_group_size={int(rg):,} rows, "
-                           f"sort_by={cols or 'none (unsorted)'}\n")
+                           f"sort_by={'auto (duckrun picks)' if auto else (cols or 'none (unsorted)')}\n")
           # THE dwh PIN IS EXACT, AND THAT IS THE GUARD RATHER THAN A PREFERENCE. This was
           # `dbt-fabric-samdebruyn`, a fork whose ONLY reason to exist here was that it had moved to
           # `mssql-python` (which bundles its own driver) while Microsoft's own adapter was still

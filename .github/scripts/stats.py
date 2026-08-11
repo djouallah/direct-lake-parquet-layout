@@ -744,8 +744,15 @@ def declared_sort_key():
         return {}
     # Fallback MUST match the model's own `env_var('DUCKDB_SORT_BY', ...)` default, or a hand run
     # with the var unset records a key it did not write. CI always sets it from the input.
-    cols = [c.strip()
-            for c in os.environ.get("DUCKDB_SORT_BY", SPEC["sort_by"]).split(",") if c.strip()]
+    raw = os.environ.get("DUCKDB_SORT_BY", SPEC["sort_by"])
+    # `auto` DECLARES NO COLUMNS — duckrun picks them at write time by profiling the data, so the
+    # only witness to what it actually chose is fabric_run.py's log scrape, recorded separately as
+    # `dbt.<engine>.sort_by_auto`. Recording the literal "auto" here as though it were a column
+    # name would put `by auto` in the dashboard's sort caption, which is worse than no caption:
+    # absent, the page reads the run as `sorted` with an unrecorded key and says so.
+    if raw.strip().lower() == "auto":
+        return {}
+    cols = [c.strip() for c in raw.split(",") if c.strip()]
     return {MART: cols} if cols else {}
 
 

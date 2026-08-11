@@ -85,10 +85,19 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 -- NOTHING read it — no model, no test, no macro, no semantic model; this one is read by the
 -- relationship every date-grouped query in the suite traverses, and it is one narrow column whose
 -- values are near-contiguous under the default sort, so it costs little and RLEs well.
+{#-- `auto` is duckrun's own picker: it profiles the data and chooses the key, and it is the
+     dispatch default. It must be passed as a SCALAR — duckrun raises on `['auto']`, because a list
+     means "these columns are the key". Any other value is a comma-separated column list, and blank
+     means no sort at all.
+
+     The comment sits ABOVE the tag, not inside it: dbt parses `config(...)` as an expression, and
+     a Jinja comment between its arguments is `invalid syntax for function call expression` — an
+     error that points at the `{{ config(` line and says nothing about comments. --#}
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
-    sort_by=(env_var('DUCKDB_SORT_BY', 'pickup_date,PULocationID').split(',')
+    sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
+              else env_var('DUCKDB_SORT_BY', 'auto').split(','))
              if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(env_var('DUCKDB_ROW_GROUP_SIZE', '16000000') | int
                         if env_var('DUCKDB_SORTED', 'false') == 'true' else none),

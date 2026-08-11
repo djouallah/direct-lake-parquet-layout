@@ -54,7 +54,7 @@ DATASETS = {
         # `dataset: nyc` dispatch leaves `sort_by` at the aemo default. Kept here rather than read
         # from the manifest because the manifest only exists inside the notebook.
         "mart_columns": ["date", "time", "DUID", "mw", "price"],
-        "sort_by": "date,time,price",
+        "sort_by": "auto",
         "download": "download_aemo.py",
         "model_prefix": "aemo_",
     },
@@ -80,7 +80,7 @@ DATASETS = {
         # when a dispatch leaves `sort_by` at the other dataset's key — `plan` refuses rather than
         # substituting, because a run that quietly measured a layout other than the one the form
         # described is exactly the failure that reshaped that field.
-        "sort_by": "pickup_date,PULocationID",
+        "sort_by": "auto",
         "download": "download_nyc_taxi.py",
         "model_prefix": "nyc_",
     },
