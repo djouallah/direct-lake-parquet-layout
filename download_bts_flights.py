@@ -35,12 +35,17 @@ loudly, for this pinned public host only — the data is public monthly CSV whos
 re-checked against what the models store, so integrity rests on the reconciliation test rather
 than the transport.
 
+AND ONE MORE: the 2001 months ARE NOT UTF-8, and reading them as latin-1 is the wrong fix. See
+repair_encoding() — BTS shipped an incomplete EBCDIC->ASCII conversion and the eight bytes it left
+behind land in Tail_Number, one of the three competing categoricals this dataset exists to measure.
+
 Env in:
   FILES_PATH      the landing lakehouse Files root (abfss:// or a local path)
   download_limit  months to fetch this run (oldest first, so a capped drain extends deterministically)
   BTS_START       first month to consider, YYYY-MM (default 1987-10 — the first month BTS
                   published; there is nothing before it to land)
 """
+import codecs
 import os
 import ssl
 import tempfile
@@ -110,6 +115,69 @@ def canonical_expr(col):
     if t == "INTEGER":
         return f'TRY_CAST(TRY_CAST("{col}" AS DOUBLE) AS INTEGER) AS "{col}"'
     return f'TRY_CAST("{col}" AS {t}) AS "{col}"'
+
+
+# EBCDIC S-Z. See repair_encoding() — 0xE2..0xE9 are S,T,U,V,W,X,Y,Z on that code page.
+EBCDIC_SZ = bytes.maketrans(bytes(range(0xE2, 0xEA)), b"STUVWXYZ")
+CHUNK = 1 << 22
+
+
+def is_utf8(path):
+    """Whether the whole file decodes as UTF-8. Incremental, so a multi-byte sequence straddling a
+    chunk boundary is not mistaken for a defect."""
+    dec = codecs.getincrementaldecoder("utf-8")()
+    with open(path, "rb") as f:
+        while True:
+            chunk = f.read(CHUNK)
+            if not chunk:
+                break
+            try:
+                dec.decode(chunk)
+            except UnicodeDecodeError:
+                return False
+    try:
+        dec.decode(b"", final=True)
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
+def repair_encoding(path):
+    """Undo BTS's half-finished EBCDIC->ASCII conversion, in place. Returns whether it fired.
+
+    THE 2001 MONTHS ARE NOT UTF-8 and `encoding='latin-1'` is the WRONG fix — it makes the leg
+    green while writing `N388U1` as `N388<a-umlaut>1`, permanently, because the archive is
+    normalised to parquet once here. Every corrupt byte lands in `Tail_Number`, which is one of
+    the three competing categoricals bts exists to measure, and each affected tail number would
+    split into a mojibake twin — inflating exactly the cardinality under test.
+
+    What the bytes actually are, measured on 2001-01 (43% of 529,942 rows, 1,774 of 4,035 distinct
+    tail numbers): the file is ASCII except for 0xE2..0xE9 and nothing else, which is EBCDIC S-Z
+    that BTS's own conversion missed. Three proofs, none of them circumstantial. The ASCII letters
+    in `Tail_Number` span A-R with ZERO S-Z, i.e. exactly the eight letters the eight bytes stand
+    for. `'\\xe4NKNO\\xe6'` is BTS's own `UNKNOW` placeholder. And against clean neighbour 2000-12
+    the per-letter frequencies match to within a percent (S 434/430, T 122/123, U 1135/1141,
+    V 34/35, W 504/508, X 9/9, Y 13/12, Z 35/35), with 1,085 of the 1,774 repaired values appearing
+    verbatim in that month's tail numbers against 0 of 1,774 for the raw latin-1 spelling.
+
+    Byte-level rather than a column fix, so a month putting the same bytes in Origin or Dest is
+    covered too. It only fires on a file that would have failed the read anyway, and the result is
+    RE-VALIDATED: a month still not UTF-8 after the repair raises, so the caller refuses it rather
+    than archiving a guess."""
+    if is_utf8(path):
+        return False
+    tmp = path + ".repaired"
+    with open(path, "rb") as src, open(tmp, "wb") as dst:
+        while True:
+            chunk = src.read(CHUNK)
+            if not chunk:
+                break
+            dst.write(chunk.translate(EBCDIC_SZ))
+    os.replace(tmp, path)
+    if not is_utf8(path):
+        raise RuntimeError(f"{os.path.basename(path)}: not UTF-8 and not the known EBCDIC S-Z "
+                           f"defect — refusing to guess at the encoding")
+    return True
 
 
 dr = duckrun.connect(FILES_PATH, read_only=False)
@@ -276,31 +344,40 @@ def land_flights(limit):
                 y, m = (int(p) for p in ym.split("-"))
                 url = ZIP_URL.format(y=y, m=m)
                 zpath = os.path.join(raw_dir, f"flights_{ym}.zip")
+                csv_path = None
+                # The whole month is inside the guard, decode included: a month that will not read
+                # is one month skipped and retried next run, not a dead drain. It used to cover
+                # fetch and unzip only, so 2001-01's encoding defect aborted the leg with
+                # 2000-01..2000-12 already decoded and nothing landed.
                 try:
                     etag = fetch(url, zpath)
                     member = csv_member(zpath)
                     with zipfile.ZipFile(zpath) as z:
                         z.extract(member, raw_dir)
                     csv_path = os.path.join(raw_dir, member)
+                    if repair_encoding(csv_path):
+                        print(f"  {ym}: repaired EBCDIC S-Z bytes (see repair_encoding)",
+                              flush=True)
+                    cols = csv_header(csv_path)
+                    missing = [c for c in CORE_COLUMNS if c not in cols]
+                    if missing:
+                        # REFUSED, not landed-and-hoped: nothing is written to out/, so the archive
+                        # only ever holds months every dialect can read.
+                        print(f"  REFUSED {ym}: missing {missing} (has {len(cols)} columns) — "
+                              f"not archived", flush=True)
+                        refused += 1
+                    else:
+                        name = f"flights_{ym}.parquet"
+                        normalise(csv_path, os.path.join(out_dir, name))
+                        rows, _ = footer(os.path.join(out_dir, name))
+                        got.append((ym, name, rows, cols, etag))
                 except Exception as e:
                     print(f"  WARN skip {ym}: {type(e).__name__}: {e}", flush=True)
-                    continue
-                cols = csv_header(csv_path)
-                missing = [c for c in CORE_COLUMNS if c not in cols]
-                if missing:
-                    # REFUSED, not landed-and-hoped: nothing is written to out/, so the archive
-                    # only ever holds months every dialect can read.
-                    print(f"  REFUSED {ym}: missing {missing} (has {len(cols)} columns) — "
-                          f"not archived", flush=True)
-                    refused += 1
-                else:
-                    name = f"flights_{ym}.parquet"
-                    normalise(csv_path, os.path.join(out_dir, name))
-                    rows, _ = footer(os.path.join(out_dir, name))
-                    got.append((ym, name, rows, cols, etag))
-                # The inflated CSV is the disk cost; drop it before the next month's.
-                os.remove(csv_path)
-                os.remove(zpath)
+                finally:
+                    # The inflated CSV is the disk cost; drop it before the next month's.
+                    for p in (csv_path, zpath):
+                        if p and os.path.exists(p):
+                            os.remove(p)
             if not got:
                 continue
             push_new(out_dir, "parquet_raw/flights")

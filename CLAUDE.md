@@ -57,6 +57,21 @@ leading/trailing whitespace only, because embedded spaces are legitimate data th
 Pan Am, ~5K rows in every 1987 month; the DUID spelling would fail every leg on correct data); and
 the carrier lookup URL is TranStats' obfuscated spelling (`Y11x72=Y_haVdhR_PNeeVRef`) because the
 plain `Lookup=L_UNIQUE_CARRIERS` now returns the HTML homepage with status 200.
+**THE 2001 MONTHS ARE NOT UTF-8, AND `encoding='latin-1'` IS THE WRONG FIX.** Those files are ASCII
+except for bytes 0xE2-0xE9 and nothing else — EBCDIC S-Z, left behind by BTS's own half-finished
+EBCDIC→ASCII conversion — and every one of them lands in `Tail_Number`, which is one of the three
+competing categoricals this dataset exists to measure. Reading them as latin-1 makes the leg green
+while storing `N388U1` as `N388ä1` PERMANENTLY (the archive is normalised to parquet once, at land
+time) and splits each affected tail number into a mojibake twin, inflating exactly the cardinality
+under test. `download_bts_flights.repair_encoding()` translates the eight bytes back, byte-level so
+another column is covered too, ONLY on a file that already fails a strict UTF-8 decode, and
+re-validates after — a month still not UTF-8 is refused, never guessed at. The identification is
+measured, not inferred: 2001-01's ASCII letters in `Tail_Number` span A-R with ZERO S-Z, `äNKNOæ` is
+BTS's own `UNKNOW` placeholder, and against clean neighbour 2000-12 the per-letter frequencies match
+within a percent with 1,085 of 1,774 repaired values appearing verbatim in that month against 0 for
+the latin-1 spelling. Clean: 1987-10, 1989-12, 2000-01, 2000-12, 2002-06, 2003-06. Dirty: 2001-01,
+2001-02, 2001-12 — the sweep was cut short when TranStats began refusing connections, so treat the
+month list as a lower bound and the repair as the general answer.
 The ladder and year-filtered DAX queries pin **1988**, not a recent year: the archive drains oldest
 first, so a recent year on a young archive filters to nothing — a very fast query that reads as a
 result. (nyc's suite pins 2019 with an archive that currently ends mid-2014; check that before

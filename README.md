@@ -68,7 +68,7 @@ less analytics CU**.
   `writeHeavy` turns it off, and `readHeavyForSpark` doesn't set it at all despite the name.
   Same data, same file band: V-Order on vs off is 1,332 vs 3,769 analytics CU. The profile also
   flips `optimizeWrite` to 1 GB bins, so on AEMO the *build* came out cheaper with V-Order on
-  too — the default profile saves 10% of compute and spends 3.3× on OneLake writes to do it.
+  too — the default profile saves 7% of compute and spends 3.3× on OneLake writes to do it.
   [Second learning](#the-second-learning-the-write-optimised-profile-doesnt-optimise-the-write)
   has the numbers.
 - **Fabric Warehouse**: on by default — leave it. `ALTER DATABASE … SET VORDER = OFF` is
@@ -315,29 +315,35 @@ and a model that knows its own size declares it instead.
 
 Fabric Spark's default resource profile is `writeHeavy`, and on this evidence it is the wrong
 default for anything Power BI reads. It does save Livy compute — and then hands the saving
-straight back at the storage counter. **aemo, 8 cores, medians over n=6 `readHeavyForPBI` and
-n=3 `writeHeavy`:**
+straight back at the storage counter. **Medians over every aemo spark run — 8 `readHeavyForPBI`
+against 4 `writeHeavy`, and 7 against 3 on the analytics row, one build of each carrying no
+benchmark pass:**
 
 | CU | `readHeavyForPBI` | `writeHeavy` | |
 |---|---:|---:|---|
-| Livy compute | 31,986 | 28,824 | −3,162 (−10%) |
-| OneLake storage | 1,803 | 5,992 | **+4,189 (3.3×)** |
-| **build total** | **33,789** | **34,816** | **1.03× — the "write-optimised" build costs more** |
-| **analytics** | **1,497** | **3,769** | **2.52×** |
+| Livy compute | 31,629 | 29,323 | −2,307 (−7%) |
+| OneLake storage | 1,803 | 5,987 | **+4,184 (3.3×)** |
+| **build total** | **33,433** | **35,310** | **1.06× — the "write-optimised" build costs more** |
+| **analytics** | **1,514** | **3,769** | **2.49×** |
 
-The storage line is a single operation — `OneLake Write via Redirect`, 503 CU against 4,083
+The storage line is a single operation — `OneLake Write via Redirect`, 503 CU against 4,084
 (**8.1×**) — and the cause is published rather than inferred: Microsoft's
 [resource profile reference][ms-profiles] gives `readHeavyForPBI` `optimizeWrite.enabled: "true"`
 at `binSize: "1g"` while `writeHeavy` doesn't enable it and sets `binSize: "128"`. Few large
-coalesced writes against many small ones, 44–47 live files against 68. `readHeavyForSpark` is the
-same trap wearing a better name: 7% cheaper to build, **2.14×** the analytics CU (n=1), and it
+coalesced writes against many small ones, 44–47 live files against 67–68. `readHeavyForSpark` is
+the same trap wearing a better name: 4% cheaper to build, **2.04×** the analytics CU (n=2), and it
 sets no V-Order at all.
 
 **The storage blowup does not reproduce on nyc**, so don't carry that half over. There
 `writeHeavy` genuinely is cheaper to build — 1,182 vs 1,344 CU on the 43.7M-row generation and
 11,053 vs 12,068 on the 591.7M one — while still costing 1.35× and 1.46× the analytics CU. What
 survives both datasets is the weaker claim, and it is enough: **the build saving is at most ~10%
-and can be negative, the analytics penalty is 1.35–2.52×.**
+and can be negative, the analytics penalty is 1.35–2.49×.**
+
+One thing deliberately absent from the table: the dispatch's `cores` input. It sizes the DuckDB
+notebook and reaches the spark leg not at all — Livy compute is workspace-side, and a 64-core
+dispatch built at 32,930 CU against the 8-core runs' 33,789, i.e. inside their spread. So every
+aemo spark run pools regardless of it.
 
 Note what this does *not* say. Capacity Metrics bills operation duration × capacity units and
 exposes no CPU-utilisation signal, so nothing here explains what the compute was doing or why.
