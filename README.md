@@ -106,6 +106,48 @@ differ silently: Fabric's writers and delta-rs kept dictionaries everywhere; OSS
 and DuckDB's own parquet writer dropped them on the widest columns, exactly where it hurts —
 those are that engine's two most expensive layouts here.
 
+### A practical example: configuring the delta-rs writer
+
+The three rules above, as an actual [delta-rs](https://github.com/delta-io/delta-rs) writer
+profile. The encoding values are the ones [duckrun ships as its default write layout][dr-layout]
+— each tuned black-box against a Spark V-Order reference with DAX timings as the signal — and
+the two geometry values are this repo's measured knee for the 144M-row table (duckrun's own
+defaults are a 16M-row ceiling and 256 MB files):
+
+```python
+from deltalake import write_deltalake, WriterProperties, ColumnProperties
+
+wp = WriterProperties(
+    compression="SNAPPY",                     # transcoding is decode-bound; ~1.3× ZSTD's size,
+                                              #   paid once in storage vs decode on every cold load
+    max_row_group_size=6_000_000,             # #1, in ROWS — the knee here; 16M is the ceiling
+    dictionary_page_size_limit=32 * 1024**2,  # #3 — THE knob. A column overflows to PLAIN when
+                                              #   its dictionary outgrows this; the ~1 MB default
+                                              #   is why writers drop the widest columns silently
+    data_page_size_limit=1024**2,             # ~1 MB pages; page count is pure reader overhead
+    data_page_row_count_limit=1_000_000,      # backstop: an ultra-compressible column otherwise
+                                              #   buffers its whole row group as ONE page
+    statistics_truncate_length=64,            # row-group min/max only; fat footers help nobody
+    default_column_properties=ColumnProperties(
+        dictionary_enabled=True, statistics_enabled="CHUNK"),
+)
+write_deltalake(path, table,                  # #2: ORDER BY your query-filter columns FIRST —
+    writer_properties=wp,                     #   no writer property sorts for you
+    target_file_size=1024**3)                 # a row group can't span files, so keep this well
+                                              #   above one group's bytes (truncation trap below)
+```
+
+Two of these are worth restating. The dictionary page limit is the mechanism behind rule #3:
+truly unique columns still overflow to PLAIN (correct — their dictionary would be as big as the
+data), but the default limit silently de-dictionaries merely-wide columns, exactly the measured
+~200 MB `PLAIN` case above; the cost of raising it lands on the *writer's* merge memory
+(measured in duckrun's harness: an 18M-row merge at a 128 MB limit hit ~25 GB RSS, 8 MB ~4 GB),
+not on the reader. And the statistics stay minimal because Direct Lake
+[never reads them at load][dl-perf] — chunk-level min/max is for the other engines sharing the
+table.
+
+[dr-layout]: https://djouallah.github.io/duckrun/parquet-layout.html
+
 ### What doesn't matter: file count and file size
 
 File count never separated engines in the CU data — the Warehouse ships 78 files and sits
@@ -232,3 +274,7 @@ this repo's own runs (`history/runs/`, the model-header sweep logs, the
   and *The Definitive Guide to DAX* on segments, dictionaries and relationship structures, plus
   the [`DISCOVER_STORAGE_TABLE_COLUMN_SEGMENTS` DMV](https://learn.microsoft.com/en-us/analysis-services/instances/use-dynamic-management-views-dmvs-to-monitor-analysis-services)
   that exposes per-segment residency and temperature on a live model.
+- [duckrun's parquet layout page](https://djouallah.github.io/duckrun/parquet-layout.html) —
+  the delta-rs writer profile above, with the measured rationale per property (SNAPPY vs ZSTD,
+  the dictionary-limit / merge-memory trade, page caps) and the black-box tuning loop against a
+  Spark V-Order reference.
