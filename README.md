@@ -12,25 +12,48 @@ the primary metric. Results are live at
 
 ## How the scan pays for your layout
 
-Three mechanics explain almost every number below — and none is specific to VertiPaq; any
-columnar OLAP engine scans this way.
+What a cold query does, per [Microsoft's own account][dl-perf]:
 
-1. **The scan unit is the segment (= one row group), and parallelism is one thread per
-   segment.** A few giant row groups leave cores idle: on a 144M-row table, warm query time
-   steps down between 19 and 24 row groups (≈5,700 ms → 3,221) and 72 row groups buy nothing
-   over 24. Treat "more row groups than the engine has threads" as a floor, not a formula — a
-   strict `ceil(segments ÷ threads)` cost model was tested with a deliberate 8-segment run and
-   does not hold.
-2. **Every segment carries a fixed cost** — its own dictionary, transcoding and bookkeeping — so
-   segments want **millions of rows each**. The same DuckDB, same notebook, same SQL was
-   **3.5× slower cold** (96,503 ms vs 27,785) when a library default of 122,880 rows per row
-   group reached OneLake: 1,172 tiny segments instead of ~25.
+1. The formula engine plans the DAX and issues storage-engine queries.
+2. For each column touched and not yet resident, the engine merges that column's per-row-group
+   parquet dictionaries into **one global VertiPaq dictionary** — work proportional to
+   row-group count, done before the scan can run.
+3. If the query joins tables, it builds a **join index per relationship**, which itself loads
+   the key columns' dictionaries and the dimension key's segments — a star-schema cold query
+   pays for the dimension too.
+4. The scan runs across the segments, **remapping each segment's parquet data IDs onto VertiPaq
+   IDs** on the way in — a cheap ID swap while the parquet side is dictionary-encoded, a full
+   re-encode where it isn't.
+5. A warm query on now-resident columns skips all of the above. Under memory pressure the
+   engine unloads **segments and join indexes** and rebuilds them on the next query that needs
+   them; a rewritten table (`OPTIMIZE`, overwrite) invalidates segments the same way.
+
+The store this fills is the same VertiPaq engine import mode uses ([same page][dl-perf]), so
+years of import-mode VertiPaq literature describe the scan too. Three consequences explain
+almost every number below:
+
+1. **The scan unit is the segment (= one row group), and the scan pool is sized by cores, not
+   by segments.** Microsoft [lays out row groups to match the capacity's cores][dl-perf] and
+   warns that uneven row-group sizes unbalance the scan — so a few giant row groups leave cores
+   idle: on a 144M-row table, warm query time steps down between 19 and 24 row groups
+   (≈5,700 ms → 3,221) and 72 row groups buy nothing over 24. Treat "more row groups than the
+   engine has threads" as a floor, not a formula — a strict `ceil(segments ÷ threads)` cost
+   model was tested with a deliberate 8-segment run and does not hold, consistent with fetch
+   and transcode overlapping the scan.
+2. **Cold cost scales with row-group count twice** — every row group is one more local
+   dictionary in the merge (step 2) and one more segment to set up and remap (step 4) — so
+   segments want **millions of rows each** ([Microsoft says 1–16M][dl-perf]). The same DuckDB,
+   same notebook, same SQL was **3.5× slower cold** (96,503 ms vs 27,785) when a library
+   default of 122,880 rows per row group reached OneLake: 1,172 tiny segments instead of ~25.
 3. **Within a segment the scan is run-length driven.** VertiPaq inherits the parquet row order
-   during transcoding, so sorted data gives long RLE runs in the resident columns — which is why
-   sorting speeds up warm and hot queries, not just the cold transcoding. This is also what
-   V-Order mechanically is: a row-reordering plus encoding pass at write time.
+   during transcoding, and [VertiScan computes directly on the compressed data][dl-perf], so
+   sorted data gives long RLE runs in the resident columns — which is why sorting speeds up
+   warm and hot queries, not just the cold transcoding. This is also what V-Order mechanically
+   is: a row-reordering plus encoding pass at write time.
 
-Everything below is these three facts applied.
+Everything below is these facts applied.
+
+[dl-perf]: https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage
 
 ## Writing with a Fabric engine? Turn V-Order on
 
@@ -74,9 +97,11 @@ query time or CU. Sort for run lengths in the columns your queries touch; don't 
 
 ### 3. Keep dictionary encoding on every column
 
-Direct Lake remaps a parquet dictionary straight into VertiPaq's own; a `PLAIN` column forces a
-dictionary build from raw values at load. One 144M-row DOUBLE column measured 618.6 MB `PLAIN`
-vs 423.1 MB dictionary-encoded — ~200 MB and a rebuild-at-load on a single column. Writers
+Direct Lake remaps a parquet dictionary straight into VertiPaq's own — [documented][dl-perf] as
+a direct remapping of parquet data IDs to VertiPaq IDs when both sides are dictionary-encoded;
+a `PLAIN` column forces a re-encode from raw values at load. One 144M-row DOUBLE column
+measured 618.6 MB `PLAIN` vs 423.1 MB dictionary-encoded — ~200 MB and a rebuild-at-load on a
+single column. Writers
 differ silently: Fabric's writers and delta-rs kept dictionaries everywhere; OSS-profile Spark
 and DuckDB's own parquet writer dropped them on the widest columns, exactly where it hurts —
 those are that engine's two most expensive layouts here.
@@ -85,10 +110,14 @@ those are that engine's two most expensive layouts here.
 
 File count never separated engines in the CU data — the Warehouse ships 78 files and sits
 mid-pack; the outlier ships ~357 and loses on its *segments*. A 30% smaller file bought no
-query time (four separate demonstrations in the log). One trap: **delta-rs truncates the
-in-progress row group at the file-size cap** (measured writing groups at 0.43× their declared
-rows) — keep the cap comfortably above one row group's bytes and control size with the
-row-group knob, not the file knob.
+query time (four separate demonstrations in the log). Both agree with the documentation:
+[Direct Lake does no statistics-based file or row-group skipping at load][dl-perf], so a
+smaller or cleverly-partitioned file elides no reads — the sort pays through run lengths
+(mechanic 3), never through skipping. One trap: **delta-rs truncates the in-progress row group
+at the file-size cap** (measured writing groups at 0.43× their declared rows) — a truncated
+group is not just small, it makes segment sizes uneven, which is exactly the
+[non-uniform scan load][dl-perf] the docs warn about. Keep the cap comfortably above one row
+group's bytes and control size with the row-group knob, not the file knob.
 
 ## The lab
 
@@ -125,6 +154,9 @@ VertiPaq is treated as a black box: one write knob changes per experiment pair, 
 declared setting was silently dropped by a writer and only the read-back caught it), the bill
 is the metric, and negative results and retractions stay in the record — "V-Order does not
 reorder rows" was written down, overturned by the second dataset, and retracted in place.
+Every mechanical claim in this document is either one of these black-box measurements (the
+number is stated in place) or linked to public documentation — see
+[References](#references).
 
 Read the numbers as measurements, not laws:
 
@@ -177,3 +209,26 @@ CI, nothing else.
 - [TODO.md](TODO.md) — open questions, with the cost of answering each
 - [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
 - [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
+
+## References
+
+Public documentation grounding the mechanics above; every other claim is a measurement from
+this repo's own runs (`history/runs/`, the model-header sweep logs, the
+[dashboard](https://djouallah.github.io/direct-lake-parquet-layout/)).
+
+- [Understand Direct Lake query performance](https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage)
+  (Microsoft Learn) — the cold-query pipeline: local→global dictionary merge, parquet-ID→
+  VertiPaq-ID remapping and the `PLAIN` re-encode cost, join indexes and what building one
+  loads, segments and join indexes unloading under memory pressure, 1–16M-row segment guidance,
+  row groups laid out to match cores, non-uniform scan load, and that no parquet/Delta
+  statistics are used for skipping at load.
+- [Direct Lake overview](https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-overview)
+  and [How Direct Lake works](https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-how-it-works)
+  (Microsoft Learn) — framing, transcoding on demand, cold/semiwarm/warm/hot, guardrails.
+- [Delta Lake table optimization and V-Order](https://learn.microsoft.com/en-us/fabric/data-engineering/delta-optimization-and-v-order)
+  (Microsoft Learn) — V-Order as a write-time sort-and-encode pass.
+- Import-mode VertiPaq internals — applicable because Direct Lake fills the same in-memory
+  store (first reference): [SQLBI's VertiPaq material](https://www.sqlbi.com/topics/vertipaq/)
+  and *The Definitive Guide to DAX* on segments, dictionaries and relationship structures, plus
+  the [`DISCOVER_STORAGE_TABLE_COLUMN_SEGMENTS` DMV](https://learn.microsoft.com/en-us/analysis-services/instances/use-dynamic-management-views-dmvs-to-monitor-analysis-services)
+  that exposes per-segment residency and temperature on a live model.
