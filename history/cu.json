@@ -671,11 +671,11 @@
    "OneLake Write via Redirect": 331.867
   },
   "4FBE4130-1717-4FC9-A985-3FB7B4A13067": {
-   "OneLake Iterative Read via Proxy": 1065.03,
-   "OneLake Other Operations": 7.946,
-   "OneLake Other Operations Via Redirect": 63.492,
+   "OneLake Iterative Read via Proxy": 1069.258,
+   "OneLake Other Operations": 8.07,
+   "OneLake Other Operations Via Redirect": 63.606,
    "OneLake Read via Proxy": 106.891,
-   "OneLake Write via Proxy": 913.975,
+   "OneLake Write via Proxy": 917.389,
    "OneLake Write via Redirect": 2106.483
   },
   "4FFE06C6-D58E-44BC-B539-6D5BB830E52E": {
@@ -1008,7 +1008,7 @@
    "Dataset On-Demand Refresh": 37.52,
    "Dataset Scheduled Refresh": 1.008,
    "Query": 14.608,
-   "XMLA Read Operation": 5491.52
+   "XMLA Read Operation": 5642.464
   },
   "7869D5DF-565A-4484-96FD-82C21D5DF295": {
    "SQL Endpoint Query": 42.74
@@ -2034,7 +2034,7 @@
   "F50835A2-EA45-47B6-89FD-33FC91B617A7": {
    "OneLake Iterative Read via Proxy": 34.471,
    "OneLake Other Operations": 2.704,
-   "OneLake Other Operations Via Redirect": 16.9,
+   "OneLake Other Operations Via Redirect": 25.553,
    "OneLake Read via Proxy": 2.361,
    "OneLake Read via Redirect": 116.47,
    "OneLake Write via Proxy": 17.723,
@@ -2050,11 +2050,11 @@
    "XMLA Read Operation": 1844.944
   },
   "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
-   "OneLake Iterative Read via Proxy": 175.445,
-   "OneLake Other Operations": 1.196,
-   "OneLake Other Operations Via Redirect": 5.959,
-   "OneLake Read via Proxy": 5.866,
-   "OneLake Write via Proxy": 607.474,
+   "OneLake Iterative Read via Proxy": 180.649,
+   "OneLake Other Operations": 1.331,
+   "OneLake Other Operations Via Redirect": 6.094,
+   "OneLake Read via Proxy": 5.897,
+   "OneLake Write via Proxy": 610.888,
    "OneLake Write via Redirect": 130.893
   },
   "F7FC02C4-4547-41FE-A40A-54791AC407C9": {
@@ -3219,6 +3219,14 @@
    "since": "2026-08-02T21:00:00",
    "timed": 369,
    "unfound": 13
+  },
+  {
+   "at": "2026-08-12T04:56:24+00:00",
+   "changed": 11,
+   "items": 369,
+   "since": "2026-08-02T21:00:00",
+   "timed": 369,
+   "unfound": 13
   }
  ],
  "schema": 2,
@@ -3872,11 +3880,11 @@
    "OneLake Write via Redirect": 0.031
   },
   "4FBE4130-1717-4FC9-A985-3FB7B4A13067": {
-   "OneLake Iterative Read via Proxy": 5.321,
-   "OneLake Other Operations": 0.411,
-   "OneLake Other Operations Via Redirect": 3.859,
+   "OneLake Iterative Read via Proxy": 5.343,
+   "OneLake Other Operations": 0.417,
+   "OneLake Other Operations Via Redirect": 3.866,
    "OneLake Read via Proxy": 4.562,
-   "OneLake Write via Proxy": 1.086,
+   "OneLake Write via Proxy": 1.09,
    "OneLake Write via Redirect": 2.17
   },
   "4FFE06C6-D58E-44BC-B539-6D5BB830E52E": {
@@ -4202,7 +4210,7 @@
    "Dataset On-Demand Refresh": 10.274,
    "Dataset Scheduled Refresh": 0.062,
    "Query": 6.784,
-   "XMLA Read Operation": 81.06
+   "XMLA Read Operation": 88.618
   },
   "7869D5DF-565A-4484-96FD-82C21D5DF295": {
    "SQL Endpoint Query": 12.548
@@ -5219,7 +5227,7 @@
   "F50835A2-EA45-47B6-89FD-33FC91B617A7": {
    "OneLake Iterative Read via Proxy": 0.113,
    "OneLake Other Operations": 0.021,
-   "OneLake Other Operations Via Redirect": 0.04,
+   "OneLake Other Operations Via Redirect": 0.058,
    "OneLake Read via Proxy": 0.053,
    "OneLake Read via Redirect": 0.024,
    "OneLake Write via Proxy": 0.029,
@@ -5235,11 +5243,11 @@
    "XMLA Read Operation": 40.446
   },
   "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
-   "OneLake Iterative Read via Proxy": 0.944,
-   "OneLake Other Operations": 0.075,
-   "OneLake Other Operations Via Redirect": 0.416,
-   "OneLake Read via Proxy": 0.288,
-   "OneLake Write via Proxy": 0.347,
+   "OneLake Iterative Read via Proxy": 0.972,
+   "OneLake Other Operations": 0.082,
+   "OneLake Other Operations Via Redirect": 0.424,
+   "OneLake Read via Proxy": 0.291,
+   "OneLake Write via Proxy": 0.352,
    "OneLake Write via Redirect": 0.125
   },
   "F7FC02C4-4547-41FE-A40A-54791AC407C9": {
@@ -5313,5 +5321,5 @@
    "OneLake Write via Redirect": 0.033
   }
  },
- "updated": "2026-08-12T04:41:58+00:00"
+ "updated": "2026-08-12T04:56:24+00:00"
 }
