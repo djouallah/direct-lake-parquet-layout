@@ -49,7 +49,7 @@
 // ------------------------------------------------------------------------------------ what to read
 
 export const DEFAULTS = {
-  repo: "djouallah/fabric-dbt-benchmark",
+  repo: "djouallah/direct-lake-parquet-layout",
   ref: "main",
   // WHICH DATASET THE PAGE IS ABOUT. Two run through this project — `aemo` (143M rows of five
   // narrow columns on a regular 5-minute grid, near-uniform) and `nyc` (17 columns, four

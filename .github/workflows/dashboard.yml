@@ -1,6 +1,6 @@
 name: Dashboard
 
-# THE PAGE — https://djouallah.github.io/fabric-dbt-benchmark/ — and nothing else. It BUILDS AND
+# THE PAGE — https://djouallah.github.io/direct-lake-parquet-layout/ — and nothing else. It BUILDS AND
 # DEPLOYS; it measures nothing, reads no Fabric endpoint, spends no capacity and commits nothing.
 #
 #   dashboard/build.mjs -> site/index.html   the SHELL, which carries no data

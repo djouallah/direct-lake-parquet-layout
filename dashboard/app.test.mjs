@@ -2215,8 +2215,8 @@ test("compose renders one run alone when a record is pinned", () => {
 });
 
 test("the offline copy links back to the live page it was frozen from", () => {
-  assert.equal(d.pagesUrl("djouallah/fabric-dbt-benchmark"),
-    "https://djouallah.github.io/fabric-dbt-benchmark/");
+  assert.equal(d.pagesUrl("djouallah/direct-lake-parquet-layout"),
+    "https://djouallah.github.io/direct-lake-parquet-layout/");
 });
 
 /** The smallest thing `boot()` will accept: three elements it can look up and write into. */

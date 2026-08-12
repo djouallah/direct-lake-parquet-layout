@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
 /** Where the live page is published — only the offline copy needs it, to reach `dag.html`. */
-const PAGES = "https://djouallah.github.io/fabric-dbt-benchmark";
+const PAGES = "https://djouallah.github.io/direct-lake-parquet-layout";
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt = null) => {

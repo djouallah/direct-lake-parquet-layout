@@ -9,7 +9,7 @@ This repo is an educational project that measures exactly that, on real Fabric c
 datasets, four writers producing the **same rows**, one semantic model and one DAX suite over
 each, with capacity units (the bill) as the primary metric. dbt is just the convenience tool
 that regenerates the data identically per engine; the parquet layout is the subject. The
-results are live at **<https://djouallah.github.io/fabric-dbt-benchmark/>**.
+results are live at **<https://djouallah.github.io/direct-lake-parquet-layout/>**.
 
 The short version, for anyone writing Delta tables that Power BI will read:
 
@@ -132,7 +132,7 @@ from Fabric's own Capacity Metrics model. Methodology detail:
 
 **Where to read further:**
 
-- the [live dashboard](https://djouallah.github.io/fabric-dbt-benchmark/) — every run, cost
+- the [live dashboard](https://djouallah.github.io/direct-lake-parquet-layout/) — every run, cost
   and speed per layout
 - [RETROSPECTIVE.md](RETROSPECTIVE.md) — what the exercise cost, and what would have to change
   to make it cheaper
@@ -142,6 +142,29 @@ from Fabric's own Capacity Metrics model. Methodology detail:
 - [TODO.md](TODO.md) — open questions, with the cost of answering each
 - [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
 - [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
+
+## Methodology
+
+VertiPaq is treated as a **black box**. Nothing here reads engine internals or takes the
+documentation's word for what Direct Lake does with a file; the method is plain experiment
+design against an opaque system:
+
+- **Change one variable per experiment.** Same landed data, same semantic model, same DAX
+  suite; a pair of dispatches differs in a single write knob — row-group size, sort key,
+  V-Order, resource profile — and the difference in the bill is attributed to that knob.
+- **Measure the layout back from the files, never trust the config.** After every build, the
+  parquet footers and the Delta log are read back — row groups, encodings, per-file V-Order
+  tags, physical row order. Twice, a declared setting was silently dropped by a writer and
+  only the read-back caught it; a run that recorded its config instead of its parquet would
+  have published the wrong experiment.
+- **The bill is the metric.** Capacity units already price in how much compute each engine was
+  handed; latency is reported as context, medians over passes, and runs repeat because a
+  shared capacity is noisy.
+- **Negative results and retractions stay in the record.** "V-Order does not reorder rows"
+  was written down, then overturned by the second dataset and retracted in place; the 16M
+  row-group geometry is recorded as the worst measured, and the 30%-smaller file that bought
+  nothing is kept as the counterexample to size-chasing. A black box earns conclusions only
+  from experiments that could have falsified them.
 
 ## Limitations
 

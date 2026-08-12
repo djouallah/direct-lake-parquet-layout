@@ -46,12 +46,15 @@ needs just `AZURE_CLIENT_ID` / `AZURE_TENANT_ID` secrets and a federated credent
 this repo actually authenticates with is:
 
 ```
-repo:djouallah@12554469/fabric-dbt-benchmark@1310610554:ref:refs/heads/main
-       ^owner  ^owner id  ^repo name        ^repo id
+repo:djouallah@12554469/direct-lake-parquet-layout@1310610554:ref:refs/heads/main
+       ^owner  ^owner id  ^repo name               ^repo id
 ```
 
-Two things follow, both learned the expensive way when this repo was renamed from `djouallah/dbt` on
-2026-08-01:
+(The repo has been renamed twice — `djouallah/dbt` → `fabric-dbt-benchmark` on 2026-08-01,
+→ `direct-lake-parquet-layout` on 2026-08-12 — and each rename means a new credential with the
+new name in the subject, created the same day.)
+
+Two things follow, both learned the expensive way on the first rename:
 
 - **A rename breaks OIDC even though the repo ID does not change.** The name sits in the middle of
   that string, so "immutable" means the ids are pinned, not that the subject survives a rename. The
@@ -59,8 +62,8 @@ Two things follow, both learned the expensive way when this repo was renamed fro
   (`1310610554`) and still stopped matching.
 - **Adding the plain `repo:<owner>/<repo>:ref:...` form does not help**, because with immutable
   identifiers enabled that form is never presented. A credential for it sits there looking correct
-  and matching nothing. `fabric_dbt_benchmark_main` is exactly that, kept only as a fallback if the
-  account setting is ever turned off.
+  and matching nothing. `direct_lake_parquet_layout_main` is exactly that, kept only as a fallback
+  if the account setting is ever turned off.
 
 The failure is `AADSTS700213: No matching federated identity record found for presented assertion
 subject '…'` at the `azure/login` step. **Read the subject in that error and create a credential for

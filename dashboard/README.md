@@ -146,7 +146,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
 - **The page says what it IS before what it measures.** It opened on `Capacity units` and went
   straight into the numbers, so it named its measure and never its subject: a reader arriving on a
   link met four columns of CU with no statement of the scale any of it describes. Now an `<h1>`
-  **Fabric dbt benchmark** with the repo link under it, then one sentence of scale, then
+  **Direct Lake parquet layout** with the repo link under it, then one sentence of scale, then
   `Capacity units` — kept, and heading the section it always described rather than the page.
   **The title is in the SHELL and the sentence is in `app.js`**, and the split is what each needs:
   the title needs no data, so putting it in `index.html` means it is already there while the page

@@ -178,7 +178,7 @@ When a build does fail, the job uploads `target/` as an artifact. Read the *comp
 instead of guessing at the error:
 
 ```bash
-gh run download <run-id> -R djouallah/fabric-dbt-benchmark -n dbt-target-dwh -D /tmp/t
+gh run download <run-id> -R djouallah/direct-lake-parquet-layout -n dbt-target-dwh -D /tmp/t
 cat /tmp/t/compiled/aemo_electricity/models/dwh/marts/fct_summary.sql
 ```
 
