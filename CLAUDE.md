@@ -9,23 +9,23 @@ side by side — it is the only cross-engine check there is, and it is **no long
 it is the dispatch-only `layout` job, because it costs ~10 minutes to report something that
 only changes when the tables are rewritten.
 
-## TWO DATASETS, AND THEY ARE A PAIR RATHER THAN A MENU
+## THREE DATASETS, AND THEY ARE POINTS ON ONE SURFACE RATHER THAN A MENU
 
-`DATASET` is a dispatch input (`aemo` | `nyc`, default `aemo`) and reaches everything from one
-workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list, mart,
-mart columns, default sort key, downloader. **It is the single source for names that provision.py
-CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would notice, with
-two it silently records the other dataset's layout under this run's id. `benchmark/engines.py`
-carries a deliberate copy (that directory must stay deletable) and `test_datasets.py` pins the two
-together.
+`DATASET` is a dispatch input (`aemo` | `nyc` | `bts`, default `aemo`) and reaches everything from
+one workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list,
+mart, mart columns, default sort key, downloader. **It is the single source for names that
+provision.py CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would
+notice, with several it silently records another dataset's layout under this run's id.
+`benchmark/engines.py` carries a deliberate copy (that directory must stay deletable) and
+`test_datasets.py` pins the copies together.
 
-| | `aemo` | `nyc` |
-|---|---|---|
-| source | ragged CSV from nemweb | monthly parquet from TLC's CDN |
-| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` |
-| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** |
-| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian |
-| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … |
+| | `aemo` | `nyc` | `bts` |
+|---|---|---|---|
+| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP |
+| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` |
+| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~200M rows full-drain, **22 columns** |
+| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL |
+| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … |
 
 **Why the second one exists, and it has already paid for itself.** The V-Order result rested on
 `fct_summary` and drew two objections: the data is too small, and the sort key happened to match the
@@ -40,6 +40,27 @@ same code, it reorders the most repetitive column **3,371×**. See the retractio
 `layout.ordering` bullet. That is what one dataset costs: not a missing data point, a confident
 wrong answer. It also answers the "too small" objection precisely — `fct_summary` is 143M rows
 against taxi's 43.7M here, three times bigger, and shows nothing.
+
+**Why the third one exists.** What made nyc EASY for the optimizer is the same thing that made it
+decisive: categoricals at 97-99% single-value are so extreme that every column stays run-friendly
+under ANY sort — the columns never compete, so the multi-column trade-off that V-Order's greedy
+ordering actually IS was never exercised. bts (US DOT on-time flights, since 1987-10) is the
+competing regime and the canonical BI fact shape: many independent, moderately skewed categoricals
+where sorting for one buys nothing on the others. The result to read is `layout.ordering`'s
+per-column `runs` under `writeHeavy` vs `readHeavyForPBI` — which columns the optimizer sacrifices,
+and whether the CU gain survives dividing the sort budget. Prediction to falsify: a sharp
+winners/losers split instead of nyc's smooth gradient, and a CU gain well under nyc's 2.8×.
+Three bts facts that differ from nyc mechanically: `FlightDate` is a DATE straight from the source,
+so there is no derived `pickup_date`-style bridge column; `Reporting_Airline` is a STRING join key
+(the first since DUID), so the whitespace guard exists in all three dialects — **narrowed to
+leading/trailing whitespace only, because embedded spaces are legitimate data there** (`PA (1)` is
+Pan Am, ~5K rows in every 1987 month; the DUID spelling would fail every leg on correct data); and
+the carrier lookup URL is TranStats' obfuscated spelling (`Y11x72=Y_haVdhR_PNeeVRef`) because the
+plain `Lookup=L_UNIQUE_CARRIERS` now returns the HTML homepage with status 200.
+The ladder and year-filtered DAX queries pin **1995**, not a recent year: the archive drains oldest
+first, so a recent year on a young archive filters to nothing — a very fast query that reads as a
+result. (nyc's suite pins 2019 with an archive that currently ends mid-2014; check that before
+trusting its year-filtered rows.)
 
 Contoso (`djouallah/duckrun tests/parquet_layout/contoso`) was the original ask and was rejected on
 the user's own criterion: SQLBI's generator with engineered weight distributions is synthetic, which
@@ -78,10 +99,12 @@ is now only visible where it surfaces in the summary. Adding a test on a fact mo
 of that decision, not an oversight being corrected.
 
 **And `tests/` is written per dataset AND per dialect, exactly like `models/`** —
-`tests/aemo/{duckdb,dwh,spark}`, `tests/nyc/{duckdb,dwh,spark}`, each holding that dataset's
-singular tests in its own SQL, with `data_tests` in `dbt_project.yml` enabling one folder per
-(dataset, target). All four engines therefore run the same assertions against the output they just
-wrote: **six on aemo** (two singular, four generic), **five on nyc** (one singular, four generic).
+`tests/aemo/{duckdb,dwh,spark}`, `tests/nyc/{duckdb,dwh,spark}`, `tests/bts/{duckdb,dwh,spark}`,
+each holding that dataset's singular tests in its own SQL, with `data_tests` in `dbt_project.yml`
+enabling one folder per (dataset, target). All four engines therefore run the same assertions
+against the output they just wrote: **six on aemo** (two singular, four generic), **five on nyc**
+(one singular, four generic), **six on bts** (two singular — the archive-log reconciliation and
+the carrier-code whitespace guard — four generic).
 
 **`fct_trips` has NO grain assertion and cannot have one** — TLC trip records carry no natural
 unique key, duplicate trips being a documented feature of the source. Its one singular test,

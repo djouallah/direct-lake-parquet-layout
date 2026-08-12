@@ -1,18 +1,26 @@
 """The dataset registry — one place that knows what a dataset IS.
 
-Two datasets run through this project, selected by the DATASET env var (a dispatch input):
+Three datasets run through this project, selected by the DATASET env var (a dispatch input):
 
   aemo   the AEMO NEM electricity pipeline. CSV in, 8 models, mart.fct_summary under layout test —
          143M rows of FIVE narrow columns on a regular 5-minute x DUID grid, i.e. near-uniform.
   nyc    NYC TLC yellow taxi. Parquet in, 4 models, mart.fct_trips under layout test — 17 columns
          of which four sit at 97-99% single-value and two are Zipfian on Manhattan and the airports.
+  bts    US DOT/BTS airline on-time performance. Zipped CSV in, 4 models, mart.fct_flights under
+         layout test — 22 columns of INDEPENDENT moderate-cardinality categoricals: DayOfWeek is
+         seven values near-uniform, Reporting_Airline ~20, Origin/Dest ~350 Zipfian, Tail_Number
+         thousands, CancellationCode ~98% NULL.
 
-They exist as a PAIR, and the pairing is the experiment — it is what turned a wrong conclusion
-into a right one. V-Order reorders rows AND re-encodes them, so what it is worth depends on the
-SURFACE: column count x categorical skew. aemo has neither and nyc has both, and measuring only
-aemo produced "V-Order does not reorder rows", which is false — see the retraction in CLAUDE.md.
-Same instrument, same code, two datasets: 3,371x fewer runs on the most repetitive taxi column
-against nothing at all on fct_summary.
+They exist as POINTS ON ONE SURFACE, and the spread is the experiment — it is what turned a wrong
+conclusion into a right one. V-Order reorders rows AND re-encodes them, so what it is worth depends
+on the SURFACE: column count x categorical skew. aemo has neither and nyc has both, and measuring
+only aemo produced "V-Order does not reorder rows", which is false — see the retraction in
+CLAUDE.md. Same instrument, same code, two datasets: 3,371x fewer runs on the most repetitive taxi
+column against nothing at all on fct_summary. What made nyc EASY for the optimizer is that its
+categoricals are 97-99% single-value — every column can win at once, so the multi-column trade-off
+that V-Order's greedy ordering actually is was never exercised. bts is the third point: many
+skewed-but-balanced columns that genuinely compete for the sort, which is the canonical BI fact
+shape and the regime the other two say nothing about.
 
 WHY THIS FILE EXISTS AT ALL. The Fabric item names were hardcoded in three places that had to agree
 by convention: provision.py (which CREATES them), stats.py (which READS them) and
@@ -85,6 +93,26 @@ DATASETS = {
         "sort_by": "auto",
         "download": "download_nyc_taxi.py",
         "model_prefix": "nyc_",
+    },
+    "bts": {
+        "landing": "dbt_bts_landing",
+        "dwh_src": "dbt_bts_dwh_src",
+        "folder": "benchmark",
+        "items": {"duckrun": "dbt_bts_delta", "iceberg": "dbt_bts_iceberg",
+                  "spark": "dbt_bts_spark", "dwh": "dbt_bts_dwh"},
+        "tables": ["stg_flights_archive_log", "dim_flight_date", "dim_carrier", "fct_flights"],
+        "mart": "fct_flights",
+        # The 22 core columns plus `file`. FlightDate is a DATE straight from the source, so unlike
+        # nyc there is no derived date column — the dimension join key ships in the file. Mirrors
+        # macros/bts_flight_columns.sql, and `.github/scripts/test_bts_columns.py` asserts it does.
+        "mart_columns": ["DayOfWeek", "FlightDate", "Reporting_Airline", "Tail_Number",
+                         "Flight_Number_Reporting_Airline", "Origin", "Dest", "CRSDepTime",
+                         "DepTime", "DepDelay", "DepDel15", "TaxiOut", "TaxiIn", "ArrTime",
+                         "ArrDelay", "ArrDel15", "Cancelled", "CancellationCode", "Diverted",
+                         "AirTime", "Distance", "DistanceGroup", "file"],
+        "sort_by": "auto",
+        "download": "download_bts_flights.py",
+        "model_prefix": "bts_",
     },
 }
 

@@ -52,6 +52,10 @@ CASES = [
     ("auto on nyc", {"dataset": "nyc", "engines": "spark"}, True),
     ("pinned nyc layout",
      {"dataset": "nyc", "row_group_size": "2000000", "sort_by": "pickup_date,PULocationID"}, True),
+    ("auto on bts", {"dataset": "bts", "engines": "spark"}, True),
+    ("pinned bts layout",
+     {"dataset": "bts", "row_group_size": "2000000",
+      "sort_by": "FlightDate,Reporting_Airline,Origin"}, True),
     # Blank sort is the only way to ask for NO sort, so it must stay legal.
     ("unsorted", {"sort_by": ""}, True),
     ("AUTO uppercase", {"row_group_size": "AUTO", "sort_by": "AUTO"}, True),
@@ -59,6 +63,7 @@ CASES = [
     ("non-numeric geometry", {"row_group_size": "abc"}, False),
     ("zero geometry", {"row_group_size": "0"}, False),
     ("the other dataset's sort key", {"dataset": "nyc", "sort_by": "date,time,price"}, False),
+    ("the aemo key on bts", {"dataset": "bts", "sort_by": "date,time,price"}, False),
     ("malformed sort key", {"sort_by": "date;time"}, False),
     ("whitespace sort key", {"sort_by": "   "}, False),
     ("unknown engine", {"engines": "nope"}, False),

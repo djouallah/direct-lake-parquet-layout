@@ -103,17 +103,20 @@ on:
       # makes that unreachable from the form; `datasets.selected()` and `check_gating.py` cover the
       # ways in that do not go through the form.
       #
-      # The two are a PAIR, not a menu. aemo is 143M rows of five narrow columns on a regular
-      # 5-minute grid (near-uniform); nyc is 17 columns with four categoricals at 97-99%
-      # single-value and two Zipfian zone ids. What V-Order is worth depends on that SURFACE —
-      # column count x categorical skew — not on row count, which is why measuring only the bigger,
-      # narrower table concluded it does nothing. Running both is what makes a V-Order result a
-      # finding rather than one dataset's anecdote.
+      # The three are POINTS ON ONE SURFACE, not a menu. aemo is 143M rows of five narrow columns
+      # on a regular 5-minute grid (near-uniform — nothing to reorder); nyc is 17 columns with four
+      # categoricals at 97-99% single-value and two Zipfian zone ids (so extreme every column wins
+      # under any sort); bts is 22 columns of INDEPENDENT moderately-skewed categoricals
+      # (DayOfWeek uniform over seven, carrier ~20, Origin/Dest ~350 Zipfian, Tail_Number
+      # thousands) — the regime where V-Order's greedy multi-column ordering actually has to
+      # choose. What V-Order is worth depends on that SURFACE — column count x categorical skew —
+      # not on row count, which is why measuring only the bigger, narrower table concluded it does
+      # nothing.
       dataset:
-        description: "dataset — aemo (uniform) or nyc (skewed)"
+        description: "dataset — aemo (uniform), nyc (extreme skew) or bts (competing skew)"
         type: choice
         default: "aemo"
-        options: ["aemo", "nyc"]
+        options: ["aemo", "nyc", "bts"]
       cores:
         description: "vCores (duckrun / iceberg only)"
         type: choice
@@ -634,11 +637,12 @@ jobs:
       # skipped is only the DOWNLOAD, which is what makes a run reproducible — the same archive in,
       # so two dispatches of the same commit differ by nothing but what was changed. Turn
       # `skip_download` off to extend the archive; that is a different question and a different run.
-      # The dataset's OWN downloader — download_aemo.py or download_nyc_taxi.py. Two scripts, not
-      # one with a flag: they share a watermark IDIOM (an archive-log parquet at the Files root, so
-      # a re-run only fetches what is new) and nothing else. AEMO unzips ragged CSV from nemweb;
-      # NYC fetches monthly parquet from a CDN, reads each footer, refuses a month whose schema
-      # drifted and rewrites the rest to one canonical schema before uploading.
+      # The dataset's OWN downloader — download_aemo.py, download_nyc_taxi.py or
+      # download_bts_flights.py. Separate scripts, not one with flags: they share a watermark IDIOM
+      # (an archive-log parquet at the Files root, so a re-run only fetches what is new) and
+      # nothing else. AEMO unzips ragged CSV from nemweb; NYC fetches monthly parquet from a CDN;
+      # BTS unzips TranStats' monthly CSV — the latter two read each file's schema, refuse a month
+      # that drifted and rewrite the rest to one canonical parquet schema before uploading.
       - name: Download the dataset (obstore -> OneLake)
         if: ${{ github.event_name != 'schedule' && !inputs.skip_download }}
         run: python "$(python .github/scripts/datasets.py --download)"

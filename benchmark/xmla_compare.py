@@ -284,6 +284,92 @@ NYC_QUERIES = [
      'fct_trips[PULocationID] = {key}, dim_date[year] = 2019, dim_date[month] = 6))'),
 ]
 
+# ---------------------------------------------------------------------------- the BTS flights suite
+#
+# THE SAME SHAPE AGAIN — probes with `probe_rowcount` LAST, composites over the star, one query per
+# raw table, then the hot-only selectivity ladder. Read the AEMO block for why each tier exists.
+#
+# What differs is WHERE the interesting result lives. nyc's probe tier measures 97-99% single-value
+# columns — the easy case, where every column can be run-friendly at once. Here the probes walk the
+# CARDINALITY LADDER of independent categoricals that compete for V-Order's one sort: DayOfWeek
+# (7, near-uniform), Reporting_Airline (~20), Origin/Dest (~350, Zipfian), CRSDepTime (~1,200,
+# clustered), Tail_Number (thousands), CancellationCode (~98% NULL). A per-column cold cost across
+# that ladder, put beside layout.ordering's per-column `runs`, is what says which columns the
+# greedy ordering sacrificed and whether the sacrifice shows up in transcode time.
+#
+# The ladder and the year-filtered composites use 1995: the archive drains OLDEST FIRST from
+# 1987-10, so 1995 is inside the first `download_limit=200` drain — a later year would silently
+# filter to nothing on a young archive, and a filter matching nothing is a very fast query, which
+# this benchmark would read as a result.
+BTS_QUERIES = [
+    # --- Tier 1: per-column probes (rowcount LAST — see the note above) ---
+    ("probe", "probe_distance",   'EVALUATE ROW("x", SUM(fct_flights[Distance]))'),
+    ("probe", "probe_depdelay",   'EVALUATE ROW("x", SUM(fct_flights[DepDelay]))'),
+    ("probe", "probe_dow",        'EVALUATE ROW("x", DISTINCTCOUNT(fct_flights[DayOfWeek]))'),
+    ("probe", "probe_carrier",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_flights[Reporting_Airline]))'),
+    ("probe", "probe_origin",     'EVALUATE ROW("x", DISTINCTCOUNT(fct_flights[Origin]))'),
+    ("probe", "probe_dest",       'EVALUATE ROW("x", DISTINCTCOUNT(fct_flights[Dest]))'),
+    ("probe", "probe_crsdep",
+     'EVALUATE ROW("x", COUNTROWS(VALUES(fct_flights[CRSDepTime])))'),
+    ("probe", "probe_tail",       'EVALUATE ROW("x", DISTINCTCOUNT(fct_flights[Tail_Number]))'),
+    # The most extreme column in the table: ~98% NULL, the store_and_fwd_flag analogue.
+    ("probe", "probe_cancelcode",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_flights[CancellationCode]))'),
+    ("probe", "probe_rowcount",   'EVALUATE ROW("x", COUNTROWS(fct_flights))'),
+    # --- Tier 2: composite workloads over the star ---
+    ("composite", "carrier_x_year",
+     'EVALUATE SUMMARIZECOLUMNS(dim_carrier[name], dim_flight_date[year], '
+     '"Flights", [Total Flights], "AvgDep", [Avg Dep Delay], "Dist", [Total Distance])'),
+    ("composite", "origin_x_dow",
+     'EVALUATE SUMMARIZECOLUMNS(fct_flights[Origin], fct_flights[DayOfWeek], '
+     '"Flights", [Total Flights], "AvgArr", [Avg Arr Delay])'),
+    ("composite", "carrier_x_month",
+     'EVALUATE SUMMARIZECOLUMNS(dim_carrier[name], dim_flight_date[year], '
+     'dim_flight_date[month], "Flights", [Total Flights])'),
+    ("composite", "filtered_1995_by_origin",
+     'EVALUATE CALCULATETABLE('
+     'SUMMARIZECOLUMNS(fct_flights[Origin], "Flights", [Total Flights], '
+     '"AvgDep", [Avg Dep Delay]), dim_flight_date[year] = 1995)'),
+    ("composite", "scalar_weighted_full_scan",
+     'EVALUATE ROW('
+     '"DelayPerMile", DIVIDE(SUMX(fct_flights, fct_flights[DepDelay] * fct_flights[Distance]), '
+     'SUMX(fct_flights, fct_flights[Distance])), '
+     '"DistinctTails", DISTINCTCOUNT(fct_flights[Tail_Number]), '
+     '"Rows", COUNTROWS(fct_flights))'),
+    ("composite", "topn_origin_by_flights",
+     'EVALUATE TOPN(50, SUMMARIZECOLUMNS(fct_flights[Origin], dim_flight_date[year], '
+     '"Flights", [Total Flights]), [Flights], DESC)'),
+    # Column-width at fixed shape — cold scaling with the number of columns touched.
+    ("composite", "wide_all_measures",
+     'EVALUATE SUMMARIZECOLUMNS(dim_flight_date[year], "a", [Total Flights], '
+     '"b", [Total Distance], "c", [Avg Dep Delay], "d", [Avg Arr Delay], '
+     '"e", [Cancelled Flights])'),
+    ("composite", "narrow_one_measure",
+     'EVALUATE SUMMARIZECOLUMNS(dim_flight_date[year], "a", [Total Flights])'),
+    # --- Tier 3: the RAW table. Like nyc, the star is four tables, so this tier is one query. ---
+    ("raw", "raw_archive_log",
+     'EVALUATE SUMMARIZECOLUMNS(stg_flights_archive_log[source_type], '
+     '"Files", [Archive Files], "Rows", [Archive Source Rows])'),
+    # --- Tier 4: selectivity ladder (SUMX lifts work above the XMLA noise floor) ---
+    ("hot_only", "sel_1yr",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
+     'fct_flights[Distance] * fct_flights[DepDelay]), dim_flight_date[year] = 1995))'),
+    ("hot_only", "sel_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
+     'fct_flights[Distance] * fct_flights[DepDelay]), '
+     'dim_flight_date[year] = 1995, dim_flight_date[month] = 6))'),
+    ("hot_only", "sel_1origin",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
+     'fct_flights[Distance] * fct_flights[DepDelay]), '
+     'fct_flights[Origin] = {key}))'),
+    ("hot_only", "sel_1origin_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
+     'fct_flights[Distance] * fct_flights[DepDelay]), '
+     'fct_flights[Origin] = {key}, dim_flight_date[year] = 1995, '
+     'dim_flight_date[month] = 6))'),
+]
+
 # The ladder's filter value is resolved from the data AFTER pass 1, per dataset. Three things per
 # suite: the queries, the DAX that finds the busiest key, and what to CALL it in the log and the
 # report — because "top DUID: 132" on a taxi run is exactly the quiet mislabel this repo is against.
@@ -307,6 +393,16 @@ SUITES = {
                    '"m", [Total Trips]), [m], DESC)',
         "quote": False,
         "ready": 'EVALUATE ROW("n", COUNTROWS(dim_date))',
+    },
+    # bts's Origin is a string like aemo's DUID, so it IS quoted into the filter — see the note on
+    # `quote` above: an unquoted string filter compares text to nothing and matches silently.
+    "bts": {
+        "queries": BTS_QUERIES,
+        "label": "busiest origin airport",
+        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_flights[Origin], '
+                   '"m", [Total Flights]), [m], DESC)',
+        "quote": True,
+        "ready": 'EVALUATE ROW("n", COUNTROWS(dim_flight_date))',
     },
 }
 

@@ -39,13 +39,17 @@ MODELS = {
     "aemo": {"stg_csv_archive_log", "dim_calendar", "dim_duid",
              "fct_price", "fct_scada", "fct_price_today", "fct_scada_today", "fct_summary"},
     "nyc": {"stg_parquet_archive_log", "dim_date", "dim_zone", "fct_trips"},
+    "bts": {"stg_flights_archive_log", "dim_flight_date", "dim_carrier", "fct_flights"},
 }
 
 # dataset -> how many data tests must be ENABLED. Generic tests come from models/<dataset>/_*.yml
 # and singular ones from tests/<dataset>/<dialect>/. The count is asserted rather than the names
 # because the whole failure mode is tests silently vanishing, and a count catches that without
 # re-listing the suite in two places.
-TESTS = {"aemo": 6, "nyc": 5}
+# bts is 6 like aemo — four generic (unique/not_null on dim_carrier.code and dim_flight_date.date)
+# plus two singular (the archive-log reconciliation, and the whitespace guard that every STRING
+# join key crossing engines gets).
+TESTS = {"aemo": 6, "nyc": 5, "bts": 6}
 
 DATASETS = tuple(MODELS)
 TARGETS = tuple(DIALECT)

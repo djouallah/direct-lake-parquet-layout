@@ -1,0 +1,474 @@
+{
+  "compatibilityLevel": 1604,
+  "model": {
+    "culture": "en-US",
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "annotations": [
+      {
+        "name": "PBI_ProTooling",
+        "value": "[\"RemoteModeling\", \"DirectLakeOnOneLakeCreatedInDesktop\"]"
+      }
+    ],
+    "expressions": [
+      {
+        "name": "DirectLake",
+        "kind": "m",
+        "description": "Direct Lake connection to OneLake — reads the Delta tables directly, no SQL endpoint. The two GUIDs are workspace + item and are REWRITTEN at deploy time by duckrun's workspace.deploy(lakehouse=...) or deploy(warehouse=...) — which is how this ONE template serves all four engines, warehouse included, since deploy(mode=) made the storage mode independent of the item kind (duckrun 0.4.36). The checked-in pair is a PLACEHOLDER of zeros, not a real workspace and item: it is overwritten before this template is ever deployed, and the real ids live in repo secrets. What must NOT change is the shape - _is_directlake_bim() greps the raw bytes for a onelake.dfs URL to decide this is a Direct Lake model, so removing the URL, or the camelCase mode token, silently turns it into something deploy cannot serve.",
+        "expression": [
+          "let",
+          "    Source = AzureStorage.DataLake(\"https://onelake.dfs.fabric.microsoft.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000\", [HierarchicalNavigation=true])",
+          "in",
+          "    Source"
+        ]
+      }
+    ],
+    "tables": [
+      {
+        "name": "fct_flights",
+        "description": "US DOT/BTS airline on-time performance — the wide raw fact, and the table under layout test.\nGrain: one row per flight leg as reported. No published primary key; duplicate rows exist in the source.",
+        "sourceLineageTag": "[mart].[fct_flights]",
+        "columns": [
+          {
+            "name": "FlightDate",
+            "dataType": "dateTime",
+            "sourceColumn": "FlightDate",
+            "sourceLineageTag": "FlightDate",
+            "summarizeBy": "none",
+            "description": "Flight date — a DATE straight from the source, so it is the dim_flight_date join key with no derived bridging column.",
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "DayOfWeek",
+            "dataType": "int64",
+            "sourceColumn": "DayOfWeek",
+            "sourceLineageTag": "DayOfWeek",
+            "summarizeBy": "none",
+            "description": "BTS's own 1=Monday..7=Sunday — seven values, near-uniform, the balanced end of the skew range this dataset exists to measure."
+          },
+          {
+            "name": "Reporting_Airline",
+            "dataType": "string",
+            "sourceColumn": "Reporting_Airline",
+            "sourceLineageTag": "Reporting_Airline",
+            "summarizeBy": "none",
+            "description": "Unique carrier code — foreign key to dim_carrier. ~20 live values, moderately skewed."
+          },
+          {
+            "name": "Tail_Number",
+            "dataType": "string",
+            "sourceColumn": "Tail_Number",
+            "sourceLineageTag": "Tail_Number",
+            "summarizeBy": "none",
+            "description": "Aircraft tail number — thousands of values, the high-cardinality end of the categorical ladder."
+          },
+          {
+            "name": "Flight_Number_Reporting_Airline",
+            "dataType": "int64",
+            "sourceColumn": "Flight_Number_Reporting_Airline",
+            "sourceLineageTag": "Flight_Number_Reporting_Airline",
+            "summarizeBy": "none",
+            "description": "Flight number, thousands of values."
+          },
+          {
+            "name": "Origin",
+            "dataType": "string",
+            "sourceColumn": "Origin",
+            "sourceLineageTag": "Origin",
+            "summarizeBy": "none",
+            "description": "Origin airport code. ~350 values, Zipfian — the hubs dominate. What the selectivity ladder filters on."
+          },
+          {
+            "name": "Dest",
+            "dataType": "string",
+            "sourceColumn": "Dest",
+            "sourceLineageTag": "Dest",
+            "summarizeBy": "none",
+            "description": "Destination airport code, same shape as Origin. Deliberately NOT related to a dimension — still measured, as probe_dest."
+          },
+          {
+            "name": "CRSDepTime",
+            "dataType": "int64",
+            "sourceColumn": "CRSDepTime",
+            "sourceLineageTag": "CRSDepTime",
+            "summarizeBy": "none",
+            "description": "Scheduled departure hhmm — ~1,200 values clustered on 5-minute marks."
+          },
+          {
+            "name": "DepTime",
+            "dataType": "int64",
+            "sourceColumn": "DepTime",
+            "sourceLineageTag": "DepTime",
+            "summarizeBy": "none",
+            "description": "Actual departure hhmm; BLANK when cancelled."
+          },
+          {
+            "name": "DepDelay",
+            "dataType": "double",
+            "sourceColumn": "DepDelay",
+            "sourceLineageTag": "DepDelay",
+            "summarizeBy": "sum",
+            "description": "Departure delay in minutes, negative when early, long-tailed.",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "DepDel15",
+            "dataType": "int64",
+            "sourceColumn": "DepDel15",
+            "sourceLineageTag": "DepDel15",
+            "summarizeBy": "sum",
+            "description": "1 when the departure was 15+ minutes late — a ~80/20 flag."
+          },
+          {
+            "name": "TaxiOut",
+            "dataType": "double",
+            "sourceColumn": "TaxiOut",
+            "sourceLineageTag": "TaxiOut",
+            "summarizeBy": "sum",
+            "description": "Taxi-out minutes.",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "TaxiIn",
+            "dataType": "double",
+            "sourceColumn": "TaxiIn",
+            "sourceLineageTag": "TaxiIn",
+            "summarizeBy": "sum",
+            "description": "Taxi-in minutes.",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "ArrTime",
+            "dataType": "int64",
+            "sourceColumn": "ArrTime",
+            "sourceLineageTag": "ArrTime",
+            "summarizeBy": "none",
+            "description": "Actual arrival hhmm; BLANK when cancelled or diverted."
+          },
+          {
+            "name": "ArrDelay",
+            "dataType": "double",
+            "sourceColumn": "ArrDelay",
+            "sourceLineageTag": "ArrDelay",
+            "summarizeBy": "sum",
+            "description": "Arrival delay in minutes.",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "ArrDel15",
+            "dataType": "int64",
+            "sourceColumn": "ArrDel15",
+            "sourceLineageTag": "ArrDel15",
+            "summarizeBy": "sum",
+            "description": "1 when the arrival was 15+ minutes late."
+          },
+          {
+            "name": "Cancelled",
+            "dataType": "int64",
+            "sourceColumn": "Cancelled",
+            "sourceLineageTag": "Cancelled",
+            "summarizeBy": "sum",
+            "description": "1 when cancelled — ~98% zero."
+          },
+          {
+            "name": "CancellationCode",
+            "dataType": "string",
+            "sourceColumn": "CancellationCode",
+            "sourceLineageTag": "CancellationCode",
+            "summarizeBy": "none",
+            "description": "A/B/C/D reason, BLANK unless cancelled — ~98% BLANK, the least varied column in the table."
+          },
+          {
+            "name": "Diverted",
+            "dataType": "int64",
+            "sourceColumn": "Diverted",
+            "sourceLineageTag": "Diverted",
+            "summarizeBy": "sum",
+            "description": "1 when diverted — ~99.8% zero."
+          },
+          {
+            "name": "AirTime",
+            "dataType": "double",
+            "sourceColumn": "AirTime",
+            "sourceLineageTag": "AirTime",
+            "summarizeBy": "sum",
+            "description": "Airborne minutes.",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "Distance",
+            "dataType": "double",
+            "sourceColumn": "Distance",
+            "sourceLineageTag": "Distance",
+            "summarizeBy": "sum",
+            "description": "Great-circle distance in miles — ~1,500 distinct route lengths.",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "DistanceGroup",
+            "dataType": "int64",
+            "sourceColumn": "DistanceGroup",
+            "sourceLineageTag": "DistanceGroup",
+            "summarizeBy": "none",
+            "description": "Distance banded to 250-mile groups, 1-11."
+          },
+          {
+            "name": "file",
+            "dataType": "string",
+            "sourceColumn": "file",
+            "sourceLineageTag": "file",
+            "summarizeBy": "none",
+            "description": "Source month, e.g. flights_1987-10 — the incremental key"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Total Flights",
+            "description": "Row count of the fact",
+            "expression": "COUNTROWS(fct_flights)",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Total Distance",
+            "description": "Miles flown across the selection",
+            "expression": "SUM(fct_flights[Distance])",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Avg Dep Delay",
+            "description": "Mean departure delay in minutes",
+            "expression": "AVERAGE(fct_flights[DepDelay])",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "Avg Arr Delay",
+            "description": "Mean arrival delay in minutes",
+            "expression": "AVERAGE(fct_flights[ArrDelay])",
+            "formatString": "#,##0.0"
+          },
+          {
+            "name": "Cancelled Flights",
+            "description": "Flights cancelled across the selection",
+            "expression": "SUM(fct_flights[Cancelled])",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Total Air Time",
+            "description": "Airborne minutes across the selection",
+            "expression": "SUM(fct_flights[AirTime])",
+            "formatString": "#,##0"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fct_flights",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "fct_flights",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_carrier",
+        "description": "BTS's unique-carrier lookup.\nJoined from fct_flights[Reporting_Airline]. code is a STRING key — which is why this dataset carries the whitespace assertion in all three dialects.",
+        "sourceLineageTag": "[mart].[dim_carrier]",
+        "columns": [
+          {
+            "name": "code",
+            "dataType": "string",
+            "sourceColumn": "code",
+            "sourceLineageTag": "code",
+            "summarizeBy": "none",
+            "description": "Unique carrier code (primary key)",
+            "isKey": true
+          },
+          {
+            "name": "name",
+            "dataType": "string",
+            "sourceColumn": "name",
+            "sourceLineageTag": "name",
+            "summarizeBy": "none",
+            "description": "Carrier name, e.g. 'American Airlines Inc.'"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_carrier",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "dim_carrier",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_flight_date",
+        "description": "Date dimension covering 1987-01-01 to 2026-12-31.\nUsed to filter and aggregate flights by date, month and year.",
+        "sourceLineageTag": "[mart].[dim_flight_date]",
+        "columns": [
+          {
+            "name": "date",
+            "dataType": "dateTime",
+            "sourceColumn": "date",
+            "sourceLineageTag": "date",
+            "summarizeBy": "none",
+            "description": "Calendar date (primary key). One row per day.",
+            "isKey": true,
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "sourceLineageTag": "year",
+            "summarizeBy": "none",
+            "description": "Calendar year (e.g. 1995)"
+          },
+          {
+            "name": "month",
+            "dataType": "int64",
+            "sourceColumn": "month",
+            "sourceLineageTag": "month",
+            "summarizeBy": "none",
+            "description": "Calendar month number (1-12)"
+          },
+          {
+            "name": "day_of_week",
+            "dataType": "int64",
+            "sourceColumn": "day_of_week",
+            "sourceLineageTag": "day_of_week",
+            "summarizeBy": "none",
+            "description": "0=Sunday, normalised identically in all three dialects. Distinct from the fact's DayOfWeek, which is BTS's own 1=Monday..7=Sunday stored verbatim."
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_flight_date",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "dim_flight_date",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "stg_flights_archive_log",
+        "description": "The archive log download_bts_flights.py writes.\nOne row per landed file: what was fetched, how many rows the landed parquet's footer declared, and the source CSV's own header as BTS published it.",
+        "sourceLineageTag": "[landing].[stg_flights_archive_log]",
+        "columns": [
+          {
+            "name": "source_type",
+            "dataType": "string",
+            "sourceColumn": "source_type",
+            "sourceLineageTag": "source_type",
+            "summarizeBy": "none",
+            "description": "'flights' for a monthly on-time file, 'carrier' for the lookup"
+          },
+          {
+            "name": "source_filename",
+            "dataType": "string",
+            "sourceColumn": "source_filename",
+            "sourceLineageTag": "source_filename",
+            "summarizeBy": "none",
+            "description": "The archived stem, e.g. 'flights_1987-10'"
+          },
+          {
+            "name": "archive_path",
+            "dataType": "string",
+            "sourceColumn": "archive_path",
+            "sourceLineageTag": "archive_path",
+            "summarizeBy": "none",
+            "description": "Path under parquet_raw/"
+          },
+          {
+            "name": "file_stem",
+            "dataType": "string",
+            "sourceColumn": "file_stem",
+            "sourceLineageTag": "file_stem",
+            "summarizeBy": "none",
+            "description": "Filename without extension — what fct_flights stores as `file`"
+          },
+          {
+            "name": "row_count",
+            "dataType": "int64",
+            "sourceColumn": "row_count",
+            "sourceLineageTag": "row_count",
+            "summarizeBy": "sum",
+            "description": "Rows in the landed file, from its parquet footer",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "columns",
+            "dataType": "string",
+            "sourceColumn": "columns",
+            "sourceLineageTag": "columns",
+            "summarizeBy": "none",
+            "description": "The source CSV's own header, as BTS published it"
+          },
+          {
+            "name": "archived_at",
+            "dataType": "dateTime",
+            "sourceColumn": "archived_at",
+            "sourceLineageTag": "archived_at",
+            "summarizeBy": "none",
+            "description": "When the file was archived",
+            "formatString": "yyyy-MM-dd HH:mm"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Archive Files",
+            "description": "Files landed",
+            "expression": "COUNTROWS(stg_flights_archive_log)",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Archive Source Rows",
+            "description": "Rows across every landed file",
+            "expression": "SUM(stg_flights_archive_log[row_count])",
+            "formatString": "#,##0"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "stg_flights_archive_log",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "stg_flights_archive_log",
+              "expressionSource": "DirectLake",
+              "schemaName": "landing"
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "fct_flights_to_dim_carrier",
+        "fromTable": "fct_flights",
+        "fromColumn": "Reporting_Airline",
+        "toTable": "dim_carrier",
+        "toColumn": "code",
+        "relyOnReferentialIntegrity": true
+      },
+      {
+        "name": "fct_flights_to_dim_flight_date",
+        "fromTable": "fct_flights",
+        "fromColumn": "FlightDate",
+        "toTable": "dim_flight_date",
+        "toColumn": "date",
+        "relyOnReferentialIntegrity": true
+      }
+    ]
+  }
+}

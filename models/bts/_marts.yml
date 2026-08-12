@@ -1,0 +1,71 @@
+version: 2
+
+models:
+  - name: fct_flights
+    description: >
+      US DOT/BTS airline on-time performance records — the wide raw fact, and the table under
+      layout test on this dataset (stats.py's MART for DATASET=bts).
+
+      Why a third dataset: aemo has nothing to reorder and nyc's categoricals are so extreme
+      (97-99% single-value) that every column stays run-friendly under ANY sort — V-Order's
+      multi-column greedy ordering never has to choose. This table is the competing case, and the
+      canonical BI fact shape: DayOfWeek near-uniform over seven values, Reporting_Airline ~20,
+      Origin/Dest ~350 Zipfian, Tail_Number thousands, CancellationCode ~98% NULL, binary flags —
+      mutually independent, so sorting for one buys nothing on the others. The per-column `runs`
+      table in layout.ordering is what shows which columns the optimizer sacrifices.
+
+      NO GRAIN ASSERTION IS POSSIBLE. BTS publishes no primary key for this data and duplicate
+      rows exist in the source, so there is no analogue of assert_fct_summary_grain. What guards
+      the write instead is file-level, and assert_fct_flights_matches_archive_log is what checks
+      it held.
+    columns:
+      - name: file
+        description: >
+          Source month, e.g. 'flights_1987-10'. The incremental key on every engine, and the only
+          thing standing between a re-dispatch and a doubled month.
+      - name: FlightDate
+        description: >
+          Flight date — a DATE straight from the source, so it is the dim_flight_date join key
+          with no derived bridging column (unlike nyc's pickup_date)
+      - name: DayOfWeek
+        description: BTS's own 1=Monday..7=Sunday — seven values, near-uniform, the balanced end of the skew range
+      - name: Reporting_Airline
+        description: Unique carrier code, joined to dim_carrier. ~20 live values, moderately skewed
+      - name: Tail_Number
+        description: Aircraft tail number. Thousands of values, empty for some carriers/eras
+      - name: Flight_Number_Reporting_Airline
+        description: Flight number, thousands of values
+      - name: Origin
+        description: Origin airport code. ~350 values, Zipfian — the hubs dominate
+      - name: Dest
+        description: Destination airport code, same shape as Origin
+      - name: CRSDepTime
+        description: Scheduled departure hhmm — ~1,200 values clustered on 5-minute marks
+      - name: DepTime
+        description: Actual departure hhmm; NULL when cancelled
+      - name: DepDelay
+        description: Departure delay in minutes, negative when early, long-tailed
+      - name: DepDel15
+        description: 1 when the departure was 15+ minutes late — a ~80/20 flag
+      - name: TaxiOut
+        description: Taxi-out minutes
+      - name: TaxiIn
+        description: Taxi-in minutes
+      - name: ArrTime
+        description: Actual arrival hhmm; NULL when cancelled or diverted
+      - name: ArrDelay
+        description: Arrival delay in minutes
+      - name: ArrDel15
+        description: 1 when the arrival was 15+ minutes late
+      - name: Cancelled
+        description: 1 when cancelled — ~98% zero
+      - name: CancellationCode
+        description: A/B/C/D reason, NULL unless cancelled — ~98% NULL, the least varied column here
+      - name: Diverted
+        description: 1 when diverted — ~99.8% zero
+      - name: AirTime
+        description: Airborne minutes
+      - name: Distance
+        description: Great-circle distance in miles — ~1,500 distinct route lengths
+      - name: DistanceGroup
+        description: Distance banded to 250-mile groups, 1-11

@@ -1,0 +1,40 @@
+version: 2
+
+# Shared across all three dialects — model names are identical in models/bts/duckdb,
+# models/bts/dwh and models/bts/spark, so ONE patch documents/tests whichever tree is enabled.
+#
+# THIS FILE'S LOCATION IS LOAD-BEARING. A generic test's fqn is the fqn of the YML FILE, not of the
+# model it patches, so living under models/bts/ is what gives its tests the `bts` segment that
+# `data_tests: aemo_electricity: bts:` gates on. At the root of models/ it would carry no folder
+# segment at all and no gate could reach it — the bug that once left dwh and spark running zero
+# tests. Do not move it up.
+
+models:
+  - name: stg_flights_archive_log
+    description: >
+      View over the archive log download_bts_flights.py writes to the landing lakehouse
+      (Files/parquet_raw_archive_log.parquet — same filename and column shape as the nyc log, in
+      bts's own landing lakehouse). One log; every engine reads it with SQL.
+    columns:
+      - name: source_type
+        description: Type of source — 'flights' for a monthly on-time file, 'carrier' for the lookup
+      - name: source_filename
+        description: The archived stem, e.g. 'flights_1987-10' (the PREZIP zip's own name is unwieldy)
+      - name: archive_path
+        description: Path under parquet_raw/, e.g. '/flights/flights_1987-10.parquet'
+      - name: file_stem
+        description: >
+          Filename without extension — what the fact models store as `file`, and what every
+          dialect's pending-file selection dedups on.
+      - name: row_count
+        description: >
+          Rows in the landed file, read from the parquet footer the downloader itself wrote —
+          the count assert_fct_flights_matches_archive_log reconciles against.
+      - name: columns
+        description: >
+          The source CSV's own header as BTS published it (~110 names, plus the blank trailing
+          column BTS's line-ending comma produces), recorded so a schema question can be answered
+          from the log rather than by re-downloading. The landed copy is normalised to the
+          canonical 22 — see download_bts_flights.py.
+      - name: archived_at
+        description: Timestamp when the file was archived

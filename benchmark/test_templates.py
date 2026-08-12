@@ -293,6 +293,71 @@ def test_the_nyc_dax_suite_only_names_things_the_template_has():
             assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
 
 
+# ------------------------------------------------------------------ the BTS flights template
+#
+# The same guards, against the third dataset's `.bim`. Spelled out rather than parameterised, for
+# the same reason the NYC block is — different stars are genuinely different data, and a loop would
+# hide which one failed.
+
+BTS = os.path.join(HERE, "fct_flights.SemanticModel", "model.bim")
+
+BTS_EXPECTED = {"stg_flights_archive_log": "landing",
+                "dim_flight_date": "mart",
+                "dim_carrier": "mart",
+                "fct_flights": "mart"}
+
+
+def test_bts_template_carries_every_shared_table():
+    assert set(_parts(BTS)) == set(BTS_EXPECTED)
+
+
+def test_bts_template_table_set_matches_the_dataset_registry():
+    """Same guard as the other two: if a model is added or renamed in the registry and not here,
+    the benchmark quietly stops covering it."""
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"bts":\s*\{.*?"tables":\s*\[(.*?)\]', src, re.S)
+    assert block, "could not find the bts dataset's tables in datasets.py"
+    assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(_parts(BTS))
+
+
+def test_bts_template_is_direct_lake_and_repointable():
+    assert _is_directlake_bim(_raw(BTS))
+    assert _ONELAKE_REF.search(_raw(BTS).decode("utf-8"))
+
+
+def test_bts_template_reads_the_real_tables_in_the_real_schemas():
+    assert _parts(BTS) == {t: ("direct" + "Lake", schema, t) for t, schema in BTS_EXPECTED.items()}
+
+
+def test_bts_relationships_point_at_columns_that_exist():
+    m = json.loads(_raw(BTS))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    for r in m["model"]["relationships"]:
+        assert r["fromColumn"] in cols[r["fromTable"]], f"{r['name']}: bad fromColumn"
+        assert r["toColumn"] in cols[r["toTable"]], f"{r['name']}: bad toColumn"
+
+
+def test_only_the_bts_mart_relies_on_referential_integrity():
+    """Same rule as the other two templates: only the MART's relationships may set RI. Here the
+    fact's Reporting_Airline joins BTS's own unique-carrier list and FlightDate a dimension
+    spanning the whole archive, so RI holds by construction — but a relationship from a dimension
+    or the archive log would be a modelling mistake before it was an RI one."""
+    m = json.loads(_raw(BTS))
+    for r in m["model"]["relationships"]:
+        if r.get("relyOnReferentialIntegrity"):
+            assert r["fromTable"] == "fct_flights", f"{r['name']} is not the mart's"
+
+
+def test_every_bts_dax_string_resolves_against_the_bts_template():
+    """Queries, readiness probe and ladder resolver — reads SUITES directly and sets nothing, for
+    the import-time-binding reason documented on the aemo/nyc copies."""
+    import xmla_compare as xc
+    _assert_dax_resolves(BTS, xc.SUITES["bts"])
+
+
 def test_the_aemo_suite_is_what_a_default_import_binds():
     """`xmla_compare.QUERIES` is the suite the process will actually run, bound once at import from
     DATASET. Nothing in this suite sets that variable, so a default import must bind AEMO — and if

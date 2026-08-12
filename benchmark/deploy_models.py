@@ -54,7 +54,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # One template PER DATASET, each over that dataset's own tables. Still ONE template per run, which
 # is the experiment: identical DAX over identical semantic models with the dbt adapter as the only
 # variable. The dataset is not a variable inside a run — it is which run this is.
-TEMPLATES = {"aemo": "fct_summary.SemanticModel", "nyc": "fct_trips.SemanticModel"}
+TEMPLATES = {"aemo": "fct_summary.SemanticModel", "nyc": "fct_trips.SemanticModel",
+             "bts": "fct_flights.SemanticModel"}
 
 
 def template():

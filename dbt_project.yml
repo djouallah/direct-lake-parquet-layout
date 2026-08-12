@@ -109,6 +109,22 @@ models:
         staging:    {+materialized: view,        +schema: landing}
         dimensions: {+materialized: table,       +schema: mart}
         marts:      {+materialized: incremental,  +schema: mart}
+    bts:                                                     # BTS on-time flights — zipped CSV, 4 models
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'bts' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'bts' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'bts' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
 
 # Singular tests, tests/<DATASET>/<DIALECT>/ — the same two axes as models/ above, gated the same
 # way, so every engine runs the same assertions in its own dialect against the output it just wrote.
@@ -136,3 +152,11 @@ data_tests:
         +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'nyc' }}"
       spark:
         +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'nyc' }}"
+    bts:
+      +enabled: "{{ env_var('DATASET', 'aemo') == 'bts' }}"
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'bts' }}"
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'bts' }}"
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'bts' }}"
