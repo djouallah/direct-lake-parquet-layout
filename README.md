@@ -111,18 +111,21 @@ DuckDB — both below.
 ### A practical example: configuring the delta-rs writer
 
 The three rules above, as an actual [delta-rs](https://github.com/delta-io/delta-rs) writer
-profile. The encoding values are the ones [duckrun ships as its default write layout][dr-layout]
-— each tuned black-box against a Spark V-Order reference with DAX timings as the signal — and
-the two geometry values are this repo's measured knee for the 144M-row table (duckrun's own
-defaults are a 16M-row ceiling and 256 MB files):
+profile — the one [duckrun ships as its default write layout][dr-layout], each value tuned
+black-box against a Spark V-Order reference with DAX timings as the signal:
 
 ```python
 from deltalake import write_deltalake, WriterProperties, ColumnProperties
 
+# The row group is ADAPTIVE, not a constant: target ~8 groups so a table transcodes on
+# several lanes, clamped into the 1M–16M segment band.
+rg = max(1_000_000, min(16_000_000, -(-rows // 8)))   # ≥128M rows -> the 16M ceiling
+
 wp = WriterProperties(
     compression="SNAPPY",                     # transcoding is decode-bound; ~1.3× ZSTD's size,
                                               #   paid once in storage vs decode on every cold load
-    max_row_group_size=6_000_000,             # #1, in ROWS — the knee here; 16M is the ceiling
+    max_row_group_size=rg,                    # #1, in ROWS — a CEILING, so the file roll may close
+                                              #   a group early; that is fine, tiny groups are not
     dictionary_page_size_limit=32 * 1024**2,  # #3 — THE knob. A column overflows to PLAIN when
                                               #   its dictionary outgrows this; the ~1 MB default
                                               #   is why writers drop the widest columns silently
@@ -138,6 +141,10 @@ write_deltalake(path, table,                  # #2: ORDER BY your query-filter c
     target_file_size=1024**3)                 # a row group can't span files, so keep this well
                                               #   above one group's bytes (truncation trap below)
 ```
+
+**`rows` is the whole problem** — see the closing note. A compaction reads it exactly from the
+Delta log; a query being materialized has only an estimate, so duckrun raises the floor from 1M
+to 8M on that path rather than trust it.
 
 Two of these are worth restating. The dictionary page limit is the mechanism behind rule #3:
 truly unique columns still overflow to PLAIN (correct — their dictionary would be as big as the
@@ -326,6 +333,20 @@ CI, nothing else.
 - [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
 - [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
 
+## The biggest learning: a planner estimate is a guess
+
+Adaptive row-group sizing needs to know how many rows are about to be written, and when the
+writer is **materializing a query**, nobody does. DuckDB's planner estimated ~14.9M rows for the
+143,980,961-row mart above — 9.7× low — and the same class of miss on a 370M-row fact produced
+380 row groups where ~34 belong. The causes are structural: a fixed 0.2 selectivity guess for
+filters and anti/semi joins, set-operation parents carrying no cardinality of their own, CSV
+sources extrapolated from *file size*.
+
+The miss is asymmetric, which is why it needs a fallback rather than a better guess: an
+over-estimate is harmless (it caps at the 16M ceiling and the file roll decides), while an
+under-estimate pins a huge table to the bottom of the band **and it stays there**. So the floor
+is raised for estimates — never below 8M from a guess, versus 1M from an exact Delta-log count —
+and a model that knows its own size declares it instead.
 
 ## References
 
