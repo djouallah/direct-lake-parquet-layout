@@ -326,46 +326,6 @@ CI, nothing else.
 - [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
 - [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
 
-## The biggest learning: layout is a background job, not a write option
-
-Everything above is written as write-time configuration, and the honest conclusion after
-measuring it is that **most of it should not be a write-time decision at all.**
-
-A writer sizing a row group needs to know how many rows it is about to write, and it does not.
-DuckDB's planner estimated **~14.9M rows for the 143,980,961-row mart above** — 9.7× low — and
-the same class of miss on a 370M-row fact produced **380 row groups where ~34 belong**. The
-causes are structural rather than bugs to wait out: a fixed 0.2 selectivity guess for filters and
-anti/semi joins, set-operation parents that carry no cardinality of their own, CSV sources
-extrapolated from *file size* (so a gzipped input is wrong by its compression ratio). No writer
-can fix that without reimplementing a planner.
-
-What makes it bite is the asymmetry. An over-estimate is harmless — it caps at the ceiling and
-the file roll decides. An under-estimate pins a large table to the bottom of the segment band
-**and it stays there**, because nothing revisits a write that already succeeded. That is the
-same shape as every other failure in this project: no error, no warning, a layout that is simply
-wrong until something rewrites it.
-
-**But the estimate is the symptom, not the disease.** The real split is scope, and it decides
-where each knob belongs:
-
-- **Global properties can't be decided by a local write.** Segment sizing, file sizing, global
-  sort order, Z-order/clustering all depend on the whole table. A perfect planner wouldn't rescue
-  the incremental case either — an append genuinely cannot know what it is landing into, which is
-  why delta-rs and duckrun both leave increments unsized on purpose. These belong in a background
-  pass that reads an exact row count from the Delta log instead of guessing at one.
-- **Local properties should stay at write time.** Compression codec, dictionary limits, page
-  sizes, and V-Order's encoding pass are decidable from the rows in hand. Doing those in the
-  background means paying a full rewrite for something that costs ~8% of build CU inline.
-
-So: V-Order, Z-order and clustering as scheduled maintenance — agreed, and Fabric ships
-`OPTIMIZE … VORDER` for exactly that. Two caveats worth stating with it. Background is **not
-free**: an optimize replaces the parquet files, which
-[invalidates the resident segments and forces a retranscode on the next query][dl-perf] — you are
-trading a permanent bad layout for a periodic transient one, which is a good trade only if it is
-scheduled rather than run hot. And the escape hatch remains open: **a writer that is *told* the
-size beats any estimate**, which is why the models here pin `max_row_group_size` explicitly
-rather than letting the planner infer it. Write-time layout works precisely when the writer is
-not guessing.
 
 ## References
 
