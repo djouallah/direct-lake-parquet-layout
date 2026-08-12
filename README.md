@@ -321,7 +321,7 @@ benchmark pass:**
 
 | CU | `readHeavyForPBI` | `writeHeavy` | |
 |---|---:|---:|---|
-| Livy compute | 31,629 | 29,323 | −2,307 (−7%) |
+| Livy compute | 31,629 | 29,323 | −2,306 (−7%) |
 | OneLake storage | 1,803 | 5,987 | **+4,184 (3.3×)** |
 | **build total** | **33,432** | **35,310** | **1.06× — the "write-optimised" build costs more** |
 | **analytics** | **1,514** | **3,769** | **2.49×** |
