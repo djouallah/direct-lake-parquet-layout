@@ -3868,3 +3868,102 @@ test("archiveTotals excludes duckrun's round-trip and falls back when there are 
   // An older record shape carries totals and no breakdown; those totals are all there is.
   assert.deepEqual(d.archiveTotals({ files: 12, size_mb: 34 }), { files: 12, mb: 34, folders: [] });
 });
+
+// ------------------------------------------------------- the README's generated spark-profile table
+//
+// Its numbers reach a file people read without the page in front of them, so what is pinned here is
+// that it agrees with the page: it imports `runCu` rather than reimplementing the GUID join, and it
+// filters generations the same way. A second implementation of that join, rendering markdown while
+// the browser renders HTML, is the drift this repo already deleted `cu/dashboard.py` for.
+import * as prof from "./profile_table.mjs";
+
+const sparkRun = (file, profile, { files = 0, rows = 143_980_961 } = {}) =>
+  rec(file, "spark", {
+    A1: { role: "output", name: "dbt_spark" },
+    A2: { role: "semantic_model", name: "bench" },
+  }, {
+    config: { spark: { resource_profile: profile } },
+    stats: { spark: { "fct_summary": { total_rows: rows, num_files: files } } },
+  });
+
+const sparkLedger = (compute, storage, analytics) => ledger({
+  A1: { "High Concurrency Session Livy Run": compute, "OneLake Write via Redirect": storage },
+  A2: { "Query Scale-out": analytics },
+});
+
+test("the generated table's build column is exactly compute + storage", () => {
+  const runs = [sparkRun("a-1.json", "writeHeavy", { files: 68 })];
+  const rows = prof.profileRows(runs, sparkLedger(29_323, 5_987, 3_769));
+  assert.equal(rows.length, 1);
+  const r = rows[0];
+  assert.equal(r.compute + r.storage, r.build, "a row a reader adds up must add up");
+  assert.equal(r.build, 35_310);
+  assert.equal(r.analytics, 3_769);
+});
+
+test("a run that built without a benchmark counts toward build but not analytics", () => {
+  const runs = [sparkRun("a-1.json", "writeHeavy"), sparkRun("a-2.json", "writeHeavy")];
+  const led = ledger({
+    A1: { "High Concurrency Session Livy Run": 100, "OneLake Write via Redirect": 10 },
+  });
+  const [r] = prof.profileRows(runs, led);
+  assert.equal(r.nBuild, 2);
+  assert.equal(r.nAnalytics, 0, "no semantic-model CU means no analytics sample, not a zero one");
+  assert.equal(r.analytics, 0);
+  // Printed as a dash, never as 0 — a zero there says querying it was free.
+  assert.match(prof.renderProfileTable([r]), /\*\*—\*\*/);
+});
+
+test("generations are not pooled — the largest wins, as on the page", () => {
+  const runs = [
+    sparkRun("n-1.json", "writeHeavy", { files: 12, rows: 43_734_157 }),
+    sparkRun("n-2.json", "writeHeavy", { files: 60, rows: 591_729_858 }),
+  ];
+  const [r] = prof.profileRows(runs, sparkLedger(10_465, 587, 8_726));
+  assert.equal(r.nBuild, 1, "the small generation is dropped, not averaged in");
+  assert.deepEqual(r.files, [60, 60]);
+});
+
+test("landing CU never reaches the table", () => {
+  const run = rec("a-1.json", "spark", {
+    A1: { role: "output", name: "dbt_spark" },
+    L1: { role: "landing", name: "dbt_landing" },
+    L2: { role: "sql_endpoint", name: "dbt_landing" },
+  }, { config: { spark: { resource_profile: "writeHeavy" } } });
+  const led = ledger({
+    A1: { "High Concurrency Session Livy Run": 100 },
+    L1: { "OneLake Read via Redirect": 9_999 },
+    L2: { "SQL Endpoint Query": 130 },
+  });
+  const [r] = prof.profileRows([run], led);
+  assert.equal(r.compute, 100);
+  assert.equal(r.storage, 0, "landing and its endpoint are skipped, exactly as runCu skips them");
+});
+
+test("the ratios are writeHeavy against readHeavyForPBI, per dataset", () => {
+  const rows = [
+    { dataset: "aemo", profile: "readHeavyForPBI", build: 33_432, analytics: 1_514 },
+    { dataset: "aemo", profile: "writeHeavy", build: 35_310, analytics: 3_769 },
+  ];
+  const q = prof.ratios(rows, "aemo");
+  assert.ok(Math.abs(q.build - 1.056) < 0.001, `${q.build}`);
+  assert.ok(Math.abs(q.analytics - 2.489) < 0.001, `${q.analytics}`);
+  assert.equal(prof.ratios(rows, "nyc"), null, "a dataset with no pair states nothing");
+});
+
+test("inject replaces between the markers and is idempotent", () => {
+  const doc = `# T\n\n${prof.START}\nold\n${prof.END}\n\ntail\n`;
+  const once = prof.inject(doc, "NEW");
+  assert.match(once, /NEW/);
+  assert.doesNotMatch(once, /old/);
+  assert.match(once, /tail/);
+  assert.equal(prof.inject(once, "NEW"), once, "regenerating an unchanged table must be a no-op");
+});
+
+test("a missing marker is fatal rather than appending", () => {
+  assert.throws(() => prof.inject("# T\nno markers here\n", "NEW"), /missing the/);
+});
+
+test("no spark run yet says so rather than printing an empty table", () => {
+  assert.match(prof.renderProfileTable([]), /No spark run/);
+});

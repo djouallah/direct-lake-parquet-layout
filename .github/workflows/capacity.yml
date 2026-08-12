@@ -231,7 +231,19 @@ jobs:
             git reset -q --hard "origin/$BRANCH"
             cp "$RUNNER_TEMP/cu.json" history/cu.json
             python -c "import sys; sys.path.insert(0, '.github/scripts'); import record; record.reindex('history/runs')"
-            git add history/cu.json history/runs/index.json
+            # The README's spark resource-profile table, regenerated from the ledger that was just
+            # written plus the run records beside it. DERIVED, exactly like the index above, and for
+            # the same reason it lives inside the loop: a `reset --hard` throws it away, so it has to
+            # be rebuilt against whatever origin now holds rather than merged onto it.
+            #
+            # It reuses `dashboard/app.js`'s join instead of reimplementing it — see the header of
+            # profile_table.mjs. Node needs no setup step; ubuntu-latest ships it.
+            #
+            # Not fatal: a table that could not be rebuilt must not block the ledger commit, which is
+            # the measurement this job exists for. It fails loudly in the log and the block keeps its
+            # previous contents, which are stale by one read rather than missing.
+            node dashboard/profile_table.mjs || echo "profile table not regenerated" >&2
+            git add history/cu.json history/runs/index.json README.md
             if git diff --cached --quiet; then
               echo "ledger unchanged — everything settled" >&2; exit 0
             fi

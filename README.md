@@ -315,30 +315,39 @@ and a model that knows its own size declares it instead.
 
 Fabric Spark's default resource profile is `writeHeavy`, and on this evidence it is the wrong
 default for anything Power BI reads. It does save Livy compute — and then hands the saving
-straight back at the storage counter. **Medians over every aemo spark run — 8 `readHeavyForPBI`
-against 4 `writeHeavy`, and 7 against 3 on the analytics row, one build of each carrying no
-benchmark pass:**
+straight back at the storage counter, before costing a multiple of it again on every query.
 
-| CU | `readHeavyForPBI` | `writeHeavy` | |
-|---|---:|---:|---|
-| Livy compute | 31,629 | 29,323 | −2,306 (−7%) |
-| OneLake storage | 1,803 | 5,987 | **+4,184 (3.3×)** |
-| **build total** | **33,432** | **35,310** | **1.06× — the "write-optimised" build costs more** |
-| **analytics** | **1,514** | **3,769** | **2.49×** |
+The table below is **regenerated from the run records every time the CU ledger is topped up**, so
+it is never staler than the ledger under it:
 
-The storage line is a single operation — `OneLake Write via Redirect`, 503 CU against 4,084
-(**8.1×**) — and the cause is published rather than inferred: Microsoft's
-[resource profile reference][ms-profiles] gives `readHeavyForPBI` `optimizeWrite.enabled: "true"`
-at `binSize: "1g"` while `writeHeavy` doesn't enable it and sets `binSize: "128"`. Few large
-coalesced writes against many small ones, 44–47 live files against 67–68. `readHeavyForSpark` is
-the same trap wearing a better name: 4% cheaper to build, **2.04×** the analytics CU (n=2), and it
-sets no V-Order at all.
+<!-- spark-profiles:start -->
 
-**The storage blowup does not reproduce on nyc**, so don't carry that half over. There
-`writeHeavy` genuinely is cheaper to build — 1,182 vs 1,344 CU on the 43.7M-row generation and
-11,053 vs 12,068 on the 591.7M one — while still costing 1.35× and 1.46× the analytics CU. What
-survives both datasets is the weaker claim, and it is enough: **the build saving is at most ~10%
-and can be negative, the analytics penalty is 1.35–2.49×.**
+| dataset | profile | runs | Livy compute | OneLake storage | build | analytics | files written |
+|---|---|---:|---:|---:|---:|---:|---:|
+| aemo | `readHeavyForPBI` | 8 / 7 | 31,629 | 1,803 | **33,432** | **1,514** | 44–47 |
+| aemo | `readHeavyForSpark` | 2 | 30,049 | 1,882 | **31,931** | **3,088** | 61–63 |
+| aemo | `writeHeavy` | 4 / 3 | 29,323 | 5,987 | **35,310** | **3,769** | 67–68 |
+| nyc | `readHeavyForPBI` | 1 | 11,614 | 454 | **12,068** | **5,968** | 59 |
+| nyc | `writeHeavy` | 1 | 10,465 | 587 | **11,052** | **8,726** | 60 |
+
+Medians per run, each dataset filtered to its largest source generation; `runs` is the count behind the build figures, and behind the analytics figure where the two differ. `build` is compute + storage, and `files written` counts every table the leg wrote, which is what the storage column is billed for.
+
+On **aemo**, `writeHeavy` builds at **1.06×** the cost of `readHeavyForPBI` and queries at **2.49×**. On **nyc**, `writeHeavy` builds at **0.92×** the cost of `readHeavyForPBI` and queries at **1.46×**.
+
+<!-- spark-profiles:end -->
+
+The storage column is almost entirely one operation, `OneLake Write via Redirect`, and its cause is
+published rather than inferred: Microsoft's [resource profile reference][ms-profiles] gives
+`readHeavyForPBI` `optimizeWrite.enabled: "true"` at `binSize: "1g"` while `writeHeavy` doesn't
+enable it and sets `binSize: "128"`. Few large coalesced writes against many small ones — which is
+also why the file counts separate. `readHeavyForSpark` is the same trap wearing a better name: a
+little cheaper to build, roughly twice the analytics CU, and it sets no V-Order at all.
+
+**Read the datasets apart rather than pooling them.** On aemo the storage penalty is large enough
+to make the "write-optimised" build the *dearer* one outright; on nyc it doesn't appear and
+`writeHeavy` genuinely does build cheaper. What survives both is the claim worth keeping: **the
+build saving is small and can be negative, while the analytics penalty is a multiple.** Either way
+the total favours `readHeavyForPBI`.
 
 Note what this does *not* say. Capacity Metrics bills operation duration × capacity units and
 exposes no CPU-utilisation signal, so nothing here explains what the compute was doing or why.
