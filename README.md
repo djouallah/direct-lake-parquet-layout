@@ -340,11 +340,6 @@ sets no V-Order at all.
 survives both datasets is the weaker claim, and it is enough: **the build saving is at most ~10%
 and can be negative, the analytics penalty is 1.35–2.49×.**
 
-One thing deliberately absent from the table: the dispatch's `cores` input. It sizes the DuckDB
-notebook and reaches the spark leg not at all — Livy compute is workspace-side, and a 64-core
-dispatch built at 32,930 CU against the 8-core runs' 33,789, i.e. inside their spread. So every
-aemo spark run pools regardless of it.
-
 Note what this does *not* say. Capacity Metrics bills operation duration × capacity units and
 exposes no CPU-utilisation signal, so nothing here explains what the compute was doing or why.
 The measurable statement is narrower and sufficient: the profile moves cost out of compute and
