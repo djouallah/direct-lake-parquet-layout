@@ -296,45 +296,6 @@ Read the numbers as measurements, not laws:
 - **Everything here is Direct Lake / VertiPaq.** A different reader pays for parquet
   differently; these findings do not transfer.
 
-## Run it yourself
-
-Quick, offline (DuckDB → local Delta):
-
-```bash
-pip install duckrun                      # brings dbt-duckdb, duckdb, deltalake
-export FILES_PATH=./landing              # where the script lands raw CSVs
-export ONELAKE_TABLES_PATH=./warehouse   # where duckrun writes Delta tables
-python download_aemo.py                  # land the raw CSVs once, then:
-dbt build --target duckrun               # models + tests, one DAG walk
-```
-
-The other engines need their adapter and env vars, then `dbt build --target <name>`:
-
-| target | adapter | key env vars |
-|---|---|---|
-| `iceberg` | `dbt-duckdb` | `WAREHOUSE_PATH`, `ONELAKE_ENDPOINT`, `ONELAKE_TOKEN`, `FILES_PATH` |
-| `dwh` | `dbt-fabric` (Python ≥ 3.12) | `FABRIC_DWH_SERVER`, `FABRIC_DWH_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
-| `spark` | `dbt-fabricspark` | `FABRIC_WORKSPACE_ID`, `FABRIC_LAKEHOUSE_ID`, `FABRIC_LAKEHOUSE_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
-
-The dataset is the `DATASET` env var (`aemo` | `nyc`, default `aemo`); models live per dialect
-under `models/<dataset>/{duckdb,dwh,spark}`, gated in `dbt_project.yml` so exactly one folder
-is enabled per (dataset, target) — `dbt parse --target <name>` verifies the gating offline, no
-credentials needed. Tests are six assertions on the mart, written once per dialect so every
-engine tests the output it just wrote; cross-engine agreement is the row-count parity table in
-CI, nothing else.
-
-**Where to read further:**
-
-- the [live dashboard](https://djouallah.github.io/direct-lake-parquet-layout/) — every run,
-  cost and speed per layout
-- [RETROSPECTIVE.md](RETROSPECTIVE.md) — what the exercise cost, and what would make it cheaper
-- [`fct_summary.sql`](models/aemo/duckdb/marts/fct_summary.sql) — the lab notebook: row-group
-  sweeps, sort keys, the delta-rs truncation measurement
-- [LEARNINGS.md](LEARNINGS.md) — dbt-adapter and engine war stories (*not* layout)
-- [TODO.md](TODO.md) — open questions, with the cost of answering each
-- [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
-- [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
-
 ## The biggest learning: a planner estimate is a guess
 
 Adaptive row-group sizing needs to know how many rows are about to be written, and when the
@@ -384,6 +345,19 @@ The measurable statement is narrower and sufficient: the profile moves cost out 
 into separately billed storage operations, at a rate that loses.
 
 [ms-profiles]: https://learn.microsoft.com/en-us/fabric/data-engineering/configure-resource-profile-configurations
+
+## Where to read further
+
+- the [live dashboard](https://djouallah.github.io/direct-lake-parquet-layout/) — every run,
+  cost and speed per layout
+- [RETROSPECTIVE.md](RETROSPECTIVE.md) — what the exercise cost, and what would make it cheaper
+- [`fct_summary.sql`](models/aemo/duckdb/marts/fct_summary.sql) — the lab notebook: row-group
+  sweeps, sort keys, the delta-rs truncation measurement
+- [LEARNINGS.md](LEARNINGS.md) — dbt-adapter and engine war stories (*not* layout)
+- [TODO.md](TODO.md) — open questions, with the cost of answering each
+- [docs/RUNNING.md](docs/RUNNING.md) — run it yourself, offline in DuckDB or against Fabric
+- [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
+- [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
 
 ## References
 
