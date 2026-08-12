@@ -3,8 +3,7 @@
 Power BI **Direct Lake** opens a Delta table's parquet directly. The first (cold) query
 transcodes each parquet **row group into a VertiPaq segment, one to one**; every query after
 that scans the segments the transcode produced. So query latency — and, more importantly,
-**capacity-unit consumption** — is a property of how the parquet was written. The engine that
-wrote it is metadata.
+**capacity-unit consumption** — is a property of how the parquet was written.
 
 This repo measures exactly that, on real Fabric capacity: two datasets, four writers producing
 the **same rows**, one semantic model and one DAX suite over each, capacity units (the bill) as
@@ -51,10 +50,10 @@ less analytics CU**.
   irreversible, and the one run measured with it off billed ~45% more analytics CU and wrote
   16% larger files (n=1 — indicative, not settled).
 
-## Writing with a third-party writer? Three knobs recover most of it
+## Writing with a third-party writer?
 
-delta-rs, DuckDB, open-source Spark, Iceberg writers — none has a V-Order encoder and there is
-no retrofit short of rewriting the files in Fabric.
+delta-rs, DuckDB, open-source Spark, Iceberg writers — none has V-Order. Good practice with
+any arbitrary parquet writer:
 
 ### 1. Row groups: millions of rows each, and more of them than the engine has threads
 
