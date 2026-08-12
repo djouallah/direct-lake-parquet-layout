@@ -193,11 +193,11 @@
    "Warehouse Query": 34017.292
   },
   "16BA1F6F-9A20-4704-A88E-1471C7731D87": {
-   "OneLake Iterative Read via Proxy": 18.699,
+   "OneLake Iterative Read via Proxy": 20.975,
    "OneLake Other Operations": 0.759,
    "OneLake Other Operations Via Redirect": 0.374,
-   "OneLake Read via Proxy": 0.166,
-   "OneLake Write via Proxy": 39.837,
+   "OneLake Read via Proxy": 0.333,
+   "OneLake Write via Proxy": 42.276,
    "OneLake Write via Redirect": 6.829
   },
   "17F0C5E6-2BBD-4BB4-A0D1-44D65DF3426C": {
@@ -1399,6 +1399,12 @@
    "OneLake Read via Redirect": 1026.532,
    "OneLake Write via Proxy": 17.398,
    "OneLake Write via Redirect": 569.75
+  },
+  "A61E7FEA-41D4-4E4E-A901-885C30D8EFF3": {
+   "OneLake Iterative Read via Proxy": 0.65,
+   "OneLake Other Operations Via Redirect": 0.177,
+   "OneLake Write via Proxy": 1.138,
+   "OneLake Write via Redirect": 3.415
   },
   "A62D6392-CC00-4344-ABE3-C5C353857FA6": {
    "SQL Endpoint Query": 42.156
@@ -3345,6 +3351,14 @@
    "since": "2026-08-02T21:00:00",
    "timed": 379,
    "unfound": 17
+  },
+  {
+   "at": "2026-08-12T11:36:02+00:00",
+   "changed": 7,
+   "items": 380,
+   "since": "2026-08-02T21:00:00",
+   "timed": 380,
+   "unfound": 19
   }
  ],
  "schema": 2,
@@ -3542,11 +3556,11 @@
    "Warehouse Query": 926.293
   },
   "16BA1F6F-9A20-4704-A88E-1471C7731D87": {
-   "OneLake Iterative Read via Proxy": 0.102,
+   "OneLake Iterative Read via Proxy": 0.113,
    "OneLake Other Operations": 0.027,
    "OneLake Other Operations Via Redirect": 0.012,
-   "OneLake Read via Proxy": 0.011,
-   "OneLake Write via Proxy": 0.061,
+   "OneLake Read via Proxy": 0.02,
+   "OneLake Write via Proxy": 0.066,
    "OneLake Write via Redirect": 0.003
   },
   "17F0C5E6-2BBD-4BB4-A0D1-44D65DF3426C": {
@@ -4714,6 +4728,12 @@
    "OneLake Write via Proxy": 0.023,
    "OneLake Write via Redirect": 0.094
   },
+  "A61E7FEA-41D4-4E4E-A901-885C30D8EFF3": {
+   "OneLake Iterative Read via Proxy": 0.001,
+   "OneLake Other Operations Via Redirect": 0.002,
+   "OneLake Write via Proxy": 0.001,
+   "OneLake Write via Redirect": 0.001
+  },
   "A62D6392-CC00-4344-ABE3-C5C353857FA6": {
    "SQL Endpoint Query": 13.661
   },
@@ -5501,5 +5521,5 @@
    "OneLake Write via Redirect": 0.033
   }
  },
- "updated": "2026-08-12T10:40:21+00:00"
+ "updated": "2026-08-12T11:36:02+00:00"
 }
