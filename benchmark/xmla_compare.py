@@ -297,10 +297,12 @@ NYC_QUERIES = [
 # that ladder, put beside layout.ordering's per-column `runs`, is what says which columns the
 # greedy ordering sacrificed and whether the sacrifice shows up in transcode time.
 #
-# The ladder and the year-filtered composites use 1995: the archive drains OLDEST FIRST from
-# 1987-10, so 1995 is inside the first `download_limit=200` drain — a later year would silently
+# The ladder and the year-filtered composites use 1988: the archive drains OLDEST FIRST from
+# 1987-10, so 1988 is complete after even the first 40-month drain — a later year would silently
 # filter to nothing on a young archive, and a filter matching nothing is a very fast query, which
-# this benchmark would read as a result.
+# this benchmark would read as a result. It was 1995 for one commit, which is WORSE than a recent
+# year: TranStats' PREZIP endpoint does not serve the 1990s at all
+# (download_bts_flights.GAP_YEARS), so 1995 filters to nothing on a FULLY drained archive too.
 BTS_QUERIES = [
     # --- Tier 1: per-column probes (rowcount LAST — see the note above) ---
     ("probe", "probe_distance",   'EVALUATE ROW("x", SUM(fct_flights[Distance]))'),
@@ -327,10 +329,10 @@ BTS_QUERIES = [
     ("composite", "carrier_x_month",
      'EVALUATE SUMMARIZECOLUMNS(dim_carrier[name], dim_flight_date[year], '
      'dim_flight_date[month], "Flights", [Total Flights])'),
-    ("composite", "filtered_1995_by_origin",
+    ("composite", "filtered_1988_by_origin",
      'EVALUATE CALCULATETABLE('
      'SUMMARIZECOLUMNS(fct_flights[Origin], "Flights", [Total Flights], '
-     '"AvgDep", [Avg Dep Delay]), dim_flight_date[year] = 1995)'),
+     '"AvgDep", [Avg Dep Delay]), dim_flight_date[year] = 1988)'),
     ("composite", "scalar_weighted_full_scan",
      'EVALUATE ROW('
      '"DelayPerMile", DIVIDE(SUMX(fct_flights, fct_flights[DepDelay] * fct_flights[Distance]), '
@@ -354,11 +356,11 @@ BTS_QUERIES = [
     # --- Tier 4: selectivity ladder (SUMX lifts work above the XMLA noise floor) ---
     ("hot_only", "sel_1yr",
      'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
-     'fct_flights[Distance] * fct_flights[DepDelay]), dim_flight_date[year] = 1995))'),
+     'fct_flights[Distance] * fct_flights[DepDelay]), dim_flight_date[year] = 1988))'),
     ("hot_only", "sel_1mo",
      'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
      'fct_flights[Distance] * fct_flights[DepDelay]), '
-     'dim_flight_date[year] = 1995, dim_flight_date[month] = 6))'),
+     'dim_flight_date[year] = 1988, dim_flight_date[month] = 6))'),
     ("hot_only", "sel_1origin",
      'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
      'fct_flights[Distance] * fct_flights[DepDelay]), '
@@ -366,7 +368,7 @@ BTS_QUERIES = [
     ("hot_only", "sel_1origin_1mo",
      'EVALUATE ROW("r", CALCULATE(SUMX(fct_flights, '
      'fct_flights[Distance] * fct_flights[DepDelay]), '
-     'fct_flights[Origin] = {key}, dim_flight_date[year] = 1995, '
+     'fct_flights[Origin] = {key}, dim_flight_date[year] = 1988, '
      'dim_flight_date[month] = 6))'),
 ]
 

@@ -23,7 +23,7 @@ notice, with several it silently records another dataset's layout under this run
 |---|---|---|---|
 | source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP |
 | models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` |
-| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~200M rows full-drain, **22 columns** |
+| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** |
 | skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL |
 | items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … |
 
@@ -57,10 +57,14 @@ leading/trailing whitespace only, because embedded spaces are legitimate data th
 Pan Am, ~5K rows in every 1987 month; the DUID spelling would fail every leg on correct data); and
 the carrier lookup URL is TranStats' obfuscated spelling (`Y11x72=Y_haVdhR_PNeeVRef`) because the
 plain `Lookup=L_UNIQUE_CARRIERS` now returns the HTML homepage with status 200.
-The ladder and year-filtered DAX queries pin **1995**, not a recent year: the archive drains oldest
+The ladder and year-filtered DAX queries pin **1988**, not a recent year: the archive drains oldest
 first, so a recent year on a young archive filters to nothing — a very fast query that reads as a
 result. (nyc's suite pins 2019 with an archive that currently ends mid-2014; check that before
-trusting its year-filtered rows.)
+trusting its year-filtered rows.) **TranStats' PREZIP does not serve the 1990s at all** — every
+month of 1990-1999 is 404 under the current filename and the pre-2018 one, probed month by month on
+2026-08-12 — so `download_bts_flights.GAP_YEARS` skips the decade and the full drain is ~343 months
+/ ~175M rows (1987-10..1989-12 + 2000-01..present). 1995 was the pin for one commit and filters to
+nothing on a FULLY drained archive; do not move the pin into the gap.
 
 Contoso (`djouallah/duckrun tests/parquet_layout/contoso`) was the original ask and was rejected on
 the user's own criterion: SQLBI's generator with engineered weight distributions is synthetic, which

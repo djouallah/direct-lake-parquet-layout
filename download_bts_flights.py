@@ -2,7 +2,9 @@
 
 Sibling of download_aemo.py and download_nyc_taxi.py, same shape and the same watermark idiom (an
 archive-log parquet at the Files root, so a re-run only fetches what is new), retargeted at a
-source that serves ZIPPED CSV: TranStats' PREZIP endpoint, one zip per month since October 1987.
+source that serves ZIPPED CSV: TranStats' PREZIP endpoint, one zip per month since October 1987 —
+minus the 1990s, which the endpoint does not serve at all (see GAP_YEARS). A full drain is
+therefore ~343 months / ~175M rows.
 
 WHY THIS DATASET EXISTS HERE. aemo and nyc are two points on the surface V-Order's worth tracks —
 column count x categorical skew — and both sit in regimes where the optimizer never has to choose.
@@ -69,6 +71,16 @@ CARRIERS = "https://www.transtats.bts.gov/Download_Lookup.asp?Y11x72=Y_haVdhR_PN
 
 # BTS publishes with roughly a three-month lag; skip the tail rather than probe it.
 PUBLISH_LAG_MONTHS = 4
+
+# TranStats' PREZIP serves 1987-10..1989-12 and 2000-01..present. EVERY month of 1990-1999 is
+# ABSENT — 404 under the current filename AND the pre-2018 `On_Time_On_Time_Performance` spelling,
+# probed month by month on 2026-08-12 (run 31569979274 hit the cliff live: 27 of 40 months landed,
+# every 1990+ URL 404). Skipped here the same way the publish lag is — a documented property of
+# the endpoint, not probed per run — because a 404'd month is never logged and would otherwise be
+# re-probed on every dispatch forever, and a drain window falling entirely inside the gap would
+# land nothing while looking exactly like a drained archive. If BTS ever republishes the decade,
+# widen this and re-drain; the log's watermark makes that safe.
+GAP_YEARS = range(1990, 2000)
 
 # Mirrored by macros/bts_flight_columns.sql — see that file for why it is 22 of BTS's ~110.
 CORE_COLUMNS = [
@@ -169,7 +181,8 @@ def months():
         end_y, end_m = end_y - 1, end_m + 12
     out = []
     while (y, m) <= (end_y, end_m):
-        out.append(f"{y:04d}-{m:02d}")
+        if y not in GAP_YEARS:
+            out.append(f"{y:04d}-{m:02d}")
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     return out
 
