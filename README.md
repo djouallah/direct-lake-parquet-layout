@@ -1,109 +1,100 @@
 # Write parquet that Power BI likes
 
-Power BI **Direct Lake** opens a Delta table's parquet directly: the first (cold) query
-transcodes row groups into VertiPaq segments, and every query after that scans what the
-transcode produced. So query latency — and, more importantly, **capacity-unit consumption** —
-belongs to *how the parquet was written*. The engine that wrote it is metadata.
+Power BI **Direct Lake** opens a Delta table's parquet directly. The first (cold) query
+transcodes each parquet **row group into a VertiPaq segment, one to one**; every query after
+that scans the segments the transcode produced. So query latency — and, more importantly,
+**capacity-unit consumption** — is a property of how the parquet was written. The engine that
+wrote it is metadata.
 
-This repo is an educational project that measures exactly that, on real Fabric capacity: two
-datasets, four writers producing the **same rows**, one semantic model and one DAX suite over
-each, with capacity units (the bill) as the primary metric. dbt is just the convenience tool
-that regenerates the data identically per engine; the parquet layout is the subject. The
-results are live at **<https://djouallah.github.io/direct-lake-parquet-layout/>**.
+This repo measures exactly that, on real Fabric capacity: two datasets, four writers producing
+the **same rows**, one semantic model and one DAX suite over each, capacity units (the bill) as
+the primary metric. Results are live at
+**<https://djouallah.github.io/direct-lake-parquet-layout/>**.
 
-The short version, for anyone writing Delta tables that Power BI will read:
+## How the scan pays for your layout
+
+Three mechanics explain almost every number below — and none is specific to VertiPaq; any
+columnar OLAP engine scans this way.
+
+1. **The scan unit is the segment (= one row group), and parallelism is one thread per
+   segment.** A few giant row groups leave cores idle: on a 144M-row table, warm query time
+   steps down between 19 and 24 row groups (≈5,700 ms → 3,221) and 72 row groups buy nothing
+   over 24. Treat "more row groups than the engine has threads" as a floor, not a formula — a
+   strict `ceil(segments ÷ threads)` cost model was tested with a deliberate 8-segment run and
+   does not hold.
+2. **Every segment carries a fixed cost** — its own dictionary, transcode and bookkeeping — so
+   segments want **millions of rows each**. The same DuckDB, same notebook, same SQL was
+   **3.5× slower cold** (96,503 ms vs 27,785) when a library default of 122,880 rows per row
+   group reached OneLake: 1,172 tiny segments instead of ~25.
+3. **Within a segment the scan is run-length driven.** VertiPaq inherits the parquet row order
+   at transcode, so sorted data gives long RLE runs in the resident columns — which is why
+   sorting speeds up warm and hot queries, not just the cold transcode. This is also what
+   V-Order mechanically is: a row-reordering plus encoding pass at write time.
+
+Everything below is these three facts applied.
 
 ## Writing with a Fabric engine? Turn V-Order on
 
-The write-side cost is nearly negligible and the query-side effect is the largest single lever
-measured here.
+V-Order is the sort-and-encode pass done for you, and its worth tracks **surface — column
+count × categorical skew — not row count**: on the skewed 17-column taxi mart it collapsed the
+most repetitive column to 3,371× fewer runs; on the near-unique 5-column AEMO mart it left row
+order untouched and still shrank files 16%. It doesn't reorder what can't benefit, so it is
+safe to leave on. Measured cost: ~8% of build compute CU (~14% on taxi); return: up to **2.8×
+less analytics CU**.
 
-V-Order is a row-reordering plus encoding pass, and what the reordering is worth depends on
-**data skew**: wide tables full of repetitive, skewed categorical columns give it long runs to
-create; a narrow table of near-unique values gives it nothing. The writer behaves accordingly —
-measured on the dataset with heavy skew it reordered the most repetitive column massively, and
-on the dataset with nothing to reorder it left the physical row order untouched (within noise
-on every column) while still engaging its encodings and shrinking the files 16%. So you don't
-pay a reordering penalty on data that can't benefit: the writer is effectively deciding where
-the reordering is worth it, which is why "just turn it on" is safe advice rather than a
-trade-off to agonize over.
+- **Fabric Spark**: only the `readHeavyForPBI` resource profile enables it — the default
+  `writeHeavy` sets it off, and `readHeavyForSpark` doesn't set it at all despite the name.
+  Same data, same file band: V-Order on vs off is 1,332 vs 3,769 analytics CU. (The profile
+  also flips `optimizeWrite` to 1 GB bins, which on AEMO cut OneLake write CU to a third —
+  the total write bill came out *cheaper* with V-Order on.)
+- **Fabric Warehouse**: on by default — leave it. `ALTER DATABASE … SET VORDER = OFF` is
+  irreversible, and the one run measured with it off billed ~45% more analytics CU and wrote
+  16% larger files (n=1 — indicative, not settled).
 
-- **Fabric Spark**: only the `readHeavyForPBI` resource profile enables V-Order — the workspace
-  default `writeHeavy` sets it off, and `readHeavyForSpark` does not set it at all despite the
-  name. Measured on the same data in the same file band, V-Order on vs off is **2.8× the
-  analytics CU** (1,332 vs 3,769) — the sharpest experiment on the dashboard. The premium on
-  the build side was **~8% of compute CU** (~14% on the taxi dataset) — and on the AEMO build
-  the *total* write bill came out cheaper with V-Order, because the profile's 1 GB bins cut
-  OneLake write CU to a third and the output itself shrank 16–36%. (The profile flips
-  `optimizeWrite` along with V-Order, so the pair compares the whole profile, not the encoder
-  alone.)
-- **Fabric Warehouse**: V-Order is **on by default** — leave it. `ALTER DATABASE … SET VORDER
-  = OFF` is irreversible, and the one run measured with it off billed ~45% more analytics CU
-  and wrote 16% larger files (n=1, and the on-arm's own spread is wide — read it as indicative,
-  not settled).
+## Writing with a third-party writer? Three knobs recover most of it
 
-## Writing with a third-party writer? Three things approximate it
+delta-rs, DuckDB, open-source Spark, Iceberg writers — none has a V-Order encoder and there is
+no retrofit short of rewriting the files in Fabric.
 
-delta-rs, DuckDB, open-source Spark, Iceberg writers — none of them has a V-Order encoder, and
-there is no way to retrofit it short of rewriting the files in Fabric. What was measured here
-is that three ordinary knobs recover most of the gap, and two things people tune don't matter.
+### 1. Row groups: millions of rows each, and more of them than the engine has threads
 
-### 1. Row groups in the millions of rows
+Never ship a parquet library's default row-group size to a Direct Lake table — declare
+something in the millions. A sweep on the 144M-row table found the knee around **2–6M rows per
+row group** (24–72 segments); 16M rows — copying V-Order's own segment size, VertiPaq's
+ceiling — was the *worst* sorted geometry measured, because 9 segments starve the scan pool
+(mechanic 1). The full sweep log lives in the
+[`fct_summary` model header](models/aemo/duckdb/marts/fct_summary.sql).
 
-Direct Lake maps row groups to VertiPaq segments, and it wants millions of rows in each. The
-starkest result in the repo: the same DuckDB, in the same notebook, at the same core count,
-running byte-identical SQL, was **3.5× slower cold** (96,503 ms vs 27,785 ms) through the
-adapter that let DuckDB's default `ROW_GROUP_SIZE` of 122,880 rows reach OneLake — 1,172
-tiny segments instead of ~25 — than through the one that wrote ~5.5M-row groups. The entire
-gap is one default constant ([RETROSPECTIVE.md](RETROSPECTIVE.md)).
+### 2. Sort the table globally, by what your queries filter
 
-A sweep on a 144M-row table found a knee around **2–6M rows per row group**; 16M — copying
-V-Order's own segment size, and VertiPaq's ceiling — was the *worst* sorted geometry measured.
-The full experiment log lives in the
-[`fct_summary` model header](models/aemo/duckdb/marts/fct_summary.sql). The practical rule:
-never ship a parquet library's default row-group size to a Direct Lake table; declare
-something in the millions.
+A global `ORDER BY` is most of the V-Order you can have (mechanic 3). Pick the key from the
+query workload, not from what compresses best: here 9 of 25 queries filter on the date
+dimension, so the key leads with `date`. The counterexample is measured — one alternative key
+cut file size a further 30% (543 MB vs 778, n=4 per arm) and bought **statistically zero**
+query time or CU. Sort for run lengths in the columns your queries touch; don't chase bytes.
 
-### 2. Keep dictionary encoding on every column
+### 3. Keep dictionary encoding on every column
 
-Direct Lake can remap a parquet dictionary into VertiPaq's own; a `PLAIN` column has to be
-dictionary-built from raw values at load. One column (`mw`, 144M DOUBLEs) measured 618.6 MB as
-`PLAIN` against 423.1 MB with its dictionary — ~200 MB and a rebuild-at-load on a single
-column — and the two Spark profiles that give up dictionaries on their large columns are that
-engine's two most expensive layouts. Writers differ silently here: Fabric's writers and
-delta-rs kept dictionaries on everything measured; OSS-profile Spark and DuckDB's own parquet
-writer dropped them on the widest columns, which is exactly where it hurts.
-
-### 3. Sort the table globally — it's most of the V-Order you can have
-
-V-Order is, mechanically, a row-reordering plus encoding pass. VertiPaq inherits the parquet
-row order when it transcodes, so a globally sorted table gives longer runs in the resident
-columns — which is why warm and hot queries improve, not just cold. Measured with the same
-instrument on the taxi dataset, V-Order reordered the most repetitive column to **3,371×
-fewer** adjacent-value runs and shrank the table 36%; a global `ORDER BY` in the model is the
-same effect under your control.
-
-What sorting is worth tracks the **surface — column count × categorical skew — not row
-count**. The 143M-row, five-column AEMO mart shows almost nothing to reorder; the 43.7M-row,
-17-column taxi mart, full of 97–99% single-value categoricals, is where the 3,371× comes from.
-That is why this repo carries two datasets. And pick the sort key from the query workload
-(here, 9 of 25 queries filter on the date dimension; the key leads with `date`), not from what
-compresses best: one sort key cut file size a further 30% and bought **statistically zero**
-query time or CU — sort for run lengths in the columns your queries touch, don't chase bytes.
+Direct Lake remaps a parquet dictionary straight into VertiPaq's own; a `PLAIN` column forces a
+dictionary build from raw values at load. One 144M-row DOUBLE column measured 618.6 MB `PLAIN`
+vs 423.1 MB dictionary-encoded — ~200 MB and a rebuild-at-load on a single column. Writers
+differ silently: Fabric's writers and delta-rs kept dictionaries everywhere; OSS-profile Spark
+and DuckDB's own parquet writer dropped them on the widest columns, exactly where it hurts —
+those are that engine's two most expensive layouts here.
 
 ### What doesn't matter: file count and file size
 
 File count never separated engines in the CU data — the Warehouse ships 78 files and sits
-mid-pack, the small-row-group layout ships ~357 and is the outlier because of its *segments*.
-And a 30% smaller file bought no query time (four separate demonstrations in the log). One
-real trap hides here: **delta-rs truncates the in-progress row group at the file-size cap**
-(measured writing groups at 0.43× their declared rows) — keep the cap comfortably above one
-row group's bytes and control size with the row-group knob, not the file knob.
+mid-pack; the outlier ships ~357 and loses on its *segments*. A 30% smaller file bought no
+query time (four separate demonstrations in the log). One trap: **delta-rs truncates the
+in-progress row group at the file-size cap** (measured writing groups at 0.43× their declared
+rows) — keep the cap comfortably above one row group's bytes and control size with the
+row-group knob, not the file knob.
 
 ## The lab
 
 Two datasets, chosen as a pair — one with almost no surface for layout to act on, one with a
-lot — because the first dataset alone gave a confidently wrong answer about V-Order:
+lot — because the first alone produced a confidently wrong answer about V-Order:
 
 | | `aemo` | `nyc` |
 |---|---|---|
@@ -112,8 +103,8 @@ lot — because the first dataset alone gave a confidently wrong answer about V-
 | out | `mart.fct_summary` — 143M rows, **5 narrow columns**, regular 5-min × DUID grid | `mart.fct_trips` — **17 columns**, ~600M rows built so far |
 | shape | near-uniform | four categoricals at 97–99% one value, two Zipfian zone ids |
 
-Four writers produce the same rows from the same landed files, selected by dbt target — so the
-only variable left is the parquet each one writes:
+Four writers produce the same rows from the same landed files, selected by dbt target — the
+parquet each writes is the only variable:
 
 | target | engine | parquet writer |
 |---|---|---|
@@ -122,68 +113,32 @@ only variable left is the parquet each one writes:
 | `dwh` | Fabric Warehouse (T-SQL) | the warehouse's own (V-Order) |
 | `spark` | Fabric Spark (Livy) | parquet-mr (V-Order per resource profile) |
 
-**How it's measured:** one `.bim` semantic model is deployed per engine in Direct Lake mode
-with fallback disabled — a query Direct Lake cannot serve fails rather than quietly running on
-the SQL endpoint. A 25-query DAX suite runs against a freshly created model: pass 1 is cold
-(the transcode), pass 2 warm, the rest hot (median). Capacity units are read per item GUID
-from Fabric's own Capacity Metrics model. Methodology detail:
-[benchmark/README.md](benchmark/README.md) (the measurement) and
-[dashboard/README.md](dashboard/README.md) (how results are grouped and rendered).
+**Measurement:** one `.bim` per engine, Direct Lake with fallback disabled (a query it can't
+serve fails, rather than quietly running on the SQL endpoint), deployed fresh so pass 1 is
+genuinely cold, pass 2 warm, the rest hot (median). CU is read per item GUID from Fabric's own
+Capacity Metrics model. Detail: [benchmark/README.md](benchmark/README.md) and
+[dashboard/README.md](dashboard/README.md).
 
-**Where to read further:**
+## Method and limits
 
-- the [live dashboard](https://djouallah.github.io/direct-lake-parquet-layout/) — every run, cost
-  and speed per layout
-- [RETROSPECTIVE.md](RETROSPECTIVE.md) — what the exercise cost, and what would have to change
-  to make it cheaper
-- [`fct_summary.sql`](models/aemo/duckdb/marts/fct_summary.sql) — the lab notebook: row-group
-  sweeps, sort keys, the delta-rs truncation measurement
-- [LEARNINGS.md](LEARNINGS.md) — dbt-adapter and engine war stories (*not* layout)
-- [TODO.md](TODO.md) — open questions, with the cost of answering each
-- [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
-- [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
+VertiPaq is treated as a black box: one write knob changes per experiment pair, the layout is
+**read back from the parquet footers and Delta log** rather than trusted from config (twice a
+declared setting was silently dropped by a writer and only the read-back caught it), the bill
+is the metric, and negative results and retractions stay in the record — "V-Order does not
+reorder rows" was written down, overturned by the second dataset, and retracted in place.
 
-## Methodology
+Read the numbers as measurements, not laws:
 
-VertiPaq is treated as a **black box**. Nothing here reads engine internals or takes the
-documentation's word for what Direct Lake does with a file; the method is plain experiment
-design against an opaque system:
-
-- **Change one variable per experiment.** Same landed data, same semantic model, same DAX
-  suite; a pair of dispatches differs in a single write knob — row-group size, sort key,
-  V-Order, resource profile — and the difference in the bill is attributed to that knob.
-- **Measure the layout back from the files, never trust the config.** After every build, the
-  parquet footers and the Delta log are read back — row groups, encodings, per-file V-Order
-  tags, physical row order. Twice, a declared setting was silently dropped by a writer and
-  only the read-back caught it; a run that recorded its config instead of its parquet would
-  have published the wrong experiment.
-- **The bill is the metric.** Capacity units already price in how much compute each engine was
-  handed; latency is reported as context, medians over passes, and runs repeat because a
-  shared capacity is noisy.
-- **Negative results and retractions stay in the record.** "V-Order does not reorder rows"
-  was written down, then overturned by the second dataset and retracted in place; the 16M
-  row-group geometry is recorded as the worst measured, and the 30%-smaller file that bought
-  nothing is kept as the counterexample to size-chasing. A black box earns conclusions only
-  from experiments that could have falsified them.
-
-## Limitations
-
-This is two datasets, one query suite, one capacity — read the numbers as measurements, not
-laws:
-
-- **Two datasets** define the whole "surface" axis: one with almost no skew, one with a lot.
-  The rule that layout value tracks column count × categorical skew is drawn from exactly these
-  two points; your table sits somewhere else on that axis.
-- **One 25-query DAX suite** over one semantic model shape. A different workload weights the
-  columns — and therefore the sort key — differently.
-- **Some cells are thin.** The Warehouse V-Order-off result is a single run; several layout
-  groups on the dashboard hold one or two runs, where the median *is* the run. CU on a shared
-  capacity is noisy run to run: one dispatch measured 2,629 analytics CU on parquet
-  byte-identical to runs reading ~1,330–1,590, because the capacity was busy.
-- **The Spark V-Order pair compares resource profiles, not the encoder alone** —
-  `readHeavyForPBI` also changes `optimizeWrite` bin size, so file packing moves with it.
-- **Everything here is Direct Lake / VertiPaq.** A different reader (Spark, DuckDB, the SQL
-  endpoint) pays for parquet differently; these findings do not transfer to it.
+- **Two datasets** define the whole surface axis; your table sits somewhere else on it.
+- **One 25-query DAX suite** — a different workload weights the columns, and therefore the
+  sort key, differently.
+- **Some cells are thin** — the Warehouse V-Order-off result is one run, and CU on a shared
+  capacity is noisy: one dispatch read 2,629 analytics CU on parquet byte-identical to runs
+  reading ~1,330–1,590.
+- **The Spark V-Order pair compares resource profiles**, not the encoder alone —
+  `optimizeWrite` bin size moves with it.
+- **Everything here is Direct Lake / VertiPaq.** A different reader pays for parquet
+  differently; these findings do not transfer.
 
 ## Run it yourself
 
@@ -205,12 +160,21 @@ The other engines need their adapter and env vars, then `dbt build --target <nam
 | `dwh` | `dbt-fabric` (Python ≥ 3.12) | `FABRIC_DWH_SERVER`, `FABRIC_DWH_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
 | `spark` | `dbt-fabricspark` | `FABRIC_WORKSPACE_ID`, `FABRIC_LAKEHOUSE_ID`, `FABRIC_LAKEHOUSE_NAME`, `FABRIC_AUTH`, `FILES_PATH` |
 
-The dataset is the `DATASET` env var (`aemo` | `nyc`, default `aemo`). Models are written per
-dialect under `models/<dataset>/{duckdb,dwh,spark}` and gated in `dbt_project.yml` so exactly
-one folder is enabled per (dataset, target) — `dbt parse --target <name>` verifies the gating
-offline, no credentials needed.
+The dataset is the `DATASET` env var (`aemo` | `nyc`, default `aemo`); models live per dialect
+under `models/<dataset>/{duckdb,dwh,spark}`, gated in `dbt_project.yml` so exactly one folder
+is enabled per (dataset, target) — `dbt parse --target <name>` verifies the gating offline, no
+credentials needed. Tests are six assertions on the mart, written once per dialect so every
+engine tests the output it just wrote; cross-engine agreement is the row-count parity table in
+CI, nothing else.
 
-Tests are deliberately minimal: six assertions on the mart tables (grain uniqueness, key
-uniqueness/nullability, a whitespace check on the join key), written once per dialect so every
-engine tests the output it just wrote. Every assertion compares a table to itself;
-cross-engine agreement is checked by the row-count parity table in CI, nothing else.
+**Where to read further:**
+
+- the [live dashboard](https://djouallah.github.io/direct-lake-parquet-layout/) — every run,
+  cost and speed per layout
+- [RETROSPECTIVE.md](RETROSPECTIVE.md) — what the exercise cost, and what would make it cheaper
+- [`fct_summary.sql`](models/aemo/duckdb/marts/fct_summary.sql) — the lab notebook: row-group
+  sweeps, sort keys, the delta-rs truncation measurement
+- [LEARNINGS.md](LEARNINGS.md) — dbt-adapter and engine war stories (*not* layout)
+- [TODO.md](TODO.md) — open questions, with the cost of answering each
+- [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
+- [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
