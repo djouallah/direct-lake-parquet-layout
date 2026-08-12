@@ -18,6 +18,16 @@ The short version, for anyone writing Delta tables that Power BI will read:
 The write-side cost is nearly negligible and the query-side effect is the largest single lever
 measured here.
 
+V-Order is a row-reordering plus encoding pass, and what the reordering is worth depends on
+**data skew**: wide tables full of repetitive, skewed categorical columns give it long runs to
+create; a narrow table of near-unique values gives it nothing. The writer behaves accordingly —
+measured on the dataset with heavy skew it reordered the most repetitive column massively, and
+on the dataset with nothing to reorder it left the physical row order untouched (within noise
+on every column) while still engaging its encodings and shrinking the files 16%. So you don't
+pay a reordering penalty on data that can't benefit: the writer is effectively deciding where
+the reordering is worth it, which is why "just turn it on" is safe advice rather than a
+trade-off to agonize over.
+
 - **Fabric Spark**: only the `readHeavyForPBI` resource profile enables V-Order — the workspace
   default `writeHeavy` sets it off, and `readHeavyForSpark` does not set it at all despite the
   name. Measured on the same data in the same file band, V-Order on vs off is **2.8× the
@@ -132,6 +142,25 @@ from Fabric's own Capacity Metrics model. Methodology detail:
 - [TODO.md](TODO.md) — open questions, with the cost of answering each
 - [docs/CI.md](docs/CI.md) — how CI runs this against Fabric, OIDC setup
 - [CLAUDE.md](CLAUDE.md) — the working rules, for anyone changing the project
+
+## Limitations
+
+This is two datasets, one query suite, one capacity — read the numbers as measurements, not
+laws:
+
+- **Two datasets** define the whole "surface" axis: one with almost no skew, one with a lot.
+  The rule that layout value tracks column count × categorical skew is drawn from exactly these
+  two points; your table sits somewhere else on that axis.
+- **One 25-query DAX suite** over one semantic model shape. A different workload weights the
+  columns — and therefore the sort key — differently.
+- **Some cells are thin.** The Warehouse V-Order-off result is a single run; several layout
+  groups on the dashboard hold one or two runs, where the median *is* the run. CU on a shared
+  capacity is noisy run to run: one dispatch measured 2,629 analytics CU on parquet
+  byte-identical to runs reading ~1,330–1,590, because the capacity was busy.
+- **The Spark V-Order pair compares resource profiles, not the encoder alone** —
+  `readHeavyForPBI` also changes `optimizeWrite` bin size, so file packing moves with it.
+- **Everything here is Direct Lake / VertiPaq.** A different reader (Spark, DuckDB, the SQL
+  endpoint) pays for parquet differently; these findings do not transfer to it.
 
 ## Run it yourself
 
