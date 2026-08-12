@@ -2,7 +2,7 @@
 
 Power BI **Direct Lake** opens a Delta table's parquet directly. The first (cold) query
 transcodes each parquet **row group into a VertiPaq segment, one to one**; every query after
-that scans the segments the transcode produced. So query latency — and, more importantly,
+that scans the segments the transcoding produced. So query latency — and, more importantly,
 **capacity-unit consumption** — is a property of how the parquet was written.
 
 This repo measures exactly that, on real Fabric capacity: two datasets, four writers producing
@@ -21,13 +21,13 @@ columnar OLAP engine scans this way.
    over 24. Treat "more row groups than the engine has threads" as a floor, not a formula — a
    strict `ceil(segments ÷ threads)` cost model was tested with a deliberate 8-segment run and
    does not hold.
-2. **Every segment carries a fixed cost** — its own dictionary, transcode and bookkeeping — so
+2. **Every segment carries a fixed cost** — its own dictionary, transcoding and bookkeeping — so
    segments want **millions of rows each**. The same DuckDB, same notebook, same SQL was
    **3.5× slower cold** (96,503 ms vs 27,785) when a library default of 122,880 rows per row
    group reached OneLake: 1,172 tiny segments instead of ~25.
 3. **Within a segment the scan is run-length driven.** VertiPaq inherits the parquet row order
-   at transcode, so sorted data gives long RLE runs in the resident columns — which is why
-   sorting speeds up warm and hot queries, not just the cold transcode. This is also what
+   during transcoding, so sorted data gives long RLE runs in the resident columns — which is why
+   sorting speeds up warm and hot queries, not just the cold transcoding. This is also what
    V-Order mechanically is: a row-reordering plus encoding pass at write time.
 
 Everything below is these three facts applied.
@@ -42,7 +42,7 @@ safe to leave on. Measured cost: ~8% of build compute CU (~14% on taxi); return:
 less analytics CU**.
 
 - **Fabric Spark**: only the `readHeavyForPBI` resource profile enables it — the default
-  `writeHeavy` sets it off, and `readHeavyForSpark` doesn't set it at all despite the name.
+  `writeHeavy` turns it off, and `readHeavyForSpark` doesn't set it at all despite the name.
   Same data, same file band: V-Order on vs off is 1,332 vs 3,769 analytics CU. (The profile
   also flips `optimizeWrite` to 1 GB bins, which on AEMO cut OneLake write CU to a third —
   the total write bill came out *cheaper* with V-Order on.)
