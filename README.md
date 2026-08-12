@@ -99,12 +99,14 @@ query time or CU. Sort for run lengths in the columns your queries touch; don't 
 
 Direct Lake remaps a parquet dictionary straight into VertiPaq's own — [documented][dl-perf] as
 a direct remapping of parquet data IDs to VertiPaq IDs when both sides are dictionary-encoded;
-a `PLAIN` column forces a re-encode from raw values at load. One 144M-row DOUBLE column
+a `PLAIN` column forces a re-encode from raw values at load. One 144M-row `DECIMAL(18,4)` column
 measured 618.6 MB `PLAIN` vs 423.1 MB dictionary-encoded — ~200 MB and a rebuild-at-load on a
-single column. Writers
-differ silently: Fabric's writers and delta-rs kept dictionaries everywhere; OSS-profile Spark
-and DuckDB's own parquet writer dropped them on the widest columns, exactly where it hurts —
-those are that engine's two most expensive layouts here.
+single column. Writers differ silently: Fabric's writers and delta-rs kept dictionaries
+everywhere; OSS-profile Spark and DuckDB's own parquet writer dropped them on the widest columns,
+exactly where it hurts — those are the two most expensive layouts here. Nothing warns you; read
+the encodings back out of the footer. The knob is per writer and never called the same thing:
+`dictionary_page_size_limit` bytes on delta-rs, `DICTIONARY_SIZE_LIMIT` distinct values on
+DuckDB — both below.
 
 ### A practical example: configuring the delta-rs writer
 
@@ -147,6 +149,78 @@ not on the reader. And the statistics stay minimal because Direct Lake
 table.
 
 [dr-layout]: https://djouallah.github.io/duckrun/parquet-layout.html
+
+### And with DuckDB's own writer, where the defaults cost the most
+
+DuckDB writing parquet directly is the worst measured layout in this repo, and both mechanics
+fail from the same [documented default][ddb-copy]: `ROW_GROUP_SIZE` is **122,880 rows**. That
+reached OneLake intact on the iceberg leg — 1,172 row groups, 122,851 rows each, **96,503 ms
+cold** against the same DuckDB in the same notebook writing through delta-rs at 27,785 ms.
+
+The second failure is downstream of the first, and it is the answer to "how do I keep every
+column dictionary-encoded": **`DICTIONARY_SIZE_LIMIT` defaults to `ROW_GROUP_SIZE / 5`** — 24,576
+distinct values at the default geometry. A column with more distinct values than that *inside one
+row group* falls back to `PLAIN`. That is exactly the column from rule #3: read back off this
+table's own footers, `mw` carries **0 dictionary pages across all 1,172 chunks** while every other
+column kept `PLAIN_DICTIONARY` — one column, one derived default, ~200 MB and a rebuild-at-load.
+
+```sql
+COPY (SELECT * FROM fct_summary ORDER BY date, time, price)  -- #2: sort is yours to do
+  TO 'fct_summary.parquet' (
+    FORMAT parquet,
+    COMPRESSION snappy,
+    ROW_GROUP_SIZE 6_000_000,                  -- #1: 122,880 is the default that cost 3.5×
+    DICTIONARY_SIZE_LIMIT 2_000_000,           -- #3: in DISTINCT VALUES, not bytes.
+                                               --     NEVER 0 — that DISABLES dictionaries
+    STRING_DICTIONARY_PAGE_SIZE_LIMIT 32_000_000,  -- the byte cap; both must clear (default 1 MB)
+    DATA_PAGE_SIZE_LIMIT 1_048_576             -- needs the next release, see below
+);
+```
+
+Raising the row group partly fixes the dictionary for free, since the limit is *derived* from it —
+at 6M rows the default limit becomes 1.2M distinct values — but set it explicitly, because the
+derivation is the trap: nobody tuning segment size expects to be changing column encodings. Two
+values worth not guessing at: `0` **disables** dictionary encoding rather than unbounding it, and
+the byte cap is separate, so a wide string column can still overflow at 1 MB while clearing the
+distinct-value limit.
+
+The whole mechanism reproduces offline in five lines — no Fabric, no capacity — and reading the
+encodings back is the only way to see any of it:
+
+```python
+import duckdb
+c = duckdb.connect()
+c.sql("create table t as select i::int id, (i%50000)::bigint mid from range(600000) tbl(i)")
+c.sql("copy t to 'a.parquet' (format parquet)")                              # defaults
+c.sql("copy t to 'b.parquet' (format parquet, row_group_size 600000)")       # one knob
+c.sql("select path_in_schema, any_value(encodings) from parquet_metadata('a.parquet') group by 1")
+```
+
+`a.parquet` writes `mid` as `PLAIN` — 50,000 distinct values against the derived 24,576 limit — and
+`b.parquet` recovers the dictionary having touched nothing but the row-group size. Do this against
+your own table before and after; the footer is the only channel that reports what you actually got.
+
+**Don't blanket-raise it, though**, and the same repro shows why: pushing
+`DICTIONARY_SIZE_LIMIT` past the *unique* `id` column's cardinality dictionary-encodes that too
+and the file grows 4.82 MB → 6.43 MB. A near-unique column's dictionary is as large as the data,
+which is why every writer here overflows to `PLAIN` eventually and should. Aim the limit at the
+mid-cardinality columns the default is silently losing, not at every column in the table.
+
+**The last gap closes in the next DuckDB release.** Data pages were split only at a hardcoded
+100 MB uncompressed threshold, "often producing a single huge page per column chunk";
+[duckdb#24645][ddb-pr] adds the `DATA_PAGE_SIZE_LIMIT` option above (merged 2026-08-10, motivated
+explicitly by downstream readers needing page-level granularity). The default stays 100 MB, so it
+has to be passed, and it is not in a release yet — DuckDB 1.5.5 answers
+`Unrecognized option "data_page_size_limit" for parquet`. It measures uncompressed bytes, which is
+why it needs no row-count backstop alongside it — unlike delta-rs, whose cap is checked on
+*encoded* bytes and therefore ships `data_page_row_count_limit` too.
+
+Neither geometry knob is reachable from dbt-duckdb, which is why the iceberg leg here is stuck at
+122,880 and stays the outlier: these are `COPY` options, and that adapter exposes no writer
+config at all.
+
+[ddb-copy]: https://duckdb.org/docs/current/sql/statements/copy.html
+[ddb-pr]: https://github.com/duckdb/duckdb/pull/24645
 
 ### What doesn't matter: file count and file size
 
@@ -278,3 +352,7 @@ this repo's own runs (`history/runs/`, the model-header sweep logs, the
   the delta-rs writer profile above, with the measured rationale per property (SNAPPY vs ZSTD,
   the dictionary-limit / merge-memory trade, page caps) and the black-box tuning loop against a
   Spark V-Order reference.
+- [DuckDB `COPY` parquet options](https://duckdb.org/docs/current/sql/statements/copy.html)
+  — every default quoted above: `ROW_GROUP_SIZE` 122,880, `DICTIONARY_SIZE_LIMIT`
+  `ROW_GROUP_SIZE / 5` (`0` disables), `STRING_DICTIONARY_PAGE_SIZE_LIMIT` 1 MB.
+  [duckdb#24645](https://github.com/duckdb/duckdb/pull/24645) adds `DATA_PAGE_SIZE_LIMIT`.
