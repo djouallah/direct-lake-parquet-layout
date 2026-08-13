@@ -1,0 +1,580 @@
+{
+ "dbt": {
+  "duckrun": {
+   "sort_by_auto": {
+    "fct_flights": [
+     "FlightDate",
+     "ArrDel15",
+     "DistanceGroup"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "false",
+  "build": "true",
+  "cores": "64",
+  "dataset": "bts",
+  "download_limit": "40",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "false",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "16BA1F6F-9A20-4704-A88E-1471C7731D87": {
+   "at": "2026-08-13T01:33:32+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_bts_landing",
+   "role": "landing"
+  },
+  "617A160D-26E0-4D73-A5FE-210842CB0802": {
+   "at": "2026-08-13T01:54:26+00:00",
+   "created": true,
+   "deleted": "2026-08-13T01:55:44+00:00",
+   "engine": "duckrun",
+   "kind": "Notebook",
+   "name": "dbt-duckrun-e990178e",
+   "role": "compute"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-13T01:47:45+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "BF749E55-2FD8-45A7-9CBF-B30CE181099D": {
+   "at": "2026-08-13T01:33:34+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_bts_landing",
+   "role": "sql_endpoint"
+  },
+  "ECE699EC-1A3D-4225-8745-8DABC2A547FA": {
+   "at": "2026-08-13T01:47:55+00:00",
+   "created": true,
+   "deleted": "2026-08-13T01:55:46+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_bts_delta",
+   "role": "output"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-13T01:33:30+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": "auto",
+    "row_group_size": "auto",
+    "sorted": "true",
+    "vcores": "64"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "duckrun": {
+    "AirTime": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 198.76,
+     "type": "DOUBLE"
+    },
+    "ArrDel15": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.14,
+     "type": "INT32"
+    },
+    "ArrDelay": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 227.45,
+     "type": "DOUBLE"
+    },
+    "ArrTime": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 232.57,
+     "type": "INT32"
+    },
+    "CRSDepTime": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 237.07,
+     "type": "INT32"
+    },
+    "CancellationCode": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.89,
+     "type": "BYTE_ARRAY"
+    },
+    "Cancelled": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.42,
+     "type": "INT32"
+    },
+    "DayOfWeek": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.05,
+     "type": "INT32"
+    },
+    "DepDel15": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 15.22,
+     "type": "INT32"
+    },
+    "DepDelay": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 220.44,
+     "type": "DOUBLE"
+    },
+    "DepTime": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 233.09,
+     "type": "INT32"
+    },
+    "Dest": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 189.77,
+     "type": "BYTE_ARRAY"
+    },
+    "Distance": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 236.28,
+     "type": "DOUBLE"
+    },
+    "DistanceGroup": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.87,
+     "type": "INT32"
+    },
+    "Diverted": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.4,
+     "type": "INT32"
+    },
+    "FlightDate": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.1,
+     "type": "INT32"
+    },
+    "Flight_Number_Reporting_Airline": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 278.38,
+     "type": "INT32"
+    },
+    "Origin": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 189.48,
+     "type": "BYTE_ARRAY"
+    },
+    "Reporting_Airline": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 90.98,
+     "type": "BYTE_ARRAY"
+    },
+    "Tail_Number": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 261.26,
+     "type": "BYTE_ARRAY"
+    },
+    "TaxiIn": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 145.71,
+     "type": "DOUBLE"
+    },
+    "TaxiOut": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 167.22,
+     "type": "DOUBLE"
+    },
+    "file": {
+     "chunks": 13,
+     "dict_pages": 13,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.01,
+     "type": "BYTE_ARRAY"
+    }
+   }
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "ece699ec-1a3d-4225-8745-8dabc2a547fa",
+    "item": "dbt_bts_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "landing": {
+   "files": 345,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.02
+    },
+    "parquet_raw/carrier": {
+     "files": 1,
+     "size_mb": 0.03
+    },
+    "parquet_raw/flights": {
+     "files": 343,
+     "size_mb": 2010.74
+    }
+   },
+   "guid": "16ba1f6f-9a20-4704-a88e-1471c7731d87",
+   "item": "dbt_bts_landing",
+   "size_mb": 2010.78
+  },
+  "ordering": {
+   "duckrun": {
+    "columns": {
+     "AirTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 0
+     },
+     "ArrDel15": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 844
+     },
+     "ArrDelay": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3792956
+     },
+     "ArrTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3931686
+     },
+     "CRSDepTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3972950
+     },
+     "CancellationCode": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 11,
+      "runs": 0
+     },
+     "Cancelled": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 15717
+     },
+     "DayOfWeek": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 282
+     },
+     "DepDel15": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 575554
+     },
+     "DepDelay": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3036401
+     },
+     "DepTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3941827
+     },
+     "Dest": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3790245
+     },
+     "Distance": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3790888
+     },
+     "DistanceGroup": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 8831
+     },
+     "Diverted": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 15607
+     },
+     "FlightDate": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 13,
+      "runs": 282
+     },
+     "Flight_Number_Reporting_Airline": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3887340
+     },
+     "Origin": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 3799333
+     },
+     "Reporting_Airline": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 2834269
+     },
+     "Tail_Number": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 0
+     },
+     "TaxiIn": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 0
+     },
+     "TaxiOut": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 13,
+      "runs": 0
+     },
+     "file": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 13,
+      "runs": 10
+     }
+    },
+    "sample": {
+     "file": "part-00000-d661e347-2a3e-477c-8fc9-d3b9323646c3-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.fct_flights",
+    "vorder_files": {
+     "files": 12,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "bts",
+   "id": "31657963059",
+   "sha": "2ced16ad6119a17fe03dc887dc6d7ad64021a468",
+   "written": "2026-08-13T01:55:09.365354+00:00"
+  },
+  "stats": {
+   "duckrun": {
+    "dim_carrier": {
+     "avg_row_group": 1778.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.04,
+     "total_rows": 1778,
+     "vorder": false
+    },
+    "dim_flight_date": {
+     "avg_row_group": 14610.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.08,
+     "total_rows": 14610,
+     "vorder": false
+    },
+    "fct_flights": {
+     "avg_row_group": 13881897.2,
+     "compression": "SNAPPY",
+     "num_files": 12,
+     "num_row_groups": 13,
+     "schema": "mart",
+     "size_mb": 2926.7,
+     "total_rows": 180464664,
+     "vorder": false
+    },
+    "stg_flights_archive_log": {
+     "avg_row_group": 344.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.02,
+     "total_rows": 344,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_flights_archive_log",
+   "dim_flight_date",
+   "dim_carrier",
+   "fct_flights"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-13T01:55:56+00:00",
+  "id": "31657963059",
+  "sha": "2ced16ad6119a17fe03dc887dc6d7ad64021a468",
+  "started": "2026-08-13T01:31:22+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/31657963059"
+ },
+ "schema": 1
+}
