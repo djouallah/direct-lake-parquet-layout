@@ -1093,7 +1093,7 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   adding it. Read the NEE bullet above before drawing conclusions from a run: execution-side semantic
   divergences, silent JVM fallback for unsupported operators, and V-Order behaviour still unstated.
   **It was off by default and is now on.** That is a deliberate change of what a bare dispatch
-  measures, not a finding: across seven spark runs NEE moves **nothing** — analytics CU 1,149 /
+  measures, not a finding: across seven spark runs NEE moves **nothing** — directlake CU 1,149 /
   1,306 / 1,480 with it on against 1,514 with it off under `readHeavyForPBI`, and the same file and
   row-group layout either way, which is why `LAYOUT_CONFIG` excludes it from the layout grouping in
   the first place. The default flipped because it is what a Fabric user gets by choosing the faster
@@ -1303,7 +1303,10 @@ Things that are load-bearing rather than stylistic:
   which is why every job's fragment is uploaded with `if-no-files-found: ignore` and the merge logs
   the item table it assembled.
 - **`role` is the closed vocabulary** — `landing` | `output` | `dwh_src` | `folder` | `compute` |
-  `semantic_model` — and it is what replaces name matching downstream. Adding an item kind means
+  `sql_endpoint` | `semantic_model` | `semantic_model_dq` | `bench_dl` | `bench_dq` — and it is what
+  replaces name matching downstream. The last four are the bench job's two measurement phases (the
+  Direct Lake and DirectQuery models and their shortcut lakehouses); the dashboard's role→class map
+  keys on exactly these spellings. Adding an item kind means
   adding a role, not teaching a matcher another substring.
 - **`benchmark/` does not import `.github/scripts/record.py`.** `deploy_models.py` writes its item
   ids through `report.merge(obj, path=os.environ["RUN_RECORD"])`, reusing the deep-merge it already
@@ -1403,11 +1406,21 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   correctness — nothing here writes — but because a concurrent dbt build contends for the same
   capacity, and capacity contention is the one thing a wall-clock benchmark cannot absorb. `resolve`
   therefore `needs: layout`. Do not parallelise it to make the run shorter.
-- **The test is: identical DAX, identical semantic models, four dbt adapters.** The adapter that
-  wrote the parquet is the only variable, so everything above it is held constant — ONE `.bim`, ONE
-  storage mode, one query suite. `deploy()` takes exactly one per-engine argument,
-  `lakehouse=`/`warehouse=` (from `engines.KIND`); `mode=` is `engines.DEPLOY_MODE`, a single constant
-  `"direct_lake"`, and **there is deliberately no per-engine `MODE` dict** — `test_templates.py`
+- **The test is: identical DAX, identical semantic models, four dbt adapters — measured in TWO
+  PHASES per engine.** The adapter that wrote the parquet is the only variable, so everything above
+  it is held constant — ONE `.bim`, one storage mode PER PHASE, one query suite. The Direct Lake
+  phase (`dl`, default) is THE ranking; the DirectQuery phase (`dq`) deploys the same `.bim` with
+  `mode=direct_query` under `<prefix><engine>_dq` and is a separate, never-blended column set.
+  Each phase binds to its own fresh SHORTCUT LAKEHOUSE (`<output item>_dl` / `_dq`, created by
+  `provision.py bench_prepare` with `Tables` shortcuts to the output item, deleted per phase by
+  `bench_drop`, roles `bench_dl`/`bench_dq`/`semantic_model_dq`) — OneLake bills a read against the
+  item HOSTING the shortcut, so each phase's storage transactions land on its own GUIDs instead of
+  mixing into the engine's ETL column, and the DQ endpoint's `SQL Endpoint Query` compute is the
+  phase's own item too. The dashboard's classes are therefore `etl` / `directlake` / `directquery`
+  (the class once called `analytics` is renamed; nothing on disk stored it). `deploy()` takes one
+  per-engine argument, `lakehouse=` (always — dwh's tables sit behind the same shortcuts); `mode=`
+  is `engines.DEPLOY_MODE` / `DEPLOY_MODE_DQ`, single constants per phase from `BENCH_PHASE`, and
+  **there is deliberately no per-engine `MODE` dict** — `test_templates.py`
   asserts one has not crept back. Requires duckrun ≥ 0.4.36 (the benchmark job pins that floor, above
   the repo's dbt floor of 0.4.35). Direct Lake is what makes a timing an answer about layout, and
   `directLakeOnly` means a query it cannot serve fails instead of falling back to the SQL endpoint and
@@ -1420,10 +1433,12 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   the dehydrate of the day was a **no-op that SUCCEEDED** rather than the failure the hot-only
   degradation watched for. Fifteen bogus "cold" samples were recorded, dwh entered the COLD totals, and the summary printed
   it the **cold winner** — 27,622 ms against duckrun's 63,437 — for never doing the work being measured.
-  Two kinds of number in one table will find a way into one comparison; the fix is to not produce both.
-  So: don't reintroduce a DirectQuery leg, and don't re-add a per-engine mode to make one possible. If
-  a pushdown-vs-Direct-Lake question ever needs answering, it is a different experiment and belongs in
-  its own run, not as a fourth column beside three layouts.
+  Two kinds of number in one table will find a way into one comparison; the fix is to keep them in
+  disjoint tables, enforced. That is what made the DQ phase admissible: `render_report.split_timings`
+  partitions on the `_dq` suffix before every ranking and side-by-side table, the DQ models rank only
+  against each other (`ranking_dq`, its own report section), and `render_summary.verify_ranking`
+  fails the job if a `_dq` model ever appears in the Direct Lake ranking. Do not weaken that
+  partition, and do not re-add a per-engine mode — the phase is the axis, never the engine.
   If anyone hand-authors a DirectQuery bim anyway rather than passing `mode=`, the old trap is still
   live: such a file must contain neither the camelCase Direct-Lake mode token nor a `onelake.dfs` URL
   **anywhere, prose included** — `_is_directlake_bim()` greps the raw bytes, so a `description` string
@@ -1593,7 +1608,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   anything ambiguous, a join to the app's lagging `'Items'` snapshot for names and kinds, and
   `sessionize()` guessing run boundaries from idle-hour gaps and repeated model names. All of it is
   deleted. Every item except `dbt_landing` is created and destroyed inside one run, so a GUID belongs
-  to exactly one run; the class (`etl` vs `analytics`) comes from the `role` **we** recorded, not from
+  to exactly one run; the class (`etl` vs `directlake` vs `directquery`) comes from the `role` **we** recorded, not from
   an item kind read out of a snapshot. There is no `shared` bucket any more, because nothing is left
   that cannot be attributed.
 - **THE REFRESH IS GONE, and the earlier claim that it was load-bearing is RETRACTED.** This file used
@@ -1653,7 +1668,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   one query covers everything still learnable and never more.
 - **A record must be built and benchmarked to reach the page**, and `incomplete()` skips anything
   else by name. Run 30743411308 is the live example: its `bench` job was skipped by the `needs` bug,
-  so it has an ETL half and no analytics, which on a chart reads as "querying spark was free". It
+  so it has an ETL half and no query half, which on a chart reads as "querying spark was free". It
   lives in `history/runs/legacy/`.
 - **A run that was never TORN DOWN renders WITH A CAVEAT, not rejected.** The creep is small and a
   missing column costs more than a caveated one, so `drifting()` marks such a run **still billing —
@@ -1676,8 +1691,9 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   `OneLake …` operation is storage, everything else is compute**, checked against every operation
   name on the capacity. A dash means no operation of that kind was billed there — an iceberg
   lakehouse is 40,832 CU of pure OneLake, because its compute is the notebook, a different item.
-  `analytics` is one bold row: a class is decomposed only when some column holds more than one
-  bucket.
+  a query class is one bold row until some column holds more than one
+  bucket — the classes are `etl` / `directlake` / `directquery` now, each query phase owning its
+  semantic model, its shortcut lakehouse and that lakehouse's endpoint.
 - **EVERY LAKEHOUSE HAS A PAIRED SQL ANALYTICS ENDPOINT, and it is a separate billable item.** Kind
   `Warehouse`, same display name, different GUID: `dbt_spark` 306.3 CU, `dbt_iceberg` 245.7,
   `dbt_delta` 278.9, `dbt_dwh_src` 54.5, all of it `SQL Endpoint Query`. It was invisible to the run
@@ -1702,7 +1718,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   "the table, then its chart", which was written for the bar charts, whose lengths were columns
   printed a block away and which could therefore only follow; this one answers AGAINST the table's
   ranking, so it introduces), one DOT per layout: cold ms across, warm ms up, both log, with
-  its AREA the analytics CU and its colour the writer. `chartSvg`, `barPath`, `groupRows` and the
+  its AREA the directlake CU and its colour the writer. `chartSvg`, `barPath`, `groupRows` and the
   `.bar` rules went with them.
   **The dot replaced a LINE** — each layout was a segment from its warm ms to its cold ms at the
   height of its CU, all three numbers in one mark, with the cold/warm trade readable as the LENGTH.
@@ -1710,7 +1726,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   decade on a log x, and nine of them are `delta_rs` at similar CU. The accepted cost is that the
   trade is a distance from the diagonal again rather than a length; CU moved to the area, which is
   the channel that survives crowding.
-  **`duckrun` LABELS TWO LAYOUTS — its CHEAPEST (by analytics CU) and its FASTEST (by `cold + warm`)**
+  **`duckrun` LABELS TWO LAYOUTS — its CHEAPEST (by directlake CU) and its FASTEST (by `cold + warm`)**
   (`LABEL_BEST_ONLY`) — nine labels in one cluster is the crowding the dots were adopted to fix,
   arriving back as text. Named, never a computed "engine with more than N dots", which would silently
   start suppressing spark's labels the day a fourth profile landed. **Two because cheap and fast are
@@ -1735,11 +1751,11 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   after seven deliberate 8-core dispatches. A new sort key or row-group band re-opens that gap;
   `TODO.md` has the recipe.
   They were `Capacity units per parquet layout` and `Capacity units per engine build`, stacked,
-  analytics first. **The reason is NOT that the build half stopped mattering** — it still carries
+  query CU first. **The reason is NOT that the build half stopped mattering** — it still carries
   the sharpest operational result here, **duckrun costs 1.8× at 64 cores for the same wall time**
-  (705s/13,083 CU at 32 against 692s/23,992 at 64), which the analytics keying structurally CANNOT
+  (705s/13,083 CU at 32 against 692s/23,992 at 64), which the layout keying structurally CANNOT
   show because both wrote identical parquet. It is that **both drew a figure the page already prints
-  as a figure one block away**: the analytics bar was the `CU` column of *Cost and speed by parquet
+  as a figure one block away**: the query-cost bar was the `CU` column of *Cost and speed by parquet
   layout*, the build bar the `etl` row of *Cost by engine*. A bar length is a worse way to read a
   number you can be told. **That no-loss claim is what to re-check before restoring one** — a test
   pins it, and a chart brought back for a number no table carries is a different argument from the
@@ -1798,7 +1814,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   **A GROUP'S NUMBER IS THE MEDIAN OF ITS RUNS, NOT THE MEAN — `groupMid`, and everything that
   summarises several runs goes through that one function** (`Cost and speed by layout`, the line
   chart and the mart rows are one measurement shown three times; deriving the middle separately is
-  how a page plots 1,582 above a row reading 1,781). Measured: run 30966983384 read **2,629.3** analytics CU
+  how a page plots 1,582 above a row reading 1,781). Measured: run 30966983384 read **2,629.3** directlake CU
   against 1,331.5, 1,577.1 and 1,586.7 for **byte-identical parquet** — 1 file, 9 RG, same sort —
   because its XMLA read billed 49s against ~33s and its model refresh took **28.4s against ~8s**.
   Nothing about the parquet makes a refresh 3.5× longer; the capacity was busy. Under a mean that one
@@ -1957,7 +1973,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   `benchmark.timings.<model>.<query>`, and `benchmark/render_report.py` renders it per dispatch — but
   a dispatch builds ONE engine, so that report always has a single column and its ranking is
   degenerate. The composed page is the only place the three tiers can be read ACROSS engines.
-  **Per LAYOUT** in the `Cost and speed by layout` table, beside the analytics CU — a group's median
+  **Per LAYOUT** in the `Cost and speed by layout` table, beside the directlake CU — a group's median
   over its runs, cheapest first, with a title and no commentary. **Per RUN** in the sources table,
   which is what actually measured them: one dispatch, against one semantic model it had just
   deployed. They used to be columns of the mart's LAYOUT block and are not any more: that made one
@@ -1982,7 +1998,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   seconds land close to the clock, while spark's five Livy REPLs under one session sum to more than
   the wall time anyone waited. Comparable freely between two runs of the SAME engine; across engines
   only knowing that.
-  **`analytics` gets no such row, deliberately** — the query half already reports latency properly as
+  **`directlake` and `directquery` get no such row, deliberately** — the query half already reports latency properly as
   the `cold`/`warm`/`hot` milliseconds beside the layout that produced them, and those are time a
   user actually waited. A second, differently-defined duration beside them would invite the two to be
   compared.
