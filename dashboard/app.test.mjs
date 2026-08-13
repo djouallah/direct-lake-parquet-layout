@@ -3967,9 +3967,11 @@ test("the generated table's build column is exactly compute + storage", () => {
   assert.deepEqual(r.rg.map(Math.round), [15_997_885, 15_997_885]);
   assert.match(prof.renderProfileTable([r]), /16\.0M/);
   // No vorder in the stats stub reads "no"; no encodings block reads a dash, never a verdict.
+  // A writeHeavy-only dataset still renders both sides of the pair — the readHeavyForPBI slot
+  // is a dash, so the cell says which side was measured.
   assert.equal(r.vorder, false);
   assert.equal(r.dict, null);
-  assert.match(prof.renderProfileTable([r]), /\| no \| — \|/);
+  assert.match(prof.renderProfileTable([r]), /\| — \/ no \| — \/ — \|/);
 });
 
 test("a run that built without a benchmark counts toward build but not directlake", () => {
@@ -3982,7 +3984,7 @@ test("a run that built without a benchmark counts toward build but not directlak
   assert.equal(r.nDirectlake, 0, "no semantic-model CU means no directlake sample, not a zero one");
   assert.equal(r.directlake, 0);
   // Printed as a dash, never as 0 — a zero there says querying it was free.
-  assert.match(prof.renderProfileTable([r]), /\*\*—\*\*/);
+  assert.match(prof.renderProfileTable([r]), /\*\*— \/ —\*\*/);
 });
 
 test("generations are not pooled — the largest wins, as on the page", () => {
@@ -4061,5 +4063,25 @@ test("a PLAIN fallback reads dict encoding NO even though the chunk kept a dicti
   const led = ledger({ A1: { "High Concurrency Session Livy Run": 100 } });
   const [r] = prof.profileRows([run], led);
   assert.equal(r.dict, false);
-  assert.match(prof.renderProfileTable([r]), /\| no \| no \|/);
+  assert.match(prof.renderProfileTable([r]), /\| — \/ no \| — \/ no \|/);
+});
+
+test("the pivot renders one row per dataset, with the ratios as columns instead of prose", () => {
+  const rows = [
+    { dataset: "aemo", profile: "readHeavyForPBI", build: 33_432, directlake: 1_514,
+      vorder: true, dict: true, rg: null, size: null },
+    { dataset: "aemo", profile: "writeHeavy", build: 35_310, directlake: 3_769,
+      vorder: false, dict: false, rg: null, size: null },
+  ];
+  const t = prof.renderProfileTable(rows);
+  assert.match(t, /\| aemo \| \*\*33,432 \/ 35,310\*\* \| \*\*1\.06×\*\* \| \*\*1,514 \/ 3,769\*\* \| \*\*2\.49×\*\* \| yes \/ no \| yes \/ no \| — \/ — \| — \/ — \|/);
+  assert.equal((t.match(/^\| aemo /gm) || []).length, 1, "the two profiles share one row");
+  assert.doesNotMatch(t, /builds at/, "the prose paragraph is replaced by the ratio columns");
+});
+
+test("a dataset with no profile pair renders dashes in both ratio columns", () => {
+  const rows = [{ dataset: "aemo", profile: "writeHeavy", build: 35_310, directlake: 3_769,
+    vorder: false, dict: null, rg: null, size: null }];
+  assert.match(prof.renderProfileTable(rows),
+    /\| aemo \| \*\*— \/ 35,310\*\* \| — \| \*\*— \/ 3,769\*\* \| — \|/);
 });
