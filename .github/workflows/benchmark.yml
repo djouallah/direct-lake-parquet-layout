@@ -615,7 +615,14 @@ jobs:
     name: land data
     needs: plan
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 30 was the value from the first commit, when landing meant copying AEMO CSV bytes to OneLake
+    # with no parse. bts is a different job: per month it fetches a zip, inflates it to 200-700 MB of
+    # CSV, decodes it, repairs it where BTS left EBCDIC behind, rewrites it as parquet and uploads —
+    # ~18 s/month measured, so 30 minutes bought ~100 months and cut run 31593455806 off mid-drain at
+    # exactly that. This is a free ubuntu runner on a public repo, so the cap is a hang guard and not
+    # a cost control; `fetch()` already bounds a wedged request at 600 s on its own. The paid jobs
+    # get 40-120 minutes, so the shortest timeout in the file was on the only job that spends nothing.
+    timeout-minutes: 120
     # No `outputs:`. This job used to export FILES_PATH for every leg to share; each leg now gets its
     # own from `provision.py <engine>`, pointing at the `Files/landing` shortcut in its own lakehouse
     # — which is what splits the landing read CU per engine. The FILES_PATH set here is the DIRECT
