@@ -211,7 +211,7 @@ on:
       # was filled. The three carry `auto` through the env when it is on, so one spelling means
       # "duckrun decides" for all of them and no knob can be half-applied.
       duckrun_auto:
-        description: "duckrun auto — pick the sort and row-group size automatically"
+        description: "duckrun auto"
         type: boolean
         default: true
 
@@ -231,7 +231,7 @@ on:
         type: boolean
         default: true
       skip_download:
-        description: "reuse the landed archive instead of fetching more"
+        description: "reuse the landed archive"
         type: boolean
         default: true
       download_limit:
