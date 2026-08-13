@@ -3904,6 +3904,10 @@ test("the generated table's build column is exactly compute + storage", () => {
   // avg row group is the MART's rows per row group, rendered in millions.
   assert.deepEqual(r.rg.map(Math.round), [15_997_885, 15_997_885]);
   assert.match(prof.renderProfileTable([r]), /16\.0M/);
+  // No vorder in the stats stub reads "no"; no encodings block reads a dash, never a verdict.
+  assert.equal(r.vorder, false);
+  assert.equal(r.dict, null);
+  assert.match(prof.renderProfileTable([r]), /\| no \| — \|/);
 });
 
 test("a run that built without a benchmark counts toward build but not analytics", () => {
