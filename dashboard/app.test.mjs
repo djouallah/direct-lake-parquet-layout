@@ -3879,13 +3879,13 @@ test("archiveTotals excludes duckrun's round-trip and falls back when there are 
 // the browser renders HTML, is the drift this repo already deleted `cu/dashboard.py` for.
 import * as prof from "./profile_table.mjs";
 
-const sparkRun = (file, profile, { size = 0, rows = 143_980_961 } = {}) =>
+const sparkRun = (file, profile, { size = 0, rows = 143_980_961, rgs = 0 } = {}) =>
   rec(file, "spark", {
     A1: { role: "output", name: "dbt_spark" },
     A2: { role: "semantic_model", name: "bench" },
   }, {
     config: { spark: { resource_profile: profile } },
-    stats: { spark: { "fct_summary": { total_rows: rows, size_mb: size } } },
+    stats: { spark: { "fct_summary": { total_rows: rows, size_mb: size, num_row_groups: rgs } } },
   });
 
 const sparkLedger = (compute, storage, analytics) => ledger({
@@ -3894,13 +3894,16 @@ const sparkLedger = (compute, storage, analytics) => ledger({
 });
 
 test("the generated table's build column is exactly compute + storage", () => {
-  const runs = [sparkRun("a-1.json", "writeHeavy", { size: 1_260.4 })];
+  const runs = [sparkRun("a-1.json", "writeHeavy", { size: 1_260.4, rgs: 9 })];
   const rows = prof.profileRows(runs, sparkLedger(29_323, 5_987, 3_769));
   assert.equal(rows.length, 1);
   const r = rows[0];
   assert.equal(r.compute + r.storage, r.build, "a row a reader adds up must add up");
   assert.equal(r.build, 35_310);
   assert.equal(r.analytics, 3_769);
+  // avg row group is the MART's rows per row group, rendered in millions.
+  assert.deepEqual(r.rg.map(Math.round), [15_997_885, 15_997_885]);
+  assert.match(prof.renderProfileTable([r]), /16\.0M/);
 });
 
 test("a run that built without a benchmark counts toward build but not analytics", () => {
