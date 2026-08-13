@@ -328,14 +328,14 @@ it is never staler than the ledger under it:
 | aemo | `readHeavyForSpark` | 2 | 30,049 | 1,882 | **31,931** | **3,088** | 61–63 |
 | aemo | `writeHeavy` | 4 / 3 | 29,323 | 5,987 | **35,310** | **3,769** | 67–68 |
 | bts | `writeHeavy` | 1 | 3,693 | 261 | **3,954** | **1,093** | 29 |
-| green | `readHeavyForPBI` | 1 / 0 | 169 | 22 | **191** | **—** | 16 |
+| green | `readHeavyForPBI` | 2 / 1 | 1,729 | 164 | **1,893** | **2,528** | 16 |
 | green | `writeHeavy` | 1 / 0 | 1,152 | 162 | **1,314** | **—** | 18 |
 | nyc | `readHeavyForPBI` | 1 | 11,614 | 454 | **12,068** | **5,968** | 59 |
 | nyc | `writeHeavy` | 1 | 10,465 | 587 | **11,052** | **8,726** | 60 |
 
 Medians per run, each dataset filtered to its largest source generation; `runs` is the count behind the build figures, and behind the analytics figure where the two differ. `build` is compute + storage, and `files written` counts every table the leg wrote, which is what the storage column is billed for.
 
-On **aemo**, `writeHeavy` builds at **1.06×** the cost of `readHeavyForPBI` and queries at **2.49×**. On **nyc**, `writeHeavy` builds at **0.92×** the cost of `readHeavyForPBI` and queries at **1.46×**.
+On **aemo**, `writeHeavy` builds at **1.06×** the cost of `readHeavyForPBI` and queries at **2.49×**. On **green**, `writeHeavy` builds at **0.69×** the cost of `readHeavyForPBI` and queries at **0.00×**. On **nyc**, `writeHeavy` builds at **0.92×** the cost of `readHeavyForPBI` and queries at **1.46×**.
 
 <!-- spark-profiles:end -->
 
