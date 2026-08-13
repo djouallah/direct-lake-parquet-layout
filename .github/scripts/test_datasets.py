@@ -48,7 +48,11 @@ def test_model_prefixes_agree():
 
 
 def _names(spec):
-    return list(spec["items"].values()) + [spec["landing"], spec["dwh_src"]]
+    # The bench job's per-phase shortcut lakehouses (`<output item>_dl` / `_dq`) are real items a
+    # run creates, so they are in the shadow check like everything else.
+    items = list(spec["items"].values())
+    return (items + [spec["landing"], spec["dwh_src"]]
+            + [f"{i}_{ph}" for i in items for ph in ("dl", "dq")])
 
 
 def test_no_two_datasets_share_or_shadow_an_item_name():
@@ -97,3 +101,45 @@ def test_the_mart_is_one_of_the_datasets_own_tables():
     # a mart that is not in TABLES would silently produce no ordering block at all.
     for name, spec in datasets.DATASETS.items():
         assert spec["mart"] in spec["tables"], f"{name}: mart is not in tables"
+
+
+def test_bench_lakehouse_names_agree_between_provision_and_engines():
+    # provision.py CREATES the per-phase shortcut lakehouses and benchmark/engines.py DEPLOYS the
+    # semantic models over them, each computing the name from its own copy of the item map — the
+    # same pinned-duplication discipline as test_item_names_agree, and a divergence is the same
+    # silent failure: a model deployed over an item that does not exist, or worse, someone else's.
+    for name, spec in datasets.DATASETS.items():
+        os.environ["DATASET"] = name
+        try:
+            for engine, item in spec["items"].items():
+                for ph in ("dl", "dq"):
+                    assert E.shortcut_lakehouse(engine, ph) == f"{item}_{ph}", \
+                        f"{name}/{engine}/{ph}: engines.shortcut_lakehouse diverged"
+        finally:
+            os.environ.pop("DATASET", None)
+
+
+def _bim_schemas(dataset):
+    """schema -> tables as the dataset's semantic-model template declares them, read as DATA —
+    benchmark/ stays import-free from here, and a .bim is a JSON file like any other."""
+    import json
+    templates = {"aemo": "fct_summary", "nyc": "fct_trips", "bts": "fct_flights",
+                 "green": "fct_green_trips"}
+    path = os.path.join(ROOT, "benchmark", f"{templates[dataset]}.SemanticModel", "model.bim")
+    with open(path, encoding="utf-8") as f:
+        bim = json.load(f)
+    out = {}
+    for t in bim["model"]["tables"]:
+        src = (t.get("partitions") or [{}])[0].get("source") or {}
+        if src.get("entityName"):
+            out.setdefault(src.get("schemaName"), set()).add(src["entityName"])
+    return out
+
+
+def test_table_schemas_agrees_with_every_semantic_model_template():
+    # provision.py builds the per-phase Tables shortcuts from table_schemas(); a table filed under
+    # the wrong schema is a shortcut pointing at a path that does not exist, discovered only when
+    # the deploy's readiness probe times out on paid capacity.
+    for name in datasets.DATASETS:
+        declared = {s: set(ts) for s, ts in datasets.table_schemas(name).items()}
+        assert declared == _bim_schemas(name), f"{name}: schema split differs from the template"

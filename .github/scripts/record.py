@@ -73,7 +73,11 @@ def item(guid, role, kind, name, **extra):
     """Record one Fabric item under its GUID.
 
     `role` is what replaces name matching downstream, so keep the vocabulary closed:
-    `landing` | `output` | `dwh_src` | `folder` | `compute` | `semantic_model`.
+    `landing` | `output` | `dwh_src` | `folder` | `compute` | `sql_endpoint` |
+    `semantic_model` | `semantic_model_dq` | `bench_dl` | `bench_dq`.
+    The last four are the bench job's two measurement phases — the Direct Lake and DirectQuery
+    semantic models and the per-phase shortcut lakehouses they read through; the dashboard's
+    role->class map keys on exactly these spellings.
     `kind` is Fabric's own item type (`Lakehouse`, `Warehouse`, `Notebook`, `SemanticModel`).
 
     A GUID is written down even when this run only FOUND the item (`created: false`) — `dbt_landing`

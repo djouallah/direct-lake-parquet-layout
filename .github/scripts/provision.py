@@ -5,6 +5,8 @@ $GITHUB_ENV). Diagnostics -> stderr.
 Usage:
   python provision.py land                 # the ONE shared landing lakehouse (holds Files)
   python provision.py {duckrun|iceberg|dwh|spark}   # that engine's OUTPUT item
+  python provision.py bench_prepare <engine>  # BOTH per-phase shortcut lakehouses for the bench job
+  python provision.py bench_drop {dl|dq}   # delete one phase's semantic model + lakehouse, mid-run
   python provision.py teardown <record>    # DELETE every item that record names, except landing
 
 The download happens once (in the `land` job) and every engine job provisions only its own output
@@ -82,6 +84,11 @@ KIND = {"lakehouses": "Lakehouse", "warehouses": "Warehouse", "folders": "Folder
 # Fabric creates a SQL analytics endpoint alongside every lakehouse and removes it with the
 # lakehouse, so attempting a DELETE would either fail or race the parent's. It is recorded — its CU
 # is real and belongs to its engine — and then left alone.
+#
+# The bench-phase roles (`bench_dl`, `bench_dq`, `semantic_model_dq` — see bench_drop) are
+# DELIBERATELY not in here: each phase deletes its own two items mid-run and stamps them `deleted`,
+# which is what makes teardown skip them; a phase whose delete failed left no stamp, so teardown is
+# the retry, and keeping the roles would remove exactly that backstop.
 TEARDOWN_KEEP = {"landing", "folder", "sql_endpoint"}
 
 # Every leg reads the landed CSVs through a `Files/landing` SHORTCUT to dbt_landing sitting in its
@@ -450,6 +457,122 @@ def ensure_landing_shortcut(item):
             r.raise_for_status()
     return f"{base}/{item}/Files/{LANDING_SHORTCUT}"
 
+
+def bench_lakehouse_name(engine, phase):
+    """The per-phase benchmark lakehouse: `<output item>_dl` / `<output item>_dq`.
+
+    Derived from the output item name so `benchmark/engines.py` can compute the same string without
+    importing this (test_datasets.py pins the two together). The two phases use DIFFERENT names on
+    purpose: the DL lakehouse is dropped mid-run and a same-named create would sit in the 409
+    display-name-reservation poll for minutes. `_dl`/`_dq` collide with no engine token and not with
+    `landing`, the two substrings the legacy cu/ matcher cared about.
+    """
+    if phase not in ("dl", "dq"):
+        raise SystemExit(f"unknown bench phase {phase!r}; use dl or dq")
+    return f"{datasets.item(engine, DATASET)}_{phase}"
+
+
+def _shortcut(host_id, path, name, target_id, target_path):
+    """Find-or-create one OneLake shortcut in `host_id`. Returns True if it exists afterwards,
+    False if Fabric refused the CREATE — the caller decides whether that is fatal (a per-table
+    fallback exists for the schema-level shape, nothing for the per-table one)."""
+    r = _req("GET", f"{FAB}/workspaces/{ws}/items/{host_id}/shortcuts/{path}/{name}")
+    if r.status_code == 200:
+        sys.stderr.write(f"  shortcut {path}/{name} exists in {host_id}\n")
+        return True
+    r = _req("POST", f"{FAB}/workspaces/{ws}/items/{host_id}/shortcuts",
+             json={"path": path, "name": name,
+                   "target": {"oneLake": {"workspaceId": ws, "itemId": target_id,
+                                          "path": target_path}}})
+    if r.status_code in (200, 201):
+        sys.stderr.write(f"  created shortcut {path}/{name} -> {target_path}\n")
+        return True
+    sys.stderr.write(f"  shortcut {path}/{name} refused ({r.status_code}): {r.text}\n")
+    return False
+
+
+def ensure_tables_shortcuts(host_id, engine):
+    """Shortcut every table the semantic model reads into `host_id`, schema by schema.
+
+    OneLake accounts a transaction against the REQUESTED PATH (see the `Files/landing` block above),
+    so a model reading through these shortcuts bills its reads to the item hosting them — which is
+    the entire reason the per-phase lakehouses exist. Schema-level shortcuts first (`Tables/<schema>`
+    as one shortcut); if Fabric refuses that shape, fall back to one shortcut per table from the
+    registry's `table_schemas()`, whose split is pinned against the `.bim` templates. Either way a
+    table the model needs but the shortcut cannot reach is fatal HERE, before any deploy spends.
+    """
+    kind = datasets.ENGINE_KIND[engine]
+    src_name = datasets.item(engine, DATASET)
+    src = find(kind, src_name)
+    if not src:
+        raise SystemExit(f"{src_name} does not exist — the {engine} build must run first")
+    for schema, tables in datasets.table_schemas(DATASET).items():
+        if _shortcut(host_id, "Tables", schema, src["id"], f"Tables/{schema}"):
+            continue
+        sys.stderr.write(f"  falling back to per-table shortcuts for schema {schema}\n")
+        for t in tables:
+            if not _shortcut(host_id, f"Tables/{schema}", t, src["id"], f"Tables/{schema}/{t}"):
+                raise SystemExit(f"could not shortcut {schema}.{t} into {host_id}")
+
+
+def bench_prepare(engine):
+    """Create BOTH per-phase lakehouses (+ shortcuts) up front, before the DL measurement.
+
+    Up front rather than each-on-demand is deliberate: the `_dq` phase queries through the
+    lakehouse's SQL analytics endpoint, which provisions asynchronously and then has to sync the
+    shortcut tables' metadata — giving it the whole DL phase to do that is what keeps the DQ
+    warm-up probe from being the thing that pays for the lag. Attribution stays clean either way
+    (it is per GUID), and the endpoint's small sync CU bills to the `_dq` item, i.e. honestly
+    inside the directquery class.
+
+    The DQ endpoint id is REQUIRED, not best-effort like `record_sql_endpoint`'s usual callers:
+    its `SQL Endpoint Query` CU is the DirectQuery compute itself, so a run that could not record
+    it would measure a phase whose main cost is attributed to nothing.
+    """
+    for ph in ("dl", "dq"):
+        name = bench_lakehouse_name(engine, ph)
+        lh = ensure("lakehouses", name, lh_payload, role=f"bench_{ph}")
+        ensure_tables_shortcuts(lh, engine)
+        if ph == "dq":
+            for _ in range(60):                        # ~10 minutes at 10s
+                if record_sql_endpoint(lh, name):
+                    break
+                time.sleep(10)
+            else:
+                raise SystemExit(f"{name}: SQL endpoint never provisioned — the DQ phase "
+                                 f"cannot be attributed without it")
+
+
+# Which record roles each phase's `bench_drop` owns. The model goes FIRST: it reads through the
+# lakehouse, and deleting its source out from under a live semantic model is the order that races.
+BENCH_PHASE_ROLES = {"dl": ("semantic_model", "bench_dl"),
+                     "dq": ("semantic_model_dq", "bench_dq")}
+
+
+def bench_drop(phase):
+    """Delete this phase's semantic model and lakehouse, reading the run-record FRAGMENT at
+    RUN_RECORD to learn their GUIDs — the same by-GUID-only property teardown has.
+
+    Failures WARN and exit 0: `drop_guid` writes no `deleted` stamp on a failure and none of these
+    roles is in TEARDOWN_KEEP, so the end-of-run teardown retries the delete and goes red if the
+    item is still standing. A red bench job here would only stop the DQ phase from measuring.
+    """
+    if phase not in BENCH_PHASE_ROLES:
+        raise SystemExit(f"unknown bench phase {phase!r}; use dl or dq")
+    src = os.environ.get("RUN_RECORD")
+    if not src:
+        raise SystemExit("bench_drop needs RUN_RECORD: without the fragment there is no record "
+                         "of what this phase created, and a name-driven delete is the failure "
+                         "teardown was built to avoid")
+    with open(src, encoding="utf-8") as f:
+        items = (json.load(f).get("items") or {})
+    order = {r: i for i, r in enumerate(BENCH_PHASE_ROLES[phase])}
+    todo = [(guid, it) for guid, it in items.items()
+            if it.get("role") in order and not it.get("deleted")]
+    for guid, it in sorted(todo, key=lambda kv: order[kv[1]["role"]]):
+        drop_guid(guid, it.get("name") or "?", it.get("kind") or "Item", it["role"])
+
+
 if mode == "teardown":
     # Deletes only, and nothing is printed to stdout — there is no env for a later job to read
     # because there is no later job. See teardown() and the module docstring.
@@ -497,6 +620,18 @@ elif mode == "dwh":
             "FABRIC_AUTH=CLI",
             f"FILES_PATH="
             f"{ensure_landing_shortcut(ensure('lakehouses', DWH_SRC, lh_payload, role='dwh_src'))}"]
+
+elif mode == "bench_prepare":
+    # Both per-phase shortcut lakehouses for one engine's bench job, before its DL measurement.
+    # Prints nothing to stdout — the names are derivable (bench_lakehouse_name) and the GUIDs go
+    # into the RUN_RECORD fragment like every other item.
+    bench_prepare(sys.argv[2])
+
+elif mode == "bench_drop":
+    # End of one bench phase: delete that phase's semantic model and lakehouse immediately, so the
+    # next phase (and the CU read) sees disjoint GUIDs. Warn-only on failure — teardown retries.
+    bench_drop(sys.argv[2])
+
 else:
     raise SystemExit(f"unknown mode {mode}")
 

@@ -68,6 +68,13 @@ DATASETS = {
         # `dataset: nyc` dispatch leaves `sort_by` at the aemo default. Kept here rather than read
         # from the manifest because the manifest only exists inside the notebook.
         "mart_columns": ["date", "time", "DUID", "mw", "price"],
+        # Which of `tables` dbt writes into the `landing` schema; the rest live in `mart`. The
+        # semantic-model templates read the same two schemas, and test_datasets.py pins this split
+        # against each template's own `schemaName` fields — provision.py builds the per-phase
+        # Tables shortcuts from it, and a table filed under the wrong schema is a shortcut pointing
+        # at a path that does not exist.
+        "landing_tables": ["stg_csv_archive_log", "fct_price", "fct_scada",
+                           "fct_price_today", "fct_scada_today"],
         "sort_by": "auto",
         "download": "download_aemo.py",
         "model_prefix": "aemo_",
@@ -94,6 +101,7 @@ DATASETS = {
         # when a dispatch leaves `sort_by` at the other dataset's key — `plan` refuses rather than
         # substituting, because a run that quietly measured a layout other than the one the form
         # described is exactly the failure that reshaped that field.
+        "landing_tables": ["stg_parquet_archive_log"],
         "sort_by": "auto",
         "download": "download_nyc_taxi.py",
         "model_prefix": "nyc_",
@@ -118,6 +126,7 @@ DATASETS = {
                          "tip_amount", "tolls_amount", "ehail_fee", "improvement_surcharge",
                          "total_amount", "payment_type", "trip_type", "congestion_surcharge",
                          "pickup_date", "file"],
+        "landing_tables": ["stg_green_archive_log"],
         "sort_by": "auto",
         "download": "download_green_taxi.py",
         "model_prefix": "green_",
@@ -138,6 +147,7 @@ DATASETS = {
                          "DepTime", "DepDelay", "DepDel15", "TaxiOut", "TaxiIn", "ArrTime",
                          "ArrDelay", "ArrDel15", "Cancelled", "CancellationCode", "Diverted",
                          "AirTime", "Distance", "DistanceGroup", "file"],
+        "landing_tables": ["stg_flights_archive_log"],
         "sort_by": "auto",
         "download": "download_bts_flights.py",
         "model_prefix": "bts_",
@@ -195,6 +205,18 @@ def engines(dataset=None):
     stats.py and benchmark/engines.py both key on."""
     items = spec(dataset)["items"]
     return [(e, items[e], ENGINE_KIND[e]) for e in ("duckrun", "iceberg", "spark", "dwh")]
+
+
+def table_schemas(dataset=None):
+    """schema -> the dataset's tables in it, for the two schemas dbt writes (`mart` + `landing`).
+
+    This is what provision.py builds the per-phase Tables shortcuts from, so it must agree with the
+    semantic-model template's own `schemaName` fields — test_datasets.py reads each `model.bim` as
+    data and asserts exactly that. Derived from `tables` minus `landing_tables` rather than stored
+    twice, so a new table added to the pipeline order cannot be forgotten here."""
+    s = spec(dataset)
+    landing = list(s["landing_tables"])
+    return {"mart": [t for t in s["tables"] if t not in landing], "landing": landing}
 
 
 if __name__ == "__main__":
