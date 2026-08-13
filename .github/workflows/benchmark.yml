@@ -168,10 +168,14 @@ on:
       # a plain Fabric session writes. readHeavyForPBI is the only profile that turns V-Order on, and
       # it also flips optimizeWrite to a 1 GB bin size — so it rewrites file layout well beyond
       # V-Order, which is why it is opt-in per dispatch rather than pinned in profiles.yml.
+      # `readHeavyForSpark` is deliberately NOT an option: despite the name it does not enable
+      # V-Order (the profile reference and our own in-session measurement agree), so it is neither
+      # the workspace default nor the PBI-optimised layout — its one measured run only blurred the
+      # two-way comparison, and `profile_table.mjs` already excludes it from the README table.
       spark_resource_profile:
         description: "spark write profile"
         type: choice
-        options: ["writeHeavy", "readHeavyForPBI", "readHeavyForSpark"]
+        options: ["writeHeavy", "readHeavyForPBI"]
         default: "writeHeavy"
       # ON by default: it is what a Fabric user gets by choosing the faster engine. Measured across
       # seven spark runs it moves NOTHING — same file and row-group layout either way — which is why
