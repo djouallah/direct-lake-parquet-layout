@@ -239,7 +239,8 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   cheapest duckrun layout is the slowest of its nine. A reader who meets the ranked table first has
   been told cheapest-is-best before the chart gets to disagree.
   The table follows immediately, unchanged and complete — one row per
-  layout, cheapest first: `cores`, `etl CU`, `analytics CU`, `cold ms`, `warm ms`, `hot ms` — build
+  layout, cheapest first: `cores`, `etl CU`, `directlake CU`, `directquery CU`, `cold ms`,
+  `warm ms`, `hot ms`, then the `dq *` tiers — build
   before query, the order the work happens in, with the tiers continuing left-to-right in their own
   order.
   **`cores` reports duckrun's vCores and dashes everyone else.** It is the only engine whose compute
@@ -248,8 +249,8 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   compute is the workspace Livy pool and dwh's is the warehouse, neither dispatched from here, and
   iceberg records a count but is not what the pinning exists for. The column also lets the header
   drop its `(8 vCores)` parenthetical, which could only ever have been right for some rows.
-  **Column order is not sort order**: the table is still RANKED by `analytics CU`, which no longer
-  leads the pair. Most of these
+  **Column order is not sort order**: the table is still RANKED by `directlake CU`, which no longer
+  leads the group. Most of these
   were columns of the mart's layout block, which made one table answer two questions — what the
   parquet looks like, and what querying it cost. *Table layout* is now physical layout alone and this
   is the other half. It has a title and no commentary. Built from the same `martPoints` as the chart
@@ -267,10 +268,14 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   from "never built at this size". Table and chart filter together on purpose — they are the same
   `martPoints`, and a section whose two halves disagreed about which layouts exist would be worse
   than either.
-  **THE TWO CU COLUMNS ARE NOT THE SAME KIND OF NUMBER, and only one of them summarises the whole
-  row.** `analytics CU` is what QUERYING the layout cost and is what the table is ranked by — it
+  **THE THREE CU COLUMNS ARE NOT THE SAME KIND OF NUMBER, and only one of them ranks the
+  row.** `directlake CU` is what QUERYING the layout through Direct Lake cost and is what the table
+  is ranked by — it
   belongs to the parquet, which is why every run in the group can be summarised into it. `etl CU` is
   what BUILDING it cost, and that belongs to the engine and the machine it was given.
+  `directquery CU` is the same suite as SQL-endpoint pushdown over the same tables — a property of
+  the endpoint far more than of the parquet, printed beside the others so that difference is
+  readable, never the ranking column, and its `dq *` tiers rank only against each other.
   **So `etl CU` is filtered to ONE core count and the header prints which** — `etl CU (8 vCores)`.
   `layoutKey` does not carry `vcores` (it is about the parquet, and duckrun writes the same files at
   every core count), so a layout group genuinely holds runs from several machines: measured on the
@@ -289,7 +294,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   [TODO.md](../TODO.md) has the recipe and the serialisation rule. `ETL_VCORES` is a constant that has to be kept in step with the dispatch default by
   hand.
 - **Under it, ONE SCATTER, and the mark is a DOT again.** Each layout is one dot: **cold ms across,
-  warm ms up, both axes log**, with **its AREA the analytics CU it cost** and **its colour the
+  warm ms up, both axes log**, with **its AREA the directlake CU it cost** and **its colour the
   writer**. Same `martPoints` and same `groupMid` as the table above, so the chart and the table
   cannot disagree about a number.
   **It replaced a LINE chart**, which drew each layout as a segment from its warm ms to its cold ms
@@ -329,7 +334,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   opposites.** The cheapest duckrun layout reads 1,569 CU and is the SLOWEST of the nine on both
   tiers (28,518 cold / 5,380 warm); the fastest (21,050 / 3,652) costs 1,571 — two CU more. One label
   would have shown whichever half of that a reader did not need.
-  **`cheapest` is lowest analytics CU**, which is the size channel, so that dot is also the smallest
+  **`cheapest` is lowest directlake CU**, which is the size channel, so that dot is also the smallest
   of its hue. **`fastest` is the lowest `cold + warm`** — the sum of the two axes it is plotted
   against, so it is the dot nearest the bottom-left corner and the pick is verifiable by looking at
   it. Same unit, so the sum needs no weighting, and it is a number a reader can add up from the
@@ -389,11 +394,11 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   One `<title>` per layout, on the dot itself — the mark a reader is pointing at — carrying the
   whole table row, `hot` and row-group size included.
 - **THE TWO CU BAR CHARTS ARE DELETED, and what they drew is not.** They were
-  `Capacity units per parquet layout` and `Capacity units per engine build`, stacked, analytics
+  `Capacity units per parquet layout` and `Capacity units per engine build`, stacked, query CU
   first. Removing them is not a judgement on the build half — that is still where the sharpest
   operational result on the page lives (duckrun costs 1.8x at 64 cores for the same wall time, which
-  the analytics keying structurally cannot show, because both runs wrote identical parquet). It is
-  that **both drew a figure the page already prints as a figure one block away**: the analytics bar
+  the layout keying structurally cannot show, because both runs wrote identical parquet). It is
+  that **both drew a figure the page already prints as a figure one block away**: the query-cost bar
   was the `CU` column of *Cost and speed by parquet layout*, the build bar was the `etl` row of
   *Cost by engine*. A bar length is a worse way to read a number you can simply be told.
   What went with them: `chartSvg`, `barPath`, `groupRows`, the `.bar`/`.bar-label` rules and four
@@ -501,8 +506,11 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   129,177 of `Warehouse Query` beside its own OneLake writes. **Every `OneLake …` operation is
   storage; everything else is compute.** A dash means no operation of that kind was billed there at
   all — an iceberg lakehouse is 40,832 CU of pure OneLake, because its compute is the notebook, a
-  different item. A class is only decomposed when some column holds more than one bucket, so
-  `analytics` stays a single bold row.
+  different item. A class is only decomposed when some column holds more than one bucket. The
+  classes are `etl`, `directlake` and `directquery` now — each query phase owns its semantic model,
+  the shortcut lakehouse it reads through, and that lakehouse's SQL endpoint (matched by name, the
+  same way the landing endpoint is), so the DQ phase's `SQL Endpoint Query` compute and its OneLake
+  reads land in `directquery` rather than in `etl`.
 - **Every lakehouse has a paired SQL analytics endpoint**, a separate billable `Warehouse` item with
   the same display name: `dbt_spark` 306.3 CU, `dbt_iceberg` 245.7, `dbt_delta` 278.9, all of it
   `SQL Endpoint Query`. It was invisible to the ledger until `provision.py` started recording it —
@@ -538,7 +546,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   **The MART block is the exception: its rows ARE the chart's bars**, same grouping and same members,
   which is what keeps a writer that produced two different shapes on two rows — `duckrun sorted` wrote
   3 files/26 RG and 4/25, which is two layouts and not one, and the `files`/`row groups` columns say
-  which is which. **The block is PHYSICAL LAYOUT ONLY**: the analytics CU and the three query tiers
+  which is which. **The block is PHYSICAL LAYOUT ONLY**: the directlake CU and the query tiers
   that used to sit beside the mart are now the *Cost and speed by layout* table above, so one table
   no longer answers both what the parquet looks like and what querying it cost. Rows are FEWEST FILES
   FIRST — it sorted by the CU column, and ordering by a column that is no longer printed is a ranking
@@ -612,7 +620,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   seconds land close to the clock; spark's five Livy REPLs under one session sum to more than the
   wall time anyone waited. Compare it freely between two runs of the same engine, across engines only
   knowing that.
-  **`analytics` gets no such row on purpose:** the query half already reports latency as the
+  **`directlake` and `directquery` get no such row on purpose:** the query half already reports latency as the
   `cold`/`warm`/`hot` milliseconds beside the layout that produced them, and those are time a user
   actually waited. A second, differently-defined duration next to them would invite a comparison.
   **COMPUTE seconds, never total**, which also makes the column reconcile against itself: `compute`
@@ -641,7 +649,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   cross-engine ranking the caveat withdraws. A number that needs a caveat belongs where the caveat
   can sit beside it — in the row label — not in a mark, where length alone reads as a ranking.
 - **A record has to be built and benchmarked to reach the page.** `incomplete()` skips anything else
-  and names why — a run with no benchmark shows an empty analytics column, which reads as "querying
+  and names why — a run with no benchmark shows an empty directlake column, which reads as "querying
   this engine was free" rather than "nobody measured it". The skipped records are **listed by file
   and reason in the sources section**, visible and never folded — they used to be only a count in
   the live status line, which the offline copy does not even have.

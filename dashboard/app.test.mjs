@@ -62,7 +62,7 @@ function block(html, heading) {
  * `[{writer, runs, cu}]` from *Cost and speed by parquet layout* — one entry per layout group, in
  * page order (cheapest first).
  *
- * THIS IS WHERE THE GROUPING SURFACES NOW. The analytics bar chart used to be the readable form of
+ * THIS IS WHERE THE GROUPING SURFACES NOW. The query-cost bar chart used to be the readable form of
  * `layoutGroups` + `groupMid`, and the tests below reached for its bar labels and values; the chart
  * is gone and the grouping is not, so they read the table that always carried the same numbers.
  */
@@ -70,7 +70,8 @@ function layoutTable(html) {
   return rows(block(html, "Cost and speed by parquet layout"))
     .map((r) => r.split("|").map((c) => c.trim()))
     .filter((c) => c.length > 7 && c[1] && c[1] !== "parquet writer")
-    // Column order is: writer, ordering, dictionary, rg size, MB, runs, cores, etl CU, analytics CU.
+    // Column order is: writer, ordering, dictionary, rg size, MB, runs, cores, etl CU, directlake CU,
+  // directquery CU.
     .map((c) => ({ writer: c[1], ordering: c[2], rgSize: c[4], runs: c[6],
       cores: c[7], etl: c[8], cu: c[9] }));
 }
@@ -200,10 +201,10 @@ test("the role decides the class, not the Fabric item kind", () => {
   })));
   assert.deepEqual(cells, {
     etl: { storage: 10.0, compute: 900.0 },
-    analytics: { compute: 40.0 },
+    directlake: { compute: 40.0 },
   });
   assert.equal(d.classTotal(cells, "etl"), 910.0);
-  assert.equal(d.classTotal(cells, "analytics"), 40.0);
+  assert.equal(d.classTotal(cells, "directlake"), 40.0);
 });
 
 test("landing CU is not on the page at all", () => {
@@ -312,7 +313,67 @@ test("seconds split by role exactly like CU", () => {
   });
   const { cells } = d.runCu(r, d.normaliseLedger(led), "seconds");
   assert.equal(d.classTotal(cells, "etl"), 30.0);
-  assert.equal(d.classTotal(cells, "analytics"), 4.0, "landing is skipped here as it is for CU");
+  assert.equal(d.classTotal(cells, "directlake"), 4.0, "landing is skipped here as it is for CU");
+});
+
+test("each bench phase's items class with their phase, endpoints included", () => {
+  // The two-phase attribution in one record: each phase owns its semantic model, its shortcut
+  // lakehouse, AND that lakehouse's SQL analytics endpoint — the endpoint carries the role
+  // `sql_endpoint`, so it is matched by NAME against the record's own bench_* items, exactly as
+  // `landingGuids` matches the landing endpoint. For the DQ phase this is not a rounding error:
+  // its `SQL Endpoint Query` CU IS the DirectQuery compute.
+  const r = rec("r-1.json", "spark", {
+    OUT: { role: "output", name: "dbt_spark" },
+    OEP: { role: "sql_endpoint", name: "dbt_spark" },        // the output item's own — stays etl
+    SEM: { role: "semantic_model", name: "aemo_spark" },
+    LHDL: { role: "bench_dl", name: "dbt_spark_dl" },
+    EPDL: { role: "sql_endpoint", name: "dbt_spark_dl" },
+    SEMDQ: { role: "semantic_model_dq", name: "aemo_spark_dq" },
+    LHDQ: { role: "bench_dq", name: "dbt_spark_dq" },
+    EPDQ: { role: "sql_endpoint", name: "dbt_spark_dq" },
+  });
+  assert.deepEqual(Object.fromEntries(d.benchEndpointClass(r)),
+    { EPDL: "directlake", EPDQ: "directquery" });
+  const { cells } = d.runCu(r, d.normaliseLedger(ledger({
+    OUT: { "High Concurrency Session Livy Run": 900.0 },
+    OEP: { "SQL Endpoint Query": 306.3 },
+    SEM: { "XMLA Read Operation": 40.0 },
+    LHDL: { "OneLake Read via Redirect": 12.0 },
+    EPDL: { "SQL Endpoint Query": 1.5 },
+    SEMDQ: { "XMLA Read Operation": 6.0 },
+    LHDQ: { "OneLake Read via Redirect": 20.0 },
+    EPDQ: { "SQL Endpoint Query": 500.0 },
+  })));
+  assert.deepEqual(cells, {
+    etl: { compute: 1206.3 },
+    directlake: { compute: 41.5, storage: 12.0 },
+    directquery: { compute: 506.0, storage: 20.0 },
+  });
+});
+
+test("benchTimings keeps the two models apart — DQ can no longer overwrite DL", () => {
+  // The bug this shape exists for: `benchTimings` used to flatten the model dimension, so a record
+  // holding `aemo_spark` and `aemo_spark_dq` merged them query by query, last one wins — pushdown
+  // times silently replacing the transcode times the whole page ranks by.
+  const r = full("a-1.json", "spark", { timings: timings({ q1: [10, 5, 4] }) });
+  r.benchmark.timings["aemo_spark_dq"] = timings({ q1: [900, 800, 700] });
+  const { dl, dq } = d.benchTimings(r);
+  assert.equal(dl.q1.cold_ms, 10, "the Direct Lake number survives");
+  assert.equal(dq.q1.cold_ms, 900, "and the DirectQuery one is its own set");
+});
+
+test("a run with DQ timings gets dq tier columns; one without gets dashes, not zeros", () => {
+  const withDq = full("a-1.json", "spark", { timings: timings({ q1: [10, 5, 4] }) });
+  withDq.benchmark.timings["aemo_spark_dq"] = timings({ q1: [900, 800, 700] });
+  const bare = full("b-2.json", "dwh", { timings: timings({ q1: [20, 6, 5] }) });
+  const { html } = d.compose([withDq, bare], ledger({ OUT: 1.0, SEM: 2.0 }), {});
+  const head = rows(block(html, "Every run on this page"))[0];
+  assert.ok(head.includes("| dq cold ms |"), `dq tiers are columns of the per-run table: ${head}`);
+  const body = rows(block(html, "Every run on this page")).slice(1);
+  const spark = body.find((x) => x.includes("spark"));
+  assert.ok(spark.includes("| 900 |"), `the dq cold sum on the row: ${spark}`);
+  const dwh = body.find((x) => x.includes("dwh"));
+  assert.ok(dwh.includes("—"), "no DQ model means dashes, never zeros");
 });
 
 test("still accruing is derived from the clock, not stored", () => {
@@ -686,7 +747,7 @@ test("the page renders end to end with charts and a layout", () => {
   const text = plain(out);
   const rr = rows(out);
   assert.ok(rr.some((r) => r.startsWith("| **etl** |")));
-  assert.ok(rr.some((r) => r.startsWith("| **analytics** |")));
+  assert.ok(rr.some((r) => r.startsWith("| **directlake** |")));
   // Bucket-major: the notebook's compute and the lakehouse's storage are separate rows, which is
   // where a DuckDB leg's cost actually goes.
   assert.ok(rr.some((r) => r.startsWith("| `compute` |") && r.includes("29,571.0")));
@@ -990,7 +1051,7 @@ test("the table says where the compute/storage split comes from", () => {
 });
 
 test("a class with one item per engine is not decomposed", () => {
-  // analytics is always exactly one semantic model per engine, so bucket rows there would repeat the
+  // a query class holding pure compute would repeat its subtotal, so bucket rows there would repeat the
   // subtotal and add a row of em dashes for every other engine. etl splits because a DuckDB leg really
   // is a notebook plus a lakehouse.
   //
@@ -1011,9 +1072,9 @@ test("a class with one item per engine is not decomposed", () => {
     OUT2: 34046.3, SEM2: 1514.0,
   }));
   const rr = rows(out);
-  const analytics = rr.find((r) => r.startsWith("| **analytics** |"));
-  assert.ok(analytics.includes("2,157.8") && analytics.includes("1,514.0"));
-  assert.ok(!plain(out).includes("semantic_model"), "no per-item analytics rows");
+  const directlake = rr.find((r) => r.startsWith("| **directlake** |"));
+  assert.ok(directlake.includes("2,157.8") && directlake.includes("1,514.0"));
+  assert.ok(!plain(out).includes("semantic_model"), "no per-item directlake rows");
   // etl still decomposes: duckrun is genuinely a notebook plus a lakehouse.
   assert.ok(rr.some((r) => r.startsWith("| `compute` |")));
   assert.ok(rr.some((r) => r.startsWith("| `storage` |")));
@@ -1049,7 +1110,7 @@ test("the sources table says which column is still billing", () => {
 });
 
 test("a run with no benchmark is rejected", () => {
-  // An empty analytics column reads as "querying this engine was free" rather than "nobody measured
+  // An empty directlake column reads as "querying this engine was free" rather than "nobody measured
   // it". Run 30743411308 is exactly this — the bench job was skipped by a needs bug.
   const r = full("a-1.json", "spark");
   r.benchmark = {};
@@ -1282,7 +1343,7 @@ test("the run table is the only filterable one, and renders whole without JS", (
   const { html } = d.compose([full("a-1.json", "spark")], ledger({ OUT: 12.5, SEM: 3.25 }), {});
   const runs = block(html, "Every run on this page");
   assert.ok(runs.includes('class="filtered"'), "the run table is marked for the autofilter");
-  assert.ok(runs.includes('data-menus="0,8"'), "menus on `column` and `state`");
+  assert.ok(runs.includes('data-menus="0,9"'), "menus on `column` and `state`");
   assert.ok(!runs.includes("<select") && !runs.includes("<input"),
     "and it emits no controls — `wireTables` builds them from the rows");
   assert.equal((html.match(/class="filtered"/g) || []).length, 1, "no other table gets one");
@@ -1290,7 +1351,7 @@ test("the run table is the only filterable one, and renders whole without JS", (
 });
 
 test("every run carries its own row-group count, and a run without one carries a dash", () => {
-  // The shape the row's analytics numbers were measured against, per run — the chart caption can
+  // The shape the row's query numbers were measured against, per run — the chart caption can
   // only say the bar's range. A dash when the run recorded no layout: unmeasured is not zero.
   const measured = lay("duckrun", 4, 27, { cfg: { vcores: "64" }, file: "a-1.json" });
   const bare = full("b-2.json", "spark",                        // stats carry no num_row_groups
@@ -1567,7 +1628,7 @@ test("a tier is summed over the queries every column has", () => {
     full("a-1.json", "duckrun", { timings: timings({ a: [10, 5, 4], b: [100, 50, 40] }) }),
     full("b-2.json", "dwh", { timings: timings({ a: [20, 6, 5] }) }),
   ];
-  const perCol = { duckrun: d.benchTimings(runs[0]), dwh: d.benchTimings(runs[1]) };
+  const perCol = { duckrun: d.benchTimings(runs[0]).dl, dwh: d.benchTimings(runs[1]).dl };
   const { totals, n } = d.benchTotals(perCol, "cold_ms");
   assert.equal(n, 1, "`b` is duckrun's alone and must not inflate its total");
   assert.deepEqual(totals, { duckrun: 10.0, dwh: 20.0 });
@@ -1588,16 +1649,16 @@ test("the three tiers are columns of the PER-RUN table, not of the layout block"
   // The LAYOUT block is physical layout only — no CU, no tiers.
   const rr = rows(block(out, "the mart the queries land on"));
   assert.ok(rr[0].startsWith("| layout | files | row groups |"), rr[0]);
-  assert.ok(!rr[0].includes("cold ms") && !/\| (analytics |etl )?CU/.test(rr[0]), rr[0]);
+  assert.ok(!rr[0].includes("cold ms") && !/\| (directlake |directquery |etl )?CU/.test(rr[0]), rr[0]);
   // Exactly two tables carry them, and neither is a layout block: the cost-and-speed table, one row
   // per layout, and the run table, one row per dispatch.
   const heads = rows(out).filter((r) => r.includes("cold ms"));
   assert.equal(heads.length, 2, `two headers carry the tiers: ${heads}`);
   assert.ok(heads.some((h) =>
-    /^\| parquet writer \| ordering \| dictionary \| row group size \| MB \| runs \| cores \| etl CU \| analytics CU \| cold ms \(\d+ q\)/
+    /^\| parquet writer \| ordering \| dictionary \| row group size \| MB \| runs \| cores \| etl CU \| directlake CU \| directquery CU \| cold ms \(\d+ q\)/
       .test(h)), heads[0]);
   assert.ok(heads.some((h) =>
-    h.includes("| etl CU | analytics CU | cold ms | warm ms | hot ms | items |")), heads[1]);
+    h.includes("| etl CU | directlake CU | directquery CU | cold ms | warm ms | hot ms | items |")), heads[1]);
   assert.ok(rows(out).some((r) => r.includes("| 30 | 11 | 9 |")), "the run's own tiers");
 });
 
@@ -1651,9 +1712,9 @@ test("the rate is a row of the engine table, not a section", () => {
     "the rate row adds no chart of its own");
 });
 
-test("etl carries a duration row and analytics deliberately does not", () => {
+test("etl carries a duration row and the query classes deliberately do not", () => {
   // "How long did the build take" is worth answering, and it rides the same Capacity Metrics row as
-  // the CU so it costs no extra query. `analytics` gets none: the query half already reports latency
+  // the CU so it costs no extra query. The query classes get none: the query half already reports latency
   // as cold/warm/hot milliseconds beside the layout, and those are time a user actually waited — a
   // second, differently-defined duration next to them would invite the two to be compared.
   const runs = [full("a-1.json", "spark")];
@@ -1803,7 +1864,7 @@ test("the rate is computed per class", () => {
   const rr = rows(out);
   assert.ok(rr.some((r) => r === "| **etl** | **900.0** |"));
   assert.ok(rr.some((r) => r === "| `compute CU per second` | 30.0 |"), "900 CU over 30 s");
-  assert.ok(rr.some((r) => r === "| **analytics** | **40.0** |"));
+  assert.ok(rr.some((r) => r === "| **directlake** | **40.0** |"));
   assert.ok(rr.some((r) => r === "| `compute CU per second` | 10.0 |"), "40 CU over 4 s");
   assert.ok(!charts(out).some((c) => /per second/.test(c.title)),
     "the rate adds no chart of its own");
@@ -2293,10 +2354,10 @@ test("the layout blocks sit behind a tab strip when more than one table renders"
 });
 
 test("the two CU bar charts are GONE, and their numbers are not", () => {
-  // They were `Capacity units per parquet layout` and `… per engine build`, analytics above ETL.
+  // They were `Capacity units per parquet layout` and `… per engine build`, query CU above ETL.
   // Removing them is not a judgement on the build half — that is still where the sharpest
   // operational result lives (duckrun costs 1.8x at 64 cores for the same wall time). It is that
-  // both drew a figure the page already PRINTS one block away: the analytics bar was the `CU`
+  // both drew a figure the page already PRINTS one block away: the query-cost bar was the `CU`
   // column of *Cost and speed by parquet layout*, the ETL bar the `etl` row of *Cost by engine*.
   // So this test is really the no-loss check — if either number ever stops being printed, restoring
   // a chart is a different argument from the one that removed these.
@@ -2304,7 +2365,7 @@ test("the two CU bar charts are GONE, and their numbers are not", () => {
   assert.ok(!/Capacity units per parquet layout|Capacity units per engine build/.test(plain(out)));
   assert.equal((out.match(/class="bar"/g) || []).length, 0, "no bar marks anywhere");
   assert.ok(!out.includes('<div class="charts">'), "and no wrapper left behind");
-  assert.equal(layoutTable(out)[0].cu, "2", "analytics CU is a table cell");
+  assert.equal(layoutTable(out)[0].cu, "2", "directlake CU is a table cell");
   assert.ok(rows(block(out, "Cost by engine")).some((r) => r.startsWith("| **etl** |")),
     "and the build CU is a table row");
 });
@@ -2341,7 +2402,7 @@ test("etl CU is computed at ONE core count, even while the column is hidden", ()
   const both = mid([at("8", "a-1.json", 1500, 9986), at("64", "b-2.json", 1500, 22547)]);
   assert.equal(both.n, 2, "one layout — both runs wrote the same parquet");
   assert.equal(both.etl, 9986, "the 8-core reading alone, never a blend with the 64-core one");
-  assert.equal(both.cu, 1500, "while analytics CU spans BOTH — that one belongs to the parquet");
+  assert.equal(both.cu, 1500, "while directlake CU spans BOTH — that one belongs to the parquet");
 
   // A LAYOUT NOBODY BUILT AT THIS SIZE IS ZERO here and a dash when printed — never a blend.
   assert.equal(mid([at("64", "c-3.json", 1500, 22547), at("32", "d-4.json", 1500, 13083)]).etl, 0);
@@ -2401,7 +2462,7 @@ test("a layout never built at ETL_VCORES leaves the section, and is NAMED as exc
   assert.equal(t.length, 1, "the 64-core-only layout is not a row");
   assert.equal(t[0].cu, "1,500", "the surviving row is the one built at 8");
   const head = rows(block(out, "Cost and speed by parquet layout"))[0];
-  assert.ok(/\| cores \| etl CU \| analytics CU \|/.test(head), `the column is SHOWN now: ${head}`);
+  assert.ok(/\| cores \| etl CU \| directlake CU \|/.test(head), `the column is SHOWN now: ${head}`);
   assert.equal(t[0].cores, "8", "and the row states the compute it was measured on");
   // NAMED, never silent — the same discipline the generation filter follows. A page quietly showing
   // a subset would read as "these are the layouts", which is the one thing it must not say.
@@ -2448,7 +2509,7 @@ test("cost and speed is one table, cheapest first, with a title and nothing else
   // is coarser than the parquet, since a group merged on RG band can still hold two file sizes.
   const head = rows(out).find((r) =>
     r.startsWith("| parquet writer | ordering | dictionary | row group size | MB | runs "
-    + "| cores | etl CU | analytics CU |"));
+    + "| cores | etl CU | directlake CU |"));
   assert.ok(head, "layout, the key, the size, the sample size, CU, then the tiers");
   // The count rides in the HEADER: each tier cell is a SUM over the suite, and the bare `cold ms`
   // read exactly like one query's time.
@@ -2596,7 +2657,7 @@ test("a still-billing drifter is a visible note, not a folded one", () => {
     "the drifter warning is not inside a <details>");
 });
 
-test("each run carries its own etl and analytics CU", () => {
+test("each run carries its own etl, directlake and directquery CU", () => {
   // The two halves used to sit a table away from the run that produced them. On the row that names
   // the dispatch, the build mode and whether the number has settled, they are qualified by the four
   // facts that qualify a CU figure.
@@ -2604,12 +2665,13 @@ test("each run carries its own etl and analytics CU", () => {
   const out = d.renderSources([{ col: "spark", engine: "spark", rec: r }], null,
     d.normaliseLedger(ledger({ OUT: 12.5, SEM: 3.25 })), "o/r");
   const head = rows(out)[0];
-  assert.ok(head.includes("etl CU") && head.includes("analytics CU"), head);
+  assert.ok(head.includes("etl CU") && head.includes("directlake CU")
+    && head.includes("directquery CU"), head);
   assert.ok(!/\|\s*CU\s*\|/.test(head),
     "the settle column is `state` — one header called CU beside two holding CU is doing two jobs");
   const row = rows(out).find((x) => x.startsWith("| spark |"));
   assert.ok(row.includes("| 12.5 |"), `etl total on the row: ${row}`);
-  assert.ok(row.includes("| 3.3 |"), `analytics total on the row: ${row}`);
+  assert.ok(row.includes("| 3.3 |"), `directlake total on the row: ${row}`);
 });
 
 test("a class the ledger has not read is a dash on the run row, never 0.0", () => {
@@ -2617,9 +2679,9 @@ test("a class the ledger has not read is a dash on the run row, never 0.0", () =
   // the one reading this page is built to prevent.
   const r = full("a-1.json", "spark");
   const out = d.renderSources([{ col: "spark", engine: "spark", rec: r }], null,
-    d.normaliseLedger(ledger({ OUT: 12.5 })), "o/r");       // no SEM => analytics unmeasured
+    d.normaliseLedger(ledger({ OUT: 12.5 })), "o/r");       // no SEM => directlake unmeasured
   const row = rows(out).find((x) => x.startsWith("| spark |"));
-  assert.ok(row.includes("—"), `unread analytics is a dash: ${row}`);
+  assert.ok(row.includes("—"), `unread directlake is a dash: ${row}`);
   assert.ok(!row.includes("| 0.0 |"), row);
 });
 
@@ -2704,7 +2766,7 @@ const twice = (engine, opts = {}) => [
 /** …and a second column, because one column is not a ranking and renders nothing at all. */
 const rival = () => own(lay("dwh", 78, 78, { file: "dwh-1.json" }), "dwh");
 const repeated = () => [...twice("duckrun"), rival()];
-// Both halves, because the section needs a RANKING to exist at all and only analytics is ranked now
+// Both halves, because the section needs a RANKING to exist at all and only the query CU is ranked now
 // — `cheapest to build` is gone, so an etl-only ledger renders no Analysis section whatever its
 // repeats say. The etl figures stay 100/120 so the measured floor is still 20/110 = 18.2%.
 const REPEAT = ledger({ Oduckrun1: 100, Oduckrun2: 120, Odwh: 300,
@@ -2841,7 +2903,7 @@ test("a tier nothing recorded produces no finding row", () => {
   const runs = [own(lay("duckrun", 4, 4, { file: "d-1.json" }), "d"),
     own(lay("spark", 11, 11, { file: "s-1.json", vorder: true }), "s")];
   const text = plain(analysis(render(runs, ledger({ Od: 100, Sd: 40, Os: 300, Ss: 90 }))));
-  assert.ok(text.includes("cheapest to query"), "the analytics ranking still stands");
+  assert.ok(text.includes("cheapest to query"), "the directlake ranking still stands");
   assert.ok(!text.includes("fastest cold"), "no timings, no tier ranking");
 });
 
@@ -3888,9 +3950,9 @@ const sparkRun = (file, profile, { size = 0, rows = 143_980_961, rgs = 0 } = {})
     stats: { spark: { "fct_summary": { total_rows: rows, size_mb: size, num_row_groups: rgs } } },
   });
 
-const sparkLedger = (compute, storage, analytics) => ledger({
+const sparkLedger = (compute, storage, directlake) => ledger({
   A1: { "High Concurrency Session Livy Run": compute, "OneLake Write via Redirect": storage },
-  A2: { "Query Scale-out": analytics },
+  A2: { "Query Scale-out": directlake },
 });
 
 test("the generated table's build column is exactly compute + storage", () => {
@@ -3900,7 +3962,7 @@ test("the generated table's build column is exactly compute + storage", () => {
   const r = rows[0];
   assert.equal(r.compute + r.storage, r.build, "a row a reader adds up must add up");
   assert.equal(r.build, 35_310);
-  assert.equal(r.analytics, 3_769);
+  assert.equal(r.directlake, 3_769);
   // avg row group is the MART's rows per row group, rendered in millions.
   assert.deepEqual(r.rg.map(Math.round), [15_997_885, 15_997_885]);
   assert.match(prof.renderProfileTable([r]), /16\.0M/);
@@ -3910,15 +3972,15 @@ test("the generated table's build column is exactly compute + storage", () => {
   assert.match(prof.renderProfileTable([r]), /\| no \| — \|/);
 });
 
-test("a run that built without a benchmark counts toward build but not analytics", () => {
+test("a run that built without a benchmark counts toward build but not directlake", () => {
   const runs = [sparkRun("a-1.json", "writeHeavy"), sparkRun("a-2.json", "writeHeavy")];
   const led = ledger({
     A1: { "High Concurrency Session Livy Run": 100, "OneLake Write via Redirect": 10 },
   });
   const [r] = prof.profileRows(runs, led);
   assert.equal(r.nBuild, 2);
-  assert.equal(r.nAnalytics, 0, "no semantic-model CU means no analytics sample, not a zero one");
-  assert.equal(r.analytics, 0);
+  assert.equal(r.nDirectlake, 0, "no semantic-model CU means no directlake sample, not a zero one");
+  assert.equal(r.directlake, 0);
   // Printed as a dash, never as 0 — a zero there says querying it was free.
   assert.match(prof.renderProfileTable([r]), /\*\*—\*\*/);
 });
@@ -3951,12 +4013,12 @@ test("landing CU never reaches the table", () => {
 
 test("the ratios are writeHeavy against readHeavyForPBI, per dataset", () => {
   const rows = [
-    { dataset: "aemo", profile: "readHeavyForPBI", build: 33_432, analytics: 1_514 },
-    { dataset: "aemo", profile: "writeHeavy", build: 35_310, analytics: 3_769 },
+    { dataset: "aemo", profile: "readHeavyForPBI", build: 33_432, directlake: 1_514 },
+    { dataset: "aemo", profile: "writeHeavy", build: 35_310, directlake: 3_769 },
   ];
   const q = prof.ratios(rows, "aemo");
   assert.ok(Math.abs(q.build - 1.056) < 0.001, `${q.build}`);
-  assert.ok(Math.abs(q.analytics - 2.489) < 0.001, `${q.analytics}`);
+  assert.ok(Math.abs(q.directlake - 2.489) < 0.001, `${q.directlake}`);
   assert.equal(prof.ratios(rows, "nyc"), null, "a dataset with no pair states nothing");
 });
 

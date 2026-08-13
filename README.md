@@ -62,17 +62,17 @@ count × categorical skew — not row count**: on the skewed 17-column taxi mart
 most repetitive column to 3,371× fewer runs; on the near-unique 5-column AEMO mart it left row
 order untouched and still shrank files 16%. It doesn't reorder what can't benefit, so it is
 safe to leave on. Measured cost: ~8% of build compute CU (~14% on taxi); return: up to **2.8×
-less analytics CU**.
+less directlake CU**.
 
 - **Fabric Spark**: only the `readHeavyForPBI` resource profile enables it — the default
   `writeHeavy` turns it off, and `readHeavyForSpark` doesn't set it at all despite the name.
-  Same data, same file band: V-Order on vs off is 1,332 vs 3,769 analytics CU. The profile also
+  Same data, same file band: V-Order on vs off is 1,332 vs 3,769 directlake CU. The profile also
   flips `optimizeWrite` to 1 GB bins, so on AEMO the *build* came out cheaper with V-Order on
   too — the default profile saves 7% of compute and spends 3.3× on OneLake writes to do it.
   [Second learning](#the-second-learning-the-write-optimised-profile-doesnt-optimise-the-write)
   has the numbers.
 - **Fabric Warehouse**: on by default — leave it. `ALTER DATABASE … SET VORDER = OFF` is
-  irreversible, and the one run measured with it off billed ~45% more analytics CU and wrote
+  irreversible, and the one run measured with it off billed ~45% more directlake CU and wrote
   16% larger files (n=1 — indicative, not settled).
 
 ## Writing with a third-party writer?
@@ -289,7 +289,7 @@ Read the numbers as measurements, not laws:
 - **One 25-query DAX suite** — a different workload weights the columns, and therefore the
   sort key, differently.
 - **Some cells are thin** — the Warehouse V-Order-off result is one run, and CU on a shared
-  capacity is noisy: one dispatch read 2,629 analytics CU on parquet byte-identical to runs
+  capacity is noisy: one dispatch read 2,629 directlake CU on parquet byte-identical to runs
   reading ~1,330–1,590.
 - **The Spark V-Order pair compares resource profiles**, not the encoder alone —
   `optimizeWrite` bin size moves with it.
@@ -322,7 +322,7 @@ it is never staler than the ledger under it:
 
 <!-- spark-profiles:start -->
 
-| dataset | profile | build | analytics | V-Order | dict encoding | avg row group | table size (MB) |
+| dataset | profile | build | directlake | V-Order | dict encoding | avg row group | table size (MB) |
 |---|---|---:|---:|---:|---:|---:|---:|
 | aemo | `readHeavyForPBI` | **33,432** | **1,514** | yes | yes | 12.0–16.0M | 4,344–4,350 |
 | aemo | `writeHeavy` | **35,310** | **3,769** | no | no | 10.3–11.1M | 5,748–5,752 |
@@ -344,12 +344,12 @@ published rather than inferred: Microsoft's [resource profile reference][ms-prof
 `readHeavyForPBI` `optimizeWrite.enabled: "true"` at `binSize: "1g"` while `writeHeavy` doesn't
 enable it and sets `binSize: "128"`. Few large coalesced writes against many small ones — which is
 also why the file counts separate. `readHeavyForSpark` is the same trap wearing a better name: a
-little cheaper to build, roughly twice the analytics CU, and it sets no V-Order at all.
+little cheaper to build, roughly twice the directlake CU, and it sets no V-Order at all.
 
 **Read the datasets apart rather than pooling them.** On aemo the storage penalty is large enough
 to make the "write-optimised" build the *dearer* one outright; on nyc it doesn't appear and
 `writeHeavy` genuinely does build cheaper. What survives both is the claim worth keeping: **the
-build saving is small and can be negative, while the analytics penalty is a multiple.** Either way
+build saving is small and can be negative, while the directlake penalty is a multiple.** Either way
 the total favours `readHeavyForPBI`.
 
 Note what this does *not* say. Capacity Metrics bills operation duration × capacity units and
