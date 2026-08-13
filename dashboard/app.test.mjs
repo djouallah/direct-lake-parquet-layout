@@ -3981,3 +3981,23 @@ test("readHeavyForSpark never reaches the table — it is neither side of the co
   const runs = [sparkRun("a-1.json", "readHeavyForSpark", { size: 5_690 })];
   assert.deepEqual(prof.profileRows(runs, sparkLedger(30_049, 1_882, 3_088)), []);
 });
+
+test("a PLAIN fallback reads dict encoding NO even though the chunk kept a dictionary page", () => {
+  // The overflow shape writeHeavy actually produces on mw/price and the taxi timestamps: the chunk
+  // has dictionary pages for what fit BEFORE the overflow, so dict_pages == chunks — and the data
+  // still fell back. Only the bare "PLAIN" in the encoding list says so.
+  const run = rec("a-1.json", "spark", {
+    A1: { role: "output", name: "dbt_spark" },
+  }, {
+    config: { spark: { resource_profile: "writeHeavy" } },
+    stats: { spark: { "fct_summary": { total_rows: 143_980_961, size_mb: 5_750 } } },
+  });
+  run.layout.encodings = { spark: {
+    date: { chunks: 9, dict_pages: 9, encodings: ["PLAIN_DICTIONARY", "RLE"] },
+    mw: { chunks: 9, dict_pages: 9, encodings: ["PLAIN", "PLAIN_DICTIONARY", "RLE"] },
+  } };
+  const led = ledger({ A1: { "High Concurrency Session Livy Run": 100 } });
+  const [r] = prof.profileRows([run], led);
+  assert.equal(r.dict, false);
+  assert.match(prof.renderProfileTable([r]), /\| no \| no \|/);
+});
