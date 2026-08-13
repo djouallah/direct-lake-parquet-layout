@@ -328,7 +328,8 @@ it is never staler than the ledger under it:
 | aemo | `readHeavyForSpark` | 2 | 30,049 | 1,882 | **31,931** | **3,088** | 61–63 |
 | aemo | `writeHeavy` | 4 / 3 | 29,323 | 5,987 | **35,310** | **3,769** | 67–68 |
 | bts | `writeHeavy` | 1 | 3,693 | 261 | **3,954** | **1,093** | 29 |
-| green | `writeHeavy` | 0 | 0 | 1 | **1** | **—** | 18 |
+| green | `readHeavyForPBI` | 1 / 0 | 169 | 22 | **191** | **—** | 16 |
+| green | `writeHeavy` | 1 / 0 | 1,152 | 162 | **1,314** | **—** | 18 |
 | nyc | `readHeavyForPBI` | 1 | 11,614 | 454 | **12,068** | **5,968** | 59 |
 | nyc | `writeHeavy` | 1 | 10,465 | 587 | **11,052** | **8,726** | 60 |
 
