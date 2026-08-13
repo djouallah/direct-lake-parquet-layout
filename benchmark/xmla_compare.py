@@ -775,7 +775,8 @@ def main():
 
     _load_adomd(adomd_dir)
     print(f"Workspace : {workspace}")
-    print(f"Engine    : {engine} -> {model} (written by {E.WRITER.get(engine, '?')})")
+    print(f"Engine    : {engine} -> {model} (written by {E.WRITER.get(engine, '?')}, "
+          f"phase {E.phase()})")
     # Think time is idle, so it costs no CU — but it is idle INSIDE the token's ~1 hour life, which
     # is the whole reason the workflow runs one job per engine. Say what it adds up to, so a raised
     # value that would run the token out is visible before the measurement rather than after.

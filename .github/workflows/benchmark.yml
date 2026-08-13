@@ -987,11 +987,12 @@ jobs:
       # measurement. The report names whichever engines are missing.
       fail-fast: false
       matrix: ${{ fromJSON(needs.resolve.outputs.matrix) }}
-    # 25 queries x `runs` passes, plus one idle gap and the deploy. `raw_scada_mw` transcodes a column
+    # TWO phases now — Direct Lake, then DirectQuery — each 25 queries x `runs` passes, plus one
+    # idle gap, two deploys and the phase-lakehouse provisioning. `raw_scada_mw` transcodes a column
     # of the largest table in the project, so this is not a small budget. It is billed Fabric
     # capacity: cancel a superseded run immediately, and scout with
     # `runs=3 think_seconds=0 gap_seconds=0` before committing to a full pass.
-    timeout-minutes: 120
+    timeout-minutes: 240
     env:
       # Narrowed to this engine: deploy_models.py deploys only it, and xmla_compare.py takes its
       # per-engine path — measure one model, write its timings, compute no ratios.
@@ -1011,9 +1012,9 @@ jobs:
         uses: actions/setup-python@v5
         with: {python-version: "3.11"}
 
-      # >=0.4.36 for Workspace.deploy(mode=), which is what lets the WAREHOUSE be read by Direct Lake
-      # like the three lakehouses instead of DirectQuery — so every leg measures a Delta layout
-      # rather than three layouts and one pushdown. (The repo's dbt floor is 0.4.35.)
+      # >=0.4.36 for Workspace.deploy(mode=), which decoupled the read mode from the item kind —
+      # both phases deploy the same .bim, `direct_lake` then `direct_query`, over that phase's
+      # shortcut lakehouse. (The repo's dbt floor is 0.4.35.)
       - name: ${{ matrix.engine }} — install deps
         run: pip install "duckrun>=0.4.36" pythonnet requests
 
@@ -1042,21 +1043,62 @@ jobs:
           echo "ADOMD_DIR=$proj/publish" >> "$GITHUB_ENV"
           echo "resolved ADOMD_DIR=$proj/publish"
 
-      # ONE semantic model, over this engine's own mart.fct_summary, from the ONE template:
-      # lakehouse=/warehouse= says which item holds the tables, mode= says how it is read. Direct
-      # Lake, so the deploy reframes and returns only once the model is live.
-      - name: ${{ matrix.engine }} — deploy semantic model
+      # BOTH per-phase shortcut lakehouses, up front: the DQ lakehouse's SQL analytics endpoint
+      # provisions asynchronously and then syncs the shortcut tables' metadata, so creating it
+      # before the DL measurement gives it that whole phase to become queryable. Attribution stays
+      # clean either way — it is per GUID — and every item lands in the record fragment, so each
+      # phase's drop below knows what to delete and the teardown retries whatever survived.
+      - name: ${{ matrix.engine }} — provision phase lakehouses + shortcuts
         run: |
           mkdir -p fragments record
-          python benchmark/deploy_models.py
+          python .github/scripts/provision.py bench_prepare ${{ matrix.engine }}
+
+      # ONE semantic model per phase, from the ONE template, bound to the PHASE's shortcut
+      # lakehouse (never the output item — OneLake bills reads to the item hosting the shortcut,
+      # which is what splits this phase's CU from the engine's ETL). Direct Lake, so the deploy
+      # reframes and returns only once the model is live.
+      - name: ${{ matrix.engine }} — deploy semantic model (Direct Lake)
+        run: python benchmark/deploy_models.py
 
       # No token re-mint needed: xmla_compare.py self-acquires the Power BI token via duckrun, which
       # re-exchanges a fresh OIDC assertion.
-      - name: ${{ matrix.engine }} — benchmark over XMLA
+      - name: ${{ matrix.engine }} — benchmark over XMLA (Direct Lake)
         env:
           PYTHONNET_RUNTIME: coreclr
           PYTHONUNBUFFERED: "1"   # non-TTY runner block-buffers stdout; stream the trace live
         run: python benchmark/xmla_compare.py
+
+      # Ends the phase: model first, then its lakehouse, both stamped `deleted` in the fragment so
+      # the teardown skips them. `continue-on-error` because a failed delete leaves no stamp and
+      # teardown IS the retry — a red step here would only cost the DQ measurement below.
+      - name: ${{ matrix.engine }} — drop the Direct Lake phase's items
+        if: always()
+        continue-on-error: true
+        run: python .github/scripts/provision.py bench_drop dl
+
+      # Same again for DirectQuery: same `.bim`, `mode=direct_query`, model `<prefix><engine>_dq`
+      # over the `_dq` lakehouse's SQL analytics endpoint. `!cancelled()` rather than the default —
+      # a Direct Lake failure must not cost the DirectQuery measurement, the same ethos as the
+      # non-fail-fast matrix. Its numbers render in their own report section, never in the ranking.
+      - name: ${{ matrix.engine }} — deploy semantic model (DirectQuery)
+        id: deploy_dq
+        if: ${{ !cancelled() }}
+        env:
+          BENCH_PHASE: dq
+        run: python benchmark/deploy_models.py
+
+      - name: ${{ matrix.engine }} — benchmark over XMLA (DirectQuery)
+        if: ${{ !cancelled() && steps.deploy_dq.outcome == 'success' }}
+        env:
+          BENCH_PHASE: dq
+          PYTHONNET_RUNTIME: coreclr
+          PYTHONUNBUFFERED: "1"
+        run: python benchmark/xmla_compare.py
+
+      - name: ${{ matrix.engine }} — drop the DirectQuery phase's items
+        if: always()
+        continue-on-error: true
+        run: python .github/scripts/provision.py bench_drop dq
 
       - name: ${{ matrix.engine }} — upload report fragment
         if: always()

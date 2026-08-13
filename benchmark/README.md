@@ -23,8 +23,8 @@ input there carries its own scheduled value; see the header of `benchmark.yml` b
 
 **The timings are not what the published page reports.** `cu/` measures what the querying *cost* in
 capacity units, and reads none of this directory's output — the engines are all fast, so the CU is
-the interesting number. This still has to RUN for that report to have an analytics side at all: the
-Direct Lake passes are what create the CU being measured.
+the interesting number. This still has to RUN for that report to have a query side at all: the
+Direct Lake and DirectQuery passes are what create the CU being measured.
 
 Ported from `djouallah/duckrun`'s `tests/parquet_layout/aemo/` (workflow `parquet_layout.yml`), which
 in turn says it came from the AEMO project's own `benchmark/` — so this is where it started.
@@ -86,14 +86,25 @@ there would make the benchmark quietly measure fewer rows on the tables it is co
 
 ### What is actually under test
 
-**Identical DAX, identical semantic models, four dbt adapters.** The adapter that wrote the parquet
-is the only variable, and everything above it is held constant on purpose: one `.bim`, one storage
-mode, one query suite. `deploy()` therefore takes exactly one per-engine argument:
+**Identical DAX, identical semantic models, four dbt adapters — twice.** The adapter that wrote the
+parquet is the only variable, and everything above it is held constant on purpose: one `.bim`, one
+storage mode *per phase*, one query suite. Each engine's bench job runs two self-contained PHASES —
+Direct Lake (`dl`, the ranking), then DirectQuery (`dq`, a separate never-blended column set) — each
+over a fresh shortcut lakehouse `provision.py bench_prepare` creates (`<output item>_dl` / `_dq`,
+`Tables` shortcuts to the output item), and each deleting its own model and lakehouse on the way out
+(`provision.py bench_drop`). OneLake bills a read against the item HOSTING the shortcut, so a
+phase's storage transactions land on its own GUIDs instead of mixing into the engine's ETL column.
+`deploy()` therefore takes exactly one per-engine argument:
 
 | knob | source | varies? |
 |---|---|---|
-| `lakehouse=` / `warehouse=` | `engines.KIND` | yes — which Fabric item holds the tables |
-| `mode=` | `engines.DEPLOY_MODE` | **no** — one constant, `direct_lake`, for every engine |
+| `lakehouse=` | `engines.shortcut_lakehouse` | yes — this phase's shortcut lakehouse, dwh included |
+| `mode=` | `engines.DEPLOY_MODE` / `DEPLOY_MODE_DQ` | **no** — one constant per phase, from `BENCH_PHASE` |
+
+The DQ model is `<prefix><engine>_dq`, so its timings key beside the DL model's in
+`benchmark.timings` and `render_report` partitions every ranking and side-by-side table on the
+suffix — a pushdown total can never place in the layout ranking (the lesson of the table below,
+kept enforceable by a test).
 
 Direct Lake is what makes the timing an answer about layout: a Delta→memory transcode (the cold pass)
 and an in-memory scan (warm, then hot), all shaped by how the files were written.
@@ -119,6 +130,13 @@ named it the **cold winner** — 27,622 against duckrun's 63,437 — for the sol
 cold tier to pay for. The ✔ went to the engine that never did the work being measured. (That
 dehydrate is gone — see *The session* below — but the lesson is about mixing two kinds of number in
 one table, and it stands.)
+
+**The DQ phase is that lesson applied, not reversed.** DirectQuery is back as a MEASUREMENT — all
+four engines, deliberately, as its own column set — and the partition is what makes it admissible:
+`render_report.split_timings` keeps `_dq` models out of every Direct Lake table and ranking, they
+rank only against each other in their own section, and `render_summary.verify_ranking` fails the
+job if one ever leaks. What the old setup did wrong was not measuring pushdown; it was letting a
+pushdown number compete in a transcode ranking.
 
 A warehouse's `Tables` are Delta in OneLake like any other item's — that is how `stats.py` has always
 read them — so the asymmetry was never about the storage, and it is gone. All four are Direct Lake,
@@ -339,9 +357,10 @@ cold number, that nothing dehydrates any more — and, replaying a whole session
 connection, that the only things touching the model between readiness and the end of pass 1 are the
 readiness probe and the suite itself, in order.
 [`test_templates.py`](test_templates.py) checks the `.bim` against duckrun's *own* repoint regexes and
-pins the deploy wiring: that `DEPLOY_MODE` is one constant duckrun's own `_normalize_mode` accepts and
-that no per-engine `MODE` has crept back, that `deploy_kwargs` pairs `warehouse=` with the warehouse
-item and `lakehouse=` with a lakehouse, and that exactly one template exists. Everything it asserts
+pins the deploy wiring: that `DEPLOY_MODE` and `DEPLOY_MODE_DQ` are single constants duckrun's own
+`_normalize_mode` accepts and
+that no per-engine `MODE` has crept back, that `deploy_kwargs` binds every engine to its phase's
+shortcut lakehouse with the phase's mode, and that exactly one template exists. Everything it asserts
 would otherwise fail at deploy time, after ADOMD.NET is installed and the workspace resolved — partway
 through a run that has already spent capacity on the engines before it.
 

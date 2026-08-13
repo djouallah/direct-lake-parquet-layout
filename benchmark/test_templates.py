@@ -157,28 +157,61 @@ def test_every_dax_reference_exists_in_the_model():
 
 # ------------------------------------------------------------------ storage mode is a premise
 
-def test_the_deploy_mode_is_one_constant_duckrun_accepts():
-    """`engines.DEPLOY_MODE` is a single string, not a per-engine dict: comparing physical layouts
-    requires that all four models be read the same way, so this is the premise of the benchmark
-    rather than a knob. Checked against duckrun's OWN normaliser — a typo raises inside duckrun
-    partway through a paid run, after ADOMD.NET is installed and the first models are deployed."""
+def test_the_deploy_mode_is_one_constant_per_phase_duckrun_accepts():
+    """`engines.DEPLOY_MODE` / `DEPLOY_MODE_DQ` are single strings, never a per-engine dict:
+    comparing engines requires that within a phase all four models be read the same way, so each
+    phase's mode is its premise rather than a knob. Checked against duckrun's OWN normaliser — a
+    typo raises inside duckrun partway through a paid run, after ADOMD.NET is installed and the
+    first models are deployed."""
     import engines as E
 
     assert isinstance(E.DEPLOY_MODE, str), "DEPLOY_MODE must be one mode for every engine"
     assert _normalize_mode(E.DEPLOY_MODE) == "direct" + "Lake"
+    assert isinstance(E.DEPLOY_MODE_DQ, str), "DEPLOY_MODE_DQ must be one mode for every engine"
+    assert _normalize_mode(E.DEPLOY_MODE_DQ) == "direct" + "Query"
     assert not hasattr(E, "MODE"), "per-engine MODE is gone: the mode is not a variable under test"
 
 
-def test_deploy_passes_warehouse_for_a_warehouse_and_lakehouse_otherwise():
-    """The only per-engine deploy argument. It follows the item's KIND, independent of the storage
-    mode since duckrun 0.4.36 — and passing `lakehouse=` for the warehouse item raises, which costs
-    a deploy failure partway through a run that has already spent capacity on the engines before it."""
+def test_deploy_binds_every_engine_to_its_phase_lakehouse(monkeypatch):
+    """The only per-engine deploy argument is WHICH shortcut lakehouse — always `lakehouse=`, dwh
+    included, because both phases read through the phase's shortcut lakehouse rather than the output
+    item (`provision.py bench_prepare` creates it; OneLake bills reads to the item hosting the
+    shortcut, which is the attribution this exists for)."""
     import deploy_models as D
 
-    assert D.deploy_kwargs({"item": "dbt_delta", "kind": "lakehouses"}) == {
-        "lakehouse": "dbt_delta", "mode": "direct_lake"}
-    assert D.deploy_kwargs({"item": "dbt_dwh", "kind": "warehouses"}) == {
-        "warehouse": "dbt_dwh", "mode": "direct_lake"}
+    monkeypatch.delenv("DATASET", raising=False)
+    monkeypatch.delenv("BENCH_PHASE", raising=False)
+    assert D.deploy_kwargs("duckrun", "dl") == {
+        "lakehouse": "dbt_delta_dl", "mode": "direct_lake"}
+    assert D.deploy_kwargs("dwh", "dl") == {
+        "lakehouse": "dbt_dwh_dl", "mode": "direct_lake"}
+    assert D.deploy_kwargs("duckrun", "dq") == {
+        "lakehouse": "dbt_delta_dq", "mode": "direct_query"}
+    assert D.deploy_kwargs("dwh", "dq") == {
+        "lakehouse": "dbt_dwh_dq", "mode": "direct_query"}
+    # And the phase defaults to the env, so the workflow's BENCH_PHASE reaches the deploy unchanged.
+    monkeypatch.setenv("BENCH_PHASE", "dq")
+    assert D.deploy_kwargs("spark") == {"lakehouse": "dbt_spark_dq", "mode": "direct_query"}
+
+
+def test_model_names_and_phases_round_trip(monkeypatch):
+    """`model_name` appends `_dq` only for the DQ phase, `is_dq` reads it back, and `engine_of`
+    keeps the suffix — `aemo_spark_dq` labels its own column as `spark_dq` everywhere the render
+    layer derives labels from model names."""
+    import engines as E
+
+    monkeypatch.delenv("DATASET", raising=False)
+    monkeypatch.delenv("BENCH_PHASE", raising=False)
+    assert E.model_name("spark", "dl") == "aemo_spark"
+    assert E.model_name("spark", "dq") == "aemo_spark_dq"
+    assert E.model_name("spark") == "aemo_spark", "no BENCH_PHASE means the Direct Lake phase"
+    monkeypatch.setenv("BENCH_PHASE", "dq")
+    assert E.model_name("spark") == "aemo_spark_dq"
+    assert E.is_dq("aemo_spark_dq") and not E.is_dq("aemo_spark")
+    assert E.engine_of("aemo_spark_dq") == "spark_dq"
+    monkeypatch.setenv("BENCH_PHASE", "warm")
+    with pytest.raises(SystemExit):
+        E.phase()
 
 
 def test_there_is_exactly_one_template_per_dataset():

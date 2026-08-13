@@ -70,7 +70,9 @@ def _ratio(v):
 def s1_header(rep):
     run = rep.get("run", {})
     inp = run.get("inputs", {})
-    tim = rep.get("timings", {})
+    # DL models only, throughout: the DirectQuery phase has its own trailing section, and letting
+    # its models into `got` would hide a missing Direct Lake engine whenever its DQ half reported.
+    tim, dq = rr.split_timings(rep.get("timings", {}))
     w("# Specialist findings — engine query benchmark")
     w()
     w(f"- run `{run.get('run_id')}` · sha `{run.get('sha')}` · {run.get('date')}")
@@ -110,6 +112,10 @@ def s1_header(rep):
         w(f"- ⚠ **the hot-only ladder filtered a DIFFERENT {_ladder_label(rep)} per engine** — "
           + ", ".join(f"`{lbl(m)}`→`{d}`" for m, d in sorted(tds.items()))
           + ". The `sel_1*` ladder rows are not comparable; pin `BENCH_TOP_DUID` and re-run.")
+        w()
+    if dq:
+        w(f"- DirectQuery context measured for {', '.join(sorted(lbl(m) for m in dq))} — "
+          f"see §5. Those numbers are SQL-endpoint pushdown and never enter the ranking above.")
         w()
 
 
@@ -234,6 +240,30 @@ def s4_spread(rep, models):
     w()
 
 
+def s4b_dq(rep, analysis):
+    """The DirectQuery phase's totals — its OWN section, after everything Direct Lake.
+
+    Same table shape as §1, disjoint models, `ranking_dq`: a pushdown total must never place in the
+    layout ranking, and giving it a section instead of a column is what enforces that visually."""
+    ranking = analysis.get("ranking_dq", {})
+    if not ranking:
+        return
+    w("## 5. DirectQuery context (never ranked against Direct Lake)")
+    w()
+    w("<sub>Same `.bim` deployed with `mode=direct_query` over the phase's own shortcut lakehouse — "
+      "every query is SQL-endpoint pushdown. cold/warm/hot stay pass positions, but with no "
+      "VertiPaq store they measure cache and session effects, not transcode, so these rows rank "
+      "only against each other.</sub>")
+    w()
+    w("| metric | rank | engine | total ms | × fastest | query wins |")
+    w("|:--|--:|:--|--:|--:|--:|")
+    for metric, _k, _s in rr.METRICS:
+        for r in ranking.get(metric, []):
+            w(f"| {metric} | {r['rank']} | {r['engine']} | {_ms(r['total_ms'])} | "
+              f"{_ratio(r['x_fastest'])} | {r['query_wins']} |")
+    w()
+
+
 def s5_pointers(rep):
     w("## 4. Raw")
     w()
@@ -268,23 +298,33 @@ def verify_ranking(rep, analysis):
                      + ", ".join(f"{lbl(m)}={d}" for m, d in sorted(tds.items()))
                      + ") — the sel_1* rows are not comparable; pin BENCH_TOP_DUID")
 
-    for metric, key, _sk in rr.METRICS:
-        ranking = analysis.get("ranking", {}).get(metric) or []
-        if not ranking:
-            continue
-        totals = [r["total_ms"] for r in ranking]
-        if totals != sorted(totals):
-            shown = ", ".join("{}={:,.0f}".format(r["engine"], r["total_ms"]) for r in ranking)
-            errs.append(f"{metric}: ranking is not ordered by total ({shown})")
-            continue
-        fastest = ranking[0]
-        if fastest["x_fastest"] not in (None, 1.0):
-            errs.append(f"{metric}: rank 1 ({fastest['engine']}) has "
-                        f"x_fastest={fastest['x_fastest']}, must be 1.0")
-        for r in ranking[1:]:
-            if r["x_fastest"] is not None and r["x_fastest"] < 1.0:
-                errs.append(f"{metric}: {r['engine']} is ranked behind {fastest['engine']} but "
-                            f"x_fastest={r['x_fastest']} < 1")
+    # Both rankings, same invariants: `ranking_dq` is derived by the same rank() over the DQ
+    # models, and a DirectQuery table naming the slower engine the winner is exactly as bad.
+    for rk in ("ranking", "ranking_dq"):
+        tag = "" if rk == "ranking" else " (DQ)"
+        for metric, key, _sk in rr.METRICS:
+            ranking = analysis.get(rk, {}).get(metric) or []
+            if not ranking:
+                continue
+            totals = [r["total_ms"] for r in ranking]
+            if totals != sorted(totals):
+                shown = ", ".join("{}={:,.0f}".format(r["engine"], r["total_ms"]) for r in ranking)
+                errs.append(f"{metric}{tag}: ranking is not ordered by total ({shown})")
+                continue
+            fastest = ranking[0]
+            if fastest["x_fastest"] not in (None, 1.0):
+                errs.append(f"{metric}{tag}: rank 1 ({fastest['engine']}) has "
+                            f"x_fastest={fastest['x_fastest']}, must be 1.0")
+            for r in ranking[1:]:
+                if r["x_fastest"] is not None and r["x_fastest"] < 1.0:
+                    errs.append(f"{metric}{tag}: {r['engine']} is ranked behind "
+                                f"{fastest['engine']} but x_fastest={r['x_fastest']} < 1")
+    # No DQ model may appear in the Direct Lake ranking — the partition IS the admissibility rule.
+    for metric, rows in (analysis.get("ranking") or {}).items():
+        for r in rows or []:
+            if str(r.get("engine", "")).endswith("_dq"):
+                errs.append(f"{metric}: DirectQuery model {r['engine']} leaked into the "
+                            f"Direct Lake ranking")
 
     # summed marginal PROBE cost vs the aggregate COLD ranking — advisory only.
     cc = analysis.get("cold_column_cost", {})
@@ -312,12 +352,14 @@ def main():
         rep = json.load(f)
 
     analysis = rep.get("analysis") or rr.compute_analysis(rep)
-    models = rr._order(list(rep.get("timings", {})))
+    dl, _dq = rr.split_timings(rep.get("timings", {}))
+    models = rr._order(list(dl))
 
     s1_header(rep)
     s2_ranking(rep, analysis)
     s3_cold_decomp(rep, analysis, models)
     s4_spread(rep, models)
+    s4b_dq(rep, analysis)
     s5_pointers(rep)
 
     text = "\n".join(OUT) + "\n"

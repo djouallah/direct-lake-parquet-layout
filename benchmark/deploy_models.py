@@ -7,25 +7,34 @@ removed rather than left configurable.
 
 `ws.deploy()` takes two arguments here, and only the first varies:
 
-  `lakehouse=` / `warehouse=`  — WHICH item holds the tables, from the item's kind (engines.KIND).
-                                 duckrun raises rather than silently pointing elsewhere if the wrong
-                                 one is passed.
-  `mode=`                      — HOW it is read: `engines.DEPLOY_MODE`, one constant, Direct Lake.
-                                 duckrun rewrites every table to an entity partition over one
-                                 AzureStorage.DataLake expression on the item's OneLake root and sets
+  `lakehouse=`                 — WHICH item holds the tables: this phase's SHORTCUT LAKEHOUSE
+                                 (`engines.shortcut_lakehouse`, created by `provision.py
+                                 bench_prepare`), never the output item itself. OneLake bills a
+                                 transaction against the item hosting the shortcut, so the phase's
+                                 reads land on its own GUID instead of mixing into the engine's ETL
+                                 column — and every deploy target is a lakehouse now, dwh included,
+                                 since its warehouse Tables sit behind the same shortcuts.
+  `mode=`                      — HOW it is read: one constant per phase (engines.DEPLOY_MODE /
+                                 DEPLOY_MODE_DQ, from BENCH_PHASE). For Direct Lake duckrun rewrites
+                                 every table to an entity partition over one AzureStorage.DataLake
+                                 expression on the item's OneLake root and sets
                                  directLakeBehavior=directLakeOnly, so a query Direct Lake cannot
                                  serve FAILS rather than falling back to the SQL endpoint and logging
-                                 a pushdown time that would read as a slow layout.
+                                 a pushdown time that would read as a slow layout. For DirectQuery it
+                                 rewrites the same tables to Sql.Database partitions over the
+                                 shortcut lakehouse's SQL analytics endpoint — same `.bim`, no
+                                 second template, and duckrun skips the post-deploy refresh a DQ
+                                 model cannot take (`warm_up`'s probe is what decides readiness).
 
 Requires duckrun >= 0.4.36, which made `mode=` independent of the item kind. Before it a warehouse
 could only be read by DirectQuery, which is why `dwh` used to be measured differently from the other
 three — a second hand-authored template, hot-only, no reframe, scoped out of every COLD table. A
 warehouse's Tables are Delta in OneLake like any other item's, so that asymmetry was never about the
-storage, and it is gone: all four are now the same measurement.
+storage, and it is gone: all four are now the same measurement within each phase.
 
-Every model is Direct Lake, so every deploy REFRESHES (a reframe onto the latest Delta) and returns
-only once the model is live. Nothing is written to any lakehouse — the models read tables the dbt run
-already produced.
+Direct Lake deploys REFRESH (a reframe onto the latest Delta) and return only once the model is
+live. Nothing is written to any lakehouse — the models read tables the dbt run already produced,
+through the phase lakehouse's shortcuts.
 
 **Each model is DELETED before it is deployed**, so the deploy creates a new item rather than
 updating one in place. That is the benchmark's cold guarantee: a newly created dataset has an empty
@@ -85,23 +94,27 @@ def template():
 FOLDER = os.environ.get("BENCH_FOLDER", "benchmark")
 
 
-def deploy_kwargs(meta):
-    """The `ws.deploy()` kwargs for one engine's BENCH_ITEMS entry.
+def deploy_kwargs(engine, ph=None):
+    """The `ws.deploy()` kwargs for one engine in one phase.
 
-    Only the item argument varies, and it follows the item's KIND — independent of the storage mode
-    since duckrun 0.4.36. Passing `lakehouse=` for a warehouse (or the reverse) raises rather than
-    deploying something that points elsewhere. The mode is the same constant for every engine, which
-    is the point: four adapters, one way of reading what they wrote.
+    Always `lakehouse=` — both phases bind to the phase's shortcut lakehouse, so the item KIND
+    branch that used to pass `warehouse=` for dwh is gone from the deploy path (BENCH_ITEMS keeps
+    the kind for resolve_env/GUID purposes). The mode is one constant per phase for every engine,
+    which is the point: four adapters, one way of reading what they wrote — per phase.
 
     Extracted from main() so the pairing is testable without Fabric — getting it wrong costs a
     deploy failure partway through a paid run."""
-    kw = {"warehouse": meta["item"]} if meta["kind"] == "warehouses" else {"lakehouse": meta["item"]}
-    kw["mode"] = E.DEPLOY_MODE
-    return kw
+    ph = ph or E.phase()
+    return {"lakehouse": E.shortcut_lakehouse(engine, ph),
+            "mode": E.DEPLOY_MODE if ph == "dl" else E.DEPLOY_MODE_DQ}
 
 
 def _delete_existing(ws, name):
     """Delete the semantic model called `name` so the deploy below CREATES a new item.
+
+    With the per-phase lifecycle (`provision.py bench_drop` deletes each phase's model mid-run and
+    the teardown catches leftovers) this normally finds nothing — it stays as the cold guarantee
+    against whatever survived anyway, e.g. a run whose bench job died between deploy and drop.
 
     **This is the benchmark's cold guarantee, and the only reset in the run.** A newly created
     dataset has an empty VertiPaq store — "After the initial semantic model load, no column data is
@@ -207,14 +220,13 @@ def main():
     TEMPLATE_PATH = template()
     ws = duckrun.workspace(os.environ["WS_ID"])
 
+    ph = E.phase()
     deployed, failed = {}, {}
     for e in picked:
-        meta = items[e]
-        item, kind = meta["item"], meta["kind"]
         name = E.model_name(e)
-        kwargs = deploy_kwargs(meta)
-        print(f"deploying {name} -> {item} ({kind[:-1]}, {E.DEPLOY_MODE}) into folder {FOLDER!r} ...",
-              flush=True)
+        kwargs = deploy_kwargs(e, ph)
+        print(f"deploying {name} -> {kwargs['lakehouse']} (phase {ph}, {kwargs['mode']}) "
+              f"into folder {FOLDER!r} ...", flush=True)
         old_id = _delete_existing(ws, name)
         t0 = time.perf_counter()
         item_id = None
@@ -251,16 +263,22 @@ def main():
               + (f"; replaced {old_id}" if old_id else "; created fresh"), flush=True)
         _reparent(ws, item_id, name)
 
-    report.merge({"deploy": {"deployed": deployed, "failed": failed}})
+    # Keyed by MODEL NAME, not engine: both phases deep-merge into the same report-<engine>.json,
+    # and an engine-keyed dict would let the DQ deploy's entry silently overwrite the DL one.
+    report.merge({"deploy": {"deployed": {d["model"]: d for d in deployed.values()},
+                             "failed": {E.model_name(e): m for e, m in failed.items()}}})
     # ...and the same GUIDs into the RUN RECORD, which is a different document with a different
     # lifetime: run_report.json is this benchmark's own artifact, the record is what the CU ledger
     # joins against and what gets committed. Written through report.merge's `path` argument rather
     # than by importing .github/scripts/record.py — benchmark/ deletes by removing one directory,
-    # and that is worth more than sharing twenty lines of dict-union.
+    # and that is worth more than sharing twenty lines of dict-union. The role is per phase —
+    # `semantic_model` / `semantic_model_dq` — which is what the dashboard's role->class map and
+    # `provision.py bench_drop`'s selection both key on.
     rec = os.environ.get("RUN_RECORD")
     if rec:
         report.merge({"items": {str(d["item_id"]).upper(): {
-            "role": "semantic_model", "kind": "SemanticModel", "name": d["model"],
+            "role": "semantic_model" if ph == "dl" else "semantic_model_dq",
+            "kind": "SemanticModel", "name": d["model"],
             "engine": e, "created": True, "replaced": d["previous_item_id"]}
             for e, d in deployed.items() if d.get("item_id")}}, rec)
 

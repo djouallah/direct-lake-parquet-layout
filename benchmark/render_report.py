@@ -94,8 +94,19 @@ def _int(v):
 
 
 def _short(model):
-    """Engine label for a semantic-model name (aemo_duckrun -> duckrun)."""
+    """Engine label for a semantic-model name (aemo_duckrun -> duckrun). A DirectQuery model keeps
+    its suffix (aemo_duckrun_dq -> duckrun_dq), so its column names its own phase everywhere."""
     return E.engine_of(model)
+
+
+def split_timings(timings):
+    """(direct-lake models, directquery models) — THE partition, applied before every ranking and
+    every side-by-side table. A pushdown timing is not a slow layout: mixing the two kinds of number
+    in one table was the reason a DirectQuery leg was once removed outright, and this split is what
+    makes it admissible again as context. Nothing downstream may consume `timings` whole."""
+    dl = {m: v for m, v in timings.items() if not E.is_dq(m)}
+    dq = {m: v for m, v in timings.items() if E.is_dq(m)}
+    return dl, dq
 
 
 def _order(models):
@@ -185,7 +196,7 @@ def rank(timings, models, key):
 
 
 def compute_analysis(rep):
-    timings = rep.get("timings", {})
+    timings, dq = split_timings(rep.get("timings", {}))
     models = _order(list(timings))
     analysis = {"cold_column_cost": {}, "ranking": {}}
 
@@ -207,11 +218,21 @@ def compute_analysis(rep):
                 row[col] = round(v - base, 1)
         analysis["cold_column_cost"][m] = {"rowcount_overhead_ms": round(base, 1), "columns": row}
 
-    # ranking: one ordered list per metric. Medians only, never a mean.
+    # ranking: one ordered list per metric. Medians only, never a mean. The DirectQuery models get
+    # their OWN ranking under `ranking_dq` — computed by the same rank(), never merged into the
+    # Direct Lake one, so a pushdown total can never place in the layout ranking.
     for metric, key, _sk in METRICS:
         r = rank(timings, models, key)
         if r:
             analysis["ranking"][metric] = r
+    dq_models = _order(list(dq))
+    ranking_dq = {}
+    for metric, key, _sk in METRICS:
+        r = rank(dq, dq_models, key)
+        if r:
+            ranking_dq[metric] = r
+    if ranking_dq:
+        analysis["ranking_dq"] = ranking_dq
     return analysis
 
 
@@ -235,7 +256,7 @@ def _summary_table(rep, analysis):
     """One row per engine: what wrote its table, and its aggregate cold/hot wall-clock with ✔ on the
     fastest. Rows in the alphabetical column order, so this table and the side-by-side ones read
     together; the ranking is stated underneath in speed order."""
-    timings = rep.get("timings", {})
+    timings, _dq = split_timings(rep.get("timings", {}))
     models = _order(list(timings))
     if not models:
         return
@@ -273,8 +294,9 @@ def _summary_table(rep, analysis):
         s = rank_sentence(metric, analysis.get("ranking", {}).get(metric), bold=True)
         if s:
             out += ["", f"- {s}"]
-    # No `mode` column: every model is Direct Lake, which is the premise rather than a variable —
-    # four adapters, one way of reading what they wrote. `writer` is the axis under test.
+    # No `mode` column: every model in THIS table is Direct Lake, which is the phase's premise
+    # rather than a variable — four adapters, one way of reading what they wrote. `writer` is the
+    # axis under test; the DirectQuery phase renders in its own section below, never here.
     out += ["", "<sub>Physical layout per engine — files, row groups, size, v-order, compression — "
                 "is the `layout` job of the `dbt` workflow, not this run.</sub>"]
     _write("\n".join(out) + "\n")
@@ -332,11 +354,12 @@ def _cold_cost_table(cc):
     _write("\n".join(out) + "\n")
 
 
-def _ranking_table(analysis):
-    ranking = analysis.get("ranking", {})
+def _ranking_table(analysis, key="ranking",
+                   title="### Ranking (medians; fastest wins, no tie band, no baseline)"):
+    ranking = analysis.get(key, {})
     if not ranking:
         return
-    out = ["### Ranking (medians; fastest wins, no tie band, no baseline)", "",
+    out = [title, "",
            "| metric | rank | engine | total (ms) | × fastest | query wins |",
            "|:--|--:|:--|--:|--:|--:|"]
     for metric, _k, _s in METRICS:
@@ -347,6 +370,29 @@ def _ranking_table(analysis):
                 "metric. Query wins count the rows it was strictly fastest on — it can win most "
                 "queries and still lose the total by losing the expensive one.</sub>"]
     _write("\n".join(out) + "\n")
+
+
+def _dq_section(rep, analysis):
+    """The DirectQuery phase, rendered AFTER everything Direct Lake and never inside it.
+
+    Same machinery, disjoint models: columns come out `<engine>_dq`, and the ranking is
+    `ranking_dq`. The tier names are kept — they are pass positions — but on a DQ model they
+    measure result-cache and session effects at the SQL endpoint, not a transcode, which is why
+    these numbers must never share a table with the Direct Lake ones."""
+    _dl, dq = split_timings(rep.get("timings", {}))
+    if not dq:
+        return
+    models = _order(list(dq))
+    _write("## DirectQuery (context — not part of the Direct Lake ranking)\n\n"
+           "<sub>Same `.bim`, deployed with `mode=direct_query` over the phase's own shortcut "
+           "lakehouse, so every query is SQL-endpoint pushdown. cold/warm/hot are still pass "
+           "positions, but there is no VertiPaq store here — they measure cache and session "
+           "effects, not transcode — so these columns rank only against each other.</sub>\n")
+    _sidebyside("DQ COLD (pass 1)", dq, models, "cold_ms")
+    _sidebyside("DQ WARM (pass 2)", dq, models, "warm_ms")
+    _sidebyside("DQ HOT (median of passes 3+)", dq, models, "hot_median_ms")
+    _ranking_table(analysis, key="ranking_dq",
+                   title="### DirectQuery ranking (against each other only)")
 
 
 def main():
@@ -366,7 +412,7 @@ def main():
 
     _summary_table(rep, analysis)
 
-    timings = rep.get("timings", {})
+    timings, _dq = split_timings(rep.get("timings", {}))
     models = _order(list(timings))
     _sidebyside("COLD (pass 1 — first visit to a freshly created model)",
                 timings, models, "cold_ms")
@@ -374,6 +420,7 @@ def main():
     _sidebyside("HOT (median of passes 3+)", timings, models, "hot_median_ms")
     _cold_cost_table(analysis.get("cold_column_cost", {}))
     _ranking_table(analysis)
+    _dq_section(rep, analysis)
 
 
 if __name__ == "__main__":

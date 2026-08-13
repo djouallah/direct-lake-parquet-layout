@@ -4,19 +4,24 @@ Deliberately mirrors `.github/scripts/stats.py`'s `ENGINES` / `WRITER`: that scr
 dashboard over the same four items, and the two must never disagree about which Fabric item belongs
 to which engine. If an item is renamed, both change together.
 
-The one thing stats.py has no opinion about and this does: `DEPLOY_MODE`. Every engine is read by a
-**Direct Lake** semantic model — an in-memory transcode straight from the Delta files — because that
-is the only reading in which the answer is about the *physical layout*. Four engines write the same
-rows in four different shapes; how long each shape takes to transcode and scan is the whole question.
+The one thing stats.py has no opinion about and this does: the deploy MODE, and there are two,
+measured as two self-contained PHASES per engine. The **Direct Lake** phase (`dl`, the default) is
+THE ranking — an in-memory transcode straight from the Delta files, the only reading in which the
+answer is about the *physical layout*. The **DirectQuery** phase (`dq`) deploys the SAME `.bim`
+with `mode="direct_query"` under `<prefix><engine>_dq` and is a separate, never-blended column set:
+render_report partitions every ranking and side-by-side table on `is_dq()`, because a pushdown
+timing is not a slow layout and a report that mixed the two kinds of number invited exactly that
+misreading — that used to be the reason no DirectQuery existed here at all, and the partition is
+what made it admissible as CONTEXT rather than as a competitor.
 
-So the mode is a **premise, not a per-engine setting**. It is one constant, and the item's KIND
-(lakehouse vs warehouse) is independent of it: duckrun 0.4.36's `deploy(mode=)` reads a warehouse's
-Tables as the Delta they are, so `dwh` measures a layout like the other three rather than SQL-endpoint
-pushdown to a different engine. Nothing here carries a DirectQuery alternative any more — a pushdown
-timing is not a slow layout, and a report that mixed the two kinds of number invited exactly that
-misreading.
+Within a phase the mode is still a **premise, not a per-engine setting** — one constant per phase,
+never a dict. Both models bind to that phase's SHORTCUT LAKEHOUSE (`<output item>_dl` / `_dq`,
+created by `provision.py bench_prepare`), not to the output item: OneLake bills a transaction
+against the item hosting the shortcut, so each phase's reads land on its own GUID instead of mixing
+into the engine's ETL column. That also makes the item KIND irrelevant at deploy time — dwh's
+models read its warehouse Tables through a lakehouse shortcut like everyone else's.
 
-The hot-only path downstream survives and is no longer about DirectQuery: a model can be missing its
+The hot-only path downstream survives and is not about DirectQuery: a model can be missing its
 cold and warm numbers because its job died before reporting them, or because the dispatch asked for
 fewer than three passes. `render_report._totals` scopes each metric to the models that have it, so a
 missing tier is a gap rather than a zero.
@@ -69,11 +74,44 @@ KIND = {e: kind for e, _, kind in ENGINES}
 WRITER = {"duckrun": "delta-rs", "iceberg": "duckdb (iceberg)",
           "spark": "spark", "dwh": "warehouse"}
 
-# How every engine's tables are read, in the spelling duckrun's deploy(mode=) takes. Not a dict:
-# comparing physical layouts requires that all four be read the same way, so this is the premise of
-# the benchmark rather than a knob. Independent of the item KIND since duckrun 0.4.36 — a warehouse's
-# Tables are Delta in OneLake exactly like a lakehouse's.
+# How every engine's tables are read, in the spelling duckrun's deploy(mode=) takes. One constant
+# PER PHASE, never a dict: within a phase all four engines must be read the same way, so the mode is
+# the phase's premise rather than a knob. Independent of the item KIND since duckrun 0.4.36 — a
+# warehouse's Tables are Delta in OneLake exactly like a lakehouse's, and both phases read through a
+# lakehouse shortcut anyway.
 DEPLOY_MODE = "direct_lake"
+DEPLOY_MODE_DQ = "direct_query"
+
+# The DirectQuery phase's model-name suffix. `engine_of("aemo_spark_dq")` returns `spark_dq`, so a
+# DQ model labels its own column everywhere the render layer derives labels from model names.
+DQ_SUFFIX = "_dq"
+
+
+def is_dq(model):
+    """Whether a model name (or bare engine label) belongs to the DirectQuery phase."""
+    return str(model).endswith(DQ_SUFFIX)
+
+
+def phase():
+    """Which bench phase this invocation measures, from BENCH_PHASE — `dl` unless the workflow's
+    DQ steps say otherwise. Refuses an unknown value for the usual reason: a typo that silently
+    meant `dl` would deploy a second Direct Lake model under the DQ name and record its pushdown
+    column from a transcode."""
+    ph = os.environ.get("BENCH_PHASE") or "dl"
+    if ph not in ("dl", "dq"):
+        raise SystemExit(f"unknown BENCH_PHASE {ph!r}; use dl or dq")
+    return ph
+
+
+def shortcut_lakehouse(engine, ph=None):
+    """The per-phase lakehouse this phase's model binds to: `<output item>_dl` / `_dq`.
+
+    A deliberate copy of provision.py's `bench_lakehouse_name` — same isolation rule as
+    DATASET_ITEMS itself, and `.github/scripts/test_datasets.py` pins the two together the same
+    way. Computed from the registry at call time, not from the import-time ITEM map, so tests can
+    exercise every dataset."""
+    return f"{DATASET_ITEMS[dataset()][engine]}_{ph or phase()}"
+
 
 ALL = [e for e, _, _ in ENGINES]
 
@@ -88,8 +126,12 @@ def prefix():
     return PREFIXES[dataset()]
 
 
-def model_name(engine):
-    return f"{prefix()}{engine}"
+def model_name(engine, ph=None):
+    """`<prefix><engine>` for the Direct Lake phase, `<prefix><engine>_dq` for DirectQuery.
+
+    The phase defaults to the env (`BENCH_PHASE`), so deploy_models.py and xmla_compare.py agree
+    about which model a step touches without either passing it explicitly."""
+    return f"{prefix()}{engine}{DQ_SUFFIX if (ph or phase()) == 'dq' else ''}"
 
 
 def engine_of(model):
