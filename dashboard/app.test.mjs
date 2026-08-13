@@ -3879,13 +3879,13 @@ test("archiveTotals excludes duckrun's round-trip and falls back when there are 
 // the browser renders HTML, is the drift this repo already deleted `cu/dashboard.py` for.
 import * as prof from "./profile_table.mjs";
 
-const sparkRun = (file, profile, { files = 0, rows = 143_980_961 } = {}) =>
+const sparkRun = (file, profile, { size = 0, rows = 143_980_961 } = {}) =>
   rec(file, "spark", {
     A1: { role: "output", name: "dbt_spark" },
     A2: { role: "semantic_model", name: "bench" },
   }, {
     config: { spark: { resource_profile: profile } },
-    stats: { spark: { "fct_summary": { total_rows: rows, num_files: files } } },
+    stats: { spark: { "fct_summary": { total_rows: rows, size_mb: size } } },
   });
 
 const sparkLedger = (compute, storage, analytics) => ledger({
@@ -3894,7 +3894,7 @@ const sparkLedger = (compute, storage, analytics) => ledger({
 });
 
 test("the generated table's build column is exactly compute + storage", () => {
-  const runs = [sparkRun("a-1.json", "writeHeavy", { files: 68 })];
+  const runs = [sparkRun("a-1.json", "writeHeavy", { size: 1_260.4 })];
   const rows = prof.profileRows(runs, sparkLedger(29_323, 5_987, 3_769));
   assert.equal(rows.length, 1);
   const r = rows[0];
@@ -3918,12 +3918,12 @@ test("a run that built without a benchmark counts toward build but not analytics
 
 test("generations are not pooled — the largest wins, as on the page", () => {
   const runs = [
-    sparkRun("n-1.json", "writeHeavy", { files: 12, rows: 43_734_157 }),
-    sparkRun("n-2.json", "writeHeavy", { files: 60, rows: 591_729_858 }),
+    sparkRun("n-1.json", "writeHeavy", { size: 427.6, rows: 43_734_157 }),
+    sparkRun("n-2.json", "writeHeavy", { size: 10_167.3, rows: 591_729_858 }),
   ];
   const [r] = prof.profileRows(runs, sparkLedger(10_465, 587, 8_726));
   assert.equal(r.nBuild, 1, "the small generation is dropped, not averaged in");
-  assert.deepEqual(r.files, [60, 60]);
+  assert.deepEqual(r.size, [10_167, 10_167]);
 });
 
 test("landing CU never reaches the table", () => {
