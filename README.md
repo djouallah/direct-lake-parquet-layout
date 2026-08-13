@@ -328,13 +328,13 @@ it is never staler than the ledger under it:
 | aemo | `writeHeavy` | **35,310** | **3,769** | no | no | 10.3–11.1M | 5,748–5,752 |
 | bts | `writeHeavy` | **3,954** | **1,093** | no | yes | 6.9M | 2,441 |
 | green | `readHeavyForPBI` | **1,897** | **2,556** | yes | yes | 2.3M | 1,546 |
-| green | `writeHeavy` | **1,314** | **—** | no | no | 3.4M | 1,623 |
+| green | `writeHeavy` | **1,496** | **2,584** | no | no | 3.4M | 1,623 |
 | nyc | `readHeavyForPBI` | **12,068** | **5,968** | yes | yes | 10.4M | 5,850 |
 | nyc | `writeHeavy` | **11,052** | **8,726** | no | no | 10.4M | 9,291 |
 
 Medians per run, each dataset filtered to its largest source generation. `build` is Livy compute + OneLake storage CU; `V-Order` is measured off the parquet, not the profile name; `dict encoding` is yes when no mart column fell back to PLAIN data pages (dictionary overflow — what makes a segment expensive to transcode); `avg row group` is the mart's rows per row group — the segment size Direct Lake transcodes — and `table size` sums every table the leg wrote, which is what OneLake storage bills for.
 
-On **aemo**, `writeHeavy` builds at **1.06×** the cost of `readHeavyForPBI` and queries at **2.49×**. On **green**, `writeHeavy` builds at **0.69×** the cost of `readHeavyForPBI` and queries at **0.00×**. On **nyc**, `writeHeavy` builds at **0.92×** the cost of `readHeavyForPBI` and queries at **1.46×**.
+On **aemo**, `writeHeavy` builds at **1.06×** the cost of `readHeavyForPBI` and queries at **2.49×**. On **green**, `writeHeavy` builds at **0.79×** the cost of `readHeavyForPBI` and queries at **1.01×**. On **nyc**, `writeHeavy` builds at **0.92×** the cost of `readHeavyForPBI` and queries at **1.46×**.
 
 <!-- spark-profiles:end -->
 
