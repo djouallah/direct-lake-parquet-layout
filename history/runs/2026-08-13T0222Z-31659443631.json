@@ -1,0 +1,1141 @@
+{
+ "benchmark": {
+  "analysis": {
+   "cold_column_cost": {
+    "bts_spark": {
+     "columns": {
+      "cancelcode": 329.3,
+      "carrier": 195.8,
+      "crsdep": 658.0,
+      "depdelay": 936.0,
+      "dest": 580.7,
+      "distance": 541.2,
+      "dow": 358.4,
+      "origin": 558.1,
+      "tail": 1010.2
+     },
+     "rowcount_overhead_ms": 90.8
+    }
+   },
+   "ranking": {
+    "COLD": [
+     {
+      "engine": "spark",
+      "query_wins": 21,
+      "rank": 1,
+      "total_ms": 12719.6,
+      "x_fastest": 1.0
+     }
+    ],
+    "HOT": [
+     {
+      "engine": "spark",
+      "query_wins": 23,
+      "rank": 1,
+      "total_ms": 3043.7,
+      "x_fastest": 1.0
+     }
+    ],
+    "WARM": [
+     {
+      "engine": "spark",
+      "query_wins": 23,
+      "rank": 1,
+      "total_ms": 3477.9,
+      "x_fastest": 1.0
+     }
+    ]
+   }
+  },
+  "deploy": {
+   "deployed": {
+    "spark": {
+     "folder": "benchmark",
+     "item_id": "404307ff-fcfb-4631-868b-4b85308becff",
+     "model": "bts_spark",
+     "previous_item_id": null,
+     "seconds": 55.3
+    }
+   },
+   "failed": {}
+  },
+  "engines": {
+   "spark": {
+    "guid": "4f10daec-a3c7-48c5-855f-c0adbf5d1ddb",
+    "item": "dbt_bts_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "ladder": {
+   "bts_spark": {
+    "label": "busiest origin airport",
+    "value": "ATL"
+   }
+  },
+  "run": {
+   "date": "2026-08-13T02:10:03.519803+00:00",
+   "duckrun_version": "0.4.49",
+   "inputs": {
+    "engines": "spark",
+    "gap_seconds": 600,
+    "runs": 6,
+    "think_seconds": 4
+   },
+   "run_id": "31659443631",
+   "sha": "bdcd7ed239d90bd9b718dc0483f091714b6c78ac",
+   "workspace": "testing"
+  },
+  "timings": {
+   "bts_spark": {
+    "carrier_x_month": {
+     "all_hot_ms": [
+      681.3914770000338,
+      323.3031350000033,
+      329.1277370000216,
+      303.08244599996215
+     ],
+     "cold_ms": 681.0907910000026,
+     "hot_median_ms": 326.21543600001246,
+     "hot_spread_pct": 115.9690772572936,
+     "ms_by_pass": {
+      "1": 681.0907910000026,
+      "2": 298.2959340000093,
+      "3": 681.3914770000338,
+      "4": 323.3031350000033,
+      "5": 329.1277370000216,
+      "6": 303.08244599996215
+     },
+     "rows": 5340,
+     "tier": "composite",
+     "warm_ms": 298.2959340000093
+    },
+    "carrier_x_year": {
+     "all_hot_ms": [
+      156.22979599999098,
+      163.65259799999876,
+      166.99499600008494,
+      436.53368499997214
+     ],
+     "cold_ms": 1157.412196999985,
+     "hot_median_ms": 165.32379700004185,
+     "hot_spread_pct": 169.54842199753625,
+     "ms_by_pass": {
+      "1": 1157.412196999985,
+      "2": 153.86797300004673,
+      "3": 156.22979599999098,
+      "4": 163.65259799999876,
+      "5": 166.99499600008494,
+      "6": 436.53368499997214
+     },
+     "rows": 470,
+     "tier": "composite",
+     "warm_ms": 153.86797300004673
+    },
+    "filtered_1988_by_origin": {
+     "all_hot_ms": [
+      104.6418820000099,
+      94.56696299997702,
+      92.77054500000759,
+      95.13002800008508
+     ],
+     "cold_ms": 252.07741700000952,
+     "hot_median_ms": 94.84849550003105,
+     "hot_spread_pct": 12.516104696672206,
+     "ms_by_pass": {
+      "1": 252.07741700000952,
+      "2": 96.3330750000182,
+      "3": 104.6418820000099,
+      "4": 94.56696299997702,
+      "5": 92.77054500000759,
+      "6": 95.13002800008508
+     },
+     "rows": 238,
+     "tier": "composite",
+     "warm_ms": 96.3330750000182
+    },
+    "narrow_one_measure": {
+     "all_hot_ms": [
+      86.55741400002626,
+      410.35348600001953,
+      93.63027599999896,
+      86.96476399995845
+     ],
+     "cold_ms": 189.24094799999125,
+     "hot_median_ms": 90.2975199999787,
+     "hot_spread_pct": 358.58800108803615,
+     "ms_by_pass": {
+      "1": 189.24094799999125,
+      "2": 82.50943800004507,
+      "3": 86.55741400002626,
+      "4": 410.35348600001953,
+      "5": 93.63027599999896,
+      "6": 86.96476399995845
+     },
+     "rows": 30,
+     "tier": "composite",
+     "warm_ms": 82.50943800004507
+    },
+    "origin_x_dow": {
+     "all_hot_ms": [
+      261.1455739999542,
+      245.64321999997674,
+      233.5427460000119,
+      242.75346800004627
+     ],
+     "cold_ms": 1850.1167019999798,
+     "hot_median_ms": 244.1983440000115,
+     "hot_spread_pct": 11.303446021706433,
+     "ms_by_pass": {
+      "1": 1850.1167019999798,
+      "2": 233.19631300000765,
+      "3": 261.1455739999542,
+      "4": 245.64321999997674,
+      "5": 233.5427460000119,
+      "6": 242.75346800004627
+     },
+     "rows": 2979,
+     "tier": "composite",
+     "warm_ms": 233.19631300000765
+    },
+    "probe_cancelcode": {
+     "all_hot_ms": [
+      96.70760699998482,
+      86.95544300002211,
+      94.77446899995812,
+      95.58215100003054
+     ],
+     "cold_ms": 420.07116700000324,
+     "hot_median_ms": 95.17830999999433,
+     "hot_spread_pct": 10.246204203419126,
+     "ms_by_pass": {
+      "1": 420.07116700000324,
+      "2": 88.35026099995957,
+      "3": 96.70760699998482,
+      "4": 86.95544300002211,
+      "5": 94.77446899995812,
+      "6": 95.58215100003054
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 88.35026099995957
+    },
+    "probe_carrier": {
+     "all_hot_ms": [
+      94.54853500000127,
+      94.08452899998565,
+      89.24451999996563,
+      82.99473899990062
+     ],
+     "cold_ms": 286.58607599999186,
+     "hot_median_ms": 91.66452449997564,
+     "hot_spread_pct": 12.604435645224688,
+     "ms_by_pass": {
+      "1": 286.58607599999186,
+      "2": 91.35226899996951,
+      "3": 94.54853500000127,
+      "4": 94.08452899998565,
+      "5": 89.24451999996563,
+      "6": 82.99473899990062
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 91.35226899996951
+    },
+    "probe_crsdep": {
+     "all_hot_ms": [
+      94.63656799999853,
+      94.25178899999764,
+      86.82839699997658,
+      95.74489999999969
+     ],
+     "cold_ms": 748.8081379999869,
+     "hot_median_ms": 94.44417849999809,
+     "hot_spread_pct": 9.44102976132435,
+     "ms_by_pass": {
+      "1": 748.8081379999869,
+      "2": 90.24954799997431,
+      "3": 94.63656799999853,
+      "4": 94.25178899999764,
+      "5": 86.82839699997658,
+      "6": 95.74489999999969
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 90.24954799997431
+    },
+    "probe_depdelay": {
+     "all_hot_ms": [
+      90.56128700001409,
+      146.2819129999957,
+      706.303450000064,
+      101.8760410000823
+     ],
+     "cold_ms": 1026.8420419999984,
+     "hot_median_ms": 124.078977000039,
+     "hot_spread_pct": 496.250193132924,
+     "ms_by_pass": {
+      "1": 1026.8420419999984,
+      "2": 88.51235999998153,
+      "3": 90.56128700001409,
+      "4": 146.2819129999957,
+      "5": 706.303450000064,
+      "6": 101.8760410000823
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 88.51235999998153
+    },
+    "probe_dest": {
+     "all_hot_ms": [
+      80.5184359999771,
+      90.2253400000177,
+      98.27434199996787,
+      85.76981999999589
+     ],
+     "cold_ms": 671.5563059999852,
+     "hot_median_ms": 87.99758000000679,
+     "hot_spread_pct": 20.177720796400767,
+     "ms_by_pass": {
+      "1": 671.5563059999852,
+      "2": 458.72625199996264,
+      "3": 80.5184359999771,
+      "4": 90.2253400000177,
+      "5": 98.27434199996787,
+      "6": 85.76981999999589
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 458.72625199996264
+    },
+    "probe_distance": {
+     "all_hot_ms": [
+      77.8863019999676,
+      83.06853599998476,
+      88.41536900001756,
+      87.78012300001592
+     ],
+     "cold_ms": 632.0469009999954,
+     "hot_median_ms": 85.42432950000034,
+     "hot_spread_pct": 12.325606840203436,
+     "ms_by_pass": {
+      "1": 632.0469009999954,
+      "2": 91.63170200000081,
+      "3": 77.8863019999676,
+      "4": 83.06853599998476,
+      "5": 88.41536900001756,
+      "6": 87.78012300001592
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 91.63170200000081
+    },
+    "probe_dow": {
+     "all_hot_ms": [
+      106.61784100000204,
+      528.3845170000063,
+      85.94957799994063,
+      489.41619000004266
+     ],
+     "cold_ms": 449.243249999995,
+     "hot_median_ms": 298.01701550002235,
+     "hot_spread_pct": 148.45962344053893,
+     "ms_by_pass": {
+      "1": 449.243249999995,
+      "2": 89.38411500000143,
+      "3": 106.61784100000204,
+      "4": 528.3845170000063,
+      "5": 85.94957799994063,
+      "6": 489.41619000004266
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 89.38411500000143
+    },
+    "probe_origin": {
+     "all_hot_ms": [
+      82.16042600002993,
+      92.4705710000353,
+      83.6647849999963,
+      87.84975899993697
+     ],
+     "cold_ms": 648.9006200000063,
+     "hot_median_ms": 85.75727199996663,
+     "hot_spread_pct": 12.02247314957662,
+     "ms_by_pass": {
+      "1": 648.9006200000063,
+      "2": 84.2118150000033,
+      "3": 82.16042600002993,
+      "4": 92.4705710000353,
+      "5": 83.6647849999963,
+      "6": 87.84975899993697
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 84.2118150000033
+    },
+    "probe_rowcount": {
+     "all_hot_ms": [
+      88.36472500001946,
+      89.86248399997976,
+      77.22730099999353,
+      116.22497899998052
+     ],
+     "cold_ms": 90.81487399998878,
+     "hot_median_ms": 89.11360449999961,
+     "hot_spread_pct": 43.76175581584421,
+     "ms_by_pass": {
+      "1": 90.81487399998878,
+      "2": 83.30074100001639,
+      "3": 88.36472500001946,
+      "4": 89.86248399997976,
+      "5": 77.22730099999353,
+      "6": 116.22497899998052
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 83.30074100001639
+    },
+    "probe_tail": {
+     "all_hot_ms": [
+      92.69346899998254,
+      91.77885399998331,
+      92.4935819999746,
+      90.83157600002778
+     ],
+     "cold_ms": 1101.060762000003,
+     "hot_median_ms": 92.13621799997895,
+     "hot_spread_pct": 2.0208046741783856,
+     "ms_by_pass": {
+      "1": 1101.060762000003,
+      "2": 81.30245099999911,
+      "3": 92.69346899998254,
+      "4": 91.77885399998331,
+      "5": 92.4935819999746,
+      "6": 90.83157600002778
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 81.30245099999911
+    },
+    "raw_archive_log": {
+     "all_hot_ms": [
+      87.7011379999999,
+      456.4307110000527,
+      88.25098599993453,
+      94.72458300001563
+     ],
+     "cold_ms": 140.03243700000212,
+     "hot_median_ms": 91.48778449997508,
+     "hot_spread_pct": 403.0369464244194,
+     "ms_by_pass": {
+      "1": 140.03243700000212,
+      "2": 83.57927200000859,
+      "3": 87.7011379999999,
+      "4": 456.4307110000527,
+      "5": 88.25098599993453,
+      "6": 94.72458300001563
+     },
+     "rows": 2,
+     "tier": "raw",
+     "warm_ms": 83.57927200000859
+    },
+    "scalar_weighted_full_scan": {
+     "all_hot_ms": [
+      101.1864290000517,
+      88.78932700002906,
+      89.50826299997061,
+      95.54504300001554
+     ],
+     "cold_ms": 425.0488559999894,
+     "hot_median_ms": 92.52665299999308,
+     "hot_spread_pct": 13.398411806837506,
+     "ms_by_pass": {
+      "1": 425.0488559999894,
+      "2": 143.7639100000183,
+      "3": 101.1864290000517,
+      "4": 88.78932700002906,
+      "5": 89.50826299997061,
+      "6": 95.54504300001554
+     },
+     "rows": 1,
+     "tier": "composite",
+     "warm_ms": 143.7639100000183
+    },
+    "sel_1mo": {
+     "all_hot_ms": [
+      417.45056100000966,
+      100.87339599999723,
+      125.39868900000783,
+      83.79105500000605
+     ],
+     "cold_ms": 182.75023800001122,
+     "hot_median_ms": 113.13604250000253,
+     "hot_spread_pct": 294.91884162378767,
+     "ms_by_pass": {
+      "1": 182.75023800001122,
+      "2": 93.56101899999203,
+      "3": 417.45056100000966,
+      "4": 100.87339599999723,
+      "5": 125.39868900000783,
+      "6": 83.79105500000605
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 93.56101899999203
+    },
+    "sel_1origin": {
+     "all_hot_ms": [
+      100.53629499998351,
+      88.03624600000148,
+      103.36258399991038,
+      85.75738199999705
+     ],
+     "hot_median_ms": 94.2862704999925,
+     "hot_spread_pct": 18.672073788213666,
+     "ms_by_pass": {
+      "2": 313.78801900001463,
+      "3": 100.53629499998351,
+      "4": 88.03624600000148,
+      "5": 103.36258399991038,
+      "6": 85.75738199999705
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 313.78801900001463
+    },
+    "sel_1origin_1mo": {
+     "all_hot_ms": [
+      98.77970899998445,
+      104.24509699998907,
+      96.98917000002893,
+      101.4010189999226
+     ],
+     "hot_median_ms": 100.09036399995352,
+     "hot_spread_pct": 7.249376173677925,
+     "ms_by_pass": {
+      "2": 172.56845599996495,
+      "3": 98.77970899998445,
+      "4": 104.24509699998907,
+      "5": 96.98917000002893,
+      "6": 101.4010189999226
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 172.56845599996495
+    },
+    "sel_1yr": {
+     "all_hot_ms": [
+      209.3012569999928,
+      115.16790999996829,
+      86.96554000005108,
+      458.1153550000181
+     ],
+     "cold_ms": 230.3254699999968,
+     "hot_median_ms": 162.23458349998054,
+     "hot_spread_pct": 228.7735493832063,
+     "ms_by_pass": {
+      "1": 230.3254699999968,
+      "2": 372.4319250000008,
+      "3": 209.3012569999928,
+      "4": 115.16790999996829,
+      "5": 86.96554000005108,
+      "6": 458.1153550000181
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 372.4319250000008
+    },
+    "topn_origin_by_flights": {
+     "all_hot_ms": [
+      388.6422619999621,
+      100.39270999999417,
+      93.4351329999572,
+      368.5355320000099
+     ],
+     "cold_ms": 271.6702160000182,
+     "hot_median_ms": 234.46412100000202,
+     "hot_spread_pct": 125.90716555732736,
+     "ms_by_pass": {
+      "1": 271.6702160000182,
+      "2": 89.71883599997454,
+      "3": 388.6422619999621,
+      "4": 100.39270999999417,
+      "5": 93.4351329999572,
+      "6": 368.5355320000099
+     },
+     "rows": 50,
+     "tier": "composite",
+     "warm_ms": 89.71883599997454
+    },
+    "wide_all_measures": {
+     "all_hot_ms": [
+      90.24510100005045,
+      97.71313200002396,
+      91.31595300004847,
+      88.8363379999646
+     ],
+     "cold_ms": 1263.8760319999847,
+     "hot_median_ms": 90.78052700004946,
+     "hot_spread_pct": 9.778301903947447,
+     "ms_by_pass": {
+      "1": 1263.8760319999847,
+      "2": 97.22484700000678,
+      "3": 90.24510100005045,
+      "4": 97.71313200002396,
+      "5": 91.31595300004847,
+      "6": 88.8363379999646
+     },
+     "rows": 30,
+     "tier": "composite",
+     "warm_ms": 97.22484700000678
+    }
+   }
+  },
+  "top_duid": {
+   "bts_spark": "ATL"
+  }
+ },
+ "engine": "spark",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "bts",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "16BA1F6F-9A20-4704-A88E-1471C7731D87": {
+   "at": "2026-08-13T02:02:06+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_bts_landing",
+   "role": "landing"
+  },
+  "404307FF-FCFB-4631-868B-4B85308BECFF": {
+   "created": true,
+   "deleted": "2026-08-13T02:22:05+00:00",
+   "engine": "spark",
+   "kind": "SemanticModel",
+   "name": "bts_spark",
+   "replaced": null,
+   "role": "semantic_model"
+  },
+  "4F10DAEC-A3C7-48C5-855F-C0ADBF5D1DDB": {
+   "at": "2026-08-13T02:02:59+00:00",
+   "created": true,
+   "deleted": "2026-08-13T02:22:01+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_bts_spark",
+   "role": "output"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-13T02:02:49+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "BF749E55-2FD8-45A7-9CBF-B30CE181099D": {
+   "at": "2026-08-13T02:02:08+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_bts_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-13T02:02:04+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "layout": {
+  "config": {
+   "spark": {
+    "native_execution_engine": "true",
+    "resource_profile": "writeHeavy"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "spark": {
+    "AirTime": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 202.76,
+     "type": "DOUBLE"
+    },
+    "ArrDel15": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 28.62,
+     "type": "INT32"
+    },
+    "ArrDelay": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 231.51,
+     "type": "DOUBLE"
+    },
+    "ArrTime": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 237.59,
+     "type": "INT32"
+    },
+    "CRSDepTime": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 154.11,
+     "type": "INT32"
+    },
+    "CancellationCode": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 4.46,
+     "type": "BYTE_ARRAY"
+    },
+    "Cancelled": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 4.96,
+     "type": "INT32"
+    },
+    "DayOfWeek": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 15.27,
+     "type": "INT32"
+    },
+    "DepDel15": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 27.36,
+     "type": "INT32"
+    },
+    "DepDelay": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 224.41,
+     "type": "DOUBLE"
+    },
+    "DepTime": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 236.51,
+     "type": "INT32"
+    },
+    "Dest": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 88.84,
+     "type": "BYTE_ARRAY"
+    },
+    "Distance": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 112.84,
+     "type": "DOUBLE"
+    },
+    "DistanceGroup": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 30.46,
+     "type": "INT32"
+    },
+    "Diverted": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 1.1,
+     "type": "INT32"
+    },
+    "FlightDate": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 29.07,
+     "type": "INT32"
+    },
+    "Flight_Number_Reporting_Airline": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 150.34,
+     "type": "INT32"
+    },
+    "Origin": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 72.59,
+     "type": "BYTE_ARRAY"
+    },
+    "Reporting_Airline": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 0.16,
+     "type": "BYTE_ARRAY"
+    },
+    "Tail_Number": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 272.51,
+     "type": "BYTE_ARRAY"
+    },
+    "TaxiIn": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 142.09,
+     "type": "DOUBLE"
+    },
+    "TaxiOut": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 173.36,
+     "type": "DOUBLE"
+    },
+    "file": {
+     "chunks": 26,
+     "dict_pages": 26,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 0.01,
+     "type": "BYTE_ARRAY"
+    }
+   }
+  },
+  "engines": {
+   "spark": {
+    "guid": "4f10daec-a3c7-48c5-855f-c0adbf5d1ddb",
+    "item": "dbt_bts_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "landing": {
+   "files": 345,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.02
+    },
+    "parquet_raw/carrier": {
+     "files": 1,
+     "size_mb": 0.03
+    },
+    "parquet_raw/flights": {
+     "files": 343,
+     "size_mb": 2010.74
+    }
+   },
+   "guid": "16ba1f6f-9a20-4704-a88e-1471c7731d87",
+   "item": "dbt_bts_landing",
+   "size_mb": 2010.78
+  },
+  "ordering": {
+   "spark": {
+    "columns": {
+     "AirTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 0
+     },
+     "ArrDel15": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 1114036
+     },
+     "ArrDelay": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 3852047
+     },
+     "ArrTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 3856121
+     },
+     "CRSDepTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 178191
+     },
+     "CancellationCode": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 0
+     },
+     "Cancelled": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 67759
+     },
+     "DayOfWeek": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 3951318
+     },
+     "DepDel15": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 860848
+     },
+     "DepDelay": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 2869333
+     },
+     "DepTime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 2911671
+     },
+     "Dest": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 150540
+     },
+     "Distance": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 150860
+     },
+     "DistanceGroup": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 114407
+     },
+     "Diverted": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 20069
+     },
+     "FlightDate": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 3997862
+     },
+     "Flight_Number_Reporting_Airline": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 92165
+     },
+     "Origin": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 153525
+     },
+     "Reporting_Airline": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 326
+     },
+     "Tail_Number": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 0
+     },
+     "TaxiIn": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 0
+     },
+     "TaxiOut": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 0
+     },
+     "file": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 26,
+      "runs": 10
+     }
+    },
+    "sample": {
+     "file": "part-00000-eb089fe6-3123-41e1-be47-445dcb35e188-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.fct_flights",
+    "vorder_files": {
+     "files": 26,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "bts",
+   "id": "31659443631",
+   "sha": "bdcd7ed239d90bd9b718dc0483f091714b6c78ac",
+   "written": "2026-08-13T02:09:32.657748+00:00"
+  },
+  "stats": {
+   "spark": {
+    "dim_carrier": {
+     "avg_row_group": 1778.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.04,
+     "total_rows": 1778,
+     "vorder": false
+    },
+    "dim_flight_date": {
+     "avg_row_group": 14610.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.08,
+     "total_rows": 14610,
+     "vorder": false
+    },
+    "fct_flights": {
+     "avg_row_group": 6940948.6,
+     "compression": "SNAPPY",
+     "num_files": 26,
+     "num_row_groups": 26,
+     "schema": "mart",
+     "size_mb": 2441.32,
+     "total_rows": 180464664,
+     "vorder": false
+    },
+    "stg_flights_archive_log": {
+     "avg_row_group": 344.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.03,
+     "total_rows": 344,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_flights_archive_log",
+   "dim_flight_date",
+   "dim_carrier",
+   "fct_flights"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-13T02:22:15+00:00",
+  "id": "31659443631",
+  "sha": "bdcd7ed239d90bd9b718dc0483f091714b6c78ac",
+  "started": "2026-08-13T02:00:02+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/31659443631"
+ },
+ "schema": 1
+}
