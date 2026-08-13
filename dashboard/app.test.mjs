@@ -3969,3 +3969,8 @@ test("a missing marker is fatal rather than appending", () => {
 test("no spark run yet says so rather than printing an empty table", () => {
   assert.match(prof.renderProfileTable([]), /No spark run/);
 });
+
+test("readHeavyForSpark never reaches the table — it is neither side of the comparison", () => {
+  const runs = [sparkRun("a-1.json", "readHeavyForSpark", { size: 5_690 })];
+  assert.deepEqual(prof.profileRows(runs, sparkLedger(30_049, 1_882, 3_088)), []);
+});

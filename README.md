@@ -325,7 +325,6 @@ it is never staler than the ledger under it:
 | dataset | profile | runs | Livy compute | OneLake storage | build | analytics | table size (MB) |
 |---|---|---:|---:|---:|---:|---:|---:|
 | aemo | `readHeavyForPBI` | 8 / 7 | 31,629 | 1,803 | **33,432** | **1,514** | 4,344–4,350 |
-| aemo | `readHeavyForSpark` | 2 | 30,049 | 1,882 | **31,931** | **3,088** | 5,690–5,696 |
 | aemo | `writeHeavy` | 4 / 3 | 29,323 | 5,987 | **35,310** | **3,769** | 5,748–5,752 |
 | bts | `writeHeavy` | 1 | 3,693 | 261 | **3,954** | **1,093** | 2,441 |
 | green | `readHeavyForPBI` | 2 / 1 | 1,729 | 164 | **1,893** | **2,528** | 1,546 |
