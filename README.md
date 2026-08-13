@@ -327,7 +327,7 @@ it is never staler than the ledger under it:
 | aemo | `readHeavyForPBI` | 31,629 | 1,803 | **33,432** | **1,514** | yes | yes | 12.0–16.0M | 4,344–4,350 |
 | aemo | `writeHeavy` | 29,323 | 5,987 | **35,310** | **3,769** | no | no | 10.3–11.1M | 5,748–5,752 |
 | bts | `writeHeavy` | 3,693 | 261 | **3,954** | **1,093** | no | yes | 6.9M | 2,441 |
-| green | `readHeavyForPBI` | 1,729 | 164 | **1,893** | **2,528** | yes | yes | 2.3M | 1,546 |
+| green | `readHeavyForPBI` | 1,729 | 168 | **1,897** | **2,556** | yes | yes | 2.3M | 1,546 |
 | green | `writeHeavy` | 1,152 | 162 | **1,314** | **—** | no | no | 3.4M | 1,623 |
 | nyc | `readHeavyForPBI` | 11,614 | 454 | **12,068** | **5,968** | yes | yes | 10.4M | 5,850 |
 | nyc | `writeHeavy` | 10,465 | 587 | **11,052** | **8,726** | no | no | 10.4M | 9,291 |
