@@ -1,0 +1,72 @@
+version: 2
+
+models:
+  - name: fct_green_trips
+    description: >
+      NYC TLC green-taxi trip records — the wide raw fact, and the table under layout test on this
+      dataset (stats.py's MART for DATASET=green, as mart.fct_trips is for nyc).
+
+      The dataset exists to test a specific counter-claim: that V-Order on green taxi produces
+      BIGGER data, where the yellow pair measured a 36% shrink. Green is the same extreme-skew
+      surface as yellow — RatecodeID, store_and_fwd_flag, payment_type and VendorID at 97-99%
+      single-value, the LocationIDs Zipfian (on Brooklyn and Queens; green's Manhattan pickups are
+      legally restricted to the upper zones) — plus trip_type (~98% street-hail) and ehail_fee
+      (~all NULL), on a far smaller table. Summarising would throw away the only property being
+      measured.
+
+      NO GRAIN ASSERTION IS POSSIBLE. TLC trip records carry no natural unique key — duplicate
+      trips are a documented feature of the source — so there is no analogue of
+      assert_fct_summary_grain. What guards the write instead is file-level, and
+      assert_fct_green_trips_matches_archive_log is what checks it held.
+    columns:
+      - name: file
+        description: >
+          Source month, e.g. 'green_tripdata_2015-06'. The incremental key on every engine, and
+          the only thing standing between a re-dispatch and a doubled month.
+      - name: lpep_pickup_datetime
+        description: Pickup timestamp; the date derived from it joins to dim_green_date
+      - name: lpep_dropoff_datetime
+        description: Dropoff timestamp
+      - name: PULocationID
+        description: Pickup zone, joined to dim_green_zone. Zipfian — Brooklyn and Queens dominate
+      - name: DOLocationID
+        description: Dropoff zone, joined to dim_green_zone
+      - name: VendorID
+        description: Technology provider. Two live values, heavily skewed
+      - name: RatecodeID
+        description: Rate type. Standard rate dominates overwhelmingly
+      - name: store_and_fwd_flag
+        description: Y/N store-and-forward. ~99% 'N' — among the least varied columns in the table
+      - name: payment_type
+        description: Card/cash/other. Two values carry almost everything
+      - name: trip_type
+        description: >
+          1=street-hail, 2=dispatch — a green-only categorical, ~98% street-hail. One of the two
+          columns yellow does not have, and part of the skew surface under test.
+      - name: passenger_count
+        description: Reported passengers; 1 dominates
+      - name: trip_distance
+        description: Miles, long-tailed
+      - name: fare_amount
+        description: Metered fare
+      - name: extra
+        description: Rush-hour and overnight surcharges
+      - name: mta_tax
+        description: Flat MTA tax
+      - name: tip_amount
+        description: Tip; card trips only, cash tips are not recorded
+      - name: tolls_amount
+        description: Tolls paid
+      - name: ehail_fee
+        description: >
+          E-hail fee — ~all NULL in every era, green's CancellationCode-shaped column. Kept
+          because a near-constant NULL column is exactly the kind of surface V-Order's encoding
+          pass acts on.
+      - name: improvement_surcharge
+        description: Flat improvement surcharge
+      - name: total_amount
+        description: Total charged to the passenger, excluding cash tips
+      - name: congestion_surcharge
+        description: >
+          Congestion surcharge — present in every archived month, NULL before 2019. Kept, unlike
+          yellow, where the column only appears from 2019 and is excluded.

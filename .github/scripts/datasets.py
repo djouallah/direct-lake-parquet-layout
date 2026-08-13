@@ -1,6 +1,6 @@
 """The dataset registry — one place that knows what a dataset IS.
 
-Three datasets run through this project, selected by the DATASET env var (a dispatch input):
+Four datasets run through this project, selected by the DATASET env var (a dispatch input):
 
   aemo   the AEMO NEM electricity pipeline. CSV in, 8 models, mart.fct_summary under layout test —
          143M rows of FIVE narrow columns on a regular 5-minute x DUID grid, i.e. near-uniform.
@@ -10,6 +10,10 @@ Three datasets run through this project, selected by the DATASET env var (a disp
          layout test — 22 columns of INDEPENDENT moderate-cardinality categoricals: DayOfWeek is
          seven values near-uniform, Reporting_Airline ~20, Origin/Dest ~350 Zipfian, Tail_Number
          thousands, CancellationCode ~98% NULL.
+  green  NYC TLC green taxi. Parquet in, 4 models, mart.fct_green_trips under layout test — the
+         same extreme-skew regime as nyc (plus trip_type ~98% one value and ehail_fee ~all NULL)
+         on a table an order of magnitude smaller. It exists to test a specific counter-claim:
+         that V-Order on green taxi produces BIGGER data, where the yellow pair measured -36%.
 
 They exist as POINTS ON ONE SURFACE, and the spread is the experiment — it is what turned a wrong
 conclusion into a right one. V-Order reorders rows AND re-encodes them, so what it is worth depends
@@ -93,6 +97,30 @@ DATASETS = {
         "sort_by": "auto",
         "download": "download_nyc_taxi.py",
         "model_prefix": "nyc_",
+    },
+    "green": {
+        "landing": "dbt_green_landing",
+        "dwh_src": "dbt_green_dwh_src",
+        "folder": "benchmark",
+        "items": {"duckrun": "dbt_green_delta", "iceberg": "dbt_green_iceberg",
+                  "spark": "dbt_green_spark", "dwh": "dbt_green_dwh"},
+        "tables": ["stg_green_archive_log", "dim_green_date", "dim_green_zone", "fct_green_trips"],
+        "mart": "fct_green_trips",
+        # The 20 core columns plus the two DERIVED ones — `pickup_date` (the date dimension's join
+        # key; Direct Lake cannot relate a datetime to a date) and `file`. Mirrors
+        # macros/green_trip_columns.sql, and `.github/scripts/test_green_columns.py` asserts it
+        # does. Green KEEPS congestion_surcharge (present in every month since 2014, NULL before
+        # 2019) — the inverse of yellow — and adds trip_type and ehail_fee; the one exclusion is
+        # cbd_congestion_fee, 2025-onward only.
+        "mart_columns": ["VendorID", "lpep_pickup_datetime", "lpep_dropoff_datetime",
+                         "store_and_fwd_flag", "RatecodeID", "PULocationID", "DOLocationID",
+                         "passenger_count", "trip_distance", "fare_amount", "extra", "mta_tax",
+                         "tip_amount", "tolls_amount", "ehail_fee", "improvement_surcharge",
+                         "total_amount", "payment_type", "trip_type", "congestion_surcharge",
+                         "pickup_date", "file"],
+        "sort_by": "auto",
+        "download": "download_green_taxi.py",
+        "model_prefix": "green_",
     },
     "bts": {
         "landing": "dbt_bts_landing",

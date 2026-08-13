@@ -2115,6 +2115,8 @@ test("?dataset= carries its mart with it, and an unknown one falls back", () => 
   // reason DATASET_TABLE exists rather than two independent params.
   assert.equal(d.optsFromSearch("?dataset=nyc").table, "fct_trips");
   assert.equal(d.optsFromSearch("?dataset=nyc").dataset, "nyc");
+  assert.equal(d.optsFromSearch("?dataset=green").table, "fct_green_trips");
+  assert.equal(d.optsFromSearch("?dataset=green").dataset, "green");
   // ...but an explicit ?table= still wins, for asking an odd question of another shared table.
   assert.equal(d.optsFromSearch("?dataset=nyc&table=dim_zone").table, "dim_zone");
   // A reader-supplied URL falls back rather than rendering nothing: an empty page is a worse

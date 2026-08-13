@@ -40,6 +40,7 @@ MODELS = {
              "fct_price", "fct_scada", "fct_price_today", "fct_scada_today", "fct_summary"},
     "nyc": {"stg_parquet_archive_log", "dim_date", "dim_zone", "fct_trips"},
     "bts": {"stg_flights_archive_log", "dim_flight_date", "dim_carrier", "fct_flights"},
+    "green": {"stg_green_archive_log", "dim_green_date", "dim_green_zone", "fct_green_trips"},
 }
 
 # dataset -> how many data tests must be ENABLED. Generic tests come from models/<dataset>/_*.yml
@@ -49,7 +50,7 @@ MODELS = {
 # bts is 6 like aemo — four generic (unique/not_null on dim_carrier.code and dim_flight_date.date)
 # plus two singular (the archive-log reconciliation, and the whitespace guard that every STRING
 # join key crossing engines gets).
-TESTS = {"aemo": 6, "nyc": 5, "bts": 6}
+TESTS = {"aemo": 6, "nyc": 5, "bts": 6, "green": 5}
 
 DATASETS = tuple(MODELS)
 TARGETS = tuple(DIALECT)

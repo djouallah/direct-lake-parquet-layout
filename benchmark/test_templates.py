@@ -433,3 +433,68 @@ def test_no_dax_hides_outside_the_suite_dict():
     stray = [ln.strip() for ln in body.splitlines()
              if "EVALUATE" in ln and not ln.strip().startswith("#")]
     assert not stray, f"DAX outside SUITES, unreachable by the template tests: {stray}"
+
+
+# ------------------------------------------------------------------ the green taxi template
+#
+# The same guards, against the fourth dataset's `.bim`. Spelled out rather than parameterised, for
+# the same reason the NYC and BTS blocks are — different stars are genuinely different data, and a
+# loop would hide which one failed.
+
+GREEN = os.path.join(HERE, "fct_green_trips.SemanticModel", "model.bim")
+
+GREEN_EXPECTED = {"stg_green_archive_log": "landing",
+                  "dim_green_date": "mart",
+                  "dim_green_zone": "mart",
+                  "fct_green_trips": "mart"}
+
+
+def test_green_template_carries_every_shared_table():
+    assert set(_parts(GREEN)) == set(GREEN_EXPECTED)
+
+
+def test_green_template_table_set_matches_the_dataset_registry():
+    """Same guard as the other three: if a model is added or renamed in the registry and not here,
+    the benchmark quietly stops covering it."""
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"green":\s*\{.*?"tables":\s*\[(.*?)\]', src, re.S)
+    assert block, "could not find the green dataset's tables in datasets.py"
+    assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(_parts(GREEN))
+
+
+def test_green_template_is_direct_lake_and_repointable():
+    assert _is_directlake_bim(_raw(GREEN))
+    assert _ONELAKE_REF.search(_raw(GREEN).decode("utf-8"))
+
+
+def test_green_template_reads_the_real_tables_in_the_real_schemas():
+    assert _parts(GREEN) == {t: ("direct" + "Lake", schema, t)
+                             for t, schema in GREEN_EXPECTED.items()}
+
+
+def test_green_relationships_point_at_columns_that_exist():
+    m = json.loads(_raw(GREEN))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    for r in m["model"]["relationships"]:
+        assert r["fromColumn"] in cols[r["fromTable"]], f"{r['name']}: bad fromColumn"
+        assert r["toColumn"] in cols[r["toTable"]], f"{r['name']}: bad toColumn"
+
+
+def test_only_the_green_mart_relies_on_referential_integrity():
+    """Same rule as the other three templates: only the MART's relationships may set RI. A
+    relationship from a dimension or the archive log would be a modelling mistake before it was
+    an RI one."""
+    m = json.loads(_raw(GREEN))
+    for r in m["model"]["relationships"]:
+        if r.get("relyOnReferentialIntegrity"):
+            assert r["fromTable"] == "fct_green_trips", f"{r['name']} is not the mart's"
+
+
+def test_every_green_dax_string_resolves_against_the_green_template():
+    """Queries, readiness probe and ladder resolver — reads SUITES directly and sets nothing, for
+    the import-time-binding reason documented on the aemo/nyc copies."""
+    import xmla_compare as xc
+    _assert_dax_resolves(GREEN, xc.SUITES["green"])

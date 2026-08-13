@@ -38,6 +38,8 @@ DATASET_ITEMS = {
             "spark": "dbt_nyc_spark", "dwh": "dbt_nyc_dwh"},
     "bts": {"duckrun": "dbt_bts_delta", "iceberg": "dbt_bts_iceberg",
             "spark": "dbt_bts_spark", "dwh": "dbt_bts_dwh"},
+    "green": {"duckrun": "dbt_green_delta", "iceberg": "dbt_green_iceberg",
+              "spark": "dbt_green_spark", "dwh": "dbt_green_dwh"},
 }
 
 # Which Fabric item KIND each engine writes into — a property of the adapter, not of the dataset,
@@ -79,7 +81,7 @@ ALL = [e for e, _, _ in ENGINES]
 # suite is identical across models, so the model name is the ONLY thing that identifies which
 # engine's table a timing came from; across runs the prefix is what keeps two datasets' timings from
 # colliding in `benchmark.timings`, which is keyed by model name.
-PREFIXES = {"aemo": "aemo_", "nyc": "nyc_", "bts": "bts_"}
+PREFIXES = {"aemo": "aemo_", "nyc": "nyc_", "bts": "bts_", "green": "green_"}
 
 
 def prefix():

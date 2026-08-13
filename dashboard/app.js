@@ -81,7 +81,8 @@ export const SERVER = "https://github.com";
 // Each dataset's mart — the table the layout grouping, the encodings block and the mart rows are
 // about. `?dataset=` picks the mart with it; `?table=` still overrides, for asking an odd question
 // of one of the other shared tables.
-export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips", bts: "fct_flights" };
+export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips", bts: "fct_flights",
+                               green: "fct_green_trips" };
 
 /**
  * The per-dataset facts the PROSE needs, kept beside `DATASET_TABLE` rather than in a registry of
@@ -99,6 +100,7 @@ export const DATASET_INFO = {
   aemo: { label: "AEMO", archive: "raw AEMO CSV", landing: "dbt_landing" },
   nyc: { label: "NYC taxi", archive: "raw TLC parquet", landing: "dbt_nyc_landing" },
   bts: { label: "BTS flights", archive: "BTS on-time parquet", landing: "dbt_bts_landing" },
+  green: { label: "Green taxi", archive: "raw TLC parquet", landing: "dbt_green_landing" },
 };
 
 export function datasetInfo(dataset) {
@@ -124,6 +126,13 @@ export const DATASET_MART_COLUMNS = {
         "Flight_Number_Reporting_Airline", "Origin", "Dest", "CRSDepTime", "DepTime", "DepDelay",
         "DepDel15", "TaxiOut", "TaxiIn", "ArrTime", "ArrDelay", "ArrDel15", "Cancelled",
         "CancellationCode", "Diverted", "AirTime", "Distance", "DistanceGroup", "file"],
+  // fct_green_trips' own select list, in its own order — the 20 source columns (green keeps
+  // congestion_surcharge and adds trip_type/ehail_fee, unlike yellow) plus the two derived ones.
+  green: ["VendorID", "lpep_pickup_datetime", "lpep_dropoff_datetime", "store_and_fwd_flag",
+          "RatecodeID", "PULocationID", "DOLocationID", "passenger_count", "trip_distance",
+          "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount", "ehail_fee",
+          "improvement_surcharge", "total_amount", "payment_type", "trip_type",
+          "congestion_surcharge", "pickup_date", "file"],
 };
 
 /**

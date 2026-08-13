@@ -9,9 +9,9 @@ side by side — it is the only cross-engine check there is, and it is **no long
 it is the dispatch-only `layout` job, because it costs ~10 minutes to report something that
 only changes when the tables are rewritten.
 
-## THREE DATASETS, AND THEY ARE POINTS ON ONE SURFACE RATHER THAN A MENU
+## FOUR DATASETS, AND THEY ARE POINTS ON ONE SURFACE RATHER THAN A MENU
 
-`DATASET` is a dispatch input (`aemo` | `nyc` | `bts`, default `aemo`) and reaches everything from
+`DATASET` is a dispatch input (`aemo` | `nyc` | `bts` | `green`, default `aemo`) and reaches everything from
 one workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list,
 mart, mart columns, default sort key, downloader. **It is the single source for names that
 provision.py CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would
@@ -19,13 +19,24 @@ notice, with several it silently records another dataset's layout under this run
 `benchmark/engines.py` carries a deliberate copy (that directory must stay deletable) and
 `test_datasets.py` pins the copies together.
 
-| | `aemo` | `nyc` | `bts` |
-|---|---|---|---|
-| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP |
-| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` |
-| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** |
-| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL |
-| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … |
+| | `aemo` | `nyc` | `bts` | `green` |
+|---|---|---|---|---|
+| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN |
+| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` | 4, `mart.fct_green_trips` |
+| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** |
+| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens |
+| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … | `dbt_green_landing`, `dbt_green_delta`, … |
+
+**Why the fourth one exists.** A reviewer of the nyc result claimed V-Order on GREEN taxi produces
+BIGGER data. Green is the same extreme-skew surface as yellow on a table an order of magnitude
+smaller, so it separates surface from row count one more time — and tests that claim directly with
+the same `writeHeavy` / `readHeavyForPBI` spark pair. Three green facts that differ from nyc
+mechanically: the column list is 20, KEEPING `congestion_surcharge` (present since 2014-01, NULL
+before 2019 — the inverse of yellow, where it only appears from 2019 and is excluded; the one
+exclusion is `cbd_congestion_fee`, 2025+ only); the timestamps are `lpep_*`, so `pickup_date`
+derives from `lpep_pickup_datetime`; and the year pins in its DAX suite are **2014** (oldest-first
+drain from 2014-01 — the bts-pins-1988 rule), with the borough filter Brooklyn rather than
+Manhattan, because green pickups in Manhattan are legally restricted to the upper zones.
 
 **Why the second one exists, and it has already paid for itself.** The V-Order result rested on
 `fct_summary` and drew two objections: the data is too small, and the sort key happened to match the

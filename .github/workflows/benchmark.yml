@@ -103,7 +103,7 @@ on:
       # makes that unreachable from the form; `datasets.selected()` and `check_gating.py` cover the
       # ways in that do not go through the form.
       #
-      # The three are POINTS ON ONE SURFACE, not a menu. aemo is 143M rows of five narrow columns
+      # The four are POINTS ON ONE SURFACE, not a menu. aemo is 143M rows of five narrow columns
       # on a regular 5-minute grid (near-uniform — nothing to reorder); nyc is 17 columns with four
       # categoricals at 97-99% single-value and two Zipfian zone ids (so extreme every column wins
       # under any sort); bts is 22 columns of INDEPENDENT moderately-skewed categoricals
@@ -111,12 +111,14 @@ on:
       # thousands) — the regime where V-Order's greedy multi-column ordering actually has to
       # choose. What V-Order is worth depends on that SURFACE — column count x categorical skew —
       # not on row count, which is why measuring only the bigger, narrower table concluded it does
-      # nothing.
+      # nothing. green is nyc's regime on a table an order of magnitude smaller (plus trip_type and
+      # a ~all-NULL ehail_fee) — the small-table arm, added to test the claim that V-Order makes
+      # green data BIGGER.
       dataset:
-        description: "dataset — aemo (uniform), nyc (extreme skew) or bts (competing skew)"
+        description: "dataset — aemo (uniform), nyc (extreme skew), bts (competing skew) or green (extreme skew, small)"
         type: choice
         default: "aemo"
-        options: ["aemo", "nyc", "bts"]
+        options: ["aemo", "nyc", "bts", "green"]
       cores:
         description: "vCores (duckrun / iceberg only)"
         type: choice

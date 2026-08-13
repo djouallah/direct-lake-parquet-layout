@@ -372,6 +372,96 @@ BTS_QUERIES = [
      'dim_flight_date[month] = 6))'),
 ]
 
+# ---------------------------------------------------------------------------- the green taxi suite
+#
+# THE SAME SHAPE AS NYC, one probe longer — green is the same extreme-skew regime on a much smaller
+# table, plus two columns yellow does not have: trip_type (~98% street-hail, probed below) and
+# ehail_fee (~all NULL — not probed: DISTINCTCOUNT over a ~single-valued NULL column is byte-alike
+# with probe_storefwd and the extra probe is paid in every pass of every engine).
+#
+# The ladder and the year-filtered composite use 2014: the archive drains OLDEST FIRST from 2014-01
+# (the CDN serves no 2013 month at all), so 2014 is complete after even the first year's drain — a
+# later year would silently filter to nothing on a young archive, and a filter matching nothing is
+# a very fast query, which this benchmark would read as a result. The borough filter is Brooklyn,
+# not Manhattan: green pickups in Manhattan are legally restricted to the upper zones, so yellow's
+# filter would select against this fleet's grain rather than through it.
+GREEN_QUERIES = [
+    # --- Tier 1: per-column probes (rowcount LAST — see the note above) ---
+    ("probe", "probe_fare",       'EVALUATE ROW("x", SUM(fct_green_trips[fare_amount]))'),
+    ("probe", "probe_distance",   'EVALUATE ROW("x", SUM(fct_green_trips[trip_distance]))'),
+    ("probe", "probe_pulocation",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_green_trips[PULocationID]))'),
+    ("probe", "probe_dolocation",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_green_trips[DOLocationID]))'),
+    ("probe", "probe_paytype",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_green_trips[payment_type]))'),
+    # The most extreme columns in the table: ~99% one value, ~97% one value, ~98% one value. If
+    # V-Order does what an encoding pass should, it does it here.
+    ("probe", "probe_storefwd",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_green_trips[store_and_fwd_flag]))'),
+    ("probe", "probe_ratecode",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_green_trips[RatecodeID]))'),
+    ("probe", "probe_triptype",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_green_trips[trip_type]))'),
+    ("probe", "probe_pickup",
+     'EVALUATE ROW("x", COUNTROWS(VALUES(fct_green_trips[lpep_pickup_datetime])))'),
+    ("probe", "probe_rowcount",   'EVALUATE ROW("x", COUNTROWS(fct_green_trips))'),
+    # --- Tier 2: composite workloads over the star ---
+    ("composite", "borough_x_year",
+     'EVALUATE SUMMARIZECOLUMNS(dim_green_zone[Borough], dim_green_date[year], '
+     '"Fare", [Total Fare], "Trips", [Total Trips], "Dist", [Avg Distance])'),
+    ("composite", "paytype_x_borough",
+     'EVALUATE SUMMARIZECOLUMNS(fct_green_trips[payment_type], dim_green_zone[Borough], '
+     '"Fare", [Total Fare], "Tips", [Total Tips])'),
+    ("composite", "dow_x_borough",
+     'EVALUATE SUMMARIZECOLUMNS(dim_green_date[day_of_week], dim_green_zone[Borough], '
+     '"Trips", [Total Trips], "Fare", [Total Fare])'),
+    ("composite", "zone_x_month",
+     'EVALUATE SUMMARIZECOLUMNS(dim_green_zone[Zone], dim_green_date[year], '
+     'dim_green_date[month], "Fare", [Total Fare])'),
+    ("composite", "filtered_brooklyn_2014_by_zone",
+     'EVALUATE CALCULATETABLE('
+     'SUMMARIZECOLUMNS(dim_green_zone[Zone], "Fare", [Total Fare], "Trips", [Total Trips]), '
+     'dim_green_zone[Borough] = "Brooklyn", dim_green_date[year] = 2014)'),
+    ("composite", "scalar_weighted_full_scan",
+     'EVALUATE ROW('
+     '"TipRate", DIVIDE(SUMX(fct_green_trips, fct_green_trips[tip_amount]), '
+     'SUMX(fct_green_trips, fct_green_trips[fare_amount])), '
+     '"DistinctZones", DISTINCTCOUNT(fct_green_trips[PULocationID]), '
+     '"Rows", COUNTROWS(fct_green_trips))'),
+    ("composite", "topn_zone_by_fare",
+     'EVALUATE TOPN(50, SUMMARIZECOLUMNS(dim_green_zone[Zone], dim_green_date[year], '
+     '"Fare", [Total Fare]), [Fare], DESC)'),
+    # Column-width at fixed shape — cold scaling with the number of columns touched.
+    ("composite", "wide_all_measures",
+     'EVALUATE SUMMARIZECOLUMNS(dim_green_date[year], "a", [Total Fare], "b", [Total Amount], '
+     '"c", [Total Tips], "d", [Total Passengers], "e", [Avg Distance])'),
+    ("composite", "narrow_one_measure",
+     'EVALUATE SUMMARIZECOLUMNS(dim_green_date[year], "a", [Total Fare])'),
+    # --- Tier 3: the RAW table. Like nyc, the star is four tables, so this tier is one query. ---
+    ("raw", "raw_archive_log",
+     'EVALUATE SUMMARIZECOLUMNS(stg_green_archive_log[source_type], '
+     '"Files", [Archive Files], "Rows", [Archive Source Rows])'),
+    # --- Tier 4: selectivity ladder (SUMX lifts work above the XMLA noise floor) ---
+    ("hot_only", "sel_1yr",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_green_trips, '
+     'fct_green_trips[trip_distance] * fct_green_trips[fare_amount]), '
+     'dim_green_date[year] = 2014))'),
+    ("hot_only", "sel_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_green_trips, '
+     'fct_green_trips[trip_distance] * fct_green_trips[fare_amount]), '
+     'dim_green_date[year] = 2014, dim_green_date[month] = 6))'),
+    ("hot_only", "sel_1zone",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_green_trips, '
+     'fct_green_trips[trip_distance] * fct_green_trips[fare_amount]), '
+     'fct_green_trips[PULocationID] = {key}))'),
+    ("hot_only", "sel_1zone_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_green_trips, '
+     'fct_green_trips[trip_distance] * fct_green_trips[fare_amount]), '
+     'fct_green_trips[PULocationID] = {key}, dim_green_date[year] = 2014, '
+     'dim_green_date[month] = 6))'),
+]
+
 # The ladder's filter value is resolved from the data AFTER pass 1, per dataset. Three things per
 # suite: the queries, the DAX that finds the busiest key, and what to CALL it in the log and the
 # report — because "top DUID: 132" on a taxi run is exactly the quiet mislabel this repo is against.
@@ -405,6 +495,17 @@ SUITES = {
                    '"m", [Total Flights]), [m], DESC)',
         "quote": True,
         "ready": 'EVALUATE ROW("n", COUNTROWS(dim_flight_date))',
+    },
+    # green's PULocationID is an integer like nyc's, so it is NOT quoted; the readiness probe reads
+    # this dataset's OWN date dimension — a hardcoded dim_date here is exactly the failure the
+    # SUITES dict exists to prevent.
+    "green": {
+        "queries": GREEN_QUERIES,
+        "label": "busiest pickup zone",
+        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_green_trips[PULocationID], '
+                   '"m", [Total Trips]), [m], DESC)',
+        "quote": False,
+        "ready": 'EVALUATE ROW("n", COUNTROWS(dim_green_date))',
     },
 }
 

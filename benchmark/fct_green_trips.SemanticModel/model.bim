@@ -1,0 +1,488 @@
+{
+  "compatibilityLevel": 1604,
+  "model": {
+    "culture": "en-US",
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "annotations": [
+      {
+        "name": "PBI_ProTooling",
+        "value": "[\"RemoteModeling\", \"DirectLakeOnOneLakeCreatedInDesktop\"]"
+      }
+    ],
+    "expressions": [
+      {
+        "name": "DirectLake",
+        "kind": "m",
+        "description": "Direct Lake connection to OneLake — reads the Delta tables directly, no SQL endpoint. The two GUIDs are workspace + item and are REWRITTEN at deploy time by duckrun's workspace.deploy(lakehouse=...) or deploy(warehouse=...) — which is how this ONE template serves all four engines, warehouse included, since deploy(mode=) made the storage mode independent of the item kind (duckrun 0.4.36). The checked-in pair is a PLACEHOLDER of zeros, not a real workspace and item: it is overwritten before this template is ever deployed, and the real ids live in repo secrets. What must NOT change is the shape - _is_directlake_bim() greps the raw bytes for a onelake.dfs URL to decide this is a Direct Lake model, so removing the URL, or the camelCase mode token, silently turns it into something deploy cannot serve.",
+        "expression": [
+          "let",
+          "    Source = AzureStorage.DataLake(\"https://onelake.dfs.fabric.microsoft.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000\", [HierarchicalNavigation=true])",
+          "in",
+          "    Source"
+        ]
+      }
+    ],
+    "tables": [
+      {
+        "name": "fct_green_trips",
+        "description": "NYC TLC green-taxi trip records — the wide raw fact, and the table under layout test.\nGrain: one row per trip. No natural unique key; duplicate trips are a documented feature of the source.",
+        "sourceLineageTag": "[mart].[fct_green_trips]",
+        "columns": [
+          {
+            "name": "pickup_date",
+            "dataType": "dateTime",
+            "sourceColumn": "pickup_date",
+            "sourceLineageTag": "pickup_date",
+            "summarizeBy": "none",
+            "description": "Pickup date — the join key to dim_green_date. Direct Lake cannot relate a dateTime column to a date dimension, which is why the fact stores this alongside the timestamp.",
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "lpep_pickup_datetime",
+            "dataType": "dateTime",
+            "sourceColumn": "lpep_pickup_datetime",
+            "sourceLineageTag": "lpep_pickup_datetime",
+            "summarizeBy": "none",
+            "description": "Meter engaged",
+            "formatString": "yyyy-MM-dd HH:mm:ss"
+          },
+          {
+            "name": "lpep_dropoff_datetime",
+            "dataType": "dateTime",
+            "sourceColumn": "lpep_dropoff_datetime",
+            "sourceLineageTag": "lpep_dropoff_datetime",
+            "summarizeBy": "none",
+            "description": "Meter disengaged",
+            "formatString": "yyyy-MM-dd HH:mm:ss"
+          },
+          {
+            "name": "PULocationID",
+            "dataType": "int64",
+            "sourceColumn": "PULocationID",
+            "sourceLineageTag": "PULocationID",
+            "summarizeBy": "none",
+            "description": "Pickup zone — foreign key to dim_green_zone. Zipfian: Brooklyn and Queens dominate (green pickups in Manhattan are legally restricted to the upper zones), and this is the skew the dataset exists to measure."
+          },
+          {
+            "name": "DOLocationID",
+            "dataType": "int64",
+            "sourceColumn": "DOLocationID",
+            "sourceLineageTag": "DOLocationID",
+            "summarizeBy": "none",
+            "description": "Dropoff zone. Deliberately NOT related to dim_green_zone: only one active relationship may exist between two tables, and a second inactive one would need USERELATIONSHIP in every query that touched it. It is still measured, as probe_dolocation."
+          },
+          {
+            "name": "VendorID",
+            "dataType": "int64",
+            "sourceColumn": "VendorID",
+            "sourceLineageTag": "VendorID",
+            "summarizeBy": "none",
+            "description": "Technology provider. Two live values, heavily skewed"
+          },
+          {
+            "name": "RatecodeID",
+            "dataType": "int64",
+            "sourceColumn": "RatecodeID",
+            "sourceLineageTag": "RatecodeID",
+            "summarizeBy": "none",
+            "description": "Rate type. Standard rate dominates overwhelmingly"
+          },
+          {
+            "name": "store_and_fwd_flag",
+            "dataType": "string",
+            "sourceColumn": "store_and_fwd_flag",
+            "sourceLineageTag": "store_and_fwd_flag",
+            "summarizeBy": "none",
+            "description": "Y/N store-and-forward. ~99% 'N' — among the least varied columns in the table"
+          },
+          {
+            "name": "payment_type",
+            "dataType": "int64",
+            "sourceColumn": "payment_type",
+            "sourceLineageTag": "payment_type",
+            "summarizeBy": "none",
+            "description": "Card/cash/other. Two values carry almost everything"
+          },
+          {
+            "name": "trip_type",
+            "dataType": "int64",
+            "sourceColumn": "trip_type",
+            "sourceLineageTag": "trip_type",
+            "summarizeBy": "none",
+            "description": "1=street-hail, 2=dispatch — a green-only categorical, ~98% street-hail"
+          },
+          {
+            "name": "passenger_count",
+            "dataType": "int64",
+            "sourceColumn": "passenger_count",
+            "sourceLineageTag": "passenger_count",
+            "summarizeBy": "sum",
+            "description": "Reported passengers; 1 dominates"
+          },
+          {
+            "name": "trip_distance",
+            "dataType": "double",
+            "sourceColumn": "trip_distance",
+            "sourceLineageTag": "trip_distance",
+            "summarizeBy": "sum",
+            "description": "Miles, long-tailed",
+            "formatString": "#,##0.00"
+          },
+          {
+            "name": "fare_amount",
+            "dataType": "double",
+            "sourceColumn": "fare_amount",
+            "sourceLineageTag": "fare_amount",
+            "summarizeBy": "sum",
+            "description": "Metered fare",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "extra",
+            "dataType": "double",
+            "sourceColumn": "extra",
+            "sourceLineageTag": "extra",
+            "summarizeBy": "sum",
+            "description": "Rush-hour and overnight surcharges",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "mta_tax",
+            "dataType": "double",
+            "sourceColumn": "mta_tax",
+            "sourceLineageTag": "mta_tax",
+            "summarizeBy": "sum",
+            "description": "Flat MTA tax",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "tip_amount",
+            "dataType": "double",
+            "sourceColumn": "tip_amount",
+            "sourceLineageTag": "tip_amount",
+            "summarizeBy": "sum",
+            "description": "Tip. Card trips only — cash tips are not recorded, which is a real skew, not a gap",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "tolls_amount",
+            "dataType": "double",
+            "sourceColumn": "tolls_amount",
+            "sourceLineageTag": "tolls_amount",
+            "summarizeBy": "sum",
+            "description": "Tolls paid",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "ehail_fee",
+            "dataType": "double",
+            "sourceColumn": "ehail_fee",
+            "sourceLineageTag": "ehail_fee",
+            "summarizeBy": "sum",
+            "description": "E-hail fee — ~all NULL in every era, the near-constant column of the surface",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "improvement_surcharge",
+            "dataType": "double",
+            "sourceColumn": "improvement_surcharge",
+            "sourceLineageTag": "improvement_surcharge",
+            "summarizeBy": "sum",
+            "description": "Flat improvement surcharge",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "total_amount",
+            "dataType": "double",
+            "sourceColumn": "total_amount",
+            "sourceLineageTag": "total_amount",
+            "summarizeBy": "sum",
+            "description": "Total charged, excluding cash tips",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "congestion_surcharge",
+            "dataType": "double",
+            "sourceColumn": "congestion_surcharge",
+            "sourceLineageTag": "congestion_surcharge",
+            "summarizeBy": "sum",
+            "description": "Congestion surcharge — present in every archived month, NULL before 2019",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "file",
+            "dataType": "string",
+            "sourceColumn": "file",
+            "sourceLineageTag": "file",
+            "summarizeBy": "none",
+            "description": "Source month, e.g. green_tripdata_2015-06 — the incremental key"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Total Fare",
+            "description": "Metered fare across the selection",
+            "expression": "SUM(fct_green_trips[fare_amount])",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "Total Amount",
+            "description": "Total charged, excluding cash tips",
+            "expression": "SUM(fct_green_trips[total_amount])",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "Total Tips",
+            "description": "Tips, card trips only",
+            "expression": "SUM(fct_green_trips[tip_amount])",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "Total Trips",
+            "description": "Row count of the fact",
+            "expression": "COUNTROWS(fct_green_trips)",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Avg Distance",
+            "description": "Mean trip distance in miles",
+            "expression": "AVERAGE(fct_green_trips[trip_distance])",
+            "formatString": "#,##0.00"
+          },
+          {
+            "name": "Total Passengers",
+            "description": "Reported passengers across the selection",
+            "expression": "SUM(fct_green_trips[passenger_count])",
+            "formatString": "#,##0"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fct_green_trips",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "fct_green_trips",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_green_zone",
+        "description": "The 265 TLC taxi zones.\nJoined from fct_green_trips[PULocationID]. LocationID is an INTEGER key, which is why this dataset needs no whitespace assertion.",
+        "sourceLineageTag": "[mart].[dim_green_zone]",
+        "columns": [
+          {
+            "name": "LocationID",
+            "dataType": "int64",
+            "sourceColumn": "LocationID",
+            "sourceLineageTag": "LocationID",
+            "summarizeBy": "none",
+            "description": "Zone id (primary key)",
+            "isKey": true
+          },
+          {
+            "name": "Borough",
+            "dataType": "string",
+            "sourceColumn": "Borough",
+            "sourceLineageTag": "Borough",
+            "summarizeBy": "none",
+            "description": "Manhattan, Brooklyn, Queens, Bronx, Staten Island, EWR or Unknown"
+          },
+          {
+            "name": "Zone",
+            "dataType": "string",
+            "sourceColumn": "Zone",
+            "sourceLineageTag": "Zone",
+            "summarizeBy": "none",
+            "description": "Zone name, e.g. 'JFK Airport'"
+          },
+          {
+            "name": "service_zone",
+            "dataType": "string",
+            "sourceColumn": "service_zone",
+            "sourceLineageTag": "service_zone",
+            "summarizeBy": "none",
+            "description": "Yellow Zone, Boro Zone, Airports or EWR"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_green_zone",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "dim_green_zone",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_green_date",
+        "description": "Date dimension covering 2011-01-01 to 2026-12-31.\nUsed to filter and aggregate trips by date, month and year.",
+        "sourceLineageTag": "[mart].[dim_green_date]",
+        "columns": [
+          {
+            "name": "date",
+            "dataType": "dateTime",
+            "sourceColumn": "date",
+            "sourceLineageTag": "date",
+            "summarizeBy": "none",
+            "description": "Calendar date (primary key). One row per day.",
+            "isKey": true,
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "sourceLineageTag": "year",
+            "summarizeBy": "none",
+            "description": "Calendar year (e.g. 2015)"
+          },
+          {
+            "name": "month",
+            "dataType": "int64",
+            "sourceColumn": "month",
+            "sourceLineageTag": "month",
+            "summarizeBy": "none",
+            "description": "Calendar month number (1-12)"
+          },
+          {
+            "name": "day_of_week",
+            "dataType": "int64",
+            "sourceColumn": "day_of_week",
+            "sourceLineageTag": "day_of_week",
+            "summarizeBy": "none",
+            "description": "0=Sunday. Normalised identically in all three dialects, so a difference here would be real rather than a dialect artefact."
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_green_date",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "dim_green_date",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "stg_green_archive_log",
+        "description": "The archive log download_green_taxi.py writes.\nOne row per landed file: what was fetched, how many rows its parquet footer declared, and the source schema as TLC published it.",
+        "sourceLineageTag": "[landing].[stg_green_archive_log]",
+        "columns": [
+          {
+            "name": "source_type",
+            "dataType": "string",
+            "sourceColumn": "source_type",
+            "sourceLineageTag": "source_type",
+            "summarizeBy": "none",
+            "description": "'green' for a monthly trip file, 'zone' for the lookup"
+          },
+          {
+            "name": "source_filename",
+            "dataType": "string",
+            "sourceColumn": "source_filename",
+            "sourceLineageTag": "source_filename",
+            "summarizeBy": "none",
+            "description": "Name of the downloaded file, without extension"
+          },
+          {
+            "name": "archive_path",
+            "dataType": "string",
+            "sourceColumn": "archive_path",
+            "sourceLineageTag": "archive_path",
+            "summarizeBy": "none",
+            "description": "Path under parquet_raw/"
+          },
+          {
+            "name": "file_stem",
+            "dataType": "string",
+            "sourceColumn": "file_stem",
+            "sourceLineageTag": "file_stem",
+            "summarizeBy": "none",
+            "description": "Filename without extension — what fct_green_trips stores as `file`"
+          },
+          {
+            "name": "row_count",
+            "dataType": "int64",
+            "sourceColumn": "row_count",
+            "sourceLineageTag": "row_count",
+            "summarizeBy": "sum",
+            "description": "Rows in the source file, from its parquet footer",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "columns",
+            "dataType": "string",
+            "sourceColumn": "columns",
+            "sourceLineageTag": "columns",
+            "summarizeBy": "none",
+            "description": "The source file's own column list, as TLC published it"
+          },
+          {
+            "name": "archived_at",
+            "dataType": "dateTime",
+            "sourceColumn": "archived_at",
+            "sourceLineageTag": "archived_at",
+            "summarizeBy": "none",
+            "description": "When the file was archived",
+            "formatString": "yyyy-MM-dd HH:mm"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Archive Files",
+            "description": "Files landed",
+            "expression": "COUNTROWS(stg_green_archive_log)",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Archive Source Rows",
+            "description": "Rows across every landed file",
+            "expression": "SUM(stg_green_archive_log[row_count])",
+            "formatString": "#,##0"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "stg_green_archive_log",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "stg_green_archive_log",
+              "expressionSource": "DirectLake",
+              "schemaName": "landing"
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "fct_green_trips_to_dim_green_zone",
+        "fromTable": "fct_green_trips",
+        "fromColumn": "PULocationID",
+        "toTable": "dim_green_zone",
+        "toColumn": "LocationID",
+        "relyOnReferentialIntegrity": true
+      },
+      {
+        "name": "fct_green_trips_to_dim_green_date",
+        "fromTable": "fct_green_trips",
+        "fromColumn": "pickup_date",
+        "toTable": "dim_green_date",
+        "toColumn": "date",
+        "relyOnReferentialIntegrity": true
+      }
+    ]
+  }
+}

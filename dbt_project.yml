@@ -125,6 +125,22 @@ models:
         staging:    {+materialized: view,        +schema: landing}
         dimensions: {+materialized: table,       +schema: mart}
         marts:      {+materialized: incremental,  +schema: mart}
+    green:                                                   # NYC TLC green taxi — parquet, 4 models
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'green' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'green' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'green' }}"
+        staging:    {+materialized: view,        +schema: landing}
+        dimensions: {+materialized: table,       +schema: mart}
+        marts:      {+materialized: incremental,  +schema: mart}
 
 # Singular tests, tests/<DATASET>/<DIALECT>/ — the same two axes as models/ above, gated the same
 # way, so every engine runs the same assertions in its own dialect against the output it just wrote.
@@ -160,3 +176,11 @@ data_tests:
         +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'bts' }}"
       spark:
         +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'bts' }}"
+    green:
+      +enabled: "{{ env_var('DATASET', 'aemo') == 'green' }}"
+      duckdb:
+        +enabled: "{{ target.type in ['duckrun', 'duckdb'] and env_var('DATASET', 'aemo') == 'green' }}"
+      dwh:
+        +enabled: "{{ target.type == 'fabric' and env_var('DATASET', 'aemo') == 'green' }}"
+      spark:
+        +enabled: "{{ target.type == 'fabricspark' and env_var('DATASET', 'aemo') == 'green' }}"
