@@ -322,7 +322,7 @@ it is never staler than the ledger under it:
 
 <!-- spark-profiles:start -->
 
-| dataset | profile | build | build % | directlake | query % | avg row group | table size (MB) |
+| dataset | profile | build | build&nbsp;% | directlake | query&nbsp;% | avg row group | table size (MB) |
 |---|---|---:|---:|---:|---:|---:|---:|
 | aemo | `readHeavyForPBI` | **33,098** | 92% | **1,618** | 41% | 9.6–16.0M | 4,338–4,350 |
 | aemo | `writeHeavy` | **35,813** | 100% | **3,903** | 100% | 6.5–11.1M | 5,691–5,752 |
