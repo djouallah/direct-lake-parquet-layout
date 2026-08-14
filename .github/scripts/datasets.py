@@ -1,6 +1,6 @@
 """The dataset registry — one place that knows what a dataset IS.
 
-Four datasets run through this project, selected by the DATASET env var (a dispatch input):
+Five datasets run through this project, selected by the DATASET env var (a dispatch input):
 
   aemo   the AEMO NEM electricity pipeline. CSV in, 8 models, mart.fct_summary under layout test —
          143M rows of FIVE narrow columns on a regular 5-minute x DUID grid, i.e. near-uniform.
@@ -14,6 +14,12 @@ Four datasets run through this project, selected by the DATASET env var (a dispa
          same extreme-skew regime as nyc (plus trip_type ~98% one value and ehail_fee ~all NULL)
          on a table an order of magnitude smaller. It exists to test a specific counter-claim:
          that V-Order on green taxi produces BIGGER data, where the yellow pair measured -36%.
+  cms    CMS Open Payments general payments. Annual CSV in, 4 models, mart.fct_cms_payments under
+         layout test — NINETY-ONE columns, 4x the widest of the others, and the only SPARSE
+         surface here: 54 of them are >50% NULL, because CMS models a one-to-many product list as
+         five repeated six-column groups whose tail members run 83-99% NULL. It is also the only
+         table carrying BOTH skew regimes at once — Nature_of_Payment at 92% single-value (nyc's)
+         beside specialty at 302 competing values and the payer id at ~1,000 (bts's).
 
 They exist as POINTS ON ONE SURFACE, and the spread is the experiment — it is what turned a wrong
 conclusion into a right one. V-Order reorders rows AND re-encodes them, so what it is worth depends
@@ -130,6 +136,88 @@ DATASETS = {
         "sort_by": "auto",
         "download": "download_green_taxi.py",
         "model_prefix": "green_",
+    },
+    "cms": {
+        "landing": "dbt_cms_landing",
+        "dwh_src": "dbt_cms_dwh_src",
+        "folder": "benchmark",
+        "items": {"duckrun": "dbt_cms_delta", "iceberg": "dbt_cms_iceberg",
+                  "spark": "dbt_cms_spark", "dwh": "dbt_cms_dwh"},
+        "tables": ["stg_cms_archive_log", "dim_cms_date", "dim_cms_payer", "fct_cms_payments"],
+        "mart": "fct_cms_payments",
+        # ALL 91 SOURCE COLUMNS plus `file`. Date_of_Payment is a DATE straight from the source, so
+        # like bts — and unlike nyc and green — there is no derived date column: the dimension join
+        # key ships in the file. Mirrors macros/cms_payment_columns.sql, and
+        # `.github/scripts/test_cms_columns.py` asserts it does.
+        #
+        # This is the only mart here that takes its source WHOLE, and that is the point of the
+        # dataset: the other four vary skew at 5-22 columns, this one varies WIDTH and adds
+        # SPARSITY (54 of the 91 are >50% NULL, because CMS models a one-to-many product list as
+        # five repeated six-column groups). Trimming it to the populated columns would delete the
+        # surface it was added to measure.
+        "mart_columns": [
+            "Change_Type", "Covered_Recipient_Type", "Teaching_Hospital_CCN",
+            "Teaching_Hospital_ID", "Teaching_Hospital_Name", "Covered_Recipient_Profile_ID",
+            "Covered_Recipient_NPI", "Covered_Recipient_First_Name",
+            "Covered_Recipient_Middle_Name", "Covered_Recipient_Last_Name",
+            "Covered_Recipient_Name_Suffix",
+            "Recipient_Primary_Business_Street_Address_Line1",
+            "Recipient_Primary_Business_Street_Address_Line2", "Recipient_City",
+            "Recipient_State", "Recipient_Zip_Code", "Recipient_Country", "Recipient_Province",
+            "Recipient_Postal_Code",
+            "Covered_Recipient_Primary_Type_1", "Covered_Recipient_Primary_Type_2",
+            "Covered_Recipient_Primary_Type_3", "Covered_Recipient_Primary_Type_4",
+            "Covered_Recipient_Primary_Type_5", "Covered_Recipient_Primary_Type_6",
+            "Covered_Recipient_Specialty_1", "Covered_Recipient_Specialty_2",
+            "Covered_Recipient_Specialty_3", "Covered_Recipient_Specialty_4",
+            "Covered_Recipient_Specialty_5", "Covered_Recipient_Specialty_6",
+            "Covered_Recipient_License_State_code1", "Covered_Recipient_License_State_code2",
+            "Covered_Recipient_License_State_code3", "Covered_Recipient_License_State_code4",
+            "Covered_Recipient_License_State_code5",
+            "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name",
+            "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID",
+            "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name",
+            "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State",
+            "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country",
+            "Total_Amount_of_Payment_USDollars", "Date_of_Payment",
+            "Number_of_Payments_Included_in_Total_Amount",
+            "Form_of_Payment_or_Transfer_of_Value", "Nature_of_Payment_or_Transfer_of_Value",
+            "City_of_Travel", "State_of_Travel", "Country_of_Travel",
+            "Physician_Ownership_Indicator", "Third_Party_Payment_Recipient_Indicator",
+            "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value",
+            "Charity_Indicator", "Third_Party_Equals_Covered_Recipient_Indicator",
+            "Contextual_Information", "Delay_in_Publication_Indicator", "Record_ID",
+            "Dispute_Status_for_Publication", "Related_Product_Indicator",
+            "Covered_or_Noncovered_Indicator_1",
+            "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "Product_Category_or_Therapeutic_Area_1",
+            "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "Associated_Drug_or_Biological_NDC_1", "Associated_Device_or_Medical_Supply_PDI_1",
+            "Covered_or_Noncovered_Indicator_2",
+            "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "Product_Category_or_Therapeutic_Area_2",
+            "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "Associated_Drug_or_Biological_NDC_2", "Associated_Device_or_Medical_Supply_PDI_2",
+            "Covered_or_Noncovered_Indicator_3",
+            "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "Product_Category_or_Therapeutic_Area_3",
+            "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "Associated_Drug_or_Biological_NDC_3", "Associated_Device_or_Medical_Supply_PDI_3",
+            "Covered_or_Noncovered_Indicator_4",
+            "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "Product_Category_or_Therapeutic_Area_4",
+            "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "Associated_Drug_or_Biological_NDC_4", "Associated_Device_or_Medical_Supply_PDI_4",
+            "Covered_or_Noncovered_Indicator_5",
+            "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "Product_Category_or_Therapeutic_Area_5",
+            "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "Associated_Drug_or_Biological_NDC_5", "Associated_Device_or_Medical_Supply_PDI_5",
+            "Program_Year", "Payment_Publication_Date", "file"],
+        "landing_tables": ["stg_cms_archive_log"],
+        "sort_by": "auto",
+        "download": "download_cms_payments.py",
+        "model_prefix": "cms_",
     },
     "bts": {
         "landing": "dbt_bts_landing",

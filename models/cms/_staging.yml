@@ -1,0 +1,57 @@
+version: 2
+
+# Shared across all three dialects — model names are identical in models/cms/duckdb,
+# models/cms/dwh and models/cms/spark, so ONE patch documents/tests whichever tree is enabled
+# for the target.
+#
+# THIS FILE'S LOCATION IS LOAD-BEARING. A generic test's fqn is the fqn of the YML FILE, not of the
+# model it patches, so living under models/cms/ is what gives its tests the `cms` segment that
+# `data_tests: aemo_electricity: cms:` gates on. At the root of models/ it would carry no folder
+# segment at all and no gate could reach it — which is exactly the bug that once left dwh and spark
+# running zero tests. Do not move it up.
+
+models:
+  - name: stg_cms_archive_log
+    description: >
+      View over the archive log download_cms_payments.py writes to the landing lakehouse
+      (Files/parquet_raw_archive_log.parquet). One log; every engine reads it with SQL.
+
+      THIS DATASET IS THE ONE WHERE source_filename AND file_stem DIFFER. Every other dataset
+      lands one file per source file, so the two agree. Here a month cannot be fetched on its own
+      — CMS publishes one CSV per program year — so the WATERMARK unit is the annual CSV and the
+      LANDED unit is the month: one year writes ~12 rows sharing a source_filename and differing
+      in file_stem. That is why the downloader's skip logic reads DISTINCT source_filename while
+      every macro that selects pending files keys on file_stem.
+    columns:
+      - name: source_type
+        description: Type of source — 'cms' for a landed month, 'payer' for the derived lookup
+      - name: source_filename
+        description: >
+          The annual CSV this month came out of, without extension, e.g.
+          'OP_DTL_GNRL_PGYR2023_P06302026_06032026'. THE WATERMARK, and repeated across the ~12
+          rows of one program year. It carries CMS's publication dates, so a republication lands
+          as a new source_filename and the year is drained again rather than silently skipped.
+      - name: archive_path
+        description: Path under parquet_raw/, e.g. '/cms/cms_2023-06.parquet'
+      - name: file_stem
+        description: >
+          Filename without extension, e.g. 'cms_2023-06' — what the fact models store as `file`,
+          and what every dialect's pending-file selection dedups on. Unique per landed month,
+          unlike source_filename.
+      - name: row_count
+        description: >
+          Rows in this landed month. The months of a program year are reconciled against the
+          source CSV's own count at LAND time, not by a dbt test — download_cms_payments.py writes
+          both sides of the split, so a dbt assertion would be comparing it against itself.
+      - name: columns
+        description: >
+          The source CSV's own header as CMS published it, recorded so a schema question can be
+          answered from the log rather than by re-downloading ~50 GB. All 91, byte-identical
+          across PY2019-2025.
+      - name: source_url
+        description: >
+          The resolved download URL. Recorded because it is NOT templatable — CMS bakes the
+          publication and refresh dates into the path — so this is the only record of what was
+          actually fetched. See download_cms_payments.resolve_urls().
+      - name: archived_at
+        description: Timestamp when the file was archived

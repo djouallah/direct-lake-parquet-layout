@@ -60,6 +60,10 @@ CASES = [
     ("pinned green layout",
      {"dataset": "green", "row_group_size": "2000000",
       "sort_by": "pickup_date,PULocationID"}, True),
+    ("auto on cms", {"dataset": "cms", "engines": "spark"}, True),
+    ("pinned cms layout",
+     {"dataset": "cms", "row_group_size": "2000000",
+      "sort_by": "Date_of_Payment,Nature_of_Payment_or_Transfer_of_Value"}, True),
     # Blank sort is the only way to ask for NO sort, so it must stay legal.
     ("unsorted", {"sort_by": ""}, True),
     ("AUTO uppercase", {"row_group_size": "AUTO", "sort_by": "AUTO"}, True),
@@ -69,6 +73,10 @@ CASES = [
     ("the other dataset's sort key", {"dataset": "nyc", "sort_by": "date,time,price"}, False),
     ("the aemo key on bts", {"dataset": "bts", "sort_by": "date,time,price"}, False),
     ("the aemo key on green", {"dataset": "green", "sort_by": "date,time,price"}, False),
+    ("the aemo key on cms", {"dataset": "cms", "sort_by": "date,time,price"}, False),
+    # cms's own key on another dataset — the refusal has to work in both directions, and this one
+    # is the likelier mistake now that cms's column names are the longest here to retype.
+    ("the cms key on nyc", {"dataset": "nyc", "sort_by": "Date_of_Payment"}, False),
     ("malformed sort key", {"sort_by": "date;time"}, False),
     ("whitespace sort key", {"sort_by": "   "}, False),
     ("unknown engine", {"engines": "nope"}, False),

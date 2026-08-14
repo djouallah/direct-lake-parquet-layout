@@ -1,0 +1,127 @@
+version: 2
+
+models:
+  - name: fct_cms_payments
+    description: >
+      CMS Open Payments general-payment records — every row is one payment a drug or device
+      manufacturer made to a physician or teaching hospital under the Sunshine Act, with an
+      amount, a date, a payer and a payee. The wide raw fact, and the table under layout test on
+      this dataset (stats.py's MART for DATASET=cms, as mart.fct_green_trips is for green).
+
+      WHY THIS DATASET EXISTS. The other four vary SKEW at a roughly constant width — 5, 17, 20
+      and 22 columns. This one varies the WIDTH, at 91, and adds a property none of them has:
+      SPARSITY. Measured on a 100 MB / 187,750-row sample of PY2023, 54 of the 91 columns are more
+      than half NULL, because CMS models a one-to-many product list as five repeated six-column
+      groups plus a six-wide recipient-type/specialty group. Sparse columns are where an encoding
+      pass has the most to gain, and nothing else in this project exercises that at all.
+
+      It is also the first table carrying BOTH skew regimes at once, which is what makes it a new
+      point rather than a wider bts: Nature_of_Payment at 92% single-value and Dispute_Status at
+      100% (nyc's regime, where every column can win the sort at once) beside
+      Covered_Recipient_Specialty_1 at 302 competing values and the payer id at ~1,000 (bts's
+      regime, where they cannot). nyc says nothing about the second and bts nothing about the
+      first.
+
+      ALL 91 COLUMNS ARE LANDED DELIBERATELY, and the star schema is a later step. Landing is the
+      irreversible half — the archive is normalised to parquet once, at land time — so a column
+      dropped now costs a re-download of ~50 GB to recover, while a mart is cheap to re-derive
+      from what is already stored. Note the consequence when that step comes: a narrow
+      star-schema fact would be NARROWER than bts, so splitting the dimensions out ends this
+      dataset's role as the wide point on the surface. That is a decision to take knowingly.
+
+      NO GRAIN ASSERTION IS NEEDED FROM A TEST, unlike nyc and green. CMS publishes Record_ID, a
+      system-generated unique identifier, so (file, Record_ID) is a genuine key and the write is a
+      real keyed merge on all four engines — the guard is at WRITE time rather than after the
+      fact. assert_fct_cms_payments_matches_archive_log is still the detector for a partial or
+      missing month.
+    columns:
+      - name: file
+        description: >
+          Source month, e.g. 'cms_2023-06'. Leads the incremental key on every engine and bounds
+          the target read via macros/pending_file_predicate.sql.
+      - name: Record_ID
+        description: >
+          CMS's system-generated unique identifier for the payment record — the second half of
+          the incremental key, and what lets this dataset use a real keyed merge where the taxi
+          facts cannot. Kept as a STRING because CMS documents it as one; see
+          download_cms_payments.py's CANONICAL for why reinterpreting it as a BIGINT is a bad
+          trade even though every observed value is ten digits.
+      - name: Date_of_Payment
+        description: >
+          Date the payment was made — a DATE in the source, so it joins dim_cms_date directly.
+          There is no derived bridge column here, unlike nyc's and green's pickup_date; the same
+          way bts uses FlightDate.
+      - name: Total_Amount_of_Payment_USDollars
+        description: The payment amount. Long-tailed — most are meals under $50, a few are six figures
+      - name: Number_of_Payments_Included_in_Total_Amount
+        description: Payments rolled into this row. ~99.7% are 1
+      - name: Program_Year
+        description: >
+          The reporting year the record was published under. Constant within a source CSV, but NOT
+          equal to YEAR(Date_of_Payment) for every row — CMS accepts payments dated outside their
+          program year, which is why the downloader buckets months by the actual payment date.
+      - name: Nature_of_Payment_or_Transfer_of_Value
+        description: >
+          What the payment was for — food and beverage, travel, consulting, royalties. ~92% one
+          value ('Food and Beverage'), which puts it in nyc's extreme-skew regime and makes it the
+          cheapest column in the table to run-length encode.
+      - name: Form_of_Payment_or_Transfer_of_Value
+        description: Cash, in-kind, stock. ~86% one value
+      - name: Covered_Recipient_Type
+        description: Physician, non-physician practitioner, or teaching hospital. ~65% one value
+      - name: Covered_Recipient_Profile_ID
+        description: CMS's id for the payee. ~128K distinct in a 187K-row sample — near-unique
+      - name: Covered_Recipient_NPI
+        description: National Provider Identifier of the payee. Ten digits, hence BIGINT not INT
+      - name: Covered_Recipient_Specialty_1
+        description: >
+          Taxonomy specialty of the payee — 302 values with the top at 9.5%. This is the bts-shaped
+          column: many independent, moderately skewed values that genuinely compete for a sort
+          budget against the 92%-single-value columns above.
+      - name: Recipient_State
+        description: Payee's state — 56 values, top at 9.6%. Zipfian on CA/NY/TX/FL
+      - name: Recipient_Country
+        description: ~100% 'United States'
+      - name: Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID
+        description: >
+          The paying manufacturer or GPO, joined to dim_cms_payer.payer_id. ~1,000 values with the
+          top at 10.5%. A STRING key crossing engines — see dim_cms_payer for the whitespace
+          assertion it requires.
+      - name: Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name
+        description: Company name at the time of the payment; may differ from dim_cms_payer's newest
+      - name: Physician_Ownership_Indicator
+        description: Whether the physician has an ownership interest. ~87% one value
+      - name: Related_Product_Indicator
+        description: Whether the payment is tied to a named product. ~95% one value
+      - name: Dispute_Status_for_Publication
+        description: Whether the recipient disputed the record. 100% one value in the sample
+      - name: Delay_in_Publication_Indicator
+        description: Publication delayed for R&D confidentiality. 100% one value in the sample
+      - name: Contextual_Information
+        description: >
+          Free text the payer may attach. ~94% NULL, and the widest column in the table at 428
+          characters observed against CMS's documented 500-character cap — which is where
+          cms_varchar_len()'s one 500 comes from.
+      - name: Teaching_Hospital_CCN
+        description: >
+          Set only when the payee is a teaching hospital — 99.8% NULL. One of the three columns
+          that are sparse for a structural reason (a payment goes to a person or a hospital, never
+          both) rather than because the field is optional.
+      - name: Covered_or_Noncovered_Indicator_1
+        description: >
+          First member of the five-wide product group. THE GROUP IS THE POINT: members _1 through
+          _5 run ~5%, ~82%, ~95%, ~98% and ~99% NULL, and the same pattern holds for
+          Indicate_Drug_or_Biological_..., Product_Category_or_Therapeutic_Area_,
+          Name_of_Drug_or_Biological_..., Associated_Drug_or_Biological_NDC_ and
+          Associated_Device_or_Medical_Supply_PDI_. The tail members are documented here as a group
+          rather than one entry each: they are self-similar by construction, and 40 near-identical
+          descriptions would bury the columns that carry actual meaning.
+          `.github/scripts/test_cms_columns.py` asserts all thirty survive, because trimming them
+          to the `_1` members is the obvious tidy-up and would delete the sparsity surface this
+          dataset was added to measure.
+      - name: Covered_Recipient_Primary_Type_1
+        description: >
+          First member of the six-wide recipient group. Members _2 through _6 are 100% NULL in the
+          sample, as are Covered_Recipient_Specialty_2..6 — the extreme end of the same sparsity
+          pattern, and the closest thing here to a column that costs storage and carries no
+          information at all. Kept for exactly that reason.

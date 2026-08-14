@@ -2341,12 +2341,39 @@ test("?dataset= carries its mart with it, and an unknown one falls back", () => 
   assert.equal(d.optsFromSearch("?dataset=nyc").dataset, "nyc");
   assert.equal(d.optsFromSearch("?dataset=green").table, "fct_green_trips");
   assert.equal(d.optsFromSearch("?dataset=green").dataset, "green");
+  assert.equal(d.optsFromSearch("?dataset=cms").table, "fct_cms_payments");
+  assert.equal(d.optsFromSearch("?dataset=cms").dataset, "cms");
   // ...but an explicit ?table= still wins, for asking an odd question of another shared table.
   assert.equal(d.optsFromSearch("?dataset=nyc&table=dim_zone").table, "dim_zone");
   // A reader-supplied URL falls back rather than rendering nothing: an empty page is a worse
   // answer than the default one, and the value that matters is validated in the workflow.
   assert.equal(d.optsFromSearch("?dataset=bogus").dataset, "aemo");
   assert.equal(d.optsFromSearch("?dataset=bogus").table, "fct_summary");
+});
+
+test("the three per-dataset maps cover exactly the same datasets", () => {
+  // DATASET_TABLE decides which datasets the switch OFFERS, so it is the authority; the other two
+  // are looked up by whatever it hands over. Both failures are silent and neither is an error:
+  //
+  //   missing from DATASET_INFO         -> datasetInfo() falls back to aemo's, so a cms page says
+  //                                        its archive is "raw AEMO CSV" and its landing lakehouse
+  //                                        is dbt_landing. A wrong sentence, rendered confidently,
+  //                                        which is the exact failure DATASET_INFO was added for.
+  //   missing from DATASET_MART_COLUMNS -> renderEncodings falls back to aemo's six column names,
+  //                                        so the encodings block shows five blank rows and a
+  //                                        `cutoff` that does not exist on this mart.
+  //
+  // Adding a dataset touches three literals in one file and it is easy to stop at two.
+  const offered = Object.keys(d.DATASET_TABLE).sort();
+  assert.deepEqual(Object.keys(d.DATASET_INFO).sort(), offered,
+    "DATASET_INFO does not cover exactly the datasets DATASET_TABLE offers");
+  assert.deepEqual(Object.keys(d.DATASET_MART_COLUMNS).sort(), offered,
+    "DATASET_MART_COLUMNS does not cover exactly the datasets DATASET_TABLE offers");
+  // ...and every label is a human name, not the directory key leaking into the prose.
+  for (const ds of offered) {
+    assert.ok((d.DATASET_INFO[ds].label || "").length > 0, `${ds} has no label`);
+    assert.ok(d.DATASET_MART_COLUMNS[ds].length > 0, `${ds} has no mart columns`);
+  }
 });
 
 test("datasetOf prefers what the dispatch asked for, then what the leg was given, then aemo", () => {

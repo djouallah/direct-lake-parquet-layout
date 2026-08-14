@@ -9,9 +9,9 @@ side by side — it is the only cross-engine check there is, and it is **no long
 it is the dispatch-only `layout` job, because it costs ~10 minutes to report something that
 only changes when the tables are rewritten.
 
-## FOUR DATASETS, AND THEY ARE POINTS ON ONE SURFACE RATHER THAN A MENU
+## FIVE DATASETS, AND THEY ARE POINTS ON ONE SURFACE RATHER THAN A MENU
 
-`DATASET` is a dispatch input (`aemo` | `nyc` | `bts` | `green`, default `aemo`) and reaches everything from
+`DATASET` is a dispatch input (`aemo` | `nyc` | `bts` | `green` | `cms`, default `aemo`) and reaches everything from
 one workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list,
 mart, mart columns, default sort key, downloader. **It is the single source for names that
 provision.py CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would
@@ -19,13 +19,62 @@ notice, with several it silently records another dataset's layout under this run
 `benchmark/engines.py` carries a deliberate copy (that directory must stay deletable) and
 `test_datasets.py` pins the copies together.
 
-| | `aemo` | `nyc` | `bts` | `green` |
-|---|---|---|---|---|
-| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN |
-| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` | 4, `mart.fct_green_trips` |
-| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** |
-| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens |
-| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … | `dbt_green_landing`, `dbt_green_delta`, … |
+| | `aemo` | `nyc` | `bts` | `green` | `cms` |
+|---|---|---|---|---|---|
+| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN | annual CSV from download.cms.gov |
+| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` | 4, `mart.fct_green_trips` | 4, `mart.fct_cms_payments` |
+| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** | ~88M rows full-drain (PY2019-2025), **91 columns**, of which **54 are >50% NULL** |
+| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens | BOTH regimes at once: `Nature_of_Payment` 92% one value / `Form_of_Payment` 86% / `Dispute_Status` 100% beside `Covered_Recipient_Specialty_1` ~302 values and the payer id ~1,000 — plus SPARSITY nothing else has |
+| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … | `dbt_green_landing`, `dbt_green_delta`, … | `dbt_cms_landing`, `dbt_cms_delta`, … |
+
+**Why the fifth one exists.** The first four vary SKEW at a roughly constant width — 5, 17, 20, 22
+columns. None of them varies WIDTH, and none of them is SPARSE. CMS Open Payments (Sunshine Act
+payment records: every row is one payment a drug or device maker made to a physician, with an
+amount, a date, a payer and a payee) is both. Measured on a 100 MB / 187,750-row sample of PY2023:
+**54 of the 91 columns are more than half NULL**, because CMS models a one-to-many product list as
+five repeated six-column groups plus a six-wide recipient group, and the tail members run ~83%,
+~95%, ~98%, ~99% NULL with `Covered_Recipient_Primary_Type_2..6` and
+`Covered_Recipient_Specialty_2..6` at 100%. Sparse columns are where an encoding pass has the most
+to gain and nothing else here exercises that at all. It is also the first table where the two skew
+regimes COMPETE inside one sort budget rather than being measured in separate datasets.
+**The DAX suite therefore carries the project's only MATCHED SPARSE PAIR** — `probe_product_head`
+and `probe_product_tail` are the same column family, type and query at ~7% and ~99% NULL, which is
+the only way here to separate what sparsity costs from what cardinality costs; every other probe in
+every other suite confounds the two. Read them together or neither.
+
+Six cms facts that differ from the others mechanically. The mart takes its source **WHOLE** (91
+columns, the only one that does) because landing is the irreversible half and the star schema is a
+later step — **note the consequence: splitting proper dimensions out later makes the fact NARROWER
+than bts and ends this dataset's role as the wide point**. `Date_of_Payment` is a DATE straight from
+the source, so like bts there is no derived `pickup_date`-style bridge. `Record_ID` is a genuine
+unique key, so this is the taxi-shaped fact that **returns to a real keyed merge** on all four
+engines — do not copy nyc's `append`, whose reason does not hold here — and dwh gets a real `merge`
+rather than green's `delete+insert` fallback, because the many-to-many match that forces green off
+merge cannot arise. The payer id is a **STRING join key**, the first since DUID, so the whitespace
+guard exists in all three dialects (full `\s`, NOT bts's leading/trailing narrowing — CMS payer ids
+are numeric strings with no legitimate whitespace). The year pin is **2019**, the oldest program
+year, by the bts-pins-1988 rule. And `download_limit` counts **program YEARS** here where it counts
+months everywhere else, so it is **clamped to `CMS_MAX_YEARS` (2)**: a year is 3.3-9.2 GB of CSV and
+the form's 200 would try to pull ~50 GB through one runner.
+
+**THE URL IS NOT TEMPLATABLE AND THE DATA DICTIONARY IS WRONG.** The download path carries CMS's
+publication and refresh dates (`PGYR2023_P06302026_06032026/OP_DTL_GNRL_PGYR2023_P06302026_06032026.csv`)
+and moves every June, so `resolve_urls()` reads it from the metastore search API and refuses rather
+than guessing — same class as bts's obfuscated TranStats spelling. Separately, CMS's own data
+dictionary spells field #78 `Covered_or_Non**cc**overed_Indicator_4`; the published CSV spells it
+correctly in every year, so rebuilding the column list from the dictionary produces a column that
+matches nothing and the land-time header guard would then refuse every year. `test_cms_columns.py`
+asserts both the 91 and the absence of that spelling. The header is byte-identical across
+PY2019-2025 (md5 of the literal header row on 2019, 2021, 2023, 2025), so unlike nyc and green there
+is no type drift to normalise around.
+
+**THE MONTH/YEAR SPLIT IS RECONCILED AT LAND TIME, NOT BY A dbt TEST.** A month cannot be fetched on
+its own, so the WATERMARK unit is the annual CSV (`source_filename`, repeated across a year's ~12 log
+rows) and the LANDED unit is the month (`file_stem`, unique, what the fact stores as `file`) — the
+only dataset where those two differ. Because the downloader writes both sides of that split, a dbt
+assertion that the months sum to the year would compare it against itself, so `land_year()` counts
+the source CSV and **refuses to log anything for a year that does not reconcile**. The dbt test keeps
+what it can actually check: that what was landed is what was written.
 
 **Why the fourth one exists.** A reviewer of the nyc result claimed V-Order on GREEN taxi produces
 BIGGER data. Green is the same extreme-skew surface as yellow on a table an order of magnitude

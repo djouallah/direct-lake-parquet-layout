@@ -1,0 +1,1042 @@
+{
+  "compatibilityLevel": 1604,
+  "model": {
+    "culture": "en-US",
+    "defaultPowerBIDataSourceVersion": "powerBI_V3",
+    "annotations": [
+      {
+        "name": "PBI_ProTooling",
+        "value": "[\"RemoteModeling\", \"DirectLakeOnOneLakeCreatedInDesktop\"]"
+      }
+    ],
+    "expressions": [
+      {
+        "name": "DirectLake",
+        "kind": "m",
+        "description": "Direct Lake connection to OneLake — reads the Delta tables directly, no SQL endpoint. The two GUIDs are workspace + item and are REWRITTEN at deploy time by duckrun's workspace.deploy(lakehouse=...) — which is how this ONE template serves all four engines, warehouse included, since deploy(mode=) made the storage mode independent of the item kind (duckrun 0.4.36). The checked-in pair is a PLACEHOLDER of zeros, not a real workspace and item: it is overwritten before this template is ever deployed, and the real ids live in repo secrets. What must NOT change is the shape - _is_directlake_bim() greps the raw bytes for a onelake.dfs URL to decide this is a Direct Lake model, so removing the URL, or the camelCase mode token, silently turns it into something deploy cannot serve.",
+        "expression": [
+          "let",
+          "    Source = AzureStorage.DataLake(\"https://onelake.dfs.fabric.microsoft.com/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000\", [HierarchicalNavigation=true])",
+          "in",
+          "    Source"
+        ]
+      }
+    ],
+    "tables": [
+      {
+        "name": "fct_cms_payments",
+        "description": "CMS Open Payments general-payment records — the wide raw fact, and the table under layout test.\nGrain: one row per payment record, uniquely identified by Record_ID.\n91 source columns, of which 54 are >50% NULL: this is the WIDE and SPARSE point on the surface, and the only table here carrying both skew regimes at once.",
+        "sourceLineageTag": "[mart].[fct_cms_payments]",
+        "columns": [
+          {
+            "name": "Change_Type",
+            "dataType": "string",
+            "sourceColumn": "Change_Type",
+            "sourceLineageTag": "Change_Type",
+            "summarizeBy": "none",
+            "description": "Change Type"
+          },
+          {
+            "name": "Covered_Recipient_Type",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Type",
+            "sourceLineageTag": "Covered_Recipient_Type",
+            "summarizeBy": "none",
+            "description": "Physician, non-physician practitioner, or teaching hospital. ~65% one value."
+          },
+          {
+            "name": "Teaching_Hospital_CCN",
+            "dataType": "string",
+            "sourceColumn": "Teaching_Hospital_CCN",
+            "sourceLineageTag": "Teaching_Hospital_CCN",
+            "summarizeBy": "none",
+            "description": "Set only when the payee is a teaching hospital — 99.8% NULL. Sparse for a structural reason (a payment goes to a person or a hospital, never both) rather than because the field is optional."
+          },
+          {
+            "name": "Teaching_Hospital_ID",
+            "dataType": "int64",
+            "sourceColumn": "Teaching_Hospital_ID",
+            "sourceLineageTag": "Teaching_Hospital_ID",
+            "summarizeBy": "none",
+            "description": "Teaching Hospital ID",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Teaching_Hospital_Name",
+            "dataType": "string",
+            "sourceColumn": "Teaching_Hospital_Name",
+            "sourceLineageTag": "Teaching_Hospital_Name",
+            "summarizeBy": "none",
+            "description": "Teaching Hospital Name"
+          },
+          {
+            "name": "Covered_Recipient_Profile_ID",
+            "dataType": "int64",
+            "sourceColumn": "Covered_Recipient_Profile_ID",
+            "sourceLineageTag": "Covered_Recipient_Profile_ID",
+            "summarizeBy": "none",
+            "description": "CMS's id for the payee. Near-unique — ~128K distinct in a 187K-row sample.",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Covered_Recipient_NPI",
+            "dataType": "int64",
+            "sourceColumn": "Covered_Recipient_NPI",
+            "sourceLineageTag": "Covered_Recipient_NPI",
+            "summarizeBy": "none",
+            "description": "National Provider Identifier of the payee. Ten digits, hence int64.",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Covered_Recipient_First_Name",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_First_Name",
+            "sourceLineageTag": "Covered_Recipient_First_Name",
+            "summarizeBy": "none",
+            "description": "Covered Recipient First Name"
+          },
+          {
+            "name": "Covered_Recipient_Middle_Name",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Middle_Name",
+            "sourceLineageTag": "Covered_Recipient_Middle_Name",
+            "summarizeBy": "none",
+            "description": "Covered Recipient Middle Name"
+          },
+          {
+            "name": "Covered_Recipient_Last_Name",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Last_Name",
+            "sourceLineageTag": "Covered_Recipient_Last_Name",
+            "summarizeBy": "none",
+            "description": "Covered Recipient Last Name"
+          },
+          {
+            "name": "Covered_Recipient_Name_Suffix",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Name_Suffix",
+            "sourceLineageTag": "Covered_Recipient_Name_Suffix",
+            "summarizeBy": "none",
+            "description": "Covered Recipient Name Suffix"
+          },
+          {
+            "name": "Recipient_Primary_Business_Street_Address_Line1",
+            "dataType": "string",
+            "sourceColumn": "Recipient_Primary_Business_Street_Address_Line1",
+            "sourceLineageTag": "Recipient_Primary_Business_Street_Address_Line1",
+            "summarizeBy": "none",
+            "description": "Recipient Primary Business Street Address Line1"
+          },
+          {
+            "name": "Recipient_Primary_Business_Street_Address_Line2",
+            "dataType": "string",
+            "sourceColumn": "Recipient_Primary_Business_Street_Address_Line2",
+            "sourceLineageTag": "Recipient_Primary_Business_Street_Address_Line2",
+            "summarizeBy": "none",
+            "description": "Recipient Primary Business Street Address Line2"
+          },
+          {
+            "name": "Recipient_City",
+            "dataType": "string",
+            "sourceColumn": "Recipient_City",
+            "sourceLineageTag": "Recipient_City",
+            "summarizeBy": "none",
+            "description": "Recipient City"
+          },
+          {
+            "name": "Recipient_State",
+            "dataType": "string",
+            "sourceColumn": "Recipient_State",
+            "sourceLineageTag": "Recipient_State",
+            "summarizeBy": "none",
+            "description": "Payee's state — 56 values, top at 9.6%. Zipfian on CA/NY/TX/FL."
+          },
+          {
+            "name": "Recipient_Zip_Code",
+            "dataType": "string",
+            "sourceColumn": "Recipient_Zip_Code",
+            "sourceLineageTag": "Recipient_Zip_Code",
+            "summarizeBy": "none",
+            "description": "Recipient Zip Code"
+          },
+          {
+            "name": "Recipient_Country",
+            "dataType": "string",
+            "sourceColumn": "Recipient_Country",
+            "sourceLineageTag": "Recipient_Country",
+            "summarizeBy": "none",
+            "description": "Recipient Country"
+          },
+          {
+            "name": "Recipient_Province",
+            "dataType": "string",
+            "sourceColumn": "Recipient_Province",
+            "sourceLineageTag": "Recipient_Province",
+            "summarizeBy": "none",
+            "description": "Recipient Province"
+          },
+          {
+            "name": "Recipient_Postal_Code",
+            "dataType": "string",
+            "sourceColumn": "Recipient_Postal_Code",
+            "sourceLineageTag": "Recipient_Postal_Code",
+            "summarizeBy": "none",
+            "description": "Recipient Postal Code"
+          },
+          {
+            "name": "Covered_Recipient_Primary_Type_1",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Primary_Type_1",
+            "sourceLineageTag": "Covered_Recipient_Primary_Type_1",
+            "summarizeBy": "none",
+            "description": "Entry 1 of up to 6 — payee's primary type. ~0% NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Primary_Type_2",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Primary_Type_2",
+            "sourceLineageTag": "Covered_Recipient_Primary_Type_2",
+            "summarizeBy": "none",
+            "description": "Entry 2 of up to 6 — payee's primary type. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Primary_Type_3",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Primary_Type_3",
+            "sourceLineageTag": "Covered_Recipient_Primary_Type_3",
+            "summarizeBy": "none",
+            "description": "Entry 3 of up to 6 — payee's primary type. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Primary_Type_4",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Primary_Type_4",
+            "sourceLineageTag": "Covered_Recipient_Primary_Type_4",
+            "summarizeBy": "none",
+            "description": "Entry 4 of up to 6 — payee's primary type. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Primary_Type_5",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Primary_Type_5",
+            "sourceLineageTag": "Covered_Recipient_Primary_Type_5",
+            "summarizeBy": "none",
+            "description": "Entry 5 of up to 6 — payee's primary type. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Primary_Type_6",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Primary_Type_6",
+            "sourceLineageTag": "Covered_Recipient_Primary_Type_6",
+            "summarizeBy": "none",
+            "description": "Entry 6 of up to 6 — payee's primary type. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Specialty_1",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Specialty_1",
+            "sourceLineageTag": "Covered_Recipient_Specialty_1",
+            "summarizeBy": "none",
+            "description": "Taxonomy specialty of the payee — 302 values, top at 9.5%. The bts-shaped column: many independent moderately skewed values competing for the same sort budget as the 92% ones."
+          },
+          {
+            "name": "Covered_Recipient_Specialty_2",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Specialty_2",
+            "sourceLineageTag": "Covered_Recipient_Specialty_2",
+            "summarizeBy": "none",
+            "description": "Entry 2 of up to 6 — payee's taxonomy specialty. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Specialty_3",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Specialty_3",
+            "sourceLineageTag": "Covered_Recipient_Specialty_3",
+            "summarizeBy": "none",
+            "description": "Entry 3 of up to 6 — payee's taxonomy specialty. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Specialty_4",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Specialty_4",
+            "sourceLineageTag": "Covered_Recipient_Specialty_4",
+            "summarizeBy": "none",
+            "description": "Entry 4 of up to 6 — payee's taxonomy specialty. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Specialty_5",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Specialty_5",
+            "sourceLineageTag": "Covered_Recipient_Specialty_5",
+            "summarizeBy": "none",
+            "description": "Entry 5 of up to 6 — payee's taxonomy specialty. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_Specialty_6",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_Specialty_6",
+            "sourceLineageTag": "Covered_Recipient_Specialty_6",
+            "summarizeBy": "none",
+            "description": "Entry 6 of up to 6 — payee's taxonomy specialty. 100% in the sample NULL. The extreme end of the same repeated-group sparsity: past the first member these carry no information at all, and are kept for exactly that reason."
+          },
+          {
+            "name": "Covered_Recipient_License_State_code1",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_License_State_code1",
+            "sourceLineageTag": "Covered_Recipient_License_State_code1",
+            "summarizeBy": "none",
+            "description": "Covered Recipient License State code1"
+          },
+          {
+            "name": "Covered_Recipient_License_State_code2",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_License_State_code2",
+            "sourceLineageTag": "Covered_Recipient_License_State_code2",
+            "summarizeBy": "none",
+            "description": "Covered Recipient License State code2"
+          },
+          {
+            "name": "Covered_Recipient_License_State_code3",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_License_State_code3",
+            "sourceLineageTag": "Covered_Recipient_License_State_code3",
+            "summarizeBy": "none",
+            "description": "Covered Recipient License State code3"
+          },
+          {
+            "name": "Covered_Recipient_License_State_code4",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_License_State_code4",
+            "sourceLineageTag": "Covered_Recipient_License_State_code4",
+            "summarizeBy": "none",
+            "description": "Covered Recipient License State code4"
+          },
+          {
+            "name": "Covered_Recipient_License_State_code5",
+            "dataType": "string",
+            "sourceColumn": "Covered_Recipient_License_State_code5",
+            "sourceLineageTag": "Covered_Recipient_License_State_code5",
+            "summarizeBy": "none",
+            "description": "Covered Recipient License State code5"
+          },
+          {
+            "name": "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name",
+            "dataType": "string",
+            "sourceColumn": "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name",
+            "sourceLineageTag": "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name",
+            "summarizeBy": "none",
+            "description": "Submitting Applicable Manufacturer or Applicable GPO Name"
+          },
+          {
+            "name": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID",
+            "dataType": "string",
+            "sourceColumn": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID",
+            "sourceLineageTag": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID",
+            "summarizeBy": "none",
+            "description": "The paying manufacturer or GPO — foreign key to dim_cms_payer. ~1,000 values, top at 10.5%. A STRING key crossing engines, which is why this dataset carries a whitespace assertion in all three dialects."
+          },
+          {
+            "name": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name",
+            "dataType": "string",
+            "sourceColumn": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name",
+            "sourceLineageTag": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name",
+            "summarizeBy": "none",
+            "description": "Applicable Manufacturer or Applicable GPO Making Payment Name"
+          },
+          {
+            "name": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State",
+            "dataType": "string",
+            "sourceColumn": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State",
+            "sourceLineageTag": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State",
+            "summarizeBy": "none",
+            "description": "Applicable Manufacturer or Applicable GPO Making Payment State"
+          },
+          {
+            "name": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country",
+            "dataType": "string",
+            "sourceColumn": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country",
+            "sourceLineageTag": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country",
+            "summarizeBy": "none",
+            "description": "Applicable Manufacturer or Applicable GPO Making Payment Country"
+          },
+          {
+            "name": "Total_Amount_of_Payment_USDollars",
+            "dataType": "double",
+            "sourceColumn": "Total_Amount_of_Payment_USDollars",
+            "sourceLineageTag": "Total_Amount_of_Payment_USDollars",
+            "summarizeBy": "sum",
+            "description": "The payment amount. Long-tailed: most are meals under $50, a few are six figures.",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "Date_of_Payment",
+            "dataType": "dateTime",
+            "sourceColumn": "Date_of_Payment",
+            "sourceLineageTag": "Date_of_Payment",
+            "summarizeBy": "none",
+            "description": "Date the payment was made — the join key to dim_cms_date. A DATE in the source, so there is no derived bridge column here, unlike nyc's and green's pickup_date.",
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "Number_of_Payments_Included_in_Total_Amount",
+            "dataType": "int64",
+            "sourceColumn": "Number_of_Payments_Included_in_Total_Amount",
+            "sourceLineageTag": "Number_of_Payments_Included_in_Total_Amount",
+            "summarizeBy": "none",
+            "description": "Number of Payments Included in Total Amount",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Form_of_Payment_or_Transfer_of_Value",
+            "dataType": "string",
+            "sourceColumn": "Form_of_Payment_or_Transfer_of_Value",
+            "sourceLineageTag": "Form_of_Payment_or_Transfer_of_Value",
+            "summarizeBy": "none",
+            "description": "Cash, in-kind, stock. ~86% one value."
+          },
+          {
+            "name": "Nature_of_Payment_or_Transfer_of_Value",
+            "dataType": "string",
+            "sourceColumn": "Nature_of_Payment_or_Transfer_of_Value",
+            "sourceLineageTag": "Nature_of_Payment_or_Transfer_of_Value",
+            "summarizeBy": "none",
+            "description": "What the payment was for. ~92% one value ('Food and Beverage') — nyc's extreme-skew regime, and the cheapest column here to run-length encode."
+          },
+          {
+            "name": "City_of_Travel",
+            "dataType": "string",
+            "sourceColumn": "City_of_Travel",
+            "sourceLineageTag": "City_of_Travel",
+            "summarizeBy": "none",
+            "description": "City of Travel"
+          },
+          {
+            "name": "State_of_Travel",
+            "dataType": "string",
+            "sourceColumn": "State_of_Travel",
+            "sourceLineageTag": "State_of_Travel",
+            "summarizeBy": "none",
+            "description": "State of Travel"
+          },
+          {
+            "name": "Country_of_Travel",
+            "dataType": "string",
+            "sourceColumn": "Country_of_Travel",
+            "sourceLineageTag": "Country_of_Travel",
+            "summarizeBy": "none",
+            "description": "Country of Travel"
+          },
+          {
+            "name": "Physician_Ownership_Indicator",
+            "dataType": "string",
+            "sourceColumn": "Physician_Ownership_Indicator",
+            "sourceLineageTag": "Physician_Ownership_Indicator",
+            "summarizeBy": "none",
+            "description": "Whether the physician has an ownership interest. ~87% one value."
+          },
+          {
+            "name": "Third_Party_Payment_Recipient_Indicator",
+            "dataType": "string",
+            "sourceColumn": "Third_Party_Payment_Recipient_Indicator",
+            "sourceLineageTag": "Third_Party_Payment_Recipient_Indicator",
+            "summarizeBy": "none",
+            "description": "Third Party Payment Recipient Indicator"
+          },
+          {
+            "name": "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value",
+            "dataType": "string",
+            "sourceColumn": "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value",
+            "sourceLineageTag": "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value",
+            "summarizeBy": "none",
+            "description": "Name of Third Party Entity Receiving Payment or Transfer of Value"
+          },
+          {
+            "name": "Charity_Indicator",
+            "dataType": "string",
+            "sourceColumn": "Charity_Indicator",
+            "sourceLineageTag": "Charity_Indicator",
+            "summarizeBy": "none",
+            "description": "Charity Indicator"
+          },
+          {
+            "name": "Third_Party_Equals_Covered_Recipient_Indicator",
+            "dataType": "string",
+            "sourceColumn": "Third_Party_Equals_Covered_Recipient_Indicator",
+            "sourceLineageTag": "Third_Party_Equals_Covered_Recipient_Indicator",
+            "summarizeBy": "none",
+            "description": "Third Party Equals Covered Recipient Indicator"
+          },
+          {
+            "name": "Contextual_Information",
+            "dataType": "string",
+            "sourceColumn": "Contextual_Information",
+            "sourceLineageTag": "Contextual_Information",
+            "summarizeBy": "none",
+            "description": "Free text the payer may attach. ~94% NULL, and the widest column in the table at 428 characters observed."
+          },
+          {
+            "name": "Delay_in_Publication_Indicator",
+            "dataType": "string",
+            "sourceColumn": "Delay_in_Publication_Indicator",
+            "sourceLineageTag": "Delay_in_Publication_Indicator",
+            "summarizeBy": "none",
+            "description": "Publication delayed for R&D confidentiality. 100% one value in the sample."
+          },
+          {
+            "name": "Record_ID",
+            "dataType": "string",
+            "sourceColumn": "Record_ID",
+            "sourceLineageTag": "Record_ID",
+            "summarizeBy": "none",
+            "description": "CMS's system-generated unique id for the payment record. With `file` it is the incremental key on all four engines — the reason this dataset uses a real keyed merge where the taxi facts cannot."
+          },
+          {
+            "name": "Dispute_Status_for_Publication",
+            "dataType": "string",
+            "sourceColumn": "Dispute_Status_for_Publication",
+            "sourceLineageTag": "Dispute_Status_for_Publication",
+            "summarizeBy": "none",
+            "description": "Whether the recipient disputed the record. 100% one value in the sample."
+          },
+          {
+            "name": "Related_Product_Indicator",
+            "dataType": "string",
+            "sourceColumn": "Related_Product_Indicator",
+            "sourceLineageTag": "Related_Product_Indicator",
+            "summarizeBy": "none",
+            "description": "Whether the payment is tied to a named product. ~95% one value."
+          },
+          {
+            "name": "Covered_or_Noncovered_Indicator_1",
+            "dataType": "string",
+            "sourceColumn": "Covered_or_Noncovered_Indicator_1",
+            "sourceLineageTag": "Covered_or_Noncovered_Indicator_1",
+            "summarizeBy": "none",
+            "description": "Product 1 of up to 5 — whether the product is covered by a federal health programme. ~5-7% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "dataType": "string",
+            "sourceColumn": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "sourceLineageTag": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "summarizeBy": "none",
+            "description": "Product 1 of up to 5 — drug, biological, device or supply. ~5-7% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Product_Category_or_Therapeutic_Area_1",
+            "dataType": "string",
+            "sourceColumn": "Product_Category_or_Therapeutic_Area_1",
+            "sourceLineageTag": "Product_Category_or_Therapeutic_Area_1",
+            "summarizeBy": "none",
+            "description": "Product 1 of up to 5 — therapeutic area. ~5-7% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "dataType": "string",
+            "sourceColumn": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "sourceLineageTag": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+            "summarizeBy": "none",
+            "description": "Product 1 of up to 5 — product name. ~5-7% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Drug_or_Biological_NDC_1",
+            "dataType": "string",
+            "sourceColumn": "Associated_Drug_or_Biological_NDC_1",
+            "sourceLineageTag": "Associated_Drug_or_Biological_NDC_1",
+            "summarizeBy": "none",
+            "description": "Product 1 of up to 5 — National Drug Code. ~5-7% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Device_or_Medical_Supply_PDI_1",
+            "dataType": "string",
+            "sourceColumn": "Associated_Device_or_Medical_Supply_PDI_1",
+            "sourceLineageTag": "Associated_Device_or_Medical_Supply_PDI_1",
+            "summarizeBy": "none",
+            "description": "Product 1 of up to 5 — Primary Device Identifier. ~5-7% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Covered_or_Noncovered_Indicator_2",
+            "dataType": "string",
+            "sourceColumn": "Covered_or_Noncovered_Indicator_2",
+            "sourceLineageTag": "Covered_or_Noncovered_Indicator_2",
+            "summarizeBy": "none",
+            "description": "Product 2 of up to 5 — whether the product is covered by a federal health programme. ~83% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "dataType": "string",
+            "sourceColumn": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "sourceLineageTag": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "summarizeBy": "none",
+            "description": "Product 2 of up to 5 — drug, biological, device or supply. ~83% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Product_Category_or_Therapeutic_Area_2",
+            "dataType": "string",
+            "sourceColumn": "Product_Category_or_Therapeutic_Area_2",
+            "sourceLineageTag": "Product_Category_or_Therapeutic_Area_2",
+            "summarizeBy": "none",
+            "description": "Product 2 of up to 5 — therapeutic area. ~83% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "dataType": "string",
+            "sourceColumn": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "sourceLineageTag": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+            "summarizeBy": "none",
+            "description": "Product 2 of up to 5 — product name. ~83% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Drug_or_Biological_NDC_2",
+            "dataType": "string",
+            "sourceColumn": "Associated_Drug_or_Biological_NDC_2",
+            "sourceLineageTag": "Associated_Drug_or_Biological_NDC_2",
+            "summarizeBy": "none",
+            "description": "Product 2 of up to 5 — National Drug Code. ~83% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Device_or_Medical_Supply_PDI_2",
+            "dataType": "string",
+            "sourceColumn": "Associated_Device_or_Medical_Supply_PDI_2",
+            "sourceLineageTag": "Associated_Device_or_Medical_Supply_PDI_2",
+            "summarizeBy": "none",
+            "description": "Product 2 of up to 5 — Primary Device Identifier. ~83% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Covered_or_Noncovered_Indicator_3",
+            "dataType": "string",
+            "sourceColumn": "Covered_or_Noncovered_Indicator_3",
+            "sourceLineageTag": "Covered_or_Noncovered_Indicator_3",
+            "summarizeBy": "none",
+            "description": "Product 3 of up to 5 — whether the product is covered by a federal health programme. ~95% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "dataType": "string",
+            "sourceColumn": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "sourceLineageTag": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "summarizeBy": "none",
+            "description": "Product 3 of up to 5 — drug, biological, device or supply. ~95% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Product_Category_or_Therapeutic_Area_3",
+            "dataType": "string",
+            "sourceColumn": "Product_Category_or_Therapeutic_Area_3",
+            "sourceLineageTag": "Product_Category_or_Therapeutic_Area_3",
+            "summarizeBy": "none",
+            "description": "Product 3 of up to 5 — therapeutic area. ~95% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "dataType": "string",
+            "sourceColumn": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "sourceLineageTag": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+            "summarizeBy": "none",
+            "description": "Product 3 of up to 5 — product name. ~95% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Drug_or_Biological_NDC_3",
+            "dataType": "string",
+            "sourceColumn": "Associated_Drug_or_Biological_NDC_3",
+            "sourceLineageTag": "Associated_Drug_or_Biological_NDC_3",
+            "summarizeBy": "none",
+            "description": "Product 3 of up to 5 — National Drug Code. ~95% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Device_or_Medical_Supply_PDI_3",
+            "dataType": "string",
+            "sourceColumn": "Associated_Device_or_Medical_Supply_PDI_3",
+            "sourceLineageTag": "Associated_Device_or_Medical_Supply_PDI_3",
+            "summarizeBy": "none",
+            "description": "Product 3 of up to 5 — Primary Device Identifier. ~95% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Covered_or_Noncovered_Indicator_4",
+            "dataType": "string",
+            "sourceColumn": "Covered_or_Noncovered_Indicator_4",
+            "sourceLineageTag": "Covered_or_Noncovered_Indicator_4",
+            "summarizeBy": "none",
+            "description": "Product 4 of up to 5 — whether the product is covered by a federal health programme. ~98% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "dataType": "string",
+            "sourceColumn": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "sourceLineageTag": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "summarizeBy": "none",
+            "description": "Product 4 of up to 5 — drug, biological, device or supply. ~98% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Product_Category_or_Therapeutic_Area_4",
+            "dataType": "string",
+            "sourceColumn": "Product_Category_or_Therapeutic_Area_4",
+            "sourceLineageTag": "Product_Category_or_Therapeutic_Area_4",
+            "summarizeBy": "none",
+            "description": "Product 4 of up to 5 — therapeutic area. ~98% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "dataType": "string",
+            "sourceColumn": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "sourceLineageTag": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+            "summarizeBy": "none",
+            "description": "Product 4 of up to 5 — product name. ~98% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Drug_or_Biological_NDC_4",
+            "dataType": "string",
+            "sourceColumn": "Associated_Drug_or_Biological_NDC_4",
+            "sourceLineageTag": "Associated_Drug_or_Biological_NDC_4",
+            "summarizeBy": "none",
+            "description": "Product 4 of up to 5 — National Drug Code. ~98% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Device_or_Medical_Supply_PDI_4",
+            "dataType": "string",
+            "sourceColumn": "Associated_Device_or_Medical_Supply_PDI_4",
+            "sourceLineageTag": "Associated_Device_or_Medical_Supply_PDI_4",
+            "summarizeBy": "none",
+            "description": "Product 4 of up to 5 — Primary Device Identifier. ~98% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Covered_or_Noncovered_Indicator_5",
+            "dataType": "string",
+            "sourceColumn": "Covered_or_Noncovered_Indicator_5",
+            "sourceLineageTag": "Covered_or_Noncovered_Indicator_5",
+            "summarizeBy": "none",
+            "description": "Product 5 of up to 5 — whether the product is covered by a federal health programme. ~99% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "dataType": "string",
+            "sourceColumn": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "sourceLineageTag": "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "summarizeBy": "none",
+            "description": "Product 5 of up to 5 — drug, biological, device or supply. ~99% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Product_Category_or_Therapeutic_Area_5",
+            "dataType": "string",
+            "sourceColumn": "Product_Category_or_Therapeutic_Area_5",
+            "sourceLineageTag": "Product_Category_or_Therapeutic_Area_5",
+            "summarizeBy": "none",
+            "description": "Product 5 of up to 5 — therapeutic area. ~99% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "dataType": "string",
+            "sourceColumn": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "sourceLineageTag": "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+            "summarizeBy": "none",
+            "description": "Product 5 of up to 5 — product name. ~99% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Drug_or_Biological_NDC_5",
+            "dataType": "string",
+            "sourceColumn": "Associated_Drug_or_Biological_NDC_5",
+            "sourceLineageTag": "Associated_Drug_or_Biological_NDC_5",
+            "summarizeBy": "none",
+            "description": "Product 5 of up to 5 — National Drug Code. ~99% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Associated_Device_or_Medical_Supply_PDI_5",
+            "dataType": "string",
+            "sourceColumn": "Associated_Device_or_Medical_Supply_PDI_5",
+            "sourceLineageTag": "Associated_Device_or_Medical_Supply_PDI_5",
+            "summarizeBy": "none",
+            "description": "Product 5 of up to 5 — Primary Device Identifier. ~99% NULL. CMS models a one-to-many product list as five repeated column groups; the sparsity of the tail members is the surface this dataset was added to measure."
+          },
+          {
+            "name": "Program_Year",
+            "dataType": "int64",
+            "sourceColumn": "Program_Year",
+            "sourceLineageTag": "Program_Year",
+            "summarizeBy": "none",
+            "description": "Reporting year the record was published under. NOT always equal to YEAR(Date_of_Payment) — CMS accepts payments dated outside their program year, which is why the downloader buckets months by the actual payment date."
+          },
+          {
+            "name": "Payment_Publication_Date",
+            "dataType": "dateTime",
+            "sourceColumn": "Payment_Publication_Date",
+            "sourceLineageTag": "Payment_Publication_Date",
+            "summarizeBy": "none",
+            "description": "Payment Publication Date",
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "file",
+            "dataType": "string",
+            "sourceColumn": "file",
+            "sourceLineageTag": "file",
+            "summarizeBy": "none",
+            "description": "Source month, e.g. cms_2023-06 — leads the incremental key"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Total Amount",
+            "description": "Dollars paid across the selection",
+            "expression": "SUM(fct_cms_payments[Total_Amount_of_Payment_USDollars])",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "Total Payments",
+            "description": "Row count of the fact",
+            "expression": "COUNTROWS(fct_cms_payments)",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Avg Payment",
+            "description": "Mean payment amount",
+            "expression": "AVERAGE(fct_cms_payments[Total_Amount_of_Payment_USDollars])",
+            "formatString": "$#,##0.00"
+          },
+          {
+            "name": "Payment Count",
+            "description": "Individual payments, where a row may roll several together",
+            "expression": "SUM(fct_cms_payments[Number_of_Payments_Included_in_Total_Amount])",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Distinct Recipients",
+            "description": "Payees receiving anything in the selection — a DISTINCTCOUNT over a near-unique column, deliberately the most expensive measure here",
+            "expression": "DISTINCTCOUNT(fct_cms_payments[Covered_Recipient_Profile_ID])",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Distinct Products",
+            "description": "Named products in the selection, first product slot only",
+            "expression": "DISTINCTCOUNT(fct_cms_payments[Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1])",
+            "formatString": "#,##0"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "fct_cms_payments",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "fct_cms_payments",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_cms_payer",
+        "description": "The manufacturers and GPOs that make the payments (~1,000 live ids).\nDerived at land time from the archive itself — CMS publishes no manufacturer lookup — one row per id, newest program year winning.\npayer_id is a STRING key, which is why this dataset carries a whitespace assertion in all three dialects.",
+        "sourceLineageTag": "[mart].[dim_cms_payer]",
+        "columns": [
+          {
+            "name": "payer_id",
+            "dataType": "string",
+            "sourceColumn": "payer_id",
+            "sourceLineageTag": "payer_id",
+            "summarizeBy": "none",
+            "description": "Manufacturer/GPO id (primary key)",
+            "isKey": true
+          },
+          {
+            "name": "payer_name",
+            "dataType": "string",
+            "sourceColumn": "payer_name",
+            "sourceLineageTag": "payer_name",
+            "summarizeBy": "none",
+            "description": "Company name as of the newest program year that named this id"
+          },
+          {
+            "name": "payer_state",
+            "dataType": "string",
+            "sourceColumn": "payer_state",
+            "sourceLineageTag": "payer_state",
+            "summarizeBy": "none",
+            "description": "Two-letter state of the paying entity"
+          },
+          {
+            "name": "payer_country",
+            "dataType": "string",
+            "sourceColumn": "payer_country",
+            "sourceLineageTag": "payer_country",
+            "summarizeBy": "none",
+            "description": "Country of the paying entity — ~99.7% 'United States'"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_cms_payer",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "dim_cms_payer",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "dim_cms_date",
+        "description": "Date dimension covering 2013-01-01 to 2027-12-31.\nWider than the archive on purpose: CMS payments carry dates outside their own program year, and the fact's date relationship asserts referential integrity, so a narrowed span would inner-join those rows away.",
+        "sourceLineageTag": "[mart].[dim_cms_date]",
+        "columns": [
+          {
+            "name": "date",
+            "dataType": "dateTime",
+            "sourceColumn": "date",
+            "sourceLineageTag": "date",
+            "summarizeBy": "none",
+            "description": "Calendar date (primary key). One row per day.",
+            "isKey": true,
+            "formatString": "yyyy-MM-dd"
+          },
+          {
+            "name": "year",
+            "dataType": "int64",
+            "sourceColumn": "year",
+            "sourceLineageTag": "year",
+            "summarizeBy": "none",
+            "description": "Calendar year (e.g. 2019)"
+          },
+          {
+            "name": "month",
+            "dataType": "int64",
+            "sourceColumn": "month",
+            "sourceLineageTag": "month",
+            "summarizeBy": "none",
+            "description": "Calendar month number (1-12)"
+          },
+          {
+            "name": "day_of_week",
+            "dataType": "int64",
+            "sourceColumn": "day_of_week",
+            "sourceLineageTag": "day_of_week",
+            "summarizeBy": "none",
+            "description": "0=Sunday. Normalised identically in all three dialects, so a difference here would be real rather than a dialect artefact."
+          }
+        ],
+        "partitions": [
+          {
+            "name": "dim_cms_date",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "dim_cms_date",
+              "expressionSource": "DirectLake",
+              "schemaName": "mart"
+            }
+          }
+        ]
+      },
+      {
+        "name": "stg_cms_archive_log",
+        "description": "The archive log download_cms_payments.py writes.\nOne row per landed MONTH, with source_filename naming the annual CSV it was split out of — this is the one dataset where the watermark unit and the landed unit differ.",
+        "sourceLineageTag": "[landing].[stg_cms_archive_log]",
+        "columns": [
+          {
+            "name": "source_type",
+            "dataType": "string",
+            "sourceColumn": "source_type",
+            "sourceLineageTag": "source_type",
+            "summarizeBy": "none",
+            "description": "'cms' for a landed month, 'payer' for the derived lookup"
+          },
+          {
+            "name": "source_filename",
+            "dataType": "string",
+            "sourceColumn": "source_filename",
+            "sourceLineageTag": "source_filename",
+            "summarizeBy": "none",
+            "description": "The annual CSV this month came out of — the watermark, repeated across the ~12 rows of one program year"
+          },
+          {
+            "name": "archive_path",
+            "dataType": "string",
+            "sourceColumn": "archive_path",
+            "sourceLineageTag": "archive_path",
+            "summarizeBy": "none",
+            "description": "Path under parquet_raw/"
+          },
+          {
+            "name": "file_stem",
+            "dataType": "string",
+            "sourceColumn": "file_stem",
+            "sourceLineageTag": "file_stem",
+            "summarizeBy": "none",
+            "description": "Filename without extension — what fct_cms_payments stores as `file`"
+          },
+          {
+            "name": "row_count",
+            "dataType": "int64",
+            "sourceColumn": "row_count",
+            "sourceLineageTag": "row_count",
+            "summarizeBy": "sum",
+            "description": "Rows in this landed month",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "columns",
+            "dataType": "string",
+            "sourceColumn": "columns",
+            "sourceLineageTag": "columns",
+            "summarizeBy": "none",
+            "description": "The source CSV's own header, as CMS published it — all 91"
+          },
+          {
+            "name": "archived_at",
+            "dataType": "dateTime",
+            "sourceColumn": "archived_at",
+            "sourceLineageTag": "archived_at",
+            "summarizeBy": "none",
+            "description": "When the file was archived",
+            "formatString": "yyyy-MM-dd HH:mm"
+          }
+        ],
+        "measures": [
+          {
+            "name": "Archive Files",
+            "description": "Months landed",
+            "expression": "COUNTROWS(stg_cms_archive_log)",
+            "formatString": "#,##0"
+          },
+          {
+            "name": "Archive Source Rows",
+            "description": "Rows across every landed month",
+            "expression": "SUM(stg_cms_archive_log[row_count])",
+            "formatString": "#,##0"
+          }
+        ],
+        "partitions": [
+          {
+            "name": "stg_cms_archive_log",
+            "mode": "directLake",
+            "source": {
+              "type": "entity",
+              "entityName": "stg_cms_archive_log",
+              "expressionSource": "DirectLake",
+              "schemaName": "landing"
+            }
+          }
+        ]
+      }
+    ],
+    "relationships": [
+      {
+        "name": "fct_cms_payments_to_dim_cms_payer",
+        "fromTable": "fct_cms_payments",
+        "fromColumn": "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID",
+        "toTable": "dim_cms_payer",
+        "toColumn": "payer_id",
+        "relyOnReferentialIntegrity": true
+      },
+      {
+        "name": "fct_cms_payments_to_dim_cms_date",
+        "fromTable": "fct_cms_payments",
+        "fromColumn": "Date_of_Payment",
+        "toTable": "dim_cms_date",
+        "toColumn": "date",
+        "relyOnReferentialIntegrity": true
+      }
+    ]
+  }
+}

@@ -82,7 +82,7 @@ export const SERVER = "https://github.com";
 // about. `?dataset=` picks the mart with it; `?table=` still overrides, for asking an odd question
 // of one of the other shared tables.
 export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips", bts: "fct_flights",
-                               green: "fct_green_trips" };
+                               green: "fct_green_trips", cms: "fct_cms_payments" };
 
 /**
  * The per-dataset facts the PROSE needs, kept beside `DATASET_TABLE` rather than in a registry of
@@ -101,6 +101,7 @@ export const DATASET_INFO = {
   nyc: { label: "NYC taxi", archive: "raw TLC parquet", landing: "dbt_nyc_landing" },
   bts: { label: "BTS flights", archive: "BTS on-time parquet", landing: "dbt_bts_landing" },
   green: { label: "Green taxi", archive: "raw TLC parquet", landing: "dbt_green_landing" },
+  cms: { label: "CMS Open Payments", archive: "annual CMS CSV", landing: "dbt_cms_landing" },
 };
 
 export function datasetInfo(dataset) {
@@ -133,6 +134,68 @@ export const DATASET_MART_COLUMNS = {
           "fare_amount", "extra", "mta_tax", "tip_amount", "tolls_amount", "ehail_fee",
           "improvement_surcharge", "total_amount", "payment_type", "trip_type",
           "congestion_surcharge", "pickup_date", "file"],
+  // fct_cms_payments' own select list, in its own order — all 91 source columns plus `file`, and
+  // no derived column (Date_of_Payment ships as a DATE, like bts's FlightDate). This is FOUR TIMES
+  // the widest of the others and the encodings block will render as such; that width is the
+  // dataset, not a bug in the table. Read the repeated groups together rather than row by row —
+  // `*_1` through `*_5` are one CMS field modelled five times over, and their encodings differ
+  // almost entirely by how NULL each position is (~7%, ~83%, ~95%, ~98%, ~99%), which is the
+  // measurement this dataset was added for.
+  cms: ["Change_Type", "Covered_Recipient_Type", "Teaching_Hospital_CCN", "Teaching_Hospital_ID",
+        "Teaching_Hospital_Name", "Covered_Recipient_Profile_ID", "Covered_Recipient_NPI",
+        "Covered_Recipient_First_Name", "Covered_Recipient_Middle_Name",
+        "Covered_Recipient_Last_Name", "Covered_Recipient_Name_Suffix",
+        "Recipient_Primary_Business_Street_Address_Line1",
+        "Recipient_Primary_Business_Street_Address_Line2", "Recipient_City", "Recipient_State",
+        "Recipient_Zip_Code", "Recipient_Country", "Recipient_Province", "Recipient_Postal_Code",
+        "Covered_Recipient_Primary_Type_1", "Covered_Recipient_Primary_Type_2",
+        "Covered_Recipient_Primary_Type_3", "Covered_Recipient_Primary_Type_4",
+        "Covered_Recipient_Primary_Type_5", "Covered_Recipient_Primary_Type_6",
+        "Covered_Recipient_Specialty_1", "Covered_Recipient_Specialty_2",
+        "Covered_Recipient_Specialty_3", "Covered_Recipient_Specialty_4",
+        "Covered_Recipient_Specialty_5", "Covered_Recipient_Specialty_6",
+        "Covered_Recipient_License_State_code1", "Covered_Recipient_License_State_code2",
+        "Covered_Recipient_License_State_code3", "Covered_Recipient_License_State_code4",
+        "Covered_Recipient_License_State_code5",
+        "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name",
+        "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID",
+        "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name",
+        "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State",
+        "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country",
+        "Total_Amount_of_Payment_USDollars", "Date_of_Payment",
+        "Number_of_Payments_Included_in_Total_Amount", "Form_of_Payment_or_Transfer_of_Value",
+        "Nature_of_Payment_or_Transfer_of_Value", "City_of_Travel", "State_of_Travel",
+        "Country_of_Travel", "Physician_Ownership_Indicator",
+        "Third_Party_Payment_Recipient_Indicator",
+        "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value", "Charity_Indicator",
+        "Third_Party_Equals_Covered_Recipient_Indicator", "Contextual_Information",
+        "Delay_in_Publication_Indicator", "Record_ID", "Dispute_Status_for_Publication",
+        "Related_Product_Indicator", "Covered_or_Noncovered_Indicator_1",
+        "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+        "Product_Category_or_Therapeutic_Area_1",
+        "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1",
+        "Associated_Drug_or_Biological_NDC_1", "Associated_Device_or_Medical_Supply_PDI_1",
+        "Covered_or_Noncovered_Indicator_2",
+        "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+        "Product_Category_or_Therapeutic_Area_2",
+        "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2",
+        "Associated_Drug_or_Biological_NDC_2", "Associated_Device_or_Medical_Supply_PDI_2",
+        "Covered_or_Noncovered_Indicator_3",
+        "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+        "Product_Category_or_Therapeutic_Area_3",
+        "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3",
+        "Associated_Drug_or_Biological_NDC_3", "Associated_Device_or_Medical_Supply_PDI_3",
+        "Covered_or_Noncovered_Indicator_4",
+        "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+        "Product_Category_or_Therapeutic_Area_4",
+        "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4",
+        "Associated_Drug_or_Biological_NDC_4", "Associated_Device_or_Medical_Supply_PDI_4",
+        "Covered_or_Noncovered_Indicator_5",
+        "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+        "Product_Category_or_Therapeutic_Area_5",
+        "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5",
+        "Associated_Drug_or_Biological_NDC_5", "Associated_Device_or_Medical_Supply_PDI_5",
+        "Program_Year", "Payment_Publication_Date", "file"],
 };
 
 /**

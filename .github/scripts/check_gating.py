@@ -41,6 +41,7 @@ MODELS = {
     "nyc": {"stg_parquet_archive_log", "dim_date", "dim_zone", "fct_trips"},
     "bts": {"stg_flights_archive_log", "dim_flight_date", "dim_carrier", "fct_flights"},
     "green": {"stg_green_archive_log", "dim_green_date", "dim_green_zone", "fct_green_trips"},
+    "cms": {"stg_cms_archive_log", "dim_cms_date", "dim_cms_payer", "fct_cms_payments"},
 }
 
 # dataset -> how many data tests must be ENABLED. Generic tests come from models/<dataset>/_*.yml
@@ -50,7 +51,11 @@ MODELS = {
 # bts is 6 like aemo — four generic (unique/not_null on dim_carrier.code and dim_flight_date.date)
 # plus two singular (the archive-log reconciliation, and the whitespace guard that every STRING
 # join key crossing engines gets).
-TESTS = {"aemo": 6, "nyc": 5, "bts": 6, "green": 5}
+# cms is 6 for the same reason bts is: four generic (unique/not_null on dim_cms_payer.payer_id and
+# dim_cms_date.date) plus the reconciliation and the whitespace guard. nyc and green sit at 5
+# because their dimension key is an INTEGER LocationID, and the T-SQL-pads-on-comparison pathology
+# can only bite a STRING key — cms joins on a string payer id, so it needs the guard.
+TESTS = {"aemo": 6, "nyc": 5, "bts": 6, "green": 5, "cms": 6}
 
 DATASETS = tuple(MODELS)
 TARGETS = tuple(DIALECT)

@@ -1,0 +1,65 @@
+version: 2
+
+# The cms dimensions are named dim_cms_payer and dim_cms_date, NOT dim_payer/dim_date, and that is
+# a hard requirement rather than a style choice: dbt resolves a patch by model NAME across the
+# whole project and raises DuplicatePatchPathError if two yml files patch the same name —
+# regardless of which dataset is gated on, because gating and patching are resolved separately.
+# Two datasets each wanting a `dim_date` entry is therefore a parse error, not a duplication smell.
+
+models:
+  - name: dim_cms_payer
+    description: >
+      The manufacturers and GPOs that make the payments (~1,000 live ids). DERIVED, not
+      downloaded: CMS publishes no manufacturer lookup, so download_cms_payments.land_payers()
+      builds it from the landed archive — one row per id, newest program year winning, because
+      manufacturers are renamed between years and a plain DISTINCT over the four columns would
+      yield the same id twice and fail the `unique` test below.
+
+      Its columns are renamed from CMS's 59-character source spellings, which is a departure from
+      dim_green_zone and dim_carrier and is deliberate: those mirror lookups their sources
+      actually publish, so they keep the source's names, while this table is one the project
+      constructs and has no source spelling to be faithful to. The FACT keeps all 91 source names
+      untouched.
+    columns:
+      - name: payer_id
+        description: >
+          Manufacturer/GPO id, joined from
+          fct_cms_payments.Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID.
+
+          A STRING join key, which is why THIS dataset carries a whitespace assertion where nyc
+          and green do not: T-SQL pads on comparison ('X' = 'X ' is TRUE) and DuckDB and Spark do
+          not, so one trailing space puts a payer in dwh's join result and in no other engine's —
+          the DUID incident exactly. assert_payer_id_has_no_whitespace guards it and all three
+          dialect copies are mandatory.
+        tests:
+          - unique
+          - not_null
+      - name: payer_name
+        description: Company name as of the newest program year that named this id
+      - name: payer_state
+        description: Two-letter state of the paying entity
+      - name: payer_country
+        description: Country of the paying entity — ~99.7% 'United States'
+  - name: dim_cms_date
+    description: >
+      Date dimension over the archive's span. The span is 2013-2027 even though the catalog only
+      serves PY2019 onward: CMS payments carry dates outside their own program year (a documented
+      source condition — the downloader buckets by the actual Date_of_Payment rather than
+      clamping), and the mart's date relationship asserts referential integrity, so a narrowed
+      span would inner-join those rows away in DAX. 2013 is where the programme itself starts, so
+      it stays the floor even if PY2013-2018 are added later.
+    columns:
+      - name: date
+        description: Calendar date
+        tests:
+          - unique
+          - not_null
+      - name: year
+        description: Calendar year
+      - name: month
+        description: Month number, 1-12
+      - name: day_of_week
+        description: >
+          0=Sunday. Normalised identically in all three dialects — DuckDB EXTRACT(dow) is already
+          0-based, Spark's dayofweek() is 1-based and T-SQL's DATEPART depends on DATEFIRST — so
+          the three engines store the SAME value and a parity difference here would be real.

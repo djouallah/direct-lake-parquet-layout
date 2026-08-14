@@ -462,6 +462,133 @@ GREEN_QUERIES = [
      'dim_green_date[month] = 6))'),
 ]
 
+# CMS Open Payments — the WIDE and SPARSE suite.
+#
+# THIS SUITE HAS ONE THING THE OTHER FOUR DO NOT: A MATCHED SPARSE PAIR. probe_product_head and
+# probe_product_tail are the SAME column family, the same semantic type and the same DAX, differing
+# only in how much of the column is NULL — ~7% against ~99%, because CMS models a one-to-many
+# product list as five repeated groups and almost every payment names one product. Nothing else here
+# can isolate what sparsity costs to transcode, because nothing else here IS sparse; every other
+# probe in every other suite confounds NULL rate with cardinality. Keep them adjacent and keep both.
+#
+# The rest of the probes cover the two skew regimes this dataset carries at once — probe_nature and
+# probe_form are the 92%/86% single-value columns (nyc's regime, where every column can win the sort)
+# and probe_specialty, probe_payer and probe_state are the 302/~1,000/56-value competing ones (bts's
+# regime, where they cannot). probe_recipient is deliberately the most expensive: a DISTINCTCOUNT
+# over a near-unique id, which is the case a column store is worst at and which no other suite has.
+#
+# The ladder and the year-filtered composite use 2019: the archive drains OLDEST FIRST from PY2019
+# (CMS's catalog serves nothing earlier), so 2019 is complete after even the first year's drain — a
+# later year would silently filter to nothing on a young archive, and a filter matching nothing is a
+# very fast query, which this benchmark would read as a result. Same rule as bts pinning 1988 and
+# green pinning 2014; do not move it forward because the archive "should" have caught up.
+CMS_QUERIES = [
+    # --- Tier 1: per-column probes (rowcount LAST — see the note above) ---
+    ("probe", "probe_amount",
+     'EVALUATE ROW("x", SUM(fct_cms_payments[Total_Amount_of_Payment_USDollars]))'),
+    # nyc's regime: 92% and 86% single-value. If V-Order does what an encoding pass should, here.
+    ("probe", "probe_nature",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments[Nature_of_Payment_or_Transfer_of_Value]))'),
+    ("probe", "probe_form",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments[Form_of_Payment_or_Transfer_of_Value]))'),
+    # bts's regime: hundreds to thousands of competing values that cannot all win one sort.
+    ("probe", "probe_specialty",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments[Covered_Recipient_Specialty_1]))'),
+    ("probe", "probe_payer",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments'
+     '[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID]))'),
+    ("probe", "probe_state",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments[Recipient_State]))'),
+    # THE SPARSE PAIR — read these two together or neither. Same family, same type, same query;
+    # ~7% NULL against ~99% NULL. This is the measurement the dataset was added for.
+    ("probe", "probe_product_head",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments'
+     '[Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1]))'),
+    ("probe", "probe_product_tail",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments'
+     '[Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5]))'),
+    # Near-unique id: the worst case for a column store, and the only probe of its kind here.
+    ("probe", "probe_recipient",
+     'EVALUATE ROW("x", DISTINCTCOUNT(fct_cms_payments[Covered_Recipient_Profile_ID]))'),
+    ("probe", "probe_date",
+     'EVALUATE ROW("x", COUNTROWS(VALUES(fct_cms_payments[Date_of_Payment])))'),
+    ("probe", "probe_rowcount", 'EVALUATE ROW("x", COUNTROWS(fct_cms_payments))'),
+    # --- Tier 2: composite workloads over the star ---
+    ("composite", "payer_x_year",
+     'EVALUATE SUMMARIZECOLUMNS(dim_cms_payer[payer_name], dim_cms_date[year], '
+     '"Amt", [Total Amount], "Pmts", [Total Payments], "Avg", [Avg Payment])'),
+    ("composite", "nature_x_year",
+     'EVALUATE SUMMARIZECOLUMNS(fct_cms_payments[Nature_of_Payment_or_Transfer_of_Value], '
+     'dim_cms_date[year], "Amt", [Total Amount], "Pmts", [Total Payments])'),
+    ("composite", "specialty_x_state",
+     'EVALUATE SUMMARIZECOLUMNS(fct_cms_payments[Covered_Recipient_Specialty_1], '
+     'fct_cms_payments[Recipient_State], "Amt", [Total Amount])'),
+    ("composite", "payer_x_month",
+     'EVALUATE SUMMARIZECOLUMNS(dim_cms_payer[payer_name], dim_cms_date[year], '
+     'dim_cms_date[month], "Amt", [Total Amount])'),
+    ("composite", "filtered_2019_by_nature",
+     'EVALUATE CALCULATETABLE('
+     'SUMMARIZECOLUMNS(fct_cms_payments[Nature_of_Payment_or_Transfer_of_Value], '
+     '"Amt", [Total Amount], "Pmts", [Total Payments]), '
+     'dim_cms_payer[payer_country] = "United States", dim_cms_date[year] = 2019)'),
+    ("composite", "scalar_weighted_full_scan",
+     'EVALUATE ROW('
+     '"PerPayment", DIVIDE('
+     'SUMX(fct_cms_payments, fct_cms_payments[Total_Amount_of_Payment_USDollars]), '
+     'SUMX(fct_cms_payments, fct_cms_payments'
+     '[Number_of_Payments_Included_in_Total_Amount])), '
+     '"DistinctPayers", DISTINCTCOUNT(fct_cms_payments'
+     '[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID]), '
+     '"Rows", COUNTROWS(fct_cms_payments))'),
+    ("composite", "topn_payer_by_amount",
+     'EVALUATE TOPN(50, SUMMARIZECOLUMNS(dim_cms_payer[payer_name], dim_cms_date[year], '
+     '"Amt", [Total Amount]), [Amt], DESC)'),
+    # Column-width at fixed shape — cold scaling with the number of columns touched.
+    ("composite", "wide_all_measures",
+     'EVALUATE SUMMARIZECOLUMNS(dim_cms_date[year], "a", [Total Amount], "b", [Total Payments], '
+     '"c", [Avg Payment], "d", [Payment Count], "e", [Distinct Recipients], '
+     '"f", [Distinct Products])'),
+    ("composite", "narrow_one_measure",
+     'EVALUATE SUMMARIZECOLUMNS(dim_cms_date[year], "a", [Total Amount])'),
+    # THE SPARSE GROUP AT WIDTH — five mostly-NULL columns of one family in one grouping. The
+    # single-column pair above says what a sparse column costs alone; this says what happens when a
+    # query opens the whole group, which is the shape a real report over this data would take.
+    ("composite", "wide_sparse_group",
+     'EVALUATE SUMMARIZECOLUMNS('
+     'fct_cms_payments[Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1], '
+     'fct_cms_payments[Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2], '
+     'fct_cms_payments[Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3], '
+     'fct_cms_payments[Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4], '
+     'fct_cms_payments[Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5], '
+     '"Amt", [Total Amount])'),
+    # --- Tier 3: the RAW table. Like nyc, the star is four tables, so this tier is one query. ---
+    ("raw", "raw_archive_log",
+     'EVALUATE SUMMARIZECOLUMNS(stg_cms_archive_log[source_type], '
+     '"Files", [Archive Files], "Rows", [Archive Source Rows])'),
+    # --- Tier 4: selectivity ladder (SUMX lifts work above the XMLA noise floor) ---
+    ("hot_only", "sel_1yr",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_cms_payments, '
+     'fct_cms_payments[Total_Amount_of_Payment_USDollars] * '
+     'fct_cms_payments[Number_of_Payments_Included_in_Total_Amount]), '
+     'dim_cms_date[year] = 2019))'),
+    ("hot_only", "sel_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_cms_payments, '
+     'fct_cms_payments[Total_Amount_of_Payment_USDollars] * '
+     'fct_cms_payments[Number_of_Payments_Included_in_Total_Amount]), '
+     'dim_cms_date[year] = 2019, dim_cms_date[month] = 6))'),
+    ("hot_only", "sel_1payer",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_cms_payments, '
+     'fct_cms_payments[Total_Amount_of_Payment_USDollars] * '
+     'fct_cms_payments[Number_of_Payments_Included_in_Total_Amount]), '
+     'fct_cms_payments[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID] = {key}))'),
+    ("hot_only", "sel_1payer_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(fct_cms_payments, '
+     'fct_cms_payments[Total_Amount_of_Payment_USDollars] * '
+     'fct_cms_payments[Number_of_Payments_Included_in_Total_Amount]), '
+     'fct_cms_payments[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID] = {key}, '
+     'dim_cms_date[year] = 2019, dim_cms_date[month] = 6))'),
+]
+
 # The ladder's filter value is resolved from the data AFTER pass 1, per dataset. Three things per
 # suite: the queries, the DAX that finds the busiest key, and what to CALL it in the log and the
 # report — because "top DUID: 132" on a taxi run is exactly the quiet mislabel this repo is against.
@@ -506,6 +633,18 @@ SUITES = {
                    '"m", [Total Trips]), [m], DESC)',
         "quote": False,
         "ready": 'EVALUATE ROW("n", COUNTROWS(dim_green_date))',
+    },
+    # cms's payer id is a STRING like aemo's DUID and bts's Origin, so it IS quoted into the filter.
+    # It resolves on [Total Amount] rather than a row count: the biggest payer by DOLLARS is the one
+    # a reader of this data cares about, and a count would resolve to whoever bought the most meals.
+    "cms": {
+        "queries": CMS_QUERIES,
+        "label": "top paying manufacturer",
+        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(fct_cms_payments'
+                   '[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID], '
+                   '"m", [Total Amount]), [m], DESC)',
+        "quote": True,
+        "ready": 'EVALUATE ROW("n", COUNTROWS(dim_cms_date))',
     },
 }
 

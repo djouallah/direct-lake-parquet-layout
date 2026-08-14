@@ -531,3 +531,105 @@ def test_every_green_dax_string_resolves_against_the_green_template():
     the import-time-binding reason documented on the aemo/nyc copies."""
     import xmla_compare as xc
     _assert_dax_resolves(GREEN, xc.SUITES["green"])
+
+
+# ------------------------------------------------------------------ the CMS Open Payments template
+#
+# The same guards, against the fifth dataset's `.bim`. Spelled out rather than parameterised, for
+# the same reason the other blocks are — different stars are genuinely different data, and a loop
+# would hide which one failed.
+
+CMS = os.path.join(HERE, "fct_cms_payments.SemanticModel", "model.bim")
+
+CMS_EXPECTED = {"stg_cms_archive_log": "landing",
+                "dim_cms_date": "mart",
+                "dim_cms_payer": "mart",
+                "fct_cms_payments": "mart"}
+
+
+def test_cms_template_carries_every_shared_table():
+    assert set(_parts(CMS)) == set(CMS_EXPECTED)
+
+
+def test_cms_template_table_set_matches_the_dataset_registry():
+    """Same guard as the other four: if a model is added or renamed in the registry and not here,
+    the benchmark quietly stops covering it."""
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"cms":\s*\{.*?"tables":\s*\[(.*?)\]', src, re.S)
+    assert block, "could not find the cms dataset's tables in datasets.py"
+    assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(_parts(CMS))
+
+
+def test_cms_template_is_direct_lake_and_repointable():
+    assert _is_directlake_bim(_raw(CMS))
+    assert _ONELAKE_REF.search(_raw(CMS).decode("utf-8"))
+
+
+def test_cms_template_reads_the_real_tables_in_the_real_schemas():
+    assert _parts(CMS) == {t: ("direct" + "Lake", schema, t)
+                           for t, schema in CMS_EXPECTED.items()}
+
+
+def test_cms_relationships_point_at_columns_that_exist():
+    m = json.loads(_raw(CMS))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    for r in m["model"]["relationships"]:
+        assert r["fromColumn"] in cols[r["fromTable"]], f"{r['name']}: bad fromColumn"
+        assert r["toColumn"] in cols[r["toTable"]], f"{r['name']}: bad toColumn"
+
+
+def test_only_the_cms_mart_relies_on_referential_integrity():
+    """Same rule as the other four templates: only the MART's relationships may set RI."""
+    m = json.loads(_raw(CMS))
+    for r in m["model"]["relationships"]:
+        if r.get("relyOnReferentialIntegrity"):
+            assert r["fromTable"] == "fct_cms_payments", f"{r['name']} is not the mart's"
+
+
+def test_every_cms_dax_string_resolves_against_the_cms_template():
+    """Queries, readiness probe and ladder resolver — reads SUITES directly and sets nothing, for
+    the import-time-binding reason documented on the aemo/nyc copies."""
+    import xmla_compare as xc
+    _assert_dax_resolves(CMS, xc.SUITES["cms"])
+
+
+def test_the_cms_fact_carries_every_source_column():
+    """The .bim must expose all 91 source columns plus `file`, not a readable subset.
+
+    THIS IS THE ONE GUARD THAT IS SPECIFIC TO THIS DATASET, and it exists because the semantic
+    model is where a wide table is easiest to quietly narrow: dropping the sparse tail members from
+    the .bim would leave dbt building a 91-column table that Power BI never transcodes past the
+    first product slot, so the layout numbers would still look wide while the QUERY numbers
+    measured something else entirely. Direct Lake transcodes per column on demand, so an undeclared
+    column costs nothing and shows nothing — which is exactly what makes the omission invisible."""
+    m = json.loads(_raw(CMS))
+    fact = next(t for t in m["model"]["tables"] if t["name"] == "fct_cms_payments")
+    declared = [c["sourceColumn"] for c in fact["columns"]]
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"cms":\s*\{.*?"mart_columns":\s*\[(.*?)\],\s*"landing_tables"', src, re.S)
+    assert block, "could not find the cms dataset's mart_columns in datasets.py"
+    assert declared == re.findall(r'"([^"]+)"', block.group(1))
+    assert len(declared) == 92, f"91 source columns plus `file`, got {len(declared)}"
+
+
+def test_the_cms_sparse_pair_is_both_declared_and_both_probed():
+    """probe_product_head and probe_product_tail are the only matched sparse pair in the project.
+
+    They are the same column family, the same type and the same DAX, differing only in NULL rate
+    (~7% against ~99%), which is what makes them the only way here to isolate what sparsity costs
+    to transcode from what cardinality costs. Dropping either one leaves a probe whose number means
+    nothing on its own, so both the columns and both the queries are asserted together."""
+    m = json.loads(_raw(CMS))
+    fact = next(t for t in m["model"]["tables"] if t["name"] == "fct_cms_payments")
+    cols = {c["sourceColumn"] for c in fact["columns"]}
+    for i in (1, 5):
+        assert f"Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_{i}" in cols
+    import xmla_compare as xc
+    named = {name for _tier, name, _dax in xc.SUITES["cms"]["queries"]}
+    assert {"probe_product_head", "probe_product_tail"} <= named

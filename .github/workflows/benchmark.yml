@@ -89,8 +89,10 @@ on:
   # the two must stay IDENTICAL, and the comparisons are exact-string against the cron AS WRITTEN
   # here, whitespace included: editing a cron line without both env chains re-points that weekday
   # at the fallback dataset (aemo — a real dataset, never blank, so the DATASET-typo trap stays
-  # unreachable). Seven days over four datasets does not divide: green, the smallest and cheapest
-  # build, takes the single Saturday slot.
+  # unreachable). Seven days over FIVE datasets does not divide, so two get a second slot: nyc,
+  # because it is the pair that produced the V-Order result everything else is measured against,
+  # and cms, because it is the newest and least characterised. aemo drops to one — its surface is
+  # five narrow near-uniform columns and it has already shown that nothing moves there.
   #
   # **Every scheduled value is the form default, `cores` included — 8, not the 64 a hand dispatch
   # usually passes** — with `dataset` as the one exception, rotating as above. 64 is for an
@@ -99,10 +101,11 @@ on:
   # rather than joining the 64c history — `vcores` is part of `variant()` — which is correct: 8 and
   # 64 are different machines and the CU rate (`cores / 2`) says so on the page.
   schedule:
-    - cron: "17 7 * * 0,3"   # aemo   Sun+Wed
+    - cron: "17 7 * * 0"     # aemo   Sun
     - cron: "17 7 * * 1,4"   # nyc    Mon+Thu
-    - cron: "17 7 * * 2,5"   # bts    Tue+Fri
-    - cron: "17 7 * * 6"     # green  Sat
+    - cron: "17 7 * * 2"     # bts    Tue
+    - cron: "17 7 * * 3,6"   # cms    Wed+Sat
+    - cron: "17 7 * * 5"     # green  Fri
   workflow_dispatch:
     inputs:
       # THE TWO THAT GET CHANGED: which engine, and how big a machine.
@@ -118,7 +121,7 @@ on:
       # makes that unreachable from the form; `datasets.selected()` and `check_gating.py` cover the
       # ways in that do not go through the form.
       #
-      # The four are POINTS ON ONE SURFACE, not a menu. aemo is 143M rows of five narrow columns
+      # The five are POINTS ON ONE SURFACE, not a menu. aemo is 143M rows of five narrow columns
       # on a regular 5-minute grid (near-uniform — nothing to reorder); nyc is 17 columns with four
       # categoricals at 97-99% single-value and two Zipfian zone ids (so extreme every column wins
       # under any sort); bts is 22 columns of INDEPENDENT moderately-skewed categoricals
@@ -129,11 +132,18 @@ on:
       # nothing. green is nyc's regime on a table an order of magnitude smaller (plus trip_type and
       # a ~all-NULL ehail_fee) — the small-table arm, added to test the claim that V-Order makes
       # green data BIGGER.
+      #
+      # cms is the fifth and it moves a different axis: 91 columns, 4x the widest of the others,
+      # and the only SPARSE surface here — 54 of them are >50% NULL, because CMS models a
+      # one-to-many product list as five repeated six-column groups whose tail members run 83-99%
+      # NULL. It is also the only table carrying BOTH skew regimes at once (Nature_of_Payment at
+      # 92% single-value beside specialty at 302 competing values), so it is the first dataset that
+      # can say what the multi-column trade-off costs when the columns genuinely disagree.
       dataset:
-        description: "dataset — aemo (uniform), nyc (extreme skew), bts (competing skew) or green (extreme skew, small)"
+        description: "dataset — aemo (uniform), nyc (extreme skew), bts (competing skew), green (extreme skew, small) or cms (wide + sparse)"
         type: choice
         default: "aemo"
-        options: ["aemo", "nyc", "bts", "green"]
+        options: ["aemo", "nyc", "bts", "green", "cms"]
       cores:
         description: "vCores (duckrun / iceberg only)"
         type: choice
@@ -322,8 +332,9 @@ env:
   # must stay identical or the record claims a different dataset than the build used.
   DATASET: ${{ github.event_name != 'schedule' && inputs.dataset
     || github.event.schedule == '17 7 * * 1,4' && 'nyc'
-    || github.event.schedule == '17 7 * * 2,5' && 'bts'
-    || github.event.schedule == '17 7 * * 6' && 'green'
+    || github.event.schedule == '17 7 * * 2' && 'bts'
+    || github.event.schedule == '17 7 * * 3,6' && 'cms'
+    || github.event.schedule == '17 7 * * 5' && 'green'
     || 'aemo' }}
   AZURE_TRANSPORT_OPTION_TYPE: curl
   CURL_CA_INFO: /etc/ssl/certs/ca-certificates.crt
@@ -412,8 +423,9 @@ jobs:
           # The weekday rotation, DUPLICATED from the workflow-level DATASET chain — keep identical.
           RUNIN_DATASET: ${{ github.event_name != 'schedule' && inputs.dataset
             || github.event.schedule == '17 7 * * 1,4' && 'nyc'
-            || github.event.schedule == '17 7 * * 2,5' && 'bts'
-            || github.event.schedule == '17 7 * * 6' && 'green'
+            || github.event.schedule == '17 7 * * 2' && 'bts'
+            || github.event.schedule == '17 7 * * 3,6' && 'cms'
+            || github.event.schedule == '17 7 * * 5' && 'green'
             || 'aemo' }}
           RUNIN_BUILD: ${{ github.event_name == 'schedule' && 'true' || inputs.build }}
           RUNIN_BENCHMARK: ${{ github.event_name == 'schedule' && 'true' || inputs.benchmark }}

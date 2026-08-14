@@ -27,7 +27,7 @@ Each needs its adapter and env vars, then `dbt build --target <name>`:
 
 ## Datasets and gating
 
-The dataset is the `DATASET` env var (`aemo` | `nyc` | `bts`, default `aemo`). Models live per
+The dataset is the `DATASET` env var (`aemo` | `nyc` | `bts` | `green` | `cms`, default `aemo`). Models live per
 dialect under `models/<dataset>/{duckdb,dwh,spark}`, gated in `dbt_project.yml` so exactly one
 folder is enabled per (dataset, target). `dbt parse --target <name>` verifies the gating offline —
 no credentials needed, and worth doing before spending any capacity, because a gate that disables
