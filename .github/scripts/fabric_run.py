@@ -152,7 +152,13 @@ def main() -> int:
             lakehouse=datasets.spec()["landing"],
             env=env,
             cores=cores,
-            pip=["duckrun", "pytz"],            # duckrun brings dbt-duckdb + duckdb + deltalake
+            # duckrun brings dbt-duckdb + duckdb + deltalake. The floor is load-bearing, not a
+            # freshness preference: below 0.4.50 a naive TIMESTAMP mart column (nyc's tpep_*,
+            # green's lpep_*) lands as Delta timestamp_ntz, which Fabric's SQL analytics endpoint
+            # silently OMITS — the DL phase passes and the DQ phase dies on the first query naming
+            # the column (run 31755603899, duckrun#42). A bare "duckrun" would not upgrade a
+            # preinstalled older copy; the floor forces it.
+            pip=["duckrun>=0.4.50", "pytz"],
         )
     except BaseException as ex:
         _record_notebook(getattr(ex, "item_id", None), engine, name)
