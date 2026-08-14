@@ -337,6 +337,11 @@ V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes,
 
 <!-- spark-profiles:end -->
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/spark-profiles-dark.svg">
+  <img src="docs/spark-profiles-light.svg" alt="Per dataset, readHeavyForPBI's query-CU saving against its build-CU delta, relative to the default writeHeavy profile — the query saving is a multiple where the build cost is small, absent, or negative. Regenerated with the table above; the table carries the exact figures.">
+</picture>
+
 The storage column is almost entirely one operation, `OneLake Write via Redirect`, and its cause is
 published rather than inferred: Microsoft's [resource profile reference][ms-profiles] gives
 `readHeavyForPBI` `optimizeWrite.enabled: "true"` at `binSize: "1g"` while `writeHeavy` doesn't

@@ -4048,6 +4048,62 @@ test("no spark run yet says so rather than printing an empty table", () => {
   assert.match(prof.renderProfileTable([]), /No spark run/);
 });
 
+// ------------------------------------------------------------------- the README's generated chart
+//
+// The chart is the same `profileRows` medians the table prints, as deltas against the same
+// readHeavyForPBI baseline — computed once in `chartData`, so the bars and the % columns cannot
+// disagree. What is pinned: the delta math and its ordering, the skip rules (a percent of nothing
+// is not a bar), that color carries POLARITY per mode, and that the SVG is deterministic — the
+// commit loop relies on an unchanged ledger producing a byte-identical file.
+
+const PROFILE_ROWS = [
+  { dataset: "aemo", profile: "readHeavyForPBI", build: 33_098, directlake: 1_618 },
+  { dataset: "aemo", profile: "writeHeavy", build: 35_813, directlake: 3_903 },
+  { dataset: "green", profile: "readHeavyForPBI", build: 1_897, directlake: 2_556 },
+  { dataset: "green", profile: "writeHeavy", build: 1_506, directlake: 2_644 },
+];
+
+test("chartData is pbi ÷ writeHeavy − 1, biggest query saving first", () => {
+  const d = prof.chartData(PROFILE_ROWS);
+  assert.deepEqual(d.map((x) => x.dataset), ["aemo", "green"], "aemo's −59% leads green's −3%");
+  assert.ok(Math.abs(d[0].queries - (1_618 / 3_903 - 1)) < 1e-9);
+  assert.ok(d[0].build < 0, "aemo builds cheaper under readHeavyForPBI too");
+  assert.ok(d[1].build > 0.25 && d[1].build < 0.27, "green pays ~+26% build");
+});
+
+test("a dataset needs both profiles, and a zero side drops the bar, not the dataset", () => {
+  assert.deepEqual(prof.chartData([PROFILE_ROWS[0]]), [], "no writeHeavy run, nothing to compare");
+  const d = prof.chartData([
+    { dataset: "bts", profile: "readHeavyForPBI", build: 3_045, directlake: 0 },
+    { dataset: "bts", profile: "writeHeavy", build: 3_954, directlake: 1_093 },
+  ]);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].queries, null, "an unmeasured directlake side is null, never 0%");
+  assert.ok(d[0].build < 0);
+});
+
+test("the chart colors polarity per mode and says the multiplier only when it rounds past 1.0×", () => {
+  const light = prof.renderProfileChart(PROFILE_ROWS, "light");
+  assert.match(light, /fill="#2a78d6"/, "a saving is the light diverging blue");
+  assert.match(light, /fill="#e34948"/, "green's build premium is the light diverging red");
+  assert.match(light, /−59% = 2\.4× cheaper/, "aemo queries carry the headline multiplier");
+  assert.match(light, /−3%(?![^<]*×)/, "green's −3% claims no '1.0× cheaper'");
+  assert.match(light, /\+26%/);
+  const dark = prof.renderProfileChart(PROFILE_ROWS, "dark");
+  assert.match(dark, /fill="#3987e5"/);
+  assert.match(dark, /fill="#e66767"/);
+  assert.doesNotMatch(dark, /#2a78d6/, "each mode's file hardcodes its own colors");
+});
+
+test("the chart is deterministic, and nothing to draw is null rather than an empty frame", () => {
+  assert.equal(prof.renderProfileChart(PROFILE_ROWS, "light"),
+    prof.renderProfileChart(PROFILE_ROWS, "light"),
+    "an unchanged ledger must produce a byte-identical SVG");
+  assert.equal(prof.renderProfileChart([], "light"), null);
+  assert.equal(prof.renderProfileChart([PROFILE_ROWS[0]], "light"), null,
+    "a lone profile has no comparison to chart");
+});
+
 test("readHeavyForSpark never reaches the table — it is neither side of the comparison", () => {
   const runs = [sparkRun("a-1.json", "readHeavyForSpark", { size: 5_690 })];
   assert.deepEqual(prof.profileRows(runs, sparkLedger(30_049, 1_882, 3_088)), []);
