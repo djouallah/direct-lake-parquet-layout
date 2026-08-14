@@ -1,0 +1,1231 @@
+{
+ "benchmark": {
+  "analysis": {
+   "cold_column_cost": {
+    "green_duckrun": {
+     "columns": {
+      "distance": 480.9,
+      "dolocation": 463.0,
+      "fare": 552.4,
+      "paytype": 77.1,
+      "pickup": 51825.4,
+      "pulocation": 209.9,
+      "ratecode": 172.5,
+      "storefwd": 186.5,
+      "triptype": 206.6
+     },
+     "rowcount_overhead_ms": 109.3
+    }
+   },
+   "ranking": {
+    "COLD": [
+     {
+      "engine": "duckrun",
+      "query_wins": 22,
+      "rank": 1,
+      "total_ms": 60774.5,
+      "x_fastest": 1.0
+     }
+    ],
+    "HOT": [
+     {
+      "engine": "duckrun",
+      "query_wins": 24,
+      "rank": 1,
+      "total_ms": 3806.2,
+      "x_fastest": 1.0
+     }
+    ],
+    "WARM": [
+     {
+      "engine": "duckrun",
+      "query_wins": 24,
+      "rank": 1,
+      "total_ms": 4799.3,
+      "x_fastest": 1.0
+     }
+    ]
+   }
+  },
+  "deploy": {
+   "deployed": {
+    "green_duckrun": {
+     "folder": "benchmark",
+     "item_id": "4174651a-f637-48de-94c8-a1c24fa64744",
+     "model": "green_duckrun",
+     "previous_item_id": null,
+     "seconds": 44.4
+    },
+    "green_duckrun_dq": {
+     "folder": "benchmark",
+     "item_id": "554b4330-3379-4c44-b2f5-bbb9bf7ebd21",
+     "model": "green_duckrun_dq",
+     "previous_item_id": null,
+     "seconds": 35.7
+    }
+   },
+   "failed": {}
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "d45eefbf-e03f-4654-a544-05a04e203c40",
+    "item": "dbt_green_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "ladder": {
+   "green_duckrun": {
+    "label": "busiest pickup zone",
+    "value": "74"
+   }
+  },
+  "run": {
+   "date": "2026-08-14T00:12:27.806698+00:00",
+   "duckrun_version": "0.4.49",
+   "inputs": {
+    "engines": "duckrun",
+    "gap_seconds": 600,
+    "runs": 6,
+    "think_seconds": 4
+   },
+   "run_id": "31755603899",
+   "sha": "740cba21098dd84956ad563a0ce8d6c21558e157",
+   "workspace": "testing"
+  },
+  "timings": {
+   "green_duckrun": {
+    "borough_x_year": {
+     "all_hot_ms": [
+      123.88260699998455,
+      113.4013230000619,
+      102.48339899999337,
+      100.0031170000284
+     ],
+     "cold_ms": 512.2019530000159,
+     "hot_median_ms": 107.94236100002763,
+     "hot_spread_pct": 22.122445515111565,
+     "ms_by_pass": {
+      "1": 512.2019530000159,
+      "2": 115.70403700000043,
+      "3": 123.88260699998455,
+      "4": 113.4013230000619,
+      "5": 102.48339899999337,
+      "6": 100.0031170000284
+     },
+     "rows": 110,
+     "tier": "composite",
+     "warm_ms": 115.70403700000043
+    },
+    "dow_x_borough": {
+     "all_hot_ms": [
+      101.31200699998999,
+      104.11590199998955,
+      142.41831100002855,
+      100.89177099996505
+     ],
+     "cold_ms": 276.5301200000181,
+     "hot_median_ms": 102.71395449998977,
+     "hot_spread_pct": 40.4293070033319,
+     "ms_by_pass": {
+      "1": 276.5301200000181,
+      "2": 119.63054400001738,
+      "3": 101.31200699998999,
+      "4": 104.11590199998955,
+      "5": 142.41831100002855,
+      "6": 100.89177099996505
+     },
+     "rows": 61,
+     "tier": "composite",
+     "warm_ms": 119.63054400001738
+    },
+    "filtered_brooklyn_2014_by_zone": {
+     "all_hot_ms": [
+      108.12859099996786,
+      99.49762900009773,
+      103.00045999997565,
+      115.31490300001224
+     ],
+     "cold_ms": 169.88307600001917,
+     "hot_median_ms": 105.56452549997175,
+     "hot_spread_pct": 14.983512619415636,
+     "ms_by_pass": {
+      "1": 169.88307600001917,
+      "2": 109.45732400000452,
+      "3": 108.12859099996786,
+      "4": 99.49762900009773,
+      "5": 103.00045999997565,
+      "6": 115.31490300001224
+     },
+     "rows": 61,
+     "tier": "composite",
+     "warm_ms": 109.45732400000452
+    },
+    "narrow_one_measure": {
+     "all_hot_ms": [
+      99.13668600000847,
+      99.1145510000706,
+      88.91934099995069,
+      95.96829899999193
+     ],
+     "cold_ms": 201.8896579999705,
+     "hot_median_ms": 97.54142500003127,
+     "hot_spread_pct": 10.474877725083985,
+     "ms_by_pass": {
+      "1": 201.8896579999705,
+      "2": 89.66858500002672,
+      "3": 99.13668600000847,
+      "4": 99.1145510000706,
+      "5": 88.91934099995069,
+      "6": 95.96829899999193
+     },
+     "rows": 15,
+     "tier": "composite",
+     "warm_ms": 89.66858500002672
+    },
+    "paytype_x_borough": {
+     "all_hot_ms": [
+      104.82266700000764,
+      99.71892600003684,
+      101.81335900006161,
+      101.07214600009229
+     ],
+     "cold_ms": 587.0313389999922,
+     "hot_median_ms": 101.44275250007695,
+     "hot_spread_pct": 5.031153901277397,
+     "ms_by_pass": {
+      "1": 587.0313389999922,
+      "2": 120.28297099999463,
+      "3": 104.82266700000764,
+      "4": 99.71892600003684,
+      "5": 101.81335900006161,
+      "6": 101.07214600009229
+     },
+     "rows": 47,
+     "tier": "composite",
+     "warm_ms": 120.28297099999463
+    },
+    "probe_distance": {
+     "all_hot_ms": [
+      114.48728799996388,
+      120.6127650000326,
+      97.8623849999849,
+      96.21176300004208
+     ],
+     "cold_ms": 590.1621909999903,
+     "hot_median_ms": 106.17483649997439,
+     "hot_spread_pct": 22.981906828739405,
+     "ms_by_pass": {
+      "1": 590.1621909999903,
+      "2": 178.69131099996594,
+      "3": 114.48728799996388,
+      "4": 120.6127650000326,
+      "5": 97.8623849999849,
+      "6": 96.21176300004208
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 178.69131099996594
+    },
+    "probe_dolocation": {
+     "all_hot_ms": [
+      101.1441719999766,
+      730.5632290000403,
+      88.63288399993507,
+      97.22017600006438
+     ],
+     "cold_ms": 572.3039050000125,
+     "hot_median_ms": 99.1821740000205,
+     "hot_spread_pct": 647.2235071193062,
+     "ms_by_pass": {
+      "1": 572.3039050000125,
+      "2": 137.28420099999994,
+      "3": 101.1441719999766,
+      "4": 730.5632290000403,
+      "5": 88.63288399993507,
+      "6": 97.22017600006438
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 137.28420099999994
+    },
+    "probe_fare": {
+     "all_hot_ms": [
+      94.51427800001966,
+      98.46159199997828,
+      103.76838399997723,
+      122.36203199995543
+     ],
+     "cold_ms": 661.6666909999935,
+     "hot_median_ms": 101.11498799997776,
+     "hot_spread_pct": 27.540678736906838,
+     "ms_by_pass": {
+      "1": 661.6666909999935,
+      "2": 94.80221900003016,
+      "3": 94.51427800001966,
+      "4": 98.46159199997828,
+      "5": 103.76838399997723,
+      "6": 122.36203199995543
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 94.80221900003016
+    },
+    "probe_paytype": {
+     "all_hot_ms": [
+      97.30080200000657,
+      100.594454999964,
+      93.96485499996743,
+      576.3749910000797
+     ],
+     "cold_ms": 186.38519000000997,
+     "hot_median_ms": 98.94762849998529,
+     "hot_spread_pct": 487.5408772431408,
+     "ms_by_pass": {
+      "1": 186.38519000000997,
+      "2": 92.42684600002349,
+      "3": 97.30080200000657,
+      "4": 100.594454999964,
+      "5": 93.96485499996743,
+      "6": 576.3749910000797
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 92.42684600002349
+    },
+    "probe_pickup": {
+     "all_hot_ms": [
+      462.1037129999763,
+      93.22740000004615,
+      448.87020900000607,
+      301.6029369999842
+     ],
+     "cold_ms": 51934.64896900002,
+     "hot_median_ms": 375.23657299999513,
+     "hot_spread_pct": 98.30499997662406,
+     "ms_by_pass": {
+      "1": 51934.64896900002,
+      "2": 102.04435499997544,
+      "3": 462.1037129999763,
+      "4": 93.22740000004615,
+      "5": 448.87020900000607,
+      "6": 301.6029369999842
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 102.04435499997544
+    },
+    "probe_pulocation": {
+     "all_hot_ms": [
+      91.16578899994465,
+      96.08137300000408,
+      91.66651900000033,
+      92.20542000002752
+     ],
+     "cold_ms": 319.2177749999985,
+     "hot_median_ms": 91.93596950001393,
+     "hot_spread_pct": 5.346747335990926,
+     "ms_by_pass": {
+      "1": 319.2177749999985,
+      "2": 93.73871299999337,
+      "3": 91.16578899994465,
+      "4": 96.08137300000408,
+      "5": 91.66651900000033,
+      "6": 92.20542000002752
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 93.73871299999337
+    },
+    "probe_ratecode": {
+     "all_hot_ms": [
+      125.59257099997012,
+      90.4428100000132,
+      88.99027099994328,
+      100.05421599998954
+     ],
+     "cold_ms": 281.7910759999904,
+     "hot_median_ms": 95.24851300000137,
+     "hot_spread_pct": 38.4282114724734,
+     "ms_by_pass": {
+      "1": 281.7910759999904,
+      "2": 92.61735799998405,
+      "3": 125.59257099997012,
+      "4": 90.4428100000132,
+      "5": 88.99027099994328,
+      "6": 100.05421599998954
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 92.61735799998405
+    },
+    "probe_rowcount": {
+     "all_hot_ms": [
+      116.1386420000099,
+      127.98129899999822,
+      120.00651700009257,
+      152.76083100002324
+     ],
+     "cold_ms": 109.2973279999967,
+     "hot_median_ms": 123.9939080000454,
+     "hot_spread_pct": 29.535474436373068,
+     "ms_by_pass": {
+      "1": 109.2973279999967,
+      "2": 161.1125050000055,
+      "3": 116.1386420000099,
+      "4": 127.98129899999822,
+      "5": 120.00651700009257,
+      "6": 152.76083100002324
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 161.1125050000055
+    },
+    "probe_storefwd": {
+     "all_hot_ms": [
+      91.65177599999197,
+      96.25509299996793,
+      97.71640600001774,
+      128.2631509999419
+     ],
+     "cold_ms": 295.840290000001,
+     "hot_median_ms": 96.98574949999283,
+     "hot_spread_pct": 37.74923139605436,
+     "ms_by_pass": {
+      "1": 295.840290000001,
+      "2": 94.23870999995643,
+      "3": 91.65177599999197,
+      "4": 96.25509299996793,
+      "5": 97.71640600001774,
+      "6": 128.2631509999419
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 94.23870999995643
+    },
+    "probe_triptype": {
+     "all_hot_ms": [
+      101.3686339999822,
+      91.26844900004016,
+      94.40079400008017,
+      111.74442800006545
+     ],
+     "cold_ms": 315.9463780000067,
+     "hot_median_ms": 97.88471400003118,
+     "hot_spread_pct": 20.9184643477824,
+     "ms_by_pass": {
+      "1": 315.9463780000067,
+      "2": 417.5233999999932,
+      "3": 101.3686339999822,
+      "4": 91.26844900004016,
+      "5": 94.40079400008017,
+      "6": 111.74442800006545
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 417.5233999999932
+    },
+    "raw_archive_log": {
+     "all_hot_ms": [
+      90.59779099999332,
+      127.44378299998971,
+      423.7900529999479,
+      98.35334900003545
+     ],
+     "cold_ms": 171.31890699999985,
+     "hot_median_ms": 112.89856600001258,
+     "hot_spread_pct": 295.1253269239199,
+     "ms_by_pass": {
+      "1": 171.31890699999985,
+      "2": 392.96170000000075,
+      "3": 90.59779099999332,
+      "4": 127.44378299998971,
+      "5": 423.7900529999479,
+      "6": 98.35334900003545
+     },
+     "rows": 2,
+     "tier": "raw",
+     "warm_ms": 392.96170000000075
+    },
+    "scalar_weighted_full_scan": {
+     "all_hot_ms": [
+      109.88607100000536,
+      99.79643400004079,
+      130.85107899996729,
+      97.69563700001527
+     ],
+     "cold_ms": 555.1800780000349,
+     "hot_median_ms": 104.84125250002307,
+     "hot_spread_pct": 31.624423792480655,
+     "ms_by_pass": {
+      "1": 555.1800780000349,
+      "2": 98.03967900000998,
+      "3": 109.88607100000536,
+      "4": 99.79643400004079,
+      "5": 130.85107899996729,
+      "6": 97.69563700001527
+     },
+     "rows": 1,
+     "tier": "composite",
+     "warm_ms": 98.03967900000998
+    },
+    "sel_1mo": {
+     "all_hot_ms": [
+      95.12864900000295,
+      93.96809600002598,
+      168.25482399997327,
+      122.88250799997513
+     ],
+     "cold_ms": 121.18685100000448,
+     "hot_median_ms": 109.00557849998904,
+     "hot_spread_pct": 68.1494736528138,
+     "ms_by_pass": {
+      "1": 121.18685100000448,
+      "2": 96.77766700002621,
+      "3": 95.12864900000295,
+      "4": 93.96809600002598,
+      "5": 168.25482399997327,
+      "6": 122.88250799997513
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 96.77766700002621
+    },
+    "sel_1yr": {
+     "all_hot_ms": [
+      117.10682500000757,
+      94.22935099996721,
+      92.20603599999322,
+      104.28046200001972
+     ],
+     "cold_ms": 261.0065270000064,
+     "hot_median_ms": 99.25490649999347,
+     "hot_spread_pct": 25.08771594078928,
+     "ms_by_pass": {
+      "1": 261.0065270000064,
+      "2": 96.13463900001307,
+      "3": 117.10682500000757,
+      "4": 94.22935099996721,
+      "5": 92.20603599999322,
+      "6": 104.28046200001972
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 96.13463900001307
+    },
+    "sel_1zone": {
+     "all_hot_ms": [
+      95.85717400000249,
+      93.36874899997838,
+      92.65513000002557,
+      100.22186999992755
+     ],
+     "hot_median_ms": 94.61296149999043,
+     "hot_spread_pct": 7.997572298698999,
+     "ms_by_pass": {
+      "2": 527.3726839999995,
+      "3": 95.85717400000249,
+      "4": 93.36874899997838,
+      "5": 92.65513000002557,
+      "6": 100.22186999992755
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 527.3726839999995
+    },
+    "sel_1zone_1mo": {
+     "all_hot_ms": [
+      123.08286799998314,
+      95.05476300000737,
+      404.6631129999696,
+      101.38018299994656
+     ],
+     "hot_median_ms": 112.23152549996485,
+     "hot_spread_pct": 275.86575930491045,
+     "ms_by_pass": {
+      "2": 203.2618599999978,
+      "3": 123.08286799998314,
+      "4": 95.05476300000737,
+      "5": 404.6631129999696,
+      "6": 101.38018299994656
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 203.2618599999978
+    },
+    "topn_zone_by_fare": {
+     "all_hot_ms": [
+      98.59190200000967,
+      146.87195499993777,
+      119.41836100004366,
+      380.4204639999398
+     ],
+     "cold_ms": 279.5885529999964,
+     "hot_median_ms": 133.14515799999072,
+     "hot_spread_pct": 211.67015476443368,
+     "ms_by_pass": {
+      "1": 279.5885529999964,
+      "2": 101.61328800001002,
+      "3": 98.59190200000967,
+      "4": 146.87195499993777,
+      "5": 119.41836100004366,
+      "6": 380.4204639999398
+     },
+     "rows": 50,
+     "tier": "composite",
+     "warm_ms": 101.61328800001002
+    },
+    "wide_all_measures": {
+     "all_hot_ms": [
+      116.2568070000134,
+      97.64559699999609,
+      101.62555600004453,
+      100.77016499997171
+     ],
+     "cold_ms": 873.5114539999813,
+     "hot_median_ms": 101.19786050000812,
+     "hot_spread_pct": 18.390912523309538,
+     "ms_by_pass": {
+      "1": 873.5114539999813,
+      "2": 105.40931600002068,
+      "3": 116.2568070000134,
+      "4": 97.64559699999609,
+      "5": 101.62555600004453,
+      "6": 100.77016499997171
+     },
+     "rows": 15,
+     "tier": "composite",
+     "warm_ms": 105.40931600002068
+    },
+    "zone_x_month": {
+     "all_hot_ms": [
+      1131.8077879999464,
+      1139.3130400000473,
+      1134.9688399999422,
+      1488.1413620000785
+     ],
+     "cold_ms": 1497.9102739999917,
+     "hot_median_ms": 1137.1409399999948,
+     "hot_spread_pct": 31.335919890469665,
+     "ms_by_pass": {
+      "1": 1497.9102739999917,
+      "2": 1158.479825000029,
+      "3": 1131.8077879999464,
+      "4": 1139.3130400000473,
+      "5": 1134.9688399999422,
+      "6": 1488.1413620000785
+     },
+     "rows": 35362,
+     "tier": "composite",
+     "warm_ms": 1158.479825000029
+    }
+   }
+  },
+  "top_duid": {
+   "green_duckrun": "74"
+  }
+ },
+ "dbt": {
+  "duckrun": {
+   "sort_by_auto": {
+    "fct_green_trips": [
+     "pickup_date",
+     "payment_type",
+     "PULocationID"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "4",
+  "dataset": "green",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "1858E9E6-E71B-4467-9459-46E0D679391A": {
+   "at": "2026-08-14T00:03:44+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_green_landing",
+   "role": "sql_endpoint"
+  },
+  "27310421-D0DA-4E48-8BFF-5FE331B84BA7": {
+   "at": "2026-08-14T00:03:42+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_green_landing",
+   "role": "landing"
+  },
+  "4174651A-F637-48DE-94C8-A1C24FA64744": {
+   "created": true,
+   "deleted": "2026-08-14T00:25:40+00:00",
+   "engine": "duckrun",
+   "kind": "SemanticModel",
+   "name": "green_duckrun",
+   "replaced": null,
+   "role": "semantic_model"
+  },
+  "554B4330-3379-4C44-B2F5-BBB9BF7EBD21": {
+   "created": true,
+   "deleted": "2026-08-14T00:27:45+00:00",
+   "engine": "duckrun",
+   "kind": "SemanticModel",
+   "name": "green_duckrun_dq",
+   "replaced": null,
+   "role": "semantic_model_dq"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-14T00:13:20+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "77530DE8-EBBC-4896-B504-971B0792AD7D": {
+   "at": "2026-08-14T00:13:29+00:00",
+   "created": true,
+   "deleted": "2026-08-14T00:25:41+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_green_delta_dl",
+   "role": "bench_dl"
+  },
+  "92A45907-7A6A-467B-9E13-F3DDB764E139": {
+   "at": "2026-08-14T00:13:49+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_green_delta_dq",
+   "role": "sql_endpoint"
+  },
+  "D45EEFBF-E03F-4654-A544-05A04E203C40": {
+   "at": "2026-08-14T00:04:28+00:00",
+   "created": true,
+   "deleted": "2026-08-14T00:28:17+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_green_delta",
+   "role": "output"
+  },
+  "ECF34B16-FB93-41F0-BF4D-A1DCFB54C262": {
+   "at": "2026-08-14T00:10:38+00:00",
+   "created": true,
+   "deleted": "2026-08-14T00:28:16+00:00",
+   "engine": "duckrun",
+   "kind": "Notebook",
+   "name": "dbt-duckrun-75fe0e62",
+   "role": "compute"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-14T00:03:41+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  },
+  "F9FC7222-5395-4675-B48B-46DF34E6B164": {
+   "at": "2026-08-14T00:13:43+00:00",
+   "created": true,
+   "deleted": "2026-08-14T00:27:46+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_green_delta_dq",
+   "role": "bench_dq"
+  }
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": "auto",
+    "row_group_size": "auto",
+    "sorted": "true",
+    "vcores": "4"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "duckrun": {
+    "DOLocationID": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 90.58,
+     "type": "INT32"
+    },
+    "PULocationID": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.67,
+     "type": "INT32"
+    },
+    "RatecodeID": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.74,
+     "type": "INT32"
+    },
+    "VendorID": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 11.96,
+     "type": "INT32"
+    },
+    "congestion_surcharge": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.7,
+     "type": "DOUBLE"
+    },
+    "ehail_fee": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.01,
+     "type": "DOUBLE"
+    },
+    "extra": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 30.08,
+     "type": "DOUBLE"
+    },
+    "fare_amount": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 115.1,
+     "type": "DOUBLE"
+    },
+    "file": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "BYTE_ARRAY"
+    },
+    "improvement_surcharge": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.21,
+     "type": "DOUBLE"
+    },
+    "lpep_dropoff_datetime": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 569.51,
+     "type": "INT64"
+    },
+    "lpep_pickup_datetime": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 569.28,
+     "type": "INT64"
+    },
+    "mta_tax": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.23,
+     "type": "DOUBLE"
+    },
+    "passenger_count": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 20.91,
+     "type": "INT32"
+    },
+    "payment_type": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.07,
+     "type": "INT32"
+    },
+    "pickup_date": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.04,
+     "type": "INT32"
+    },
+    "store_and_fwd_flag": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.98,
+     "type": "BYTE_ARRAY"
+    },
+    "tip_amount": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 55.55,
+     "type": "DOUBLE"
+    },
+    "tolls_amount": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 6.14,
+     "type": "DOUBLE"
+    },
+    "total_amount": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 136.78,
+     "type": "DOUBLE"
+    },
+    "trip_distance": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 126.47,
+     "type": "DOUBLE"
+    },
+    "trip_type": {
+     "chunks": 7,
+     "dict_pages": 7,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.17,
+     "type": "INT32"
+    }
+   }
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "d45eefbf-e03f-4654-a544-05a04e203c40",
+    "item": "dbt_green_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "landing": {
+   "files": 151,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/green": {
+     "files": 149,
+     "size_mb": 1182.52
+    },
+    "parquet_raw/zone": {
+     "files": 1,
+     "size_mb": 0.01
+    }
+   },
+   "guid": "27310421-d0da-4e48-8bff-5fe331b84ba7",
+   "item": "dbt_green_landing",
+   "size_mb": 1182.54
+  },
+  "ordering": {
+   "duckrun": {
+    "columns": {
+     "DOLocationID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 3726294
+     },
+     "PULocationID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 36327
+     },
+     "RatecodeID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 176321
+     },
+     "VendorID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 1309332
+     },
+     "congestion_surcharge": {
+      "rg_overlap_pct": 66.7,
+      "rgs": 4,
+      "runs": 0
+     },
+     "ehail_fee": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 2,
+      "runs": 0
+     },
+     "extra": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 2053410
+     },
+     "fare_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 3873340
+     },
+     "file": {
+      "rg_overlap_pct": 83.3,
+      "rgs": 7,
+      "runs": 6
+     },
+     "improvement_surcharge": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 59754
+     },
+     "lpep_dropoff_datetime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 3999695
+     },
+     "lpep_pickup_datetime": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 3999570
+     },
+     "mta_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 157395
+     },
+     "passenger_count": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 1162691
+     },
+     "payment_type": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 382
+     },
+     "pickup_date": {
+      "rg_overlap_pct": 33.3,
+      "rgs": 7,
+      "runs": 81
+     },
+     "store_and_fwd_flag": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 67317
+     },
+     "tip_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 1681504
+     },
+     "tolls_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 147668
+     },
+     "total_amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 3905031
+     },
+     "trip_distance": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 3976996
+     },
+     "trip_type": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 7,
+      "runs": 140353
+     }
+    },
+    "sample": {
+     "file": "part-00001-64102fa7-5546-4da7-9800-af4eecc27739-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.fct_green_trips",
+    "vorder_files": {
+     "files": 7,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "green",
+   "id": "31755603899",
+   "sha": "740cba21098dd84956ad563a0ce8d6c21558e157",
+   "written": "2026-08-14T00:11:38.246271+00:00"
+  },
+  "stats": {
+   "duckrun": {
+    "dim_green_date": {
+     "avg_row_group": 5844.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.03,
+     "total_rows": 5844,
+     "vorder": false
+    },
+    "dim_green_zone": {
+     "avg_row_group": 265.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.01,
+     "total_rows": 265,
+     "vorder": false
+    },
+    "fct_green_trips": {
+     "avg_row_group": 12041010.7,
+     "compression": "SNAPPY",
+     "num_files": 7,
+     "num_row_groups": 7,
+     "schema": "mart",
+     "size_mb": 1755.27,
+     "total_rows": 84287075,
+     "vorder": false
+    },
+    "stg_green_archive_log": {
+     "avg_row_group": 150.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.01,
+     "total_rows": 150,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_green_archive_log",
+   "dim_green_date",
+   "dim_green_zone",
+   "fct_green_trips"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-14T00:28:27+00:00",
+  "id": "31755603899",
+  "sha": "740cba21098dd84956ad563a0ce8d6c21558e157",
+  "started": "2026-08-13T23:56:13+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/31755603899"
+ },
+ "schema": 1
+}
