@@ -1887,9 +1887,28 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   (`duckrun_auto`), so it is the only duckrun layout still being measured; every other row is a frozen
   sample of whatever the archive looked like the week somebody ran it. Keeping the CHEAPEST instead
   would put a row nothing refreshes beside engines that are refreshed nightly.
-  **The cost is real and is not hidden:** the sort-key sweep is duckrun's own finding and it leaves
-  these tables, **including the cheapest layout on the aemo page** (`date, time, price` at 2.0M, 1,557
-  CU against `auto`'s 1,738). Every one of those runs keeps its row in **Every run** with its own CU
+  **WHAT LEAVES THE TABLE COSTS LESS THAN IT LOOKS, AND THAT IS MEASURED.** The obvious objection is
+  that the sweep holds duckrun's own finding — the cheapest layout on the aemo page is
+  `date, time, price` at 2.0M, **1,557 CU against `auto`'s 1,738**, so hand-tuning appears to beat the
+  picker by ~11%. **It does not survive its own spread.** Per-run directlake CU inside each layout,
+  aemo duckrun, `n` runs each:
+
+  | ordering | rg | n | median | min | max | spread |
+  |---|---|---:|---:|---:|---:|---:|
+  | `date, time, price` | 2.0M | 7 | 1,557 | 1,518 | 1,803 | 18% |
+  | `date, time` | 16.0M | 7 | 1,577 | 1,271 | 2,629 | 86% |
+  | `auto` | 7.6M | 5 | **1,738** | 1,601 | 4,336 | 157% |
+  | — (unsorted) | 5.3–7.6M | 8 | 1,754 | 1,379 | 2,091 | 41% |
+  | `date, DUID, time` | 6.0M | 6 | 1,878 | 1,326 | 3,262 | 103% |
+
+  **The winner's MAX (1,803) sits above the loser's MEDIAN (1,738)** — one dispatch of the better
+  layout lands worse than the typical dispatch of the worse one. All fifteen duckrun medians fit in a
+  46% band while individual rows swing 18–157% run to run, so there is no layout signal separable from
+  capacity weather at these sample sizes. That is the same conclusion the noise floor under
+  *What moved, and what is inside the noise* reaches by its own route. **Do not restore these rows to
+  argue that a hand key beats `auto`** without first showing the gap clears the spread; today it does
+  not, and the earlier version of this bullet said it did.
+  Nothing is deleted either way: every one of those runs keeps its row in **Every run** with its own CU
   and tiers, `history/` has all of it, and the count is NAMED under the table — the same discipline
   the `ETL_VCORES` cut and the generation filter follow.
   **`shownLayouts` is applied ONCE, to the groups all three layout renderers share** (the fit table,

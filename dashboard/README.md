@@ -449,9 +449,11 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   nobody else can have: six sort keys across four row-group sizes, 13 of aemo's 18 rows, against five
   that are the cross-engine comparison. `auto` is the one kept because it is what the NIGHTLY
   dispatches, so it is the only duckrun layout still being measured — every other row is a frozen
-  sample of the week somebody ran it. The cost is stated rather than hidden: the sweep is duckrun's
-  own finding and it leaves these tables, including the cheapest layout on the aemo page
-  (`date, time, price` at 2.0M, 1,557 CU against `auto`'s 1,738). Those runs keep their rows in
+  sample of the week somebody ran it. The apparent cost is that the sweep holds duckrun's own
+  finding — aemo's cheapest layout is `date, time, price` at 2.0M, 1,557 CU against `auto`'s 1,738 —
+  and it does not survive its own spread: that layout's seven runs span 1,518–1,803, so its MAX is
+  above `auto`'s MEDIAN, and all fifteen duckrun medians fit in a 46% band while single rows swing
+  18–157% run to run. Those runs keep their rows in
   *Every run*, `history/` has all of it, and the held count is NAMED under the table. Applied ONCE to
   the groups the fit table, the scatter and the mart block share, so the three cannot disagree — and
   **never to the point of erasing an engine**: the condition is per engine, so a dataset where

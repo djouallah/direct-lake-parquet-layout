@@ -1086,11 +1086,16 @@ export function vorderOf(rec, table = DEFAULTS.table) {
  * instead would have put a row on the page that nothing is refreshing, ranked against engines that
  * are.
  *
- * **WHAT THIS COSTS, stated because it is not small:** the sort-key sweep is duckrun's own finding and
- * it leaves the layout tables, including the cheapest layout on the aemo page (`date, time, price` at
- * 2.0M, 1,557 CU against `auto`'s 1,738). It is not deleted — every one of those runs keeps its row in
- * **Every run**, with its own CU and its own tiers, and `history/` has all of it. The hidden count is
- * NAMED under the table, the same discipline the `ETL_VCORES` cut and the generation filter follow.
+ * **WHAT THIS COSTS IS SMALLER THAN IT LOOKS, AND THAT IS MEASURED.** The objection is that the sweep
+ * holds duckrun's own finding: aemo's cheapest layout is `date, time, price` at 2.0M, 1,557 CU against
+ * `auto`'s 1,738, so hand-tuning appears to beat the picker by ~11%. It does not survive its own
+ * spread — that layout's seven runs span 1,518–1,803, so its MAX sits above `auto`'s MEDIAN, and
+ * `auto`'s own five span 1,601–4,336. All fifteen duckrun medians fit in a 46% band while individual
+ * rows swing 18–157% run to run: there is no layout signal separable from capacity weather at these
+ * sample sizes. See CLAUDE.md for the full table.
+ * Nothing is deleted either way — every one of those runs keeps its row in **Every run**, with its own
+ * CU and its own tiers, and `history/` has all of it. The hidden count is NAMED under the table, the
+ * same discipline the `ETL_VCORES` cut and the generation filter follow.
  *
  * Keyed by engine, so it does nothing on nyc/bts/green, where duckrun only ever dispatched `auto` and
  * the tables are 3-4 rows already.
