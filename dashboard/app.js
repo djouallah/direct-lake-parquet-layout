@@ -1103,29 +1103,56 @@ export function vorderOf(rec, table = DEFAULTS.table) {
 export const LAYOUTS_SHOWN = { duckrun: "auto" };
 
 /**
- * `{shown, hidden}` — the layout groups the page renders, and the ones `LAYOUTS_SHOWN` held back.
+ * Resource profiles whose layout row answers nothing this page asks: `{engine: [profile]}`.
+ *
+ * **`readHeavyForSpark` SETS NO V-ORDER AT ALL** — Microsoft's own profile reference publishes its
+ * config set as `optimizeWrite.enabled`, `optimizeWrite.partitioned.enabled` and `binSize: 128`, and
+ * that is the whole of it. So it is neither side of the comparison the spark rows exist to make:
+ * `readHeavyForPBI` is the only profile that turns V-Order on and `writeHeavy` is the workspace
+ * default it is measured against. What it leaves is a third bar sitting between them, named as though
+ * it were the read-optimised one — the V-Order page itself says "switch to readHeavyforSpark … which
+ * automatically enable V-Order", which the profile reference and our own in-session measurement both
+ * contradict. A row that invites exactly that misreading, on two runs, is worse than no row.
+ *
+ * SEPARATE FROM `LAYOUTS_SHOWN` because the rules differ in kind: that one keeps ONE of an engine's
+ * many layouts (a crowding rule, so it names what to keep), this one drops a NAMED profile whatever
+ * else exists (a relevance rule, so it names what to drop). Both go through `shownLayouts`, so both
+ * are subject to the never-thinned-to-nothing guard and both are counted in the note under the table.
+ */
+export const PROFILES_HIDDEN = { spark: ["readHeavyForSpark"] };
+
+/** Does the page show this layout key? `[engine, resource_profile, sort, …]` — see `layoutKey`. */
+function wantedLayout(key) {
+  const [engine, profile, sort] = key || [];
+  const only = LAYOUTS_SHOWN[engine];
+  if (only !== undefined && sort !== only) return false;
+  return !(PROFILES_HIDDEN[engine] || []).includes(profile);
+}
+
+/**
+ * `{shown, hidden}` — the layout groups the page renders, and the ones `LAYOUTS_SHOWN` and
+ * `PROFILES_HIDDEN` held back.
  *
  * Applied ONCE, to the groups every layout renderer shares, so the fit table, the scatter and the
  * mart block cannot disagree about which layouts exist. They are one measurement described three
  * ways; filtering them separately is how a page ends up plotting a dot with no row under it.
  *
- * Reads the KEY, not the records: the engine and the sort are elements `[0]` and `[2]` of
- * `layoutKey`, so every member of a group agrees on both by construction.
+ * Reads the KEY, not the records: the engine, the profile and the sort are elements `[0]`, `[1]` and
+ * `[2]` of `layoutKey`, so every member of a group agrees on all three by construction.
  */
 export function shownLayouts(groups) {
   const all = groups || [];
-  // AN ENGINE IS NEVER THINNED TO NOTHING. `LAYOUTS_SHOWN` says which of an engine's MANY layouts to
-  // keep, and that only means anything while it has that one — on a dataset where duckrun was never
-  // dispatched with `auto`, hiding every other row would erase the engine from a table comparing
-  // engines, over a rule about crowding. The condition is per engine, so aemo thins and a dataset
-  // with one duckrun layout keeps it whatever it was dispatched with.
-  const have = new Set(all.filter(([k]) => (k || [])[2] === LAYOUTS_SHOWN[(k || [])[0]])
-    .map(([k]) => k[0]));
+  // AN ENGINE IS NEVER THINNED TO NOTHING, and the guard covers BOTH rules. Each says which of an
+  // engine's MANY layouts to drop, which only means anything while something of that engine survives
+  // — on a dataset where duckrun never dispatched `auto`, or where spark only ever ran
+  // `readHeavyForSpark`, hiding the rest would erase an engine from a table comparing engines, over
+  // a rule about crowding or relevance. The condition is per engine, so aemo thins and a dataset
+  // holding one layout of an engine keeps it whatever it was dispatched with.
+  const have = new Set(all.filter(([k]) => wantedLayout(k)).map(([k]) => (k || [])[0]));
   const shown = [], hidden = [];
   for (const g of all) {
-    const [engine, , sort] = g[0] || [];
-    const want = LAYOUTS_SHOWN[engine];
-    (want === undefined || !have.has(engine) || sort === want ? shown : hidden).push(g);
+    const engine = (g[0] || [])[0];
+    (!have.has(engine) || wantedLayout(g[0]) ? shown : hidden).push(g);
   }
   return { shown, hidden };
 }
@@ -2417,25 +2444,40 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
 }
 
 /**
- * What `LAYOUTS_SHOWN` held back, said under the table — never a silent filter.
+ * What `LAYOUTS_SHOWN` and `PROFILES_HIDDEN` held back, said under the table — never a silent filter.
  *
- * Names the ENGINE and the number of layouts, and points at the two places the data still is. It
- * counts LAYOUTS rather than runs because that is what the reader is looking at a table of; the run
- * count would answer a question the row above it does not ask.
+ * **EACH REASON IS SPELLED OUT, not summed into one count.** They are different claims — a sweep is
+ * hidden for CROWDING and a profile for RELEVANCE — and "3 layouts not shown" over two rules tells a
+ * reader neither of them. The writer name is what the row would have been labelled, so the note names
+ * what is missing in the same words the table would have used.
+ *
+ * It counts LAYOUTS rather than runs because that is what the reader is looking at a table of; the
+ * run count would answer a question the rows above it do not ask.
  */
 function heldNote(held, table = DEFAULTS.table) {
   if (!held || !held.length) return "";
-  const by = new Map();
+  const sweep = new Map(), profile = new Map();
   for (const [key, ms] of held) {
     const name = producers(ms);
+    const only = LAYOUTS_SHOWN[(key || [])[0]];
+    const by = only !== undefined && (key || [])[2] !== only ? sweep : profile;
     by.set(name, (by.get(name) || 0) + 1);
   }
-  const parts = [...by].map(([name, n]) =>
-    `**${n}** hand-dispatched \`${name}\` layout${n === 1 ? "" : "s"}`);
-  return note(`${parts.join(", ")} not shown — this table compares ENGINES, and one engine tuning `
-    + `its own sort key and row-group size outnumbers them. Only the layout the nightly keeps `
-    + `measuring (\`auto\`) is here. Every one of the others has its own row in **Every run**, with `
-    + `its own CU and tiers.`);
+  const say = (m) => [...m].map(([name, n]) =>
+    `**${n}** \`${name}\` layout${n === 1 ? "" : "s"}`).join(", ");
+  const out = [];
+  if (sweep.size) {
+    out.push(`${say(sweep)} not shown: this table compares ENGINES, and one engine tuning its own `
+      + `sort key and row-group size outnumbers them. Only the layout the nightly keeps measuring `
+      + `(\`auto\`) is here — and the sweep's apparent win does not clear its own run-to-run spread.`);
+  }
+  if (profile.size) {
+    out.push(`${say(profile)} not shown: \`readHeavyForSpark\` enables **no V-Order**, so it is `
+      + `neither side of the comparison the spark rows make — \`readHeavyForPBI\` turns V-Order on, `
+      + `\`writeHeavy\` is the workspace default it is measured against.`);
+  }
+  return note(`${out.join(" ")} Every held run keeps its own row in **Every run**, with its own CU `
+    + `and tiers.`);
 }
 
 

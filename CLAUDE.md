@@ -1914,12 +1914,26 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   **`shownLayouts` is applied ONCE, to the groups all three layout renderers share** (the fit table,
   the scatter inside it, the mart block), because they are one measurement described three ways;
   filtering them separately is how a page plots a dot with no row under it.
-  **AN ENGINE IS NEVER THINNED TO NOTHING.** The rule says which of an engine's MANY layouts to keep
-  and only means anything while it HAS that one, so the condition is per engine: a dataset where
-  duckrun never dispatched `auto` keeps every duckrun row it has. Without that guard the filter would
-  erase an engine from a table comparing engines, over a rule about crowding. Keyed by engine, so it
-  changes nyc/bts/green not at all — duckrun is already `auto`-only there, which is the check that it
-  is the right rule rather than an aemo-shaped one.
+  **`readHeavyForSpark` IS HIDDEN TOO, by a SECOND and different rule — `PROFILES_HIDDEN`.** That
+  profile enables **no V-Order**: Microsoft's profile reference publishes its whole config set as
+  `optimizeWrite.enabled`, `optimizeWrite.partitioned.enabled` and `binSize: 128`. So it is neither
+  side of the comparison the spark rows exist to make — `readHeavyForPBI` is the only profile that
+  turns V-Order on, `writeHeavy` is the workspace default it is measured against — and what its row
+  did was sit between them, named as though it were the read-optimised one. That is exactly the
+  misreading the V-Order doc page invites ("switch to `readHeavyforSpark` … which automatically enable
+  V-Order"), which the profile reference and this repo's own in-session measurement both contradict. A
+  row inviting it, on two runs, is worse than no row. aemo reads 6 rows with both rules applied.
+  The two rules differ IN KIND and are kept separate for that reason: `LAYOUTS_SHOWN` keeps ONE of an
+  engine's many layouts (crowding, so it names what to KEEP), `PROFILES_HIDDEN` drops a NAMED profile
+  whatever else exists (relevance, so it names what to DROP). `heldNote` states each reason
+  separately — "3 layouts not shown" over two rules tells a reader neither of them.
+  **AN ENGINE IS NEVER THINNED TO NOTHING, and the guard covers BOTH rules.** Each says which of an
+  engine's layouts to drop, which only means anything while something of that engine survives, so the
+  condition is per engine: a dataset where duckrun never dispatched `auto`, or where spark only ever
+  ran `readHeavyForSpark`, keeps every row it has. Without that guard either rule would erase an
+  engine from a table comparing engines, over crowding or relevance. Keyed by engine, so nyc/bts/green
+  are unchanged — duckrun is already `auto`-only there and none of them ran `readHeavyForSpark`, which
+  is the check that these are the right rules rather than aemo-shaped ones.
 - **A LAYOUT ROW IS A WRITER, and `producer()` decides what that means.** `spark V-Order`,
   `spark default`, `duckrun` — not `spark·V-Order+NEE`, not `duckrun·64c`. `LAYOUT_CONFIG` is
   `("resource_profile", "sorted")` and the exclusions are **measured, not tidiness**: duckrun wrote 4

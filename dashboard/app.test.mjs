@@ -637,11 +637,35 @@ test("duckrun's hand-dispatched sweep leaves the layout table, and the count is 
   // NAMED, NEVER SILENT — the larger of the section's two cuts, and on aemo it removes the CHEAPEST
   // layout on the page. A table quietly showing 7 of 18 would read as "these are the layouts".
   const text = plain(out);
-  assert.ok(/\*\*2\*\* hand-dispatched `delta_rs` layouts not shown/.test(text),
+  assert.ok(/\*\*2\*\* `delta_rs` layouts not shown/.test(text),
     text.slice(text.indexOf("Cost and speed"), 1800));
   assert.ok(/Every run/.test(text), "and it points at where those runs still are");
   // ...where they are, in full: the filter is a DISPLAY rule and touches no run.
   assert.equal(rows(block(out, "Every run on this page")).slice(1).length, 3);
+});
+
+test("`readHeavyForSpark` leaves the layout table — it is neither side of the V-Order comparison", () => {
+  // It enables NO V-Order: Microsoft's profile reference publishes its config set as optimizeWrite,
+  // optimizeWrite.partitioned and binSize 128, and that is all of it. So a row for it sits between
+  // the two profiles that ARE the comparison, named as though it were the read-optimised one — which
+  // is exactly the misreading the V-Order doc page invites ("switch to readHeavyforSpark … which
+  // automatically enable V-Order"), and which the reference and our own in-session read contradict.
+  const groups = d.layoutGroups([
+    { rec: lay("spark", 11, 11, { vorder: true, cfg: { resource_profile: "readHeavyForPBI" },
+      file: "a-1.json" }) },
+    { rec: lay("spark", 14, 14, { cfg: { resource_profile: "writeHeavy" }, file: "b-2.json" }) },
+    { rec: lay("spark", 16, 16, { cfg: { resource_profile: "readHeavyForSpark" }, file: "c-3.json" }) },
+  ]);
+  const { shown, hidden } = d.shownLayouts(groups);
+  assert.deepEqual(shown.map(([k]) => k[1]), ["readHeavyForPBI", "writeHeavy"]);
+  assert.equal(hidden.length, 1);
+  // A DROP RULE, not a keep rule — so it takes the profile out whatever else spark ran, where
+  // `LAYOUTS_SHOWN` names the one duckrun layout to keep. Both still obey the guard below.
+  const alone = d.shownLayouts(d.layoutGroups([
+    { rec: lay("spark", 16, 16, { cfg: { resource_profile: "readHeavyForSpark" }, file: "c-3.json" }) },
+  ]));
+  assert.equal(alone.shown.length, 1, "spark's only layout is not erased");
+  assert.equal(alone.hidden.length, 0);
 });
 
 test("an engine is never thinned to nothing", () => {

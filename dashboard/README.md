@@ -458,6 +458,14 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   the groups the fit table, the scatter and the mart block share, so the three cannot disagree — and
   **never to the point of erasing an engine**: the condition is per engine, so a dataset where
   duckrun never dispatched `auto` keeps every duckrun row it has.
+- **`spark readHeavyForSpark` is hidden too, by a second rule (`PROFILES_HIDDEN`).** That profile
+  enables **no V-Order** — Microsoft's reference publishes its whole config set as `optimizeWrite`,
+  `optimizeWrite.partitioned` and `binSize: 128` — so it is neither side of the comparison the spark
+  rows make: `readHeavyForPBI` turns V-Order on, `writeHeavy` is the default it is measured against.
+  Its row sat between them named as though it were the read-optimised one, which is the misreading the
+  V-Order doc page itself invites. The two rules are kept apart because they differ in kind — one
+  names what to KEEP (crowding), the other what to DROP (relevance) — and the note under the table
+  states each reason separately. aemo reads 6 rows with both applied.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
   speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
   dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run
