@@ -324,14 +324,14 @@ it is never staler than the ledger under it:
 
 | dataset | profile | build | build&nbsp;% | directlake | query&nbsp;% | rows | avg row group | table size (MB) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
-| aemo | `readHeavyForPBI` | **33,098** | 92% | **1,618** | 41% | 144.0M | 9.6–16.0M | 4,338–4,350 |
-| aemo | `writeHeavy` | **35,813** | 100% | **3,903** | 100% | 144.0M | 6.5–11.1M | 5,691–5,752 |
-| bts | `readHeavyForPBI` | **3,045** | 77% | **869** | 80% | 180.5M | 6.7M | 2,585 |
-| bts | `writeHeavy` | **3,954** | 100% | **1,093** | 100% | 180.5M | 6.9M | 2,441 |
-| green | `readHeavyForPBI` | **1,897** | 126% | **2,556** | 97% | 84.3M | 2.3M | 1,546 |
-| green | `writeHeavy` | **1,506** | 100% | **2,644** | 100% | 84.3M | 3.4M | 1,623 |
-| nyc | `readHeavyForPBI` | **12,068** | 109% | **5,968** | 68% | 591.7M | 10.4M | 5,850 |
-| nyc | `writeHeavy` | **11,052** | 100% | **8,726** | 100% | 591.7M | 10.4M | 9,291 |
+| aemo | `readHeavyForPBI` | **33,098** | 100% | **1,618** | 100% | 144.0M | 9.6–16.0M | 4,338–4,350 |
+| aemo | `writeHeavy` | **35,813** | 108% | **3,903** | 241% | 144.0M | 6.5–11.1M | 5,691–5,752 |
+| bts | `readHeavyForPBI` | **3,045** | 100% | **869** | 100% | 180.5M | 6.7M | 2,585 |
+| bts | `writeHeavy` | **3,954** | 130% | **1,093** | 126% | 180.5M | 6.9M | 2,441 |
+| green | `readHeavyForPBI` | **1,897** | 100% | **2,556** | 100% | 84.3M | 2.3M | 1,546 |
+| green | `writeHeavy` | **1,506** | 79% | **2,644** | 103% | 84.3M | 3.4M | 1,623 |
+| nyc | `readHeavyForPBI` | **12,068** | 100% | **5,968** | 100% | 591.7M | 10.4M | 5,850 |
+| nyc | `writeHeavy` | **11,052** | 92% | **8,726** | 146% | 591.7M | 10.4M | 9,291 |
 
 V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes, `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes, `writeHeavy` no (bts yes).
 
