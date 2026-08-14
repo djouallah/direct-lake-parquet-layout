@@ -4086,7 +4086,8 @@ test("the chart colors polarity per mode and says the multiplier only when it ro
   const light = prof.renderProfileChart(PROFILE_ROWS, "light");
   assert.match(light, /fill="#2a78d6"/, "a saving is the light diverging blue");
   assert.match(light, /fill="#e34948"/, "green's build premium is the light diverging red");
-  assert.match(light, /−59% = 2\.4× cheaper/, "aemo queries carry the headline multiplier");
+  assert.match(light, />2\.4× cheaper</, "aemo queries carry the multiplier alone");
+  assert.doesNotMatch(light, /−59%/, "the % beside it read as a second number");
   assert.match(light, /−3%(?![^<]*×)/, "green's −3% claims no '1.0× cheaper'");
   assert.match(light, /\+26%/);
   const dark = prof.renderProfileChart(PROFILE_ROWS, "dark");
