@@ -465,7 +465,17 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   Its row sat between them named as though it were the read-optimised one, which is the misreading the
   V-Order doc page itself invites. The two rules are kept apart because they differ in kind — one
   names what to KEEP (crowding), the other what to DROP (relevance) — and the note under the table
-  states each reason separately. aemo reads 6 rows with both applied.
+  states each reason separately.
+- **`duckdb iceberg` is out of the layout tables entirely (`ENGINES_HIDDEN`), and only those.** Its
+  layout is not one anyone chose: dbt-duckdb can express neither a sort nor a row-group size, so what
+  it writes is the Iceberg catalog path's default — 1,172 row groups at 0.1M rows, an order of
+  magnitude off every other writer, and why it reads 8,641 CU against 1,618–3,903. Re-add it when
+  those defaults improve; deleting the entry is the whole change. It keeps its *Cost by engine*
+  column and its *Every run* rows, so the page still records that it was built and what it cost —
+  the narrowing that makes this admissible where the deleted `SCATTER_OMIT` was not, since the layout
+  tables now curate and say so. Unlike the other two rules it sits OUTSIDE the never-erase guard,
+  which exists to stop a rule about some of an engine's layouts from erasing the engine. aemo reads
+  5 rows with all three applied.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
   speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
   dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run

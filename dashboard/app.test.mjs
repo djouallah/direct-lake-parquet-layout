@@ -49,11 +49,27 @@ function rows(html) {
  * Cutting on `<h4` alone is not enough and the difference is not cosmetic: the LAST block on the page
  * is followed by an `<h3>`, so a `<h4>`-only cut swallowed the sources table and a "one row per writer"
  * assertion counted five rows and called it a pass in the other direction.
+ *
+ * A HEADING ELEMENT WINS OVER A MENTION OF ONE, and that is not hypothetical: the page's own prose
+ * points readers at other sections by name ("its cost and its runs are in **Cost by engine**"), so a
+ * plain `indexOf` anchored inside that sentence and returned the few characters before the real
+ * heading. Every assertion under it then read an EMPTY block — which passes any test asserting
+ * something is absent, in the wrong direction. Matching on `>heading<` is not enough either: bold
+ * renders as `<strong>Cost by engine</strong>` and carries the same delimiters. So this walks the
+ * heading ELEMENTS and takes the first whose own text contains what was asked for; the `indexOf`
+ * fallback keeps callers passing a fragment that spans markup inside an `<h4>` working.
  */
 function block(html, heading) {
-  const at = String(html).indexOf(heading);
+  const s = String(html);
+  for (const m of s.matchAll(/<h([234])[^>]*>([\s\S]*?)<\/h\1>/g)) {
+    if (!m[2].includes(heading)) continue;
+    const rest = s.slice(m.index + m[0].length);
+    const end = rest.search(/<h[234][\s>]/);
+    return end < 0 ? rest : rest.slice(0, end);
+  }
+  const at = s.indexOf(heading);
   if (at < 0) return "";
-  const rest = String(html).slice(at + heading.length);
+  const rest = s.slice(at + heading.length);
   const end = rest.search(/<h[234][\s>]/);
   return end < 0 ? rest : rest.slice(0, end);
 }
@@ -666,6 +682,38 @@ test("`readHeavyForSpark` leaves the layout table — it is neither side of the 
   ]));
   assert.equal(alone.shown.length, 1, "spark's only layout is not erased");
   assert.equal(alone.hidden.length, 0);
+});
+
+test("iceberg leaves the LAYOUT tables and keeps its column and its runs", () => {
+  // A layout nobody chose: dbt-duckdb can express neither a sort nor a row-group size, so what
+  // iceberg writes is whatever the catalog path defaults to — 1,172 row groups at 0.1M rows, an order
+  // of magnitude off every other writer. Ranking that against three dispatched layouts is not this
+  // table's comparison.
+  const ice = lay("iceberg", 357, 1172, { file: "a-1.json",
+    timings: timings({ q1: [90000, 5000, 4000] }) });
+  const spark = lay("spark", 11, 11, { vorder: true, cfg: { resource_profile: "readHeavyForPBI" },
+    file: "b-2.json", timings: timings({ q1: [20000, 4000, 3000] }) });
+  ice.items = { Si: gone("semantic_model", "aemo_iceberg"), Oi: gone("output", "dbt_iceberg") };
+  spark.items = { Ss: gone("semantic_model", "aemo_spark"), Os: gone("output", "dbt_spark") };
+  const out = render([ice, spark], ledger({
+    Si: { "XMLA Read Operation": 8600 }, Oi: { "Jupyter Notebook Scheduled Run": 11183 },
+    Ss: { "XMLA Read Operation": 1600 }, Os: { "High Concurrency Session Livy Run": 33339 },
+  }));
+  assert.deepEqual(layoutTable(out).map((r) => r.writer), ["spark readHeavyForPBI"]);
+  // NOT ERASED, and that is what makes hiding it admissible at all — `SCATTER_OMIT` kept iceberg off
+  // one figure while it held a column in every table, which CLAUDE.md records as the worst of the
+  // three states. Here the layout tables curate AND SAY SO, and the engine keeps its cost and its
+  // runs where those are the subject.
+  const text = plain(out);
+  assert.ok(/\*\*1\*\* `duckdb iceberg` layout not shown/.test(text),
+    text.slice(text.indexOf("Cost and speed"), 2200));
+  assert.ok(rows(block(out, "Cost by engine"))[0].includes("duckdb iceberg"), "keeps its column");
+  assert.equal(rows(block(out, "Every run on this page")).slice(1).length, 2, "keeps its run row");
+  // It is a whole-ENGINE rule, so the never-thinned-to-nothing guard must NOT hand it back when it is
+  // the only engine there — the guard is about a rule hiding SOME of an engine's layouts.
+  const alone = d.shownLayouts(d.layoutGroups([{ rec: lay("iceberg", 357, 1172) }]));
+  assert.equal(alone.shown.length, 0);
+  assert.equal(alone.hidden.length, 1);
 });
 
 test("an engine is never thinned to nothing", () => {

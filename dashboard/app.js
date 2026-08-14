@@ -346,9 +346,8 @@ export const STORAGE_PREFIX = "OneLake";
 // question from what ingesting it cost.
 export const NON_ENGINE_ROLES = new Set(["landing", "folder"]);
 
-// NO ENGINE IS OMITTED FROM THIS PAGE, and two constants that used to omit one are gone —
-// `SCATTER_OMIT` (chart only) and then `PAGE_OMIT` (page-wide), both for `iceberg`. `duckdb iceberg`
-// is a column, a layout row and a dot again, like every other engine.
+// NO ENGINE IS OMITTED FROM THIS PAGE FOR BEING AN OUTLIER, and the two constants that did that are
+// gone — `SCATTER_OMIT` (chart only) and then `PAGE_OMIT` (page-wide), both for `iceberg`.
 //
 // The history, so it is not re-litigated from one direction only. `SCATTER_OMIT` was the worst of
 // the three states: absent from the chart, present in every table, with the chart's caption the only
@@ -359,9 +358,14 @@ export const NON_ENGINE_ROLES = new Set(["landing", "folder"]);
 //
 // THE MARK IS WHAT CHANGED. A dot occupies one point and both axes are log, so a 4x outlier costs a
 // little under a decade of axis and leaves every other dot where it was: the reason to exclude it
-// was a property of the segment, not of the engine. It plots as the biggest dot too (8,641 CU),
-// which is the honest picture — it is genuinely the dearest and slowest layout here, and a page
-// comparing four adapters should say so rather than quietly drop the one that loses.
+// was a property of the SEGMENT, not of the engine. That reason is dead and must not be revived.
+//
+// `ENGINES_HIDDEN` IS NOT THOSE CONSTANTS COMING BACK, and the difference is the argument, not the
+// effect. It holds iceberg out of the LAYOUT tables — all three of them, consistently — because its
+// layout is the Iceberg catalog path's DEFAULT rather than one anyone dispatched, and it keeps its
+// column, its runs and its cost everywhere the ENGINE is the subject. The worst-of-three-states
+// objection was about a figure disagreeing silently with the tables beside it; these tables curate
+// and SAY SO. Widening it back to the page means reviving `PAGE_OMIT`, so read that history first.
 
 // Roles the teardown must have deleted. If one is still alive, that run's items are STILL ACCRUING and
 // its numbers are not a measurement of that run — they are a measurement of everything since. The
@@ -1121,7 +1125,38 @@ export const LAYOUTS_SHOWN = { duckrun: "auto" };
  */
 export const PROFILES_HIDDEN = { spark: ["readHeavyForSpark"] };
 
-/** Does the page show this layout key? `[engine, resource_profile, sort, …]` — see `layoutKey`. */
+/**
+ * Engines held out of the LAYOUT tables entirely — not out of the page.
+ *
+ * `iceberg` is here because its layout is not a layout anyone chose. dbt-duckdb can express neither a
+ * sort nor a row-group size (`sort_by` and the geometry keys occur ZERO times in that adapter and its
+ * macro package), so what it writes is whatever the Iceberg REST catalog path defaults to — 1,172 row
+ * groups at 0.1M rows each, an order of magnitude off every other writer, and the reason it reads
+ * 8,641 CU against 1,618–3,903. Ranking a default nobody dispatched against three deliberately
+ * dispatched layouts is not the comparison this table makes. Re-add it when those defaults improve:
+ * deleting the entry is the whole change, and its history is still in `history/`.
+ *
+ * **SCOPE IS THE LAYOUT TABLES, AND THAT IS A DELIBERATE NARROWING OF A DELETED RULE.** `PAGE_OMIT`
+ * once removed iceberg from the whole page and `SCATTER_OMIT` from one figure while it held a column
+ * in every table — the second is recorded in CLAUDE.md as the worst of the three states, and both
+ * were deleted. What makes this admissible where `SCATTER_OMIT` was not: the layout tables now
+ * CURATE and SAY SO — the duckrun sweep and `readHeavyForSpark` already leave them under a named
+ * note — so a reader is told what is missing and why, in the table it is missing from. `Cost by
+ * engine`, `Every run` and the sources table keep every iceberg column and row, so the page still
+ * records that it was built, what it cost and when.
+ *
+ * **NOT SUBJECT TO THE never-thinned-to-nothing GUARD**, unlike the other two rules, and it cannot
+ * be: that guard exists to stop a rule about SOME of an engine's layouts erasing the engine, and this
+ * rule is about the engine. Applied after it, for that reason.
+ */
+export const ENGINES_HIDDEN = ["iceberg"];
+
+/**
+ * Does the page's LAYOUT half show this key? `[engine, resource_profile, sort, …]` — see `layoutKey`.
+ *
+ * `ENGINES_HIDDEN` is checked by `shownLayouts` rather than here, because it must sit OUTSIDE the
+ * per-engine guard that this predicate feeds.
+ */
 function wantedLayout(key) {
   const [engine, profile, sort] = key || [];
   const only = LAYOUTS_SHOWN[engine];
@@ -1152,7 +1187,12 @@ export function shownLayouts(groups) {
   const shown = [], hidden = [];
   for (const g of all) {
     const engine = (g[0] || [])[0];
-    (!have.has(engine) || wantedLayout(g[0]) ? shown : hidden).push(g);
+    // `ENGINES_HIDDEN` FIRST AND OUTSIDE THE GUARD — see its own note. The guard stops a rule about
+    // some of an engine's layouts from erasing the engine; an engine rule would defeat itself under
+    // it, since hiding all of iceberg leaves iceberg with nothing and the guard would hand it back.
+    const keep = !ENGINES_HIDDEN.includes(engine)
+      && (!have.has(engine) || wantedLayout(g[0]));
+    (keep ? shown : hidden).push(g);
   }
   return { shown, hidden };
 }
@@ -2456,11 +2496,12 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
  */
 function heldNote(held, table = DEFAULTS.table) {
   if (!held || !held.length) return "";
-  const sweep = new Map(), profile = new Map();
+  const sweep = new Map(), profile = new Map(), engine = new Map();
   for (const [key, ms] of held) {
     const name = producers(ms);
     const only = LAYOUTS_SHOWN[(key || [])[0]];
-    const by = only !== undefined && (key || [])[2] !== only ? sweep : profile;
+    const by = ENGINES_HIDDEN.includes((key || [])[0]) ? engine
+      : only !== undefined && (key || [])[2] !== only ? sweep : profile;
     by.set(name, (by.get(name) || 0) + 1);
   }
   const say = (m) => [...m].map(([name, n]) =>
@@ -2475,6 +2516,12 @@ function heldNote(held, table = DEFAULTS.table) {
     out.push(`${say(profile)} not shown: \`readHeavyForSpark\` enables **no V-Order**, so it is `
       + `neither side of the comparison the spark rows make — \`readHeavyForPBI\` turns V-Order on, `
       + `\`writeHeavy\` is the workspace default it is measured against.`);
+  }
+  if (engine.size) {
+    out.push(`${say(engine)} not shown: dbt-duckdb can express neither a sort nor a row-group size, `
+      + `so what it writes is the Iceberg catalog path's DEFAULT — 1,172 row groups at 0.1M rows — `
+      + `rather than a layout anyone dispatched. It is here to be re-added when those defaults `
+      + `improve; its cost and its runs are in **Cost by engine** and **Every run** meanwhile.`);
   }
   return note(`${out.join(" ")} Every held run keeps its own row in **Every run**, with its own CU `
     + `and tiers.`);

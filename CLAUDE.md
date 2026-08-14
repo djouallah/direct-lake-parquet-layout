@@ -1748,18 +1748,21 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   layout on the CHART when it is only the best of ONE writer's. The caption under the chart states
   the rule, which is where an explanation of the labelling belongs. A dot winning both is still
   labelled once. The rest are a hue, a hover and a ranked row of the table.
-  **NO ENGINE IS OMITTED — `SCATTER_OMIT` AND `PAGE_OMIT` ARE BOTH GONE.** The first kept `iceberg`
-  off the chart while it still held a column in *Cost by engine* and a row in *Table layout* (absent
-  from one figure, present in every table — the worst of the three states); the second made that
-  consistent page-wide; both are deleted and `duckdb iceberg` is a column, a layout row and a dot
-  again. What they bought was SCALE against the LINE mark, whose length ran off the plot at a 4x
-  outlier — its cold pass is 100,394 ms against 22,823-45,010. A DOT occupies one point on a log
-  axis, so the outlier costs a little axis and moves nothing else: the reason to exclude it was a
-  property of the segment, not of the engine. It plots as the biggest dot too (8,641 CU), which is
-  the honest picture — the dearest and slowest layout here, said out loud rather than dropped.
-  **17 layout groups**, all of them on the page complete: the `ETL_VCORES` filter drops nothing today
-  after seven deliberate 8-core dispatches. A new sort key or row-group band re-opens that gap;
-  `TODO.md` has the recipe.
+  **`SCATTER_OMIT` AND `PAGE_OMIT` ARE BOTH GONE — and `ENGINES_HIDDEN` is NOT them coming back.**
+  The first kept `iceberg` off the chart while it still held a column in *Cost by engine* and a row in
+  *Table layout* (absent from one figure, present in every table — the worst of the three states); the
+  second made that consistent page-wide; both are deleted. What they bought was SCALE against the LINE
+  mark, whose length ran off the plot at a 4x outlier — its cold pass is 100,394 ms against
+  22,823-45,010. A DOT occupies one point on a log axis, so the outlier costs a little axis and moves
+  nothing else: **the reason to exclude it was a property of the MARK, not of the engine**, and that
+  reason is dead.
+  What replaced it is a different argument and lives with `ENGINES_HIDDEN`: iceberg's layout is the
+  catalog path's DEFAULT rather than one anyone dispatched, so it is out of the LAYOUT tables (all
+  three of them, consistently) and keeps its column and its runs everywhere else. The
+  worst-of-three-states objection does not apply because those tables now curate and SAY SO. Do not
+  read this bullet as licence to widen it back to the page.
+  **The `ETL_VCORES` filter drops one layout today**; a new sort key or row-group size re-opens that
+  gap, and `TODO.md` has the recipe.
   They were `Capacity units per parquet layout` and `Capacity units per engine build`, stacked,
   query CU first. **The reason is NOT that the build half stopped mattering** — it still carries
   the sharpest operational result here, **duckrun costs 1.8× at 64 cores for the same wall time**
@@ -1927,7 +1930,27 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   engine's many layouts (crowding, so it names what to KEEP), `PROFILES_HIDDEN` drops a NAMED profile
   whatever else exists (relevance, so it names what to DROP). `heldNote` states each reason
   separately — "3 layouts not shown" over two rules tells a reader neither of them.
-  **AN ENGINE IS NEVER THINNED TO NOTHING, and the guard covers BOTH rules.** Each says which of an
+  **`duckdb iceberg` IS OUT OF THE LAYOUT TABLES ENTIRELY — a THIRD rule, `ENGINES_HIDDEN`, and the
+  narrowest one.** Its layout is not a layout anyone chose: dbt-duckdb can express neither a sort nor
+  a row-group size (`sort_by` and the geometry keys occur ZERO times in that adapter and its macro
+  package), so what it writes is whatever the Iceberg REST catalog path defaults to — **1,172 row
+  groups at 0.1M rows**, an order of magnitude off every other writer, and the reason it reads 8,641
+  CU against 1,618–3,903. Ranking a default nobody dispatched against three dispatched layouts is not
+  the comparison the table makes. **Re-add it when those defaults improve: deleting the entry is the
+  whole change**, and every iceberg run is still in `history/`. aemo reads 5 rows with all three
+  rules applied.
+  **SCOPE IS THE LAYOUT TABLES AND THAT NARROWING IS THE POINT.** `PAGE_OMIT` once removed iceberg
+  from the whole page and `SCATTER_OMIT` from one figure while it held a column in every table — this
+  file records the second as *the worst of the three states*, and both were deleted. What makes this
+  admissible where `SCATTER_OMIT` was not: the layout tables now CURATE AND SAY SO, so a reader is
+  told what is missing and why, in the table it is missing from. `Cost by engine`, `Every run` and the
+  sources table keep every iceberg column and row, so the page still records that it was built, what
+  it cost and when. Do not widen it to the page without re-reading why `PAGE_OMIT` was deleted.
+  **It is NOT subject to the guard below, and cannot be:** that guard stops a rule about SOME of an
+  engine's layouts from erasing the engine, and this rule is about the engine — under it, hiding all
+  of iceberg would leave iceberg with nothing and the guard would hand it straight back. Applied
+  first, outside it.
+  **AN ENGINE IS NEVER THINNED TO NOTHING, and the guard covers the OTHER TWO rules.** Each says which of an
   engine's layouts to drop, which only means anything while something of that engine survives, so the
   condition is per engine: a dataset where duckrun never dispatched `auto`, or where spark only ever
   ran `readHeavyForSpark`, keeps every row it has. Without that guard either rule would erase an
