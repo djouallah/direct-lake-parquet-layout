@@ -518,6 +518,29 @@ def land_year(year, source_filename, url):
                   f"not archived", flush=True)
             return []
 
+        # ⚠️ A PROGRAM YEAR CAN EMIT A MONTH BELONGING TO ANOTHER YEAR, and the landed file is named
+        # for the MONTH alone. Measured: PY2024 holds 15,498,612 payments dated in 2024 and 75 that
+        # are not, so it lands 13 months. If one of those months was already landed by a different
+        # program year, push_new(overwrite=False) keeps the FIRST file while this year's rows are
+        # dropped — and the log still gains a row claiming them. Rows that never landed, which no
+        # downstream model can filter back in, under a log that says otherwise.
+        #
+        # Refuse rather than write. The alternative is a stem carrying the program year
+        # (cms_2024_2019-07), which is the better scheme but costs a ~50 GB re-drain of everything
+        # already landed; this makes the failure loud and keeps that decision open. The archive
+        # stays consistent either way, which is the property that matters in the irreversible half.
+        clash = con.sql(
+            "SELECT file_stem, min(source_filename) FROM _pq_archive_log "
+            "WHERE source_type = 'cms' AND source_filename <> '" + source_filename + "' "
+            "AND file_stem IN ('" + "', '".join(s for s, _d, _r, _e in landed) + "') "
+            "GROUP BY file_stem ORDER BY file_stem").fetchall()
+        if clash:
+            print(f"  REFUSED {year}: {len(clash)} month(s) already landed by another program "
+                  f"year — {', '.join(f'{s} (from {o})' for s, o in clash[:5])}"
+                  f"{' …' if len(clash) > 5 else ''}. Landing would drop this year's rows for "
+                  f"those months while still logging them. Not archived.", flush=True)
+            return []
+
         push_new(out_dir, "parquet_raw/cms")
         now = datetime.now(timezone.utc).isoformat()
         cols_csv = ",".join(cols).replace("'", "''")
