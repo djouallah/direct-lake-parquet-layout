@@ -322,18 +322,20 @@ it is never staler than the ledger under it:
 
 <!-- spark-profiles:start -->
 
-| dataset | profile | build | build % | directlake | query % | V-Order | dict encoding | avg row group | table size (MB) |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|
-| aemo | `readHeavyForPBI` | **33,098** | 92% | **1,618** | 41% | yes | yes | 9.6–16.0M | 4,338–4,350 |
-| aemo | `writeHeavy` | **35,813** | 100% | **3,903** | 100% | no | no | 6.5–11.1M | 5,691–5,752 |
-| bts | `readHeavyForPBI` | **3,045** | 77% | **869** | 80% | yes | yes | 6.7M | 2,585 |
-| bts | `writeHeavy` | **3,954** | 100% | **1,093** | 100% | no | yes | 6.9M | 2,441 |
-| green | `readHeavyForPBI` | **1,897** | 126% | **2,556** | 97% | yes | yes | 2.3M | 1,546 |
-| green | `writeHeavy` | **1,506** | 100% | **2,644** | 100% | no | no | 3.4M | 1,623 |
-| nyc | `readHeavyForPBI` | **12,068** | 109% | **5,968** | 68% | yes | yes | 10.4M | 5,850 |
-| nyc | `writeHeavy` | **11,052** | 100% | **8,726** | 100% | no | no | 10.4M | 9,291 |
+| dataset | profile | build | build % | directlake | query % | avg row group | table size (MB) |
+|---|---|---:|---:|---:|---:|---:|---:|
+| aemo | `readHeavyForPBI` | **33,098** | 92% | **1,618** | 41% | 9.6–16.0M | 4,338–4,350 |
+| aemo | `writeHeavy` | **35,813** | 100% | **3,903** | 100% | 6.5–11.1M | 5,691–5,752 |
+| bts | `readHeavyForPBI` | **3,045** | 77% | **869** | 80% | 6.7M | 2,585 |
+| bts | `writeHeavy` | **3,954** | 100% | **1,093** | 100% | 6.9M | 2,441 |
+| green | `readHeavyForPBI` | **1,897** | 126% | **2,556** | 97% | 2.3M | 1,546 |
+| green | `writeHeavy` | **1,506** | 100% | **2,644** | 100% | 3.4M | 1,623 |
+| nyc | `readHeavyForPBI` | **12,068** | 109% | **5,968** | 68% | 10.4M | 5,850 |
+| nyc | `writeHeavy` | **11,052** | 100% | **8,726** | 100% | 10.4M | 9,291 |
 
-Medians per run, each dataset filtered to its largest source generation. `build %` and `query %` are against the dataset's `writeHeavy` row — the workspace default profile — so under 100% is cheaper than the default. `build` is Livy compute + OneLake storage CU; `V-Order` is measured off the parquet, not the profile name; `dict encoding` is yes when no mart column fell back to PLAIN data pages (dictionary overflow — what makes a segment expensive to transcode); `avg row group` is the mart's rows per row group — the segment size Direct Lake transcodes — and `table size` sums every table the leg wrote, which is what OneLake storage bills for.
+Medians per run, each dataset filtered to its largest source generation. `build %` and `query %` are against the dataset's `writeHeavy` row — the workspace default profile — so under 100% is cheaper than the default. `build` is Livy compute + OneLake storage CU; `avg row group` is the mart's rows per row group — the segment size Direct Lake transcodes — and `table size` sums every table the leg wrote, which is what OneLake storage bills for.
+
+V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes, `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes, `writeHeavy` no (bts yes).
 
 <!-- spark-profiles:end -->
 

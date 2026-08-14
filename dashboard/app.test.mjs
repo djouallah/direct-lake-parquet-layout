@@ -3967,9 +3967,12 @@ test("the generated table's build column is exactly compute + storage", () => {
   assert.deepEqual(r.rg.map(Math.round), [15_997_885, 15_997_885]);
   assert.match(prof.renderProfileTable([r]), /16\.0M/);
   // No vorder in the stats stub reads "no"; no encodings block reads a dash, never a verdict.
+  // Both live in the FOOTNOTE now, not the matrix.
   assert.equal(r.vorder, false);
   assert.equal(r.dict, null);
-  assert.match(prof.renderProfileTable([r]), /\| no \| — \|/);
+  assert.match(prof.renderProfileTable([r]), /V-Order[^:]*: `writeHeavy` no/);
+  assert.match(prof.renderProfileTable([r]), /transcode\): `writeHeavy` —/);
+  assert.doesNotMatch(prof.renderProfileTable([r]), /\| V-Order \|/, "no flag columns in the matrix");
 });
 
 test("a run that built without a benchmark counts toward build but not directlake", () => {
@@ -4065,5 +4068,16 @@ test("a PLAIN fallback reads dict encoding NO even though the chunk kept a dicti
   const led = ledger({ A1: { "High Concurrency Session Livy Run": 100 } });
   const [r] = prof.profileRows([run], led);
   assert.equal(r.dict, false);
-  assert.match(prof.renderProfileTable([r]), /\| no \| no \|/);
+  assert.match(prof.renderProfileTable([r]), /transcode\): `writeHeavy` no/);
+});
+
+test("the flag footnote names a dataset that deviates from its profile's common value", () => {
+  const rows = [
+    { dataset: "aemo", profile: "writeHeavy", build: 1, directlake: 1, vorder: false, dict: false },
+    { dataset: "bts", profile: "writeHeavy", build: 1, directlake: 1, vorder: false, dict: true },
+    { dataset: "nyc", profile: "writeHeavy", build: 1, directlake: 1, vorder: false, dict: false },
+  ];
+  const t = prof.renderProfileTable(rows);
+  assert.match(t, /transcode\): `writeHeavy` no \(bts yes\)/);
+  assert.match(t, /V-Order[^:]*: `writeHeavy` no\./, "a uniform flag prints once, no exceptions");
 });
