@@ -3963,9 +3963,11 @@ test("the generated table's build column is exactly compute + storage", () => {
   assert.equal(r.compute + r.storage, r.build, "a row a reader adds up must add up");
   assert.equal(r.build, 35_310);
   assert.equal(r.directlake, 3_769);
-  // avg row group is the MART's rows per row group, rendered in millions.
+  // avg row group is the MART's rows per row group, rendered in millions — and the mart's own
+  // row count renders beside it, in millions too.
   assert.deepEqual(r.rg.map(Math.round), [15_997_885, 15_997_885]);
   assert.match(prof.renderProfileTable([r]), /16\.0M/);
+  assert.match(prof.renderProfileTable([r]), /\| 144\.0M \|/);
   // No vorder in the stats stub reads "no"; no encodings block reads a dash, never a verdict.
   // Both live in the FOOTNOTE now, not the matrix.
   assert.equal(r.vorder, false);
