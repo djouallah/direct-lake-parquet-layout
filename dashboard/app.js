@@ -389,27 +389,24 @@ export const DELETABLE_ROLES = new Set(["output", "dwh_src", "compute", "semanti
 // LAYOUT_CONFIG the same way the moment a second one joins. It is the ONLY relabelling left: the
 // resource profile is now printed verbatim (see above), and this exists because `sorted=true` has no
 // name of its own to print.
-// The LABEL still does not spell the sort key out — the caption does (`sortKeyOf`), which is where
-// the shape of what was written already lives.
+// The LABEL still does not spell the sort out — the `ordering` cell does (`sortLabelOf`), which is
+// where the shape of what was written already lives.
 export const CONFIG_LABEL = { "sorted=true": "sorted" };
 
-// The dispatch config that is SHOWN to change what gets written. `vcores` and
-// `native_execution_engine` are excluded, and that is measured rather than assumed: duckrun at 64 and
-// at 32 cores wrote 4 files and 27 row groups either way, and spark under `readHeavyForPBI` wrote the
-// same layout with NEE on and off. Neither reaches the parquet, so neither belongs on a caption about
-// parquet — `duckrun·64c, duckrun·32c` names one layout twice and puts a knob in front of the reader
-// that demonstrably had nothing to do with it. `resource_profile` stays because it plainly does:
-// `readHeavyForPBI` writes V-Order at ~10 files, `writeHeavy` writes neither. `sorted` stays for
-// the same reason and is the more direct case — it is nothing BUT a physical ordering of the rows,
-// so it reaches the parquet by definition. Note it does so without moving the numbers this page
-// measures: the one sorted run wrote 4 files either way, changing size (985 -> 777 MB) and row
-// groups (27 -> 25) but not the BANDS those fall in. That is exactly why it has to be carried as
-// config — see `layoutKey`.
-// `sorted` is deliberately NOT here. It is a property of the row ORDER, which `keyCells` now prints
-// in full (the resolved column list, not a flag), so appending it to the writer's name said the same
-// thing twice and said it less precisely — `delta_rs sorted` beside an `ordering` cell reading
-// `date, DUID, time`. It still SPLITS the bars: `layoutKey` carries the sort key independently of
-// this list, which is only about what a writer is CALLED.
+// The dispatch config a WRITER IS NAMED BY — `producer()` only, and a much shorter list than the one
+// `layoutKey` groups on. Everything the dispatch declares about the write is in the KEY; this is
+// about what fits in a row label, and a name that restates a cell the same row already prints is a
+// name spent twice. So `resource_profile` and nothing else: it says which spark wrote the file, which
+// the row is otherwise unable to say.
+// `sorted` is deliberately NOT here. It is a property of the row ORDER, which the `ordering` cell
+// prints in full, so appending it to the writer's name said the same thing twice and less precisely
+// — `delta_rs sorted` beside an `ordering` cell reading `date, DUID, time`. The geometry keys
+// (`row_group_size`, `file_size_mb`) are absent for the same reason: `row group size` is a column.
+// `vcores` and `native_execution_engine` are excluded from BOTH, and that is measured rather than
+// assumed: duckrun at 64 and at 32 cores wrote 4 files and 27 row groups either way, and spark under
+// `readHeavyForPBI` wrote the same layout with NEE on and off. Neither reaches the parquet, so
+// neither belongs in a key or a caption about parquet — `duckrun·64c, duckrun·32c` names one layout
+// twice and puts a knob in front of the reader that demonstrably had nothing to do with it.
 export const LAYOUT_CONFIG = ["resource_profile"];
 
 // Pass POSITION, which is what cold/warm/hot mean here — the first visit to a freshly deployed
@@ -757,9 +754,13 @@ export function variantTag(sig, terse = true) {
 // -------------------------------------------------------------- what a layout IS, and whose it is
 //
 // Power BI never sees the engine. It opens parquet through Direct Lake and transcodes row groups, so
-// what a query costs is a property of the LAYOUT and the writer that produced it is metadata. That is
-// why the query-cost chart groups by what was written while the ETL chart — where the writer and the
-// compute it was given are the entire subject — does not.
+// what a query costs is a property of the LAYOUT, and the writer that produced it is metadata.
+//
+// A LAYOUT IS THEREFORE THE WRITE CONFIG THAT WAS DISPATCHED, not the parquet that came out — see
+// `layoutKey`. Reading the parquet was the obvious way to do it and it is the wrong one: the same
+// dispatch does not always write the same file, so it split one profile into rows a reader could
+// neither explain nor act on. The measured shape is still printed, on the row that owns it, where a
+// spread says something about the writer instead of pretending to be a second layout.
 
 /**
  * `13,089,178` → `13.1M`. Row-group sizes span four orders of magnitude across these engines — 123K
@@ -772,21 +773,6 @@ export function compact(n) {
     if (Math.abs(v) >= cut) return fmt(v / cut, 1) + suffix;
   }
   return fmt(v, 0);
-}
-
-/**
- * The power-of-two band a count falls in. `-1` for missing or zero.
- *
- * Banded, not exact. Exact equality splits dwh's own two runs from each other — 78 files and 80, same
- * writer, same settings, incremental drift — and splits duckrun on 1.1 MB of size. The accepted cost
- * is the boundary: 15 row groups and 17 land in different bands despite being close. That edge is
- * visible in the mart block, and no tolerance rule avoids it without chaining groups together through
- * their neighbours.
- */
-export function layoutBand(n) {
-  const v = Number(n || 0);
-  if (!Number.isFinite(v) || v < 1) return -1;
-  return Math.floor(Math.log2(v));
 }
 
 const martStats = (rec, table) =>
@@ -845,8 +831,8 @@ export function sizeCounts(runs, table = DEFAULTS.table) {
  * one click away rather than requiring another dispatch to reverse it.
  *
  * Two things it deliberately does not do. A run with NO recorded count is **kept**: unmeasured is a
- * different claim from different, the same distinction `layoutKey` makes by keying `null` to a bar of
- * its own. And with no reference anywhere it filters **nothing** — a record set where nobody recorded
+ * different claim from different, and dropping it would delete a run for a question nobody asked it.
+ * And with no reference anywhere it filters **nothing** — a record set where nobody recorded
  * `total_rows` must render whole rather than vanish.
  */
 export function sameGeneration(runs, table = DEFAULTS.table, want = null) {
@@ -869,94 +855,63 @@ export function sameGeneration(runs, table = DEFAULTS.table, want = null) {
 }
 
 /**
- * What Power BI can actually tell apart: `[V-Order, files band, row-groups band, sorted]` for the
- * mart.
+ * WHAT WAS DISPATCHED — `[engine, resource profile, sort, row group size, file size, V-Order
+ * declared, V-Order measured]`, and that is what a layout row IS.
  *
- * `avg RG rows` is `total_rows ÷ row groups` and every engine writes the same 143,980,961 rows, so it
- * carries nothing the row-group count does not. `size MB` is excluded deliberately — see `layoutBand`.
+ * **THE KEY IS THE DECLARED WRITE CONFIG. THIS REVERSES "grouping is MEASURED, labelling is
+ * DECLARED", which held for as long as nobody dispatched a knob whose ANSWER moved.** It keyed on the
+ * parquet that came out — a power-of-two band of the row-group count, plus the columns duckrun's
+ * picker had resolved to — and that made one profile look like several. Measured on nyc: six duckrun
+ * runs dispatched with identical config (`sorted`, `row_group_size: auto`, `file_size_mb: auto`)
+ * rendered as THREE rows, because the picker answered `…payment_type` twice, `…payment_type,
+ * tip_amount` three times and `…payment_type, fare_amount` once, landing at 68 / 63 / 58 row groups.
+ * Every printed cell on those three rows was identical — `delta_rs`, `auto`, `yes` — so the table
+ * showed a split it could not explain, over a distinction nobody had asked for.
  *
- * `null` when neither metric was recorded, which keeps that column a bar of its OWN rather than filing
- * it into a group it was never measured into. That distinction is the whole point: two records
- * carrying no file count are not two identical layouts, they are two unmeasured ones, and merging them
- * would claim Power BI cannot tell apart two things nobody looked at.
+ * **`auto` is ONE profile however the picker answers on a given night.** What the dispatcher chose is
+ * `auto`; which columns that resolves to is the picker's ANSWER, and an answer that moves run to run
+ * is a property of the picker rather than a second layout somebody ordered. A run that NAMES its
+ * columns is a different profile — `sortLabelOf` returns the list against the literal `auto`, so the
+ * picker's runs still never merge into a hand-declared row, which is the comparison the old
+ * `auto:`-prefixed key existed to protect. `auto` at a custom `row_group_size` is different again.
  *
- * THE LAST ELEMENT IS DECLARED, NOT MEASURED, and it is the one exception to that rule on this page.
- * A sort is the same class of thing as V-Order — a write-time reordering that changes what Power BI
- * transcodes — and V-Order is already element `[0]`, so it belongs in the same key. The difference is
- * where each comes from: `vorder` is read off the Delta table property by `stats.py`, while nothing in
- * `stats.py` measures sort ORDER, so the config the run recorded is the only witness that the parquet
- * differs. Leaving it out is not neutral — a sorted and an unsorted duckrun run wrote the same bands
- * either way, so they would share one bar and have their cold/warm/hot means averaged
- * together, which is precisely the comparison the flag exists to make. It carries the resolved
- * COLUMN LIST, not a boolean, so two sorts on different keys can never share a bar either.
+ * **WHAT THE MERGE COSTS IS PAID IN THE OPEN.** A row now holds parquet that genuinely differs — that
+ * nyc row spans 58–68 row groups and 7,251–8,596 MB — and its CU and query times are a median across
+ * it. `keyCells` prints the RG, row-group-size and MB SPANS, so the variation is stated by the row
+ * that owns it: one row reading `8.7–10.2M · 7,251–8,596 MB · 6 runs` says the picker is unstable and
+ * roughly by how much, where three rows reading `auto` said nothing at all. The median over six runs
+ * is also the sturdier number — see `groupMid`, and the capacity weather it exists to damp.
  *
- * **THE FILE COUNT IS NOT IN THE KEY, AND WAS REMOVED FOR SPLITTING BARS INVISIBLY.** It used to sit
- * between V-Order and the row groups, while `layoutLabel` prints row groups ONLY — so two bars could
- * carry overlapping captions (`19–25 RG` at 1,805.7 beside `24 RG` at 1,823.5) that looked like an
- * arbitrary split of one group. They were one RG band, separated by a dimension the page refused to
- * show. Measured, the dimension does not earn its place either: 1 file and 4 files at the same row
- * groups and the same sort read 1,823 and 1,806 CU. Segments are what Direct Lake transcodes; the
- * file count only bounds incremental framing, which this benchmark does not measure.
+ * `vcores` and `native_execution_engine` are excluded, and that is measured rather than assumed:
+ * duckrun wrote 4 files / 27 row groups at 64 cores and at 32, and spark wrote one layout with NEE on
+ * and off. Neither reaches the parquet. `LAYOUT_CONFIG` excludes them from the row's NAME for the
+ * same reason.
  *
- * **THE ENGINE IS THE LAST ELEMENT, so two engines never share a bar.** This is a deliberate
- * reversal of the older "Power BI never sees the engine, so the bar is one per LAYOUT" reading. That
- * argument holds only if the key captures everything Power BI can tell apart, and it does not: the
- * key carries no SIZE, so `duckrun` at 777–1,006 MB merged with `spark readHeavyForSpark` at
- * 1,235 MB into one bar labelled `duckrun, spark readHeavyForSpark` — a 1.6× size spread presented
- * as one layout, under a label that reads like an accident. Keeping the engine separate costs a few
- * more bars and makes every bar attributable to something that was actually dispatched.
+ * **THE LAST ELEMENT IS MEASURED, AND IT IS A DETECTOR RATHER THAN A DIMENSION.** `vorderOf` is the
+ * `sys.databases` readback on dwh and the Delta property or Spark tag elsewhere; it sits beside the
+ * DECLARED `vorder` and agrees with it on every record in `history/` — spark's profile decides it,
+ * dwh's input decides it, and the DuckDB pair has no V-Order encoder at all — so it adds no rows
+ * today. What it buys is that a dwh run declaring `vorder: true` whose irreversible `ALTER` silently
+ * did nothing keys as `(true, false)` and gets a row of its own, instead of being averaged into
+ * either cohort under a cell that reads like the other one.
  *
- * A measured version is possible later and would be better: per-file `date` min/max from the Delta log
- * says whether files cover disjoint date ranges, which is what a date sort actually produces.
+ * **THERE IS NO `null` RETURN AND NO UNMEASURED CASE.** A record with no `layout.config` entry is a
+ * default-profile run, which is a real key rather than a hole — which is also how the geometry reads:
+ * `stats.py` records `row_group_size`/`file_size_mb` only when they differ from the pinned
+ * `16000000` baseline, so an absent one means the baseline for every record ever written, never
+ * "unknown". Keying on the dispatch instead of on the parquet is what deletes the whole unmeasured
+ * branch, and `layoutGroups`' fallback-to-column with it.
  */
 export function layoutKey(rec, table = DEFAULTS.table) {
-  const d = martStats(rec, table);
-  if (d.num_row_groups === undefined || d.num_row_groups === null) return null;
-  return [vorderOf(rec, table), layoutBand(d.num_row_groups), sortElement(rec, table), rec.engine];
+  const engine = (rec || {}).engine || "?";
+  const c = (((rec || {}).layout || {}).config || {})[engine] || {};
+  // Normalised to a string so a record storing `2000000` and one storing `"2000000"` are one profile.
+  const declared = (v) => (v === undefined || v === null || v === "" ? null : String(v));
+  return [engine, declared(c.resource_profile), sortLabelOf(rec, table),
+    declared(c.row_group_size), declared(c.file_size_mb), declared(c.vorder),
+    vorderOf(rec, table)];
 }
 
-/**
- * The sort element of `layoutKey` — the resolved columns, and separately whether the PICKER chose
- * them.
- *
- * **An `auto` run gets its own row even when a hand-dispatched run resolved to the same columns**,
- * which is the one place this key deliberately separates two runs whose parquet matches. The reason
- * is that comparing them IS the question: on aemo the picker answers `date,time`, which five
- * dispatches also declared by hand, so merging them averaged the picker's three runs into the hand
- * key's row and there was no way to read what auto had cost or saved. The two rows now sit next to
- * each other with their own measured geometry, MB and CU, which is the comparison — and if they
- * really are identical, two rows reading the same numbers says that far better than one row can.
- *
- * The resolved columns stay IN the key, so this is not "auto is one bucket": duckrun's picker
- * answers per dataset (`pickup_date, VendorID, …` on taxi against `date, time` on aemo), and two
- * auto runs that resolved differently must not merge. `auto:` is a prefix on the columns, never a
- * replacement for them.
- */
-function sortElement(rec, table = DEFAULTS.table) {
-  const key = sortKeyOf(rec, table);
-  return sortLabelOf(rec, table) === "auto" ? `auto:${key}` : key;
-}
-
-/**
- * The sort key one run wrote under, as a `"date,time"` string; `false` when it wrote unsorted, and
- * `true` when it sorted by something the record does not name.
- *
- * THE KEY IS A PROPERTY OF THE COMMIT, WHICH IS WHY IT HAS TO COME OFF THE RECORD. The model
- * declared `['date','time','DUID']` for a while and `['date','time']` since, so a constant here
- * could only ever be right for today's model — and briefly was not: it captioned run 30955591822,
- * a DUID sort, `by date, time`. Every sorted record now carries its own key, backfilled from the
- * model at the SHA it ran.
- *
- * Two spellings, both legitimate and neither preferred on principle: `sort_by` is what the run
- * DECLARED, `sort_by_auto` is what duckrun's picker RESOLVED (`fabric_run.py` scrapes it from the
- * log, and it is the only witness for an `'auto'` run, whose declaration names no columns).
- *
- * `false` — not `null` — for a record with no `sorted` config at all: every run before the input
- * existed demonstrably wrote unsorted parquet, so absence here is not "unmeasured" (unlike the row
- * group count in `layoutKey`) and must key identically to an explicit unsorted run. A sorted run with
- * no key recorded is the opposite case and gets `true`, which shares a bar with neither an unsorted
- * run nor any named sort — the same rule `layoutKey` applies to a missing row group count.
- */
 /**
  * The vCores a run's engine was given, as a string — or `undefined` when the engine has no such
  * notion.
@@ -1019,56 +974,40 @@ const ETL_VCORES = "8";
  */
 const FIT_HEAD = ["parquet writer", "ordering", "dictionary", "row group size", "MB", "runs"];
 
-export function sortKeyOf(rec, table = DEFAULTS.table) {
-  const engine = (rec || {}).engine || "?";
-  const cfg = (((rec || {}).layout || {}).config || {})[engine] || {};
-  if (!cfg.sorted) return false;
-  const dbt = ((rec || {}).dbt || {})[engine] || {};
-  const key = (dbt.sort_by || {})[table] || (dbt.sort_by_auto || {})[table];
-  return Array.isArray(key) && key.length ? key.join(",") : true;
-}
-
-/**
- * WHAT TO PRINT for a run's sort — `auto` when the dispatch asked duckrun to pick, the column list
- * when the dispatch named one. Same shape as `sortKeyOf` otherwise (`false` unsorted, `true` sorted
- * but unnamed).
- *
- * **THIS IS THE LABEL AND `sortKeyOf` IS THE KEY, and they must not be merged.** Grouping has to stay
- * on the RESOLVED columns: duckrun's picker answers per dataset — `pickup_date, VendorID,
- * store_and_fwd_flag, payment_type` on the taxi mart — so two `auto` runs can write genuinely
- * different parquet, and keying them both to the string `auto` would pour two layouts into one row
- * and print a median neither of them measured. That is the exact defect `layoutGroups` was fixed for
- * once already.
- *
- * What the label buys is the reverse trade: the resolved list is duckrun's ANSWER, not the
- * dispatch's question, and spelling four columns across the `ordering` cell of a table whose other
- * rows read `V-Order` and `—` spends the column's whole width on something the reader did not ask
- * for. `auto` is the input that produced it; the columns are still in the record, and still what the
- * rows are separated by.
- *
- * A declared key WINS over a resolved one, so a run that named its columns prints them even if a
- * picker also ran — the declaration is what the dispatcher chose.
- */
 /**
  * The sort labels to PRINT for a group — every distinct spelling its members used.
  *
- * **Normally exactly one**, because `sortElement` puts the auto/declared distinction IN
- * `layoutKey`: an auto run and a hand-dispatched run that resolved to the same columns are two
- * groups, so neither the `auto / date, time` cell nor a suppressed `auto` can arise. The join
- * survives only for the unmeasured-layout fallback, which groups by COLUMN and can genuinely hold
- * several keys.
- *
- * Two things were tried before the key was split, both wrong in the same direction — they made the
- * page unable to answer "what does duckrun's picker choose, and what does it cost?". Suppressing
- * `auto` wherever a declared key existed hid aemo's three picker runs entirely, since they all
- * resolve to `date,time` and five dispatches declared exactly that. Printing both put two spellings
- * in one cell over a row whose numbers were the two averaged together.
+ * **Always exactly one**, because `sortLabelOf` IS the sort element of `layoutKey`: every member of a
+ * group answered the same thing. The dedup and the join survive as a guard rather than a feature —
+ * a group that ever printed `auto / date, time` would be a key that had stopped keying on what it
+ * prints, which is the state this page spent a release in.
  */
 function sortLabels(members, table) {
   return [...new Set((members || []).map(({ rec }) => sortLabelOf(rec, table))
     .filter((s) => typeof s === "string"))];
 }
 
+/**
+ * A run's sort AS DISPATCHED — the column list when the dispatch named one, the literal `auto` when
+ * it asked duckrun's picker, `false` unsorted and `true` sorted by something the record does not name.
+ *
+ * **THIS IS BOTH THE LABEL AND THE KEY, and merging them back apart is the bug.** They were two
+ * functions for a release — the label printed `auto`, the key carried the columns the picker had
+ * resolved to — on the reasoning that two `auto` runs can write genuinely different parquet and must
+ * not be averaged together. They can, and it does not follow: the picker answering differently on two
+ * nights is one profile behaving inconsistently, not two profiles, and splitting on it produced three
+ * nyc rows whose every printed cell was identical. See `layoutKey` for the measurement.
+ *
+ * A DECLARED KEY WINS OVER A RESOLVED ONE, which is what keeps the picker's runs out of a
+ * hand-dispatched row: on aemo the picker answers `date,time` and five dispatches declared exactly
+ * that, and those are two rows — `auto` against `date,time` — because the question "what does auto
+ * choose, and what does it cost?" is answerable only while they stay apart. The resolved columns are
+ * still in the record (`dbt.<engine>.sort_by_auto`) for anyone who wants the answer itself.
+ *
+ * `false` — not `null` — for a record with no `sorted` config at all: every run before that input
+ * existed demonstrably wrote unsorted parquet, so absence here is history rather than a hole, and has
+ * to key identically to an explicit unsorted run.
+ */
 export function sortLabelOf(rec, table = DEFAULTS.table) {
   const engine = (rec || {}).engine || "?";
   const cfg = (((rec || {}).layout || {}).config || {})[engine] || {};
@@ -1113,16 +1052,12 @@ export function vorderOf(rec, table = DEFAULTS.table) {
 }
 
 /**
- * `[[key, [entry]]]` — the entries that wrote parquet Power BI cannot distinguish.
+ * `[[key, [entry]]]` — the entries dispatched with the same write profile.
  *
- * **ONE ENTRY PER RUN, not per column, and that is the whole point.** A column is `(engine, config)`
- * and a run is one dispatch, so two runs of ONE column can write different parquet — which is not
- * hypothetical: `duckrun·64c+sorted` wrote 3 files / 26 row groups under an explicit
- * `sort_by=['date','time','DUID']` and 4 files / 25 under the `sort_by='auto'` the picker resolved to
- * `['date','time']`. Grouping the COLUMNS and then averaging every run of each is what put those two
- * in one bar, valued at their mean (2,041.8) and captioned with only the newer one's shape. The layout
- * is measured PER RUN, so it has to be grouped per run; two runs that wrote different shapes are two
- * bars sharing a label, which the caption then explains.
+ * **ONE ENTRY PER RUN, not per column.** A column is `(engine, config)` where `config` is
+ * `variant()`'s — it carries `vcores`, which does not reach the parquet, and drops nothing that does
+ * — so grouping columns would both split one profile across two machines and merge two profiles that
+ * differ only in geometry. Runs are the grain the write config is recorded at.
  *
  * Entries are passed through untouched, so a caller can hang the run's CU and its query timings on
  * them and read them back off the members.
@@ -1130,21 +1065,19 @@ export function vorderOf(rec, table = DEFAULTS.table) {
  * Insertion-ordered, so the caller's order survives into the grouping; the chart re-sorts by value
  * anyway.
  *
- * An entry with no `layoutKey` falls back to its COLUMN, which is as much as is known about it, and to
- * a singleton when it has no column either. Two unmeasured records are still never merged with each
- * other — that rule is about two different columns, and it holds — but a column's own runs are not
- * split into a bar each just because none of them recorded a file count, which would print the same
- * label several times with no caption able to say why.
+ * **EVERY ENTRY KEYS.** `layoutKey` reads the dispatch, not the parquet, so there is no unmeasured
+ * case and no fallback-to-column path — a record with no config recorded is a default-profile run
+ * and groups with the other default-profile runs of its engine. That branch existed only because the
+ * key used to require a row-group count, and a run whose stats never landed had none.
  */
 export function layoutGroups(entries, table = DEFAULTS.table) {
   const out = [], seen = new Map();
   for (const entry of entries) {
     const key = layoutKey(entry.rec, table);
-    const id = key !== null ? JSON.stringify(key)
-      : entry.col === undefined || entry.col === null ? null : `col:${entry.col}`;
-    const at = id === null ? undefined : seen.get(id);
+    const id = JSON.stringify(key);
+    const at = seen.get(id);
     if (at === undefined) {
-      if (id !== null) seen.set(id, out.length);
+      seen.set(id, out.length);
       out.push([key, [entry]]);
     } else {
       out[at][1].push(entry);
@@ -1156,11 +1089,12 @@ export function layoutGroups(entries, table = DEFAULTS.table) {
 /**
  * The bar label: the layout itself, short enough for the chart's 224px label gutter.
  *
- * `V-Order · 11 RG`, `19–27 RG`, `by date, time · 9 RG`. Row groups only — segments are what drive
- * Direct Lake's transcode and scan cost, and the file count was a second number saying less; the
- * file BAND still separates bars (`layoutKey`), it just is not printed. A metric that differs across
- * the group's members prints as a range, which is what a band means in practice. A sorted bar names
- * its sort columns, because "sorted" alone does not say what Power BI is reading in order.
+ * `V-Order · 11 RG`, `19–27 RG`, `by auto · 58–68 RG`. Row groups only — segments are what drive
+ * Direct Lake's transcode and scan cost, and the file count was a second number saying less. A metric
+ * that differs across the group's members prints as a RANGE, and since `layoutKey` stopped keying on
+ * measured geometry that range is the group's own spread rather than the width of a band: `58–68 RG`
+ * is one profile whose picker answered three ways, said out loud. A sorted bar names its sort,
+ * because "sorted" alone does not say what Power BI is reading in order.
  */
 export function layoutLabel(members, table = DEFAULTS.table) {
   const stats = members.map(({ rec }) => martStats(rec, table));
@@ -1174,12 +1108,9 @@ export function layoutLabel(members, table = DEFAULTS.table) {
   };
   const bits = [];
   if (members.some(({ rec }) => vorderOf(rec, table))) bits.push("V-Order");
-  // One value per bar when grouping came through `layoutKey` (the sort key is IN the key); the
-  // dedup only matters for the unmeasured-column fallback, where members are grouped by column.
+  // Exactly one value per bar — the sort IS an element of `layoutKey`, so the dedup is a guard.
   // STRINGS ONLY — `true` means the run sorted by something it did not write down, and the label
   // already says `sorted`, so there is nothing to add and nothing to invent.
-  // `sortLabels` for the same reason the table uses it: `by auto` names the knob, and the resolved
-  // columns keep the caption's own bars apart without being spelled across a dot label.
   const sorts = sortLabels(members, table);
   if (sorts.length) bits.push(`by ${sorts.join(" / ").split(",").join(", ")}`);
   for (const [field, unit] of [["num_row_groups", "RG"]]) {
@@ -1864,36 +1795,17 @@ const groupMid = (vals) => {
 };
 
 /**
- * `[label, mean, min, max, caption]` per LAYOUT — the query-cost chart's rows.
- *
- * One bar per thing Power BI can distinguish, not per engine, because Power BI never sees the engine:
- * it opens parquet through Direct Lake and transcodes row groups. Two producers that wrote the same
- * shape are one bar, and every run of either of them is a sample of it — which is what turns a 50% gap
- * between duckrun at two core counts from a comparison into what it actually is, one layout measured
- * twice.
- *
- * **The bar is NAMED for its writer and captioned with the shape** — `spark readHeavyForPBI` over
- * `V-Order · 10–11 files · 10–11 RG`. The grouping is still the layout, which is the whole point; but a
- * reader scanning bars wants to know which thing they are looking at, and a file count is a poor name
- * even when it is the real subject. The shape sits underneath, where it explains why two writers would
- * ever share a bar.
- *
- * The mean is over the group's OWN runs — `layoutGroups` keys per run, so a run that wrote a different
- * shape is a sample of a different bar rather than of this one. That is what makes two bars with the
- * same label possible (`duckrun sorted` twice, at `3 files · 26 RG` and `4 files · 25 RG`), and the
- * caption is what tells them apart: the label answers who wrote it, the caption answers what.
- */
-/**
  * One entry per layout group: `{name, rec, cu, ms: {cold, warm, hot}}`.
  *
  * The single source for both things that describe the mart — the rows of its layout block and the
  * dots of the fit chart. They are the same measurement shown twice, so deriving them separately is
  * how a page ends up printing 1,916 in a table and plotting 1,960 above it.
  *
- * `rec` is the NEWEST member's record: entries arrive oldest-first, and within a group the physical
- * stats agree to the band anyway — 78 files and 80 is one bar — so this only picks which of the two
- * prints. The CU and the tier times are the group's MEDIAN across its runs, which is what the chart's
- * bars already quote.
+ * `rec` is the NEWEST member's record: entries arrive oldest-first. It answers questions the whole
+ * group agrees on — its engine, its declared config, its V-Order, all of them key elements — and is
+ * NOT a source for the physical stats, which a group can genuinely disagree about now that the key
+ * reads the dispatch. Anything measured goes through `keyCells`, which spans every member. The CU and
+ * the tier times are the group's MEDIAN across its runs.
  */
 export function martPoints(groups, times) {
   return (groups || []).map(([, ms]) => {
@@ -2018,6 +1930,25 @@ function spanM(values) {
   return !vals.length ? DASH
     : vals.length === 1 ? `${fmt(vals[0], 1)}M`
       : `${fmt(vals[0], 1)}–${fmt(vals[vals.length - 1], 1)}M`;
+}
+
+/**
+ * One measure across a group's members, at a fixed number of decimals: `4`, `3–4`, `1,059.2`, or a
+ * dash. `dp < 0` means `compact` (`16.0M`), which is how `rows per RG` prints.
+ *
+ * The general form of `span`/`spanM`, for the layout block, whose four metrics each want their own
+ * precision — `size MB` at one decimal because `stg_csv_archive_log` is 0.37 MB and rounding that to
+ * `0` says the table is empty. It dedups on the FORMATTED value, so two runs 1.02 and 1.04 MB apart
+ * print one number rather than a range that is an artefact of rounding.
+ */
+function spanAt(values, dp) {
+  const nums = (values || [])
+    .map((v) => (v === undefined || v === null || v === "" ? NaN : Number(v)))
+    .filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (!nums.length) return DASH;
+  const at = (v) => (dp < 0 ? compact(v) : fmt(v, dp));
+  const lo = at(nums[0]), hi = at(nums[nums.length - 1]);
+  return lo === hi ? lo : `${lo}–${hi}`;
 }
 
 /**
@@ -2300,8 +2231,8 @@ function martSize(members, table = DEFAULTS.table) {
 
 export function keyCells(members, table = DEFAULTS.table) {
   const stats = (members || []).map(({ rec }) => martStats(rec, table));
-  // `sortLabels`, NOT `sortKeyOf` — an `auto` run prints `auto`, which is the knob that was turned;
-  // the resolved columns still SEPARATE the rows, they just do not fill the cell. See sortLabelOf.
+  // `auto` is what this prints and what `layoutKey` groups on — the knob that was turned. The columns
+  // the picker resolved to are its ANSWER and stay in the record; see `sortLabelOf`.
   const sorts = sortLabels(members, table);
   const bits = [];
   if ((members || []).some(({ rec }) => vorderOf(rec, table))) bits.push("V-Order");
@@ -2316,10 +2247,12 @@ export function keyCells(members, table = DEFAULTS.table) {
     // predate that field still fill the column rather than dashing out.
     rgSize: spanM(stats.map((s) => (s.avg_row_group != null ? s.avg_row_group
       : (s.total_rows && s.num_row_groups ? Number(s.total_rows) / Number(s.num_row_groups) : null)))),
-    // NOT a key element — `layoutKey` has no size term, deliberately, and this is the column that
-    // exposes what that costs: a group whose MB cell reads as a wide range is one the page merged on
-    // (V-Order, RG band, sort key, engine) while the files themselves differ in size. Printed rather
-    // than grouped on, because banding size would split runs of one column on incremental drift.
+    // NOT a key element, and NEITHER IS `rg`/`rgSize` ANY MORE — `layoutKey` reads the dispatch, so
+    // all three of these are the OUTPUT of the profile the row names. That is what makes them worth
+    // printing: a row spanning `58–68 RG` / `7,251–8,596 MB` is one dispatch config that did not
+    // write the same parquet twice, which is a finding about the writer rather than a key too coarse
+    // to tell two profiles apart. Grouping on them instead is what split nyc's one `auto` profile
+    // into three rows that could not say why they were three.
     mb: span(stats.map((s) => s.size_mb)),
   };
 }
@@ -2362,14 +2295,17 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
     // hovers and every caption point back into.
     scatterFit(pts, martTable),
     // THE KEY IS PRINTED, not just grouped on. Six rows reading `duckrun sorted` with nothing to
-    // tell them apart is a table asking the reader to trust a grouping it will not show. `ordering`
-    // and `row group size` ARE `layoutKey` (the engine is already in the label) — the key bands the
-    // row-group COUNT, and with every engine writing the identical 143,980,961 rows the size is that
-    // same number inverted, so nothing is hidden by printing the more meaningful of the two.
-    // `dictionary` and `MB` are MEASURED BUT NOT GROUPED ON, and printing them is how a reader sees
-    // where the key is coarser than the parquet — a wide `MB` range, or a `dictionary` cell that had
-    // to name columns, is a row holding more than one physical shape. `runs` is the sample size
-    // behind each median, which is what says whether a row is one dispatch or seven.
+    // tell them apart is a table asking the reader to trust a grouping it will not show. `parquet
+    // writer` and `ordering` ARE `layoutKey` — the engine and the sort as dispatched. What the key
+    // also carries and this table does not print is the declared GEOMETRY (`row_group_size`,
+    // `file_size_mb`): the `row group size` column beside it is the MEASURED result, and on `auto`
+    // those are different statements — one row can read `auto` and `8.7–10.2M` at once. When two
+    // rows share a writer and an ordering, the declared geometry is what separates them and the
+    // measured spans are what show it landing.
+    // `dictionary` and `MB` are measured too, and printing them is how a reader sees one profile
+    // writing more than one physical shape — a wide `MB` range, or a `dictionary` cell that had to
+    // name columns. `runs` is the sample size behind each median, which is what says whether a row is
+    // one dispatch or seven.
     // THE QUERY COUNT IS IN THE HEADER, not only in the note four rows below. Each tier cell is a
     // SUM over the suite -- 23 queries at cold, 25 at warm and hot -- and `28,518` reads exactly
     // like one query's time to anyone who has not reached the note. On one real run the sum is
@@ -2399,6 +2335,13 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
           ...cols.map((l) => (p.ms[l] ? fmt(p.ms[l], 0) : DASH))];
       }),
       { sort: true }),
+    // WHAT A ROW IS, said on the page and not only in `layoutKey`. A reader meeting a `runs` of 6
+    // beside an `MB` reading `7,251–8,596` needs to know that is one dispatch config rather than a
+    // grouping mistake, and the range is the only place the page can say it.
+    note("**A row is a WRITE CONFIG as dispatched** — the writer, the sort it was asked for and the "
+      + "row-group and file sizes it was given — and its numbers are the MEDIAN over the runs behind "
+      + "it. A cell printed as a RANGE is that config not writing the same parquet twice: `auto` "
+      + "leaves the sort columns to the writer, and it does not always choose the same ones."),
     // THE EXCLUSION IS NAMED, because a dropped run on this page is always a named run — the same
     // discipline `renderSources` follows for the generation filter. Silently showing 10 of 17
     // layouts would read as "these are the layouts", which is the one thing it must not say.
@@ -2862,13 +2805,16 @@ export function renderInput(cols, dataset = DEFAULTS.dataset) {
  * The question every other table on this page leaves open. `Table layout` reports SHAPE — files, row
  * groups, size — and shape turned out not to explain the CU: duckrun writes the densest parquet here
  * (5.63 bytes/row) and does not win, dwh writes UNCOMPRESSED and beats a SNAPPY spark build, and
- * spark's two resource profiles sit in the same row-group BAND 2.6x apart. What Power BI actually
+ * spark's two resource profiles write the same row-group size 2.6x apart. What Power BI actually
  * pays for on a cold pass is transcoding parquet into VertiPaq segments, and how expensive that is
  * depends on what the columns are ENCODED as — the one property nothing measured.
  *
  * Keyed on the LAYOUT, like the query-cost chart, because encoding is a property of what was written.
- * The newest member of a group that carries a profile wins; members of one group wrote the same
- * shape, and `stats.py` reads the encodings from the same item it read the shape from.
+ * The newest member of a group that carries a profile wins — members of one group were dispatched
+ * with the same write config, and `stats.py` reads the encodings from the same item it read the shape
+ * from. Note the group can hold runs whose parquet differs (a picker that answered twice), so this is
+ * the newest run's encodings rather than the group's; the `dictionary` cell in `Cost and speed by
+ * parquet layout` is where a group that disagrees with itself surfaces.
  *
  * `dict_pages < chunks` is flagged: a column the writer gave up dictionary-encoding partway through
  * still says `PLAIN_DICTIONARY` in its encoding list, so the list alone would read as "dictionary"
@@ -3001,35 +2947,44 @@ export function renderLayouts(cols, groups, times, counts, martTable = DEFAULTS.
   const blocks = [];
   for (const t of ordered) {
     const byLayout = t === mart;
-    // The mart's rows are still the CHART's groups, so a writer that produced two different shapes
-    // gets a row each — `duckrun sorted` wrote 3 files/26 RG and 4/25, which is two layouts and not
-    // one. Every other block is one row per producer, read off that producer's first column: those
-    // describe a table the mart's shape says nothing about, so splitting them the same way would
-    // print one row twice for a difference that is not in it.
+    // The mart's rows are still the CHART's groups, so a writer dispatched two ways — sorted and not,
+    // or at two row-group sizes — gets a row each. Every other block is one row per producer, read off
+    // that producer's first column: those describe a table the mart's shape says nothing about, so
+    // splitting them the same way would print one row twice for a difference that is not in it.
+    // `ds` IS EVERY MEMBER'S STATS, NOT THE NEWEST ONE'S, and on the mart that is the difference
+    // between a row and a claim. `layoutKey` reads the dispatch, so one row can hold runs whose
+    // parquet differs — a picker that answered three ways over six nights — and printing the newest
+    // member's numbers would report one of those shapes as if it were the profile's. Every cell is a
+    // SPAN across the members instead. Off the mart there is one member per producer, so `ds` is a
+    // single entry and every span is a single value.
     let present = byLayout
       ? martPoints(groups, times)
-        .map((p) => ({ ...p, d: (((p.rec.layout || {}).stats || {})[p.rec.engine] || {})[t] }))
-        .filter(({ d }) => d)
+        .map((p) => ({ ...p, ds: (p.members || [])
+          .map(({ rec }) => (((rec.layout || {}).stats || {})[rec.engine] || {})[t])
+          .filter(Boolean) }))
+        .filter(({ ds }) => ds.length)
       // `rec` rides along so the V-Order cell can prefer the authoritative flag over the blind
-      // `vorder` property — see `vorderOf`. The first member's record, matching the `d` beside it.
-      : order.map((n) => ({ name: n, d: (stats[members.get(n)[0].col] || {})[t], ms: {},
-        rec: members.get(n)[0].rec }))
-        .filter(({ d }) => d);
+      // `vorder` property — see `vorderOf`. The first member's record, matching the `ds` beside it.
+      : order.map((n) => ({ name: n, ds: [(stats[members.get(n)[0].col] || {})[t]].filter(Boolean),
+        ms: {}, rec: members.get(n)[0].rec }))
+        .filter(({ ds }) => ds.length);
     if (!present.length) continue;
     if (byLayout) {
       // FEWEST FILES FIRST. It sorted cheapest-CU-first while the CU column was here; ordering by a
       // column that is no longer printed is a ranking a reader cannot check. Files is the layout
-      // fact this block leads with, so it is the one to sort on.
+      // fact this block leads with, so it is the one to sort on. On the SMALLEST of a row's members,
+      // which is what its cell leads with.
+      const least = (p, k) => Math.min(...p.ds.map((s) => Number(s[k]) || 0));
       present = present.sort((a, b) =>
-        (Number(a.d.num_files) || 0) - (Number(b.d.num_files) || 0) ||
-        (Number(a.d.num_row_groups) || 0) - (Number(b.d.num_row_groups) || 0));
+        least(a, "num_files") - least(b, "num_files") ||
+        least(a, "num_row_groups") - least(b, "num_row_groups"));
     }
     // The ROW COUNT goes in the heading, not in a column. It is identical on every row — that is the
     // parity statement the whole project rests on — and a 143,980,961 repeated down the table is a wide
     // column carrying one fact. When the engines DISAGREE it becomes a column again and the heading
     // says so, because that disagreement is the loudest signal this page has.
-    const seenCounts = [...new Set(present.filter(({ d }) => d.total_rows)
-      .map(({ d }) => Math.trunc(Number(d.total_rows))))].sort((a, b) => a - b);
+    const seenCounts = [...new Set(present.flatMap(({ ds }) => ds)
+      .filter((s) => s.total_rows).map((s) => Math.trunc(Number(s.total_rows))))].sort((a, b) => a - b);
     const agree = seenCounts.length === 1;
     const rowsNote = agree ? ` — ${fmt(seenCounts[0], 0)} rows on every engine`
       : seenCounts.length ? " — **row counts DISAGREE**" : "";
@@ -3044,10 +2999,9 @@ export function renderLayouts(cols, groups, times, counts, martTable = DEFAULTS.
     // rather than one layout. What is left here is what `stats.py` read off the Delta log.
     const header = ["layout", ...colsHere.map(([, h]) => h), "V-Order"];
     const align = ["left", ...colsHere.map(() => "right"), "left"];
-    const body = present.map(({ name, d, rec }) => [
+    const body = present.map(({ name, ds, rec }) => [
       name,
-      ...colsHere.map(([k, , dp]) => (d[k] === undefined || d[k] === null ? DASH
-        : dp < 0 ? compact(d[k]) : fmt(d[k], dp))),
+      ...colsHere.map(([k, , dp]) => spanAt(ds.map((s) => s[k]), dp)),
       // `vorderOf`, not `d.vorder`: the property is blind to a Warehouse, which is why this column
       // read `·` for dwh on parquet that was V-Ordered throughout.
       vorderOf(rec, t) ? "**yes**" : "·",
@@ -3081,9 +3035,12 @@ export function renderLayouts(cols, groups, times, counts, martTable = DEFAULTS.
     "off because two runs each showed they never reach the parquet — duckrun wrote 4 files and 27 row " +
     "groups at 64 cores and at 32, and spark wrote the same layout with NEE on and off — so " +
     "everything but the resource profile and the sort collapses to one row. The mart is the " +
-    "exception: it splits by the shape a run actually WROTE, so a writer that produced two different " +
-    "layouts gets a row each. Row counts sit in the heading because they are identical by design; if " +
-    "they ever stop being, the heading says so and they come back as a column."));
+    "exception: it splits by the WRITE CONFIG a run was dispatched with, so one writer's sorted and " +
+    "unsorted builds get a row each. **A cell that reads as a RANGE is one dispatch config that did " +
+    "not write the same parquet twice** — `auto` asks duckrun to pick the sort columns and it does " +
+    "not always pick the same ones — which is a fact about the writer rather than two layouts. Row " +
+    "counts sit in the heading because they are identical by design; if they ever stop being, the " +
+    "heading says so and they come back as a column."));
   return out.join("\n");
 }
 
@@ -3519,12 +3476,14 @@ export function renderAnalysis(cols, entries, groups, times, ctx = {}) {
     "Where both sides of a comparison have been run twice, whether their min–max ranges overlap is " +
     "stated as well — a gap between two means whose ranges still overlap is weaker than one whose " +
     "ranges are disjoint.",
-    "**The floor is measured per COLUMN, never per layout bar.** A bar groups every run that wrote " +
-    "the same parquet shape, which on this page means several core counts at once, so its internal " +
-    "spread already contains a real effect and would hide the differences this section looks for.",
+    "**The floor is measured per COLUMN, never per layout row.** A layout row groups every run " +
+    "dispatched with the same write config, which on this page means several core counts at once — " +
+    "and, where the sort was left to the writer, several shapes — so its internal spread already " +
+    "contains real effects and would hide the differences this section looks for.",
     "**In the knob table a bold delta is one that clears the floor for its measure.** `layout` says " +
-    "whether the two columns wrote parquet Power BI can tell apart: `same` means their directlake " +
-    "and query-time deltas are two readings of one bar rather than a comparison, so a difference " +
+    "whether the two columns were dispatched to write different parquet: `same` means their " +
+    "directlake and query-time deltas are two readings of one layout rather than a comparison, so a " +
+    "difference " +
     "there is noise by construction."));
   return out.join("\n");
 }

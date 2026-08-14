@@ -452,10 +452,24 @@ test("a V-Order-off warehouse gets its own column instead of replacing the V-Ord
   const off = lay("dwh", 78, 20, { cfg: { vorder: "false" }, file: "b-2.json", vorder: false });
   const cols = d.columnsFor([on, off]).map((c) => c.col);
   assert.deepEqual(cols.sort(), ["dwh·V-Order", "dwh·noVOrder"]);
-  // Same file and row-group band, so ONLY the V-Order element can be separating the bars.
+  // Identical parquet shape, so ONLY the V-Order elements can be separating the rows.
   assert.notDeepEqual(d.layoutKey(on), d.layoutKey(off));
-  assert.equal(d.layoutKey(on)[0], true);
-  assert.equal(d.layoutKey(off)[0], false);
+  assert.deepEqual(d.layoutKey(on).slice(5), ["true", true], "declared and measured, in that order");
+  assert.deepEqual(d.layoutKey(off).slice(5), ["false", false]);
+});
+
+test("a declared V-Order the warehouse did not apply splits into a row of its own", () => {
+  // WHY THE KEY CARRIES BOTH, and it is the only measured element left in it. The `ALTER DATABASE
+  // CURRENT SET VORDER = OFF` is irreversible and fired against a seconds-old warehouse, so an
+  // accepted-but-ineffective set is the plausible failure — and it is the one that must not be taken
+  // on trust. Keyed on the DECLARATION alone it would join the runs that meant to V-Order; keyed on
+  // the READBACK alone it would join the ones that really did not. Keyed on both it is neither, which
+  // is what a contradiction should look like.
+  const meant = lay("dwh", 78, 20, { cfg: { vorder: "true" }, file: "a-1.json", vorder: true });
+  const failed = lay("dwh", 78, 20, { cfg: { vorder: "true" }, file: "b-2.json",
+    ordering: { dwh: { vorder_enabled: false } } });
+  const real = lay("dwh", 78, 20, { cfg: { vorder: "false" }, file: "c-3.json", vorder: false });
+  assert.equal(d.layoutGroups([{ rec: meant }, { rec: failed }, { rec: real }]).length, 3);
 });
 
 test("the dwh V-Order tag is spelled on both values, unlike every other flag", () => {
@@ -490,19 +504,18 @@ test("the writer name carries no ordering — that is a column of its own", () =
     "vcores still never reaches a caption about parquet");
 });
 
-test("a sort splits the layout bar even though the bands do not move", () => {
+test("a sort splits the layout row even though the parquet barely moves", () => {
   // THE reason `sorted` is in layoutKey. The one measured sorted run wrote 4 files either way and
-  // 27 -> 25 row groups, which fall in the SAME bands — so without the config in the key these two
-  // share a bar and their cold/warm/hot means are averaged, which is the comparison the flag exists
-  // to make.
+  // 27 -> 25 row groups — so a key reading the parquet could barely tell these apart, and would
+  // average their cold/warm/hot together, which is the comparison the flag exists to make.
   const plain = lay("duckrun", 4, 27, { cfg: { vcores: "64" } });
   const sorted = lay("duckrun", 4, 25, { cfg: { vcores: "64", sorted: "true" } });
-  assert.deepEqual(d.layoutKey(plain).slice(0, 2), d.layoutKey(sorted).slice(0, 2),
-    "same V-Order and same band — the measured half cannot tell them apart");
   assert.notDeepEqual(d.layoutKey(plain), d.layoutKey(sorted));
   // This fixture records no key, so it reads `true` — sorted by something unnamed. The COLUMNS case
   // is the two-sorts test below.
   assert.equal(d.layoutKey(sorted)[2], true);
+  // `vcores` is NOT in the key: the same dispatch on a bigger machine is the same profile, measured.
+  assert.deepEqual(d.layoutKey(lay("duckrun", 4, 27, { cfg: { vcores: "8" } })), d.layoutKey(plain));
 });
 
 test("a record with no sorted key groups with an unsorted run, not alone", () => {
@@ -513,7 +526,7 @@ test("a record with no sorted key groups with an unsorted run, not alone", () =>
   // this test would pass for the wrong reason if it kept comparing duckrun against iceberg.
   // Both sides carry NO `sorted` key, because that is the only spelling an unsorted run has —
   // `stats.py` records the flag when it is on and not otherwise. (`sorted: "false"` would not be
-  // that case: it is a truthy STRING, so `sortKeyOf` reads it as sorted-but-unnamed.)
+  // that case: it is a truthy STRING, so `sortLabelOf` reads it as sorted-but-unnamed.)
   const old = lay("duckrun", 4, 27, { cfg: { vcores: "64" } });          // no `sorted` key at all
   const off = lay("duckrun", 4, 25, { cfg: { vcores: "64" }, file: "y.json" });
   assert.deepEqual(d.layoutKey(old), d.layoutKey(off));
@@ -529,42 +542,42 @@ const sortedBy = (files, rgs, key, opts = {}) => {
   return r;
 };
 
-test("two sorts on different keys never share a bar, even when the bands agree", () => {
-  // The real pair — `['date','time','DUID']` (run 30955591822) and `['date','time']` — writes the
-  // same row-group band, so the COLUMNS are now the only thing keeping them apart. This used to be
-  // covered accidentally by 3 vs 4 files crossing a band boundary; that element is gone.
+test("two sorts on different DECLARED keys never share a row", () => {
+  // The real pair — `['date','time','DUID']` (run 30955591822) and `['date','time']` — writes almost
+  // the same shape, so the declared columns are the only thing keeping them apart.
   const duid = sortedBy(4, 25, ["date", "time", "DUID"], { file: "a-1.json" });
   const dt = sortedBy(4, 25, ["date", "time"], { file: "b-2.json" });
   assert.equal(d.layoutKey(duid)[2], "date,time,DUID");
   assert.equal(d.layoutKey(dt)[2], "date,time");
-  assert.deepEqual(d.layoutKey(duid).slice(0, 2), d.layoutKey(dt).slice(0, 2));
   assert.equal(d.layoutGroups([{ rec: duid }, { rec: dt }]).length, 2,
-    "identical shape, different sort — two bars");
+    "identical shape, different sort — two rows");
 });
 
-test("the sort key comes off the RECORD, in either spelling, and is never guessed", () => {
-  // THE KEY IS A PROPERTY OF THE COMMIT: the model declared date,time,DUID for a while and date,time
+test("the sort comes off the RECORD, in either spelling, and is never guessed", () => {
+  // THE SORT IS A PROPERTY OF THE COMMIT: the model declared date,time,DUID for a while and date,time
   // since. A constant in this file was right for today's model only, and captioned run 30955591822 —
   // a DUID sort — `by date, time`. Both spellings are legitimate: `sort_by` is declared, and
   // `sort_by_auto` is the only witness for an `'auto'` run, whose declaration names no columns.
-  assert.equal(d.sortKeyOf(sortedBy(4, 25, ["date", "time", "DUID"])), "date,time,DUID");
-  assert.equal(d.sortKeyOf(sortedBy(4, 25, ["date", "time"], { spelling: "sort_by_auto" })),
-    "date,time");
-  // Sorted by SOMETHING the record does not name: `true`, which shares a bar with neither an
-  // unsorted run nor any named sort — the rule `layoutKey` already applies to a missing file count.
+  assert.equal(d.sortLabelOf(sortedBy(4, 25, ["date", "time", "DUID"])), "date,time,DUID");
+  assert.equal(d.sortLabelOf(sortedBy(4, 25, ["date", "time"], { spelling: "sort_by_auto" })),
+    "auto", "the picker's answer is not what was dispatched");
+  // Sorted by SOMETHING the record does not name: `true`, which shares a row with neither an
+  // unsorted run nor any named sort — there is nothing to add and nothing to invent.
   const unnamed = sortedBy(4, 25, null);
-  assert.equal(d.sortKeyOf(unnamed), true);
-  assert.equal(d.sortKeyOf(lay("duckrun", 4, 27, { cfg: { vcores: "64" } })), false);
+  assert.equal(d.sortLabelOf(unnamed), true);
+  assert.equal(d.sortLabelOf(lay("duckrun", 4, 27, { cfg: { vcores: "64" } })), false);
   assert.equal(new Set([{ rec: unnamed }, { rec: sortedBy(4, 25, ["date", "time"]) },
     { rec: lay("duckrun", 4, 25, { cfg: { vcores: "64" } }) }]
     .map(({ rec }) => JSON.stringify(d.layoutKey(rec)))).size, 3);
 });
 
-test("an `auto` run PRINTS `auto` and is still GROUPED by the columns it resolved to", () => {
-  // The label and the key are deliberately different functions. A dispatch that asked duckrun to
-  // pick should read `auto` — that is the knob that was turned, and the resolved list is duckrun's
-  // answer, four columns wide on the taxi mart (`pickup_date, VendorID, store_and_fwd_flag,
-  // payment_type`) in a cell whose neighbours read `V-Order` and `—`.
+test("`auto` is ONE profile however the picker answers — the label IS the key", () => {
+  // WHAT THIS REVERSES, and it ran for a release. The label printed `auto` while the key carried the
+  // columns the picker had resolved to, on the reasoning that two `auto` runs can write different
+  // parquet. They can — and it does not follow. Measured on nyc: six duckrun runs dispatched with
+  // identical config rendered as THREE rows, because the picker answered `…payment_type` twice,
+  // `…, tip_amount` three times and `…, fare_amount` once. Every printed cell on those rows was the
+  // same, so the table showed a split it could not explain and nobody had asked for.
   const auto = sortedBy(4, 25, ["date", "time"], { spelling: "sort_by_auto" });
   assert.equal(d.sortLabelOf(auto), "auto");
   assert.equal(d.keyCells([{ rec: auto }]).ordering, "auto");
@@ -577,27 +590,42 @@ test("an `auto` run PRINTS `auto` and is still GROUPED by the columns it resolve
   both.dbt.duckrun.sort_by_auto = { fct_summary: ["date", "time", "DUID"] };
   assert.equal(d.sortLabelOf(both), "date,time");
 
-  // THE GROUPING MUST NOT FOLLOW THE LABEL. duckrun's picker answers per dataset, so two `auto` runs
-  // can write genuinely different parquet; keying them both to the string `auto` would pour two
-  // layouts into one row and print a median neither measured.
+  // TWO AUTO RUNS THAT RESOLVED DIFFERENTLY ARE ONE ROW, even at different measured geometry. The
+  // picker moving between nights is the picker being unstable, not a second layout somebody ordered;
+  // the row states it as its own `RG` and `MB` spans instead of as rows that cannot say why.
   const a = sortedBy(4, 25, ["date", "time"], { spelling: "sort_by_auto", file: "a-1.json" });
-  const b = sortedBy(4, 25, ["date", "time", "DUID"], { spelling: "sort_by_auto", file: "b-2.json" });
-  assert.equal(d.sortLabelOf(a), d.sortLabelOf(b), "same label");
-  assert.notEqual(d.layoutKey(a)[2], d.layoutKey(b)[2], "different key");
-  assert.equal(d.layoutGroups([{ rec: a }, { rec: b }]).length, 2,
-    "two resolutions, two bars — the label is not the key");
+  const b = sortedBy(8, 58, ["date", "time", "DUID"],
+    { spelling: "sort_by_auto", file: "b-2.json", mb: 2.0 });
+  const one = d.layoutGroups([{ rec: a }, { rec: b }]);
+  assert.equal(one.length, 1, "one dispatch config, one row");
+  assert.equal(d.keyCells(one[0][1]).ordering, "auto");
+  assert.equal(d.keyCells(one[0][1]).rg, "25–58", "the spread is printed, not keyed on");
+  assert.equal(d.layoutLabel(one[0][1]), "by auto · 25–58 RG");
 
-  // AN AUTO RUN GETS ITS OWN ROW even when a hand-dispatched run resolved to the same columns —
-  // the one place `layoutKey` separates two runs whose parquet matches, because comparing them IS
-  // the question. Live on aemo: the picker answers `date,time`, which five dispatches also declared
-  // by hand. Merged, the picker's three runs were averaged into the hand key's row and neither
-  // "auto" nor its cost was readable; two spellings in one cell (`auto / date, time`) was the same
-  // defect wearing a label. Split, they sit side by side with their own geometry, MB and CU.
+  // AN AUTO RUN STILL GETS ITS OWN ROW against a hand-dispatched run that resolved to the same
+  // columns, because comparing them IS the question. Live on aemo: the picker answers `date,time`,
+  // which five dispatches also declared by hand, and merged there was no way to read what auto cost.
   const hand = sortedBy(4, 25, ["date", "time"], { file: "h.json" });
   assert.notEqual(JSON.stringify(d.layoutKey(auto)), JSON.stringify(d.layoutKey(hand)));
   const two = d.layoutGroups([{ rec: auto }, { rec: hand }]);
   assert.equal(two.length, 2, "one auto row, one declared row");
   assert.deepEqual(two.map(([, ms]) => d.keyCells(ms).ordering).sort(), ["auto", "date, time"]);
+});
+
+test("the declared GEOMETRY splits a row the sort cannot", () => {
+  // `auto` at 2M row groups and `auto` at the default are two profiles — the dispatcher turned a
+  // knob — even though `ordering` reads `auto` on both. This is the half of the key the layout table
+  // does not print, which is why `variantTag` spells it into the column header instead.
+  const dflt = sortedBy(4, 25, null, { cfg: { sorted: "true" }, file: "a-1.json" });
+  const small = lay("duckrun", 4, 72, { cfg: { sorted: "true", row_group_size: "2000000" },
+    file: "b-2.json" });
+  const wide = lay("duckrun", 1, 72, { cfg: { sorted: "true", row_group_size: "2000000",
+    file_size_mb: "128" }, file: "c-3.json" });
+  assert.equal(d.layoutGroups([{ rec: dflt }, { rec: small }, { rec: wide }]).length, 3);
+  // Recorded as a number and as a string is one profile — records have carried both spellings.
+  const asNum = lay("duckrun", 4, 72, { cfg: { sorted: "true", row_group_size: 2000000 },
+    file: "d-4.json" });
+  assert.deepEqual(d.layoutKey(asNum), d.layoutKey(small));
 });
 
 test("the caption says which columns a sorted bar is ordered by, row groups only", () => {
@@ -624,13 +652,13 @@ test("a warehouse's V-Order comes off `vorder_enabled`, because the property can
   assert.equal(d.vorderOf(dwh), true, "the authoritative flag wins over a `vorder: false` property");
   assert.equal(d.layoutLabel([{ rec: dwh }]), "V-Order · 77 RG");
   assert.equal(d.keyCells([{ rec: dwh }]).ordering, "V-Order");
-  assert.equal(d.layoutKey(dwh)[0], true, "and it is what bands the bar");
+  assert.equal(d.layoutKey(dwh)[6], true, "and it is what splits the row");
 
   // A REAL `false` MUST BEAT A `true` PROPERTY — someone ran the irreversible ALTER, and that is a
   // measurement, not an absence. Hence `typeof === "boolean"` rather than a truthiness test.
   const off = lay("dwh", 77, 77, { vorder: true, ordering: { dwh: { vorder_enabled: false } } });
   assert.equal(d.vorderOf(off), false);
-  assert.equal(d.layoutKey(off)[0], false);
+  assert.equal(d.layoutKey(off)[6], false);
 
   // No key at all is a LAKEHOUSE engine, where the property and the tag are the right instruments —
   // so the fallback has to stay, and must not throw on a record with no ordering block.
@@ -640,7 +668,8 @@ test("a warehouse's V-Order comes off `vorder_enabled`, because the property can
 
   // Two dwh runs, one V-Ordered and one not, must not share a bar — the whole point of the key.
   assert.notDeepEqual(d.layoutKey(dwh), d.layoutKey(off));
-  assert.equal(d.layoutKey(dwh)[1], d.layoutKey(off)[1], "same RG band, on purpose");
+  assert.deepEqual(d.layoutKey(dwh).slice(0, 5), d.layoutKey(off).slice(0, 5),
+    "identical dispatch otherwise, on purpose");
 });
 
 test("a non-default write geometry gets its own column, and the tag says so", () => {
@@ -1469,12 +1498,11 @@ test("the same parquet is one row however many engines wrote it", () => {
     "both configs keep a column — string sort, so 64c precedes 8c");
 });
 
-test("two runs of ONE column that wrote different parquet are two rows", () => {
-  // The bug this pins, on the real records: `duckrun·64c+sorted` wrote two different shapes under
-  // one column. Grouping the COLUMNS and pouring every run of each into one entry put them together
-  // at their mean — 2,041.8, a number neither run measured — described by only the newer's shape.
-  // The layout is measured per RUN, so it has to be grouped per run. (The original pair differed by
-  // file count too; that element has left the key, so the fixture separates on row groups.)
+test("two runs of ONE profile that wrote different parquet are ONE row that says so", () => {
+  // THE REVERSAL, end to end. These two runs are the same dispatch — same engine, same declared sort,
+  // same (default) geometry — and they wrote 9 row groups and 25. Under a key that read the parquet
+  // they were two rows, and on the real nyc records that is what turned ONE `auto` profile into three
+  // rows whose every printed cell was identical. One row now, with the spread in its own cells.
   const cfg = { vcores: "8", sorted: "true" };
   const runs = [
     lay("duckrun", 3, 9, { cfg, file: "a-1.json", finishedHoursAgo: 72 }),
@@ -1488,21 +1516,18 @@ test("two runs of ONE column that wrote different parquet are two rows", () => {
     S1: { "XMLA Read Operation": 1600.0 }, O1: 1.0,
   }));
   const t = layoutTable(out);
-  assert.deepEqual(t.map((r) => r.writer), ["delta_rs", "delta_rs"], "one writer, two layouts");
-  assert.deepEqual(t.map((r) => r.cu), ["1,600", "2,400"], "each run's OWN CU, never their mean");
-  // The `ordering`/`row group size` cells are the whole reason two rows with one writer read: the
-  // writer answers who wrote it, the key answers what.
-  assert.deepEqual(t.map((r) => r.rgSize), ["5.8M", "16.0M"], "and the shapes tell them apart");
+  assert.deepEqual(t.map((r) => r.writer), ["delta_rs"], "one profile, one row");
+  assert.equal(t[0].cu, "2,000", "the median of the two runs behind it");
+  assert.equal(t[0].runs, "2");
+  // WHAT PAYS FOR THE MERGE: the row prints the range it covers, so a profile that did not write the
+  // same parquet twice says so where it happened rather than by splitting into rows that cannot.
+  assert.equal(t[0].rgSize, "5.8–16.0M");
   // ...and the mart block says the same thing, because its rows ARE these groups.
   const body = rows(block(out, "the mart the queries land on")).slice(1);
-  assert.equal(body.length, 2, "one mart row per bar, not one per writer");
-  // Fewest files first, and the block carries LAYOUT ONLY — the CU that used to sit here is in
-  // *Cost and speed by parquet layout* and in `Cost by engine`, on the run that measured it.
-  assert.ok(body[0].startsWith("| delta_rs | 3 | 9 |"), body[0]);
-  assert.ok(body[1].startsWith("| delta_rs | 4 | 25 |"), body[1]);
-  assert.ok(!body[0].includes("1,600"), "no CU column on the layout block");
-  // `Cost by engine` groups per COLUMN, and both runs are samples of one — so two layout rows and
-  // ONE engine column.
+  assert.equal(body.length, 1, "one mart row per profile");
+  assert.ok(body[0].startsWith("| delta_rs | 3–4 | 9–25 |"), body[0]);
+  assert.ok(!body[0].includes("2,000"), "no CU column on the layout block");
+  // `Cost by engine` groups per COLUMN, and both runs are samples of one — so one engine column too.
   assert.equal(rows(block(out, "Cost by engine"))[0].split("|").length - 2, 2,
     "one measure column and one engine column");
   assert.ok(rows(block(out, "Cost by engine")).some((r) => r.startsWith("| **etl** |")));
@@ -1536,30 +1561,40 @@ test("an engine is named for who WRITES, not for the dbt target that asked", () 
 });
 
 test("V-Order never merges with anything", () => {
-  // The sharpest experiment on the page: the same file band with V-Order on and off.
+  // The sharpest experiment on the page: one engine, two resource profiles, V-Order on and off. The
+  // profile is in the key and the measured V-Order is too, so this cannot merge on either half.
   const a = lay("spark", 11, 11, { vorder: true, cfg: { resource_profile: "readHeavyForPBI" } });
   const b = lay("spark", 14, 14, { vorder: false, cfg: { resource_profile: "writeHeavy" } });
   assert.notDeepEqual(d.layoutKey(a), d.layoutKey(b));
-  assert.equal(d.layoutKey(a)[1], d.layoutKey(b)[1], "same file band, on purpose");
+  assert.equal(d.layoutKey(a)[1], "readHeavyForPBI");
+  assert.equal(d.layoutKey(b)[1], "writeHeavy");
+  // Even written at the IDENTICAL shape, which is what the profiles are being compared over.
+  const same = lay("spark", 11, 11, { vorder: false, cfg: { resource_profile: "writeHeavy" } });
+  assert.notDeepEqual(d.layoutKey(a), d.layoutKey(same));
 });
 
-test("a band absorbs drift but not a real difference", () => {
-  // 78 files and 80 are the same writer with the same settings and one more incremental run.
-  assert.equal(d.layoutBand(78), d.layoutBand(80));
-  assert.equal(d.layoutBand(10), d.layoutBand(11));
-  assert.equal(d.layoutBand(11), d.layoutBand(14));
-  assert.notEqual(d.layoutBand(27), d.layoutBand(1172));
-  assert.notEqual(d.layoutBand(1172), d.layoutBand(4));
-  assert.equal(d.layoutBand(0), -1);
-  assert.equal(d.layoutBand(null), -1);
+test("incremental drift needs no band, because the key never reads the parquet", () => {
+  // 78 files and 80 are the same writer with the same settings and one more incremental run. Banding
+  // the counts to powers of two is what used to absorb that, at the cost of a boundary — 15 row
+  // groups and 17 landed in different bands despite being close, and it could not absorb a picker
+  // answering three ways. Keying on the dispatch absorbs both and has no boundary to explain.
+  const cfg = { vorder: "true" };
+  assert.deepEqual(d.layoutKey(lay("dwh", 78, 20, { cfg, vorder: true })),
+    d.layoutKey(lay("dwh", 80, 21, { cfg, vorder: true, file: "b-2.json" })));
+  assert.deepEqual(d.layoutKey(lay("dwh", 78, 15, { cfg, vorder: true })),
+    d.layoutKey(lay("dwh", 78, 17, { cfg, vorder: true, file: "b-2.json" })),
+    "the old band boundary, gone");
 });
 
-test("an unmeasured layout is never grouped with another one", () => {
-  // Two records carrying no file count are not two identical layouts, they are two unmeasured ones.
+test("two runs that recorded no layout at all still group by what they were dispatched with", () => {
+  // There is no unmeasured case any more: `layoutKey` reads `layout.config`, so a run whose stats
+  // never landed is a default-profile run rather than a hole, and the fallback-to-column path that
+  // existed to catch it is gone with the `null` return.
   const a = full("a-1.json", "spark"), b = full("b-2.json", "dwh");   // stats carry total_rows only
-  assert.equal(d.layoutKey(a), null);
-  assert.equal(d.layoutKey(b), null);
-  assert.equal(d.layoutGroups(d.columnsFor([a, b])).length, 2);
+  assert.notEqual(d.layoutKey(a), null);
+  assert.equal(d.layoutGroups(d.columnsFor([a, b])).length, 2, "two engines never share a row");
+  const c = full("c-3.json", "spark");
+  assert.equal(d.layoutGroups([{ rec: a }, { rec: c }]).length, 1, "one engine, one default profile");
 });
 
 test("the producer name drops what never reached the parquet", () => {
@@ -2443,8 +2478,8 @@ test("the cores column reports duckrun's vCores and dashes everyone else", () =>
 test("a layout never built at ETL_VCORES leaves the section, and is NAMED as excluded", () => {
   // The other way round from hiding the column: every row that IS here is complete, and a cost
   // column that is mostly dashes never gets the chance to read as "the build was free".
-  const at = (cores, file, rgs) => {
-    const r = lay("duckrun", 4, rgs, { cfg: { vcores: cores }, file,
+  const at = (cores, file, cfg = {}) => {
+    const r = lay("duckrun", 4, 27, { cfg: { vcores: cores, ...cfg }, file,
       timings: timings({ q1: [20000, 4000, 3000] }) });
     r.items = { [`O${file}`]: gone("output", "dbt_delta"),
       [`S${file}`]: gone("semantic_model", "aemo_duckrun") };
@@ -2456,8 +2491,10 @@ test("a layout never built at ETL_VCORES leaves the section, and is NAMED as exc
     "Ob-2.json": { "Jupyter Notebook Scheduled Run": 22547.0 },
     "Sb-2.json": { "XMLA Read Operation": 2500.0 },
   };
-  // Two DIFFERENT layouts (row-group bands a power of two apart): one built at 8, one only at 64.
-  const out = render([at("8", "a-1.json", 9), at("64", "b-2.json", 80)], ledger(led));
+  // Two DIFFERENT profiles — one sorted, one not — of which only the unsorted one was built at 8.
+  // It has to be a declared difference: `vcores` is not in the key and neither is the shape, so two
+  // runs of ONE profile at two core counts are one row, which is what `ETL_VCORES` filters WITHIN.
+  const out = render([at("8", "a-1.json"), at("64", "b-2.json", { sorted: "true" })], ledger(led));
   const t = layoutTable(out);
   assert.equal(t.length, 1, "the 64-core-only layout is not a row");
   assert.equal(t[0].cu, "1,500", "the surviving row is the one built at 8");
@@ -2471,7 +2508,7 @@ test("a layout never built at ETL_VCORES leaves the section, and is NAMED as exc
   assert.ok(/never built at 8 vCores/.test(text), text.slice(0, 400));
 
   // NOTHING EXCLUDED MEANS NOTHING SAID.
-  const all8 = render([at("8", "a-1.json", 9), at("8", "b-2.json", 80)], ledger(led));
+  const all8 = render([at("8", "a-1.json"), at("8", "b-2.json", { sorted: "true" })], ledger(led));
   assert.ok(!/layouts? not shown/.test(plain(all8)), "no caveat where nothing was cut");
   assert.equal(layoutTable(all8).length, 2);
 
@@ -2709,7 +2746,10 @@ test("every run a summary drew from has a row of its own", () => {
   // already what the sort order and the `built` column say.
   assert.ok(body[1].startsWith("| duckrun |"), body[1]);
   assert.ok(body[1].includes("| 2,400.0 |"), `the older run's own number: ${body[1]}`);
-  assert.ok(layoutTable(html).some((r) => r.cu === "2,400"), "which is a layout row of its own");
+  // THIS IS WHY THE TABLE HAS TO EXIST. Both runs are one dispatch profile, so the layout row quotes
+  // their MEDIAN and neither run's own figure appears there — 2,000 against 1,600 and 2,400. The only
+  // place a summarised run is visible as itself is here.
+  assert.deepEqual(layoutTable(html).map((r) => r.cu), ["2,000"]);
 });
 
 test("the run rows and Cost by engine quote the same numbers", () => {

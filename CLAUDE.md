@@ -795,8 +795,10 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   It lives under `layout.ordering`, a sibling of `stats`/`encodings` — **never in `layout.config`**,
   whose every key `variant()` walks into a dashboard column name: a MEASURED value there would split
   an engine's column and its layout bar every time the parquet moved. The dashboard does not read it
-  at all yet, deliberately — `layoutKey`'s `sorted` element is still the DECLARED flag, and making
-  it measured would re-band every historical run against a value none of them recorded.
+  at all yet, deliberately — `layoutKey` is the DECLARED write config throughout (its one measured
+  element is V-Order, and only as a declared-vs-measured detector), so a measured sort element would
+  be the single exception to that rule and would re-key every historical run against a value none of
+  them recorded.
 - **V-Order only affects files written after it, so an incremental leg flips over slowly.** There
   is no model-level equivalent and no way to retrofit it in place; `OPTIMIZE … VORDER` or a
   rewrite is what moves parquet already on disk. `benchmark/README.md`'s snapshot table predates
@@ -980,8 +982,9 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   column, while the 16M history keeps the column it has. Had the baseline read the default, a 2M run
   would have recorded `None`, shared a column with the 16M history, and `columnsFor` — latest run per
   column — would have hidden nine runs of 9-RG history behind one 72-RG run, with the bars still
-  separating so nothing looked broken. `layoutKey` bands the MEASURED row-group count and carries the
-  sort column list, so 72 RG and 9 RG can never merge and neither can two sort keys. **Do not "tidy"
+  separating so nothing looked broken. `layoutKey` carries the DECLARED `row_group_size` and the sort
+  as dispatched, so 2M and the 16M baseline can never merge and neither can two sort keys — note that
+  is the declaration doing the work, not the 72-vs-9 row groups it produced. **Do not "tidy"
   the baseline to match this new default** — that is the trap, and `test_sort_key.py` pins it.
   Read a jump in the layout table as the defaults changing, and check the record's `inputs` block
   before calling it a regression.
@@ -1776,7 +1779,8 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   count is a poor NAME even when it is the real subject, so the shape sits underneath where it
   explains why two writers would ever share a group. **Only ROW GROUPS are printed** — segments
   are what drive Direct Lake's transcode/scan cost and the file count was a second number saying
-  less; the file BAND still separates groups, it just is not printed. **A sorted group names
+  less. A count that differs across a group's runs prints as a RANGE (`58–68 RG`) — the group is one
+  dispatch config, so that spread is the writer not repeating itself. **A sorted group names
   its sort columns** (`date, time · 9 RG`), **and that key comes off the RECORD — never a constant
   here.** THE KEY IS A PROPERTY OF THE COMMIT: the model declared `['date','time','DUID']` for a
   while and `['date','time']` since, so a constant in `app.js` is right only for today's model, and
@@ -1791,28 +1795,30 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   `sorted`. The five records predating `declared_sort_key()` were **backfilled** from the model at
   the SHA each ran; the two `'auto'` ones were deliberately left alone, their scrape being the better
   source.
-  **THE LABEL AND THE KEY ARE NOW TWO FUNCTIONS, AND MERGING THEM BACK IS THE BUG.** `sortKeyOf`
-  GROUPS and reads either spelling — unchanged, and it must keep reading `sort_by_auto`, because
-  duckrun's picker answers **per dataset** (`pickup_date, VendorID, store_and_fwd_flag, payment_type`
-  on the taxi mart against `date, time` on aemo's) so two `auto` runs can write genuinely different
-  parquet; keying both to the string `auto` would pour two layouts into one row and print a median
-  neither measured. `sortLabelOf` PRINTS, prefers the DECLARED key, and falls back to the bare word
-  **`auto`** rather than the resolved list: the list is duckrun's answer, not the dispatch's
-  question, and four columns across a cell whose neighbours read `V-Order` and `—` is the whole
-  column width spent on something nobody asked for.
-  **AN `auto` RUN GETS ITS OWN LAYOUT ROW, and this is the ONE place `layoutKey` separates two runs
-  whose parquet matches.** `sortElement` prefixes the resolved columns with `auto:`, so the picker's
-  runs never merge into a hand-dispatched row that resolved the same way. The reason is that
-  comparing them IS the question: on aemo the picker answers `date,time`, which five dispatches also
-  declared by hand, so a merged row averaged the picker's three runs into theirs and neither `auto`
-  nor its cost was readable anywhere on the page. Split, aemo reads
-  `auto · 5.8–7.6M · 777–778 MB · 3` beside `date, time · 6.0M · 778–779 MB · 5` — which is the
-  finding (the picker matches the hand key on that mart) stated as two rows instead of hidden in one.
-  Two weaker versions were tried first and both failed the same way, by making that question
-  unanswerable: dropping `auto` where a declared key existed hid the picker's aemo runs completely,
-  and printing `auto / date, time` put two spellings in one cell above numbers that were their mean.
-  The resolved columns stay IN the key — `auto:` is a PREFIX, never a replacement — because the
-  picker answers per dataset and two auto runs that resolved differently must not merge.
+  **THE LABEL AND THE KEY ARE ONE FUNCTION AGAIN — `sortLabelOf` — AND SPLITTING THEM WAS THE BUG.**
+  They were two for a release: `sortLabelOf` printed `auto` while `sortKeyOf` grouped on the columns
+  duckrun's picker had RESOLVED to, on the reasoning that the picker answers **per dataset**
+  (`pickup_date, VendorID, store_and_fwd_flag, payment_type` on the taxi mart against `date, time` on
+  aemo's) so two `auto` runs can write genuinely different parquet. They can, and it does not follow.
+  **MEASURED, on nyc: six duckrun runs dispatched with IDENTICAL config** — `sorted`,
+  `row_group_size: auto`, `file_size_mb: auto` — **rendered as THREE rows**, because the picker
+  answered `…payment_type` twice, `…, tip_amount` three times and `…, fare_amount` once, landing at
+  68 / 63 / 58 row groups and 8,591 / 7,950 / 7,251 MB. Every printed cell on those three rows was
+  identical (`delta_rs`, `auto`, `yes`), so the table showed a split it could not explain, over a
+  distinction nobody had dispatched. `auto` is ONE profile however the picker answers on a given
+  night; the resolved columns are its ANSWER, they stay in `dbt.<engine>.sort_by_auto`, and a picker
+  that moves between nights is the picker being unstable rather than a second layout somebody ordered.
+  **A DECLARED KEY STILL BEATS A RESOLVED ONE, which is what keeps the picker out of a hand-dispatched
+  row.** On aemo the picker answers `date,time` and five dispatches declared exactly that: `auto` and
+  `date, time` are two rows, because "what does auto choose, and what does it cost?" is answerable
+  only while they stay apart. That much of the old arrangement survives — what is gone is splitting
+  `auto` against ITSELF.
+  **WHAT THE MERGE COSTS IS PAID IN THE OPEN.** A row can now hold parquet that genuinely differs, and
+  its CU and query times are a median across it — so `keyCells` prints the RG, row-group-size and MB
+  cells as SPANS and the page states the rule under the table. nyc's row reads
+  `auto · 8.7–10.2M · 7,251–8,596 MB · 6 runs`, which says the picker is unstable and roughly by how
+  much; three rows reading `auto` said nothing at all. The median over six runs is also the sturdier
+  number.
   **Build CU stays keyed per COLUMN** — `Cost by engine` — because there the writer and the
   compute it was given are the entire subject.
   What forced the layout keying: duckrun at 64 cores and at 32 wrote 4 files and 27 row groups either
@@ -1830,47 +1836,45 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   the mean**, and four of nine groups are that thin — it dampens an outlier once there are three
   samples, and only more dispatches make one trustworthy. min/max are still measured and stated in
   `Every run`'s per-run rows, so the median is what the page claims and the spread stays checkable.
-  **Grouping is MEASURED, labelling is DECLARED — with ONE stated exception.** The key is
-  `(V-Order, band(row groups), sort columns, ENGINE)`, the first two from the parquet as `stats.py`
-  read it. **Two engines never share a bar** — a reversal of the older "Power BI never sees the
-  engine" reading, which holds only if the key captures everything Power BI can tell apart, and it
-  does not: there is no SIZE element, so duckrun at 777–1,006 MB merged with `spark
-  readHeavyForSpark` at 1,235 MB under the label `duckrun, spark readHeavyForSpark`; the caption comes
-  from `LAYOUT_CONFIG` so it does not re-word itself whenever a record lands. The sort element is
-  the resolved COLUMN LIST, not a boolean, so two sorts on different keys never share a bar — the
-  `['date','time','DUID']` and `['date','time']` runs split by file band today only by luck.
-  **IT GROUPS RUNS, NOT COLUMNS, and that was got wrong for one release.** A column is
-  `(engine, config)` and the layout is measured per RUN, so two runs of one column can write different
-  parquet — which is not hypothetical: `duckrun·64c+sorted` wrote **3 files / 26 RG** under an explicit
-  `sort_by=['date','time','DUID']` (run 30805417412) and **4 files / 25 RG** under the `sort_by='auto'`
-  the picker resolved to `['date','time']` (run 30809945203). `layoutGroups` keyed the COLUMNS and
-  `spreadFor` then poured every run of each into one entry, so those two landed together valued at
-  their mean — **2,041.8, a number neither run measured** — described as `4 files · 25 RG` from the
-  newer record alone, because `layoutLabel` ranged over columns too. Per run they are two entries
-  sharing the writer `duckrun sorted`, at 2,454.1 and 1,629.5, and the shape is what tells them apart.
-  Two rows with one writer is the correct output, not a defect to tidy: the writer answers who wrote
-  it and the key answers what. A run whose record carries no file count falls back to its COLUMN
-  rather than to a group of its own — the "two unmeasured layouts are not one layout" rule below is about two
-  different columns and still holds, but one column's own runs must not split into a bar each with no
-  caption able to say why.
-  **`sorted` is the exception and it is DECLARED**, because nothing in `stats.py` measures sort
-  ORDER — there is no column for it, so the config the run recorded is the only witness that the
-  parquet differs. It earns its place the same way V-Order does (a write-time reordering of what
-  Power BI transcodes; V-Order is already element `[0]`), and leaving it out is not neutral: the
-  `sort_by='auto'` duckrun run wrote **4 files either way** and moved 27 → 25 row groups, i.e. the same
-  bands, so it would have shared a bar with the unsorted run and had its cold/warm/hot means averaged in —
-  destroying the comparison the flag exists to make. A record with no `sorted` key groups WITH an
-  unsorted run rather than opening its own bar: all 13 pre-input records demonstrably wrote unsorted
-  parquet, so absence here is not the "unmeasured" case below. If this ever needs to become
-  measured, per-file `date` min/max from the Delta log says whether files cover disjoint date ranges,
-  which is what a date sort actually produces.
-  **Banded to powers of two, never exact** — exact
-  equality splits dwh's own two runs from each other (78 files and 80, same writer, incremental
-  drift) and splits duckrun on 1.1 MB of size. Accepted cost: 15 row groups and 17 land in different
-  bands. A record with no file count keys to `None` and keeps its own bar — two UNMEASURED layouts
-  are not one identical layout, and merging them would claim Power BI cannot distinguish two things
-  nobody looked at.
-  It surfaced two things the old chart hid: V-Order on and off sit in the SAME file band and differ
+  **THE KEY IS WHAT WAS DISPATCHED, NOT WHAT CAME OUT — this REVERSES "grouping is MEASURED,
+  labelling is DECLARED", which held only while no dispatched knob had a moving ANSWER.**
+  `layoutKey` is `(engine, resource_profile, sort as dispatched, row_group_size, file_size_mb,
+  vorder DECLARED, vorder MEASURED)` — every element off `layout.config.<engine>` except the last.
+  It used to read the parquet: a power-of-two BAND of the row-group count plus the picker's resolved
+  columns. `layoutBand`, `sortElement` and `sortKeyOf` are all deleted with that reading; see the nyc
+  measurement above for what it cost.
+  **`vcores` and `native_execution_engine` stay out, and that is measured**: duckrun wrote 4 files /
+  27 row groups at 64 cores and at 32, and spark wrote one layout with NEE on and off.
+  **THE LAST ELEMENT IS MEASURED AND IT IS A DETECTOR, NOT A DIMENSION.** `vorderOf` agrees with the
+  declared config on every record in `history/` — spark's profile decides it, dwh's input decides it,
+  the DuckDB pair has no V-Order encoder — so it opens no rows today. What it buys is that a dwh run
+  declaring `vorder: true` whose **irreversible** `ALTER` silently did nothing keys as `(true, false)`
+  and gets a row of its own, rather than joining either cohort under a cell that reads like the other.
+  Keyed on the declaration alone it would join the runs that MEANT to V-Order; on the readback alone,
+  the ones that really did not.
+  **THERE IS NO UNMEASURED CASE AND NO `null` KEY.** A record with no config recorded is a
+  default-profile run, which is a real key — and the geometry reads the same way, because `stats.py`
+  records `row_group_size`/`file_size_mb` only when they differ from the pinned `16000000` baseline,
+  so an absent one means the baseline for every record ever written. That deletes `layoutGroups`'
+  fallback-to-column path along with it.
+  **IT STILL GROUPS RUNS, NOT COLUMNS.** A column is `(engine, config)` where `config` is
+  `variant()`'s — it carries `vcores`, which does not reach the parquet, and drops the geometry, which
+  does. Runs are the grain the write config is recorded at.
+  **Two engines never share a row** — the engine leads the key. This is a reversal of the older
+  "Power BI never sees the engine" reading, which holds only if the key captures everything Power BI
+  can tell apart: it does not, and duckrun at 777–1,006 MB once merged with `spark readHeavyForSpark`
+  at 1,235 MB under the label `duckrun, spark readHeavyForSpark`.
+  **`sorted` and the geometry are DECLARED and always were**, because nothing in `stats.py` measures
+  sort ORDER — the config the run recorded is the only witness that the parquet differs. Leaving
+  `sorted` out is not neutral: the `sort_by='auto'` duckrun run wrote **4 files either way** and moved
+  27 → 25 row groups, so it would have shared a row with the unsorted run and had its cold/warm/hot
+  averaged in. A record with no `sorted` key groups WITH an unsorted run: all 13 pre-input records
+  demonstrably wrote unsorted parquet, so absence there is history, not a hole.
+  **The old banding is gone and nothing replaces it.** Powers of two absorbed incremental drift (78
+  files and 80, same writer, one more run) at the cost of a boundary — 15 row groups and 17 landed in
+  different bands — and could not absorb a picker answering three ways. A key that never reads the
+  parquet absorbs both and has no boundary to explain.
+  It surfaced two things the old chart hid: V-Order on and off sit at a similar row-group size and differ
   2.8× (1,332 against 3,769), which is the sharpest experiment on the page; and NEE on and off
   produce the same layout, so the gap between them was never an NEE effect.
 - **A LAYOUT ROW IS A WRITER, and `producer()` decides what that means.** `spark V-Order`,
@@ -1957,7 +1961,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   shout for nothing; named, it is strictly sharper ("duckrun wrote 143,980,960 against the current
   143,980,961"). Do not quiet this down.
   Two behaviours that are deliberate: a run recording **no** count is KEPT (unmeasured is a different
-  claim from different — the same distinction `layoutKey` makes by keying `null` to its own bar), and
+  claim from different, and dropping it would delete a run over a question nobody asked it), and
   with no reference anywhere **nothing** is filtered rather than everything vanishing. `?record=`
   bypasses it entirely, because pinning a run means asking for that run.
   **The failure mode, stated on the page as well as here:** the filter cannot tell "the source grew"

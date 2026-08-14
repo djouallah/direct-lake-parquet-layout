@@ -411,42 +411,39 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   never sees the engine — it opens parquet through Direct Lake and transcodes row groups — so what a
   query costs belongs to what was WRITTEN, and the writer is metadata. The row is named for its
   writer; the `ordering` and `row group size` cells are what tell two rows of one writer apart.
-  **Grouping is MEASURED, labelling is DECLARED.** The key is
-  `(V-Order, power-of-two band of files, power-of-two band of row groups, sort columns)` read off
-  the parquet as `stats.py` saw it, so two unrelated engines that wrote the same shape *do* share a
-  row. The sort element is the run's own COLUMN LIST, not a boolean, so two sorts on different keys
-  can never merge — the `['date','time','DUID']` and `['date','time']` runs split by file band today
-  only by luck. **The columns come off the RECORD, never a constant here**: the key is a property of
-  the COMMIT, and the model declared `['date','time','DUID']` for a while and `['date','time']`
-  since. Two spellings are read, both legitimate: `dbt.<engine>.sort_by` is what the run DECLARED
-  (`stats.py`), `dbt.<engine>.sort_by_auto` what duckrun's picker RESOLVED (`fabric_run.py`'s log
-  scrape, the only witness for an `'auto'` run).
-  **What is GROUPED and what is PRINTED differ, on purpose.** `sortKeyOf` groups on the resolved
-  columns — the picker answers per dataset, so two `auto` runs can write different parquet and must
-  not merge. `sortLabelOf` prints, and an `auto` run's cell reads just **`auto`**: the resolved list
-  is duckrun's answer rather than the dispatch's question, and on the taxi mart it is four columns
-  wide (`pickup_date, VendorID, store_and_fwd_flag, payment_type`) in a cell whose neighbours read
-  `V-Order` and `—`.
-  **An `auto` run also gets its own ROW** — `sortElement` prefixes the key with `auto:`, the one
-  place `layoutKey` separates two runs whose parquet matches. Comparing the picker against a hand key
-  is the question, and on aemo they resolve identically (`date,time`), so merging them averaged the
-  picker's runs into the hand row and left neither readable. Split, aemo prints
-  `auto · 5.8–7.6M · 777–778 MB · 3` beside `date, time · 6.0M · 778–779 MB · 5`.
-  **It groups RUNS, not columns, and that distinction is load-bearing.** A column is
-  `(engine, config)`, so two of its runs can write different parquet — `duckrun·64c+sorted` wrote
-  3 files / 26 row groups under an explicit `sort_by=['date','time','DUID']` and 4 files / 25 under
-  the `sort_by='auto'` the picker resolved to `['date','time']`. Grouping the columns and averaging
-  every run of each put those two together at their mean (2,041.8 — a number neither run measured),
-  described by only the newer one's shape. Per run they are two rows sharing a writer, and the key
-  cells are what tell them apart. A run with no file count at all falls back to its column rather
-  than to a row of its own — two *unmeasured* layouts are still never merged, but one column's own
-  runs are not split with nothing able to say why.
-  Banded, not exact: exact equality splits dwh's own two runs from each other (78 files and 80) and
-  splits duckrun on 1.1 MB of size. The accepted cost is the boundary — 15 row groups and 17 land in
-  different bands. A record with **no** file count keys to `null` and keeps a row of its own.
-  It surfaces two things a per-engine view hid: V-Order on and off sit in the same file band and
-  differ 2.8x (1,332 against 3,769), the sharpest experiment on the page; and NEE on and off produce
-  the same layout, so the gap between them was never an NEE effect.
+  **A ROW IS THE WRITE CONFIG THAT WAS DISPATCHED, not the parquet that came out.** The key is
+  `(engine, resource profile, sort as dispatched, row_group_size, file_size_mb, V-Order declared,
+  V-Order measured)` — every element off `layout.config.<engine>` but the last. `vcores` and the NEE
+  flag stay out because two runs each showed they never reach the parquet.
+  **This REVERSES "grouping is MEASURED, labelling is DECLARED"**, which the page followed while the
+  key was `(V-Order, band of files, band of row groups, resolved sort columns)` read off the parquet.
+  What broke it: `auto` leaves the sort columns to duckrun's picker, and the picker does not always
+  answer the same way. Six nyc runs dispatched with identical config rendered as **three rows** —
+  the picker chose `…payment_type` twice, `…, tip_amount` three times and `…, fare_amount` once,
+  landing at 68 / 63 / 58 row groups — with every printed cell on those rows identical. A split the
+  table could not explain, over a distinction nobody had dispatched.
+  **The sort comes off the RECORD, never a constant here**: the model declared `['date','time','DUID']`
+  for a while and `['date','time']` since. Two spellings are read, both legitimate:
+  `dbt.<engine>.sort_by` is what the run DECLARED (`stats.py`), `dbt.<engine>.sort_by_auto` what the
+  picker RESOLVED (`fabric_run.py`'s log scrape, the only witness for an `'auto'` run). An `auto` run
+  reads and keys as `auto`; a declared key wins over a resolved one, so the picker's runs still never
+  merge into a hand-dispatched row — on aemo both resolve to `date,time` and they are two rows,
+  because "what does auto choose, and what does it cost?" is answerable only while they stay apart.
+  **What the merge costs is paid in the open.** A row can hold parquet that genuinely differs, so the
+  `row group size`, `RG` and `MB` cells print as SPANS and its CU and times are the MEDIAN over its
+  runs. nyc reads `auto · 8.7–10.2M · 7,251–8,596 MB · 6 runs`, which states the picker's instability
+  and roughly its size; three rows reading `auto` stated nothing.
+  **It groups RUNS, not columns.** A column is `(engine, config)` where `config` is `variant()`'s — it
+  carries `vcores`, which does not reach the parquet, and drops the geometry, which does.
+  **There is no unmeasured case.** A record with no config recorded is a default-profile run, and an
+  absent `row_group_size` means the pinned `16000000` baseline (`stats.py` records it only when it
+  differs), so nothing keys to `null` and there is no fallback-to-column path.
+  **The old power-of-two banding is gone and nothing replaces it.** It absorbed incremental drift (78
+  files and 80) at the cost of a boundary — 15 row groups and 17 landed apart — and could not absorb
+  a picker answering three ways; a key that never reads the parquet absorbs both.
+  It surfaces two things a per-engine view hid: V-Order on and off differ 2.8x (1,332 against 3,769),
+  the sharpest experiment on the page; and NEE on and off produce the same layout, so the gap between
+  them was never an NEE effect.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
   speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
   dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run
