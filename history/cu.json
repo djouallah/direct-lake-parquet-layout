@@ -2232,10 +2232,11 @@
    "XMLA Read Operation": 5326.656
   },
   "C8E333C0-58C6-4242-8320-327D4F312156": {
-   "OneLake Iterative Read via Proxy": 4.878,
-   "OneLake Other Operations": 0.125,
+   "OneLake Iterative Read via Proxy": 5.366,
+   "OneLake Other Operations": 1.518,
    "OneLake Other Operations Via Redirect": 0.281,
-   "OneLake Write via Proxy": 12.52,
+   "OneLake Read via Proxy": 3.359,
+   "OneLake Write via Proxy": 47.317,
    "OneLake Write via Redirect": 6.829
   },
   "C9AE3F60-3DC3-4FE8-893F-2BF40E699FC7": {
@@ -4323,6 +4324,14 @@
    "since": "2026-08-02T21:00:00",
    "timed": 489,
    "unfound": 31
+  },
+  {
+   "at": "2026-08-14T15:22:20+00:00",
+   "changed": 4,
+   "items": 489,
+   "since": "2026-08-02T21:00:00",
+   "timed": 489,
+   "unfound": 32
   }
  ],
  "schema": 2,
@@ -6524,10 +6533,11 @@
    "XMLA Read Operation": 138.034
   },
   "C8E333C0-58C6-4242-8320-327D4F312156": {
-   "OneLake Iterative Read via Proxy": 0.027,
-   "OneLake Other Operations": 0.006,
+   "OneLake Iterative Read via Proxy": 0.028,
+   "OneLake Other Operations": 0.017,
    "OneLake Other Operations Via Redirect": 0.009,
-   "OneLake Write via Proxy": 0.016,
+   "OneLake Read via Proxy": 0.004,
+   "OneLake Write via Proxy": 0.029,
    "OneLake Write via Redirect": 0.003
   },
   "C9AE3F60-3DC3-4FE8-893F-2BF40E699FC7": {
@@ -7209,5 +7219,5 @@
    "OneLake Write via Redirect": 0.033
   }
  },
- "updated": "2026-08-14T15:13:33+00:00"
+ "updated": "2026-08-14T15:22:20+00:00"
 }
