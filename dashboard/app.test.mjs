@@ -4011,15 +4011,19 @@ test("landing CU never reaches the table", () => {
   assert.equal(r.storage, 0, "landing and its endpoint are skipped, exactly as runCu skips them");
 });
 
-test("the ratios are writeHeavy against readHeavyForPBI, per dataset", () => {
+test("the % columns read against the dataset's writeHeavy row — the default profile", () => {
   const rows = [
-    { dataset: "aemo", profile: "readHeavyForPBI", build: 33_432, directlake: 1_514 },
-    { dataset: "aemo", profile: "writeHeavy", build: 35_310, directlake: 3_769 },
+    { dataset: "aemo", profile: "readHeavyForPBI", build: 33_098, directlake: 1_618 },
+    { dataset: "aemo", profile: "writeHeavy", build: 35_813, directlake: 3_903 },
   ];
-  const q = prof.ratios(rows, "aemo");
-  assert.ok(Math.abs(q.build - 1.056) < 0.001, `${q.build}`);
-  assert.ok(Math.abs(q.directlake - 2.489) < 0.001, `${q.directlake}`);
-  assert.equal(prof.ratios(rows, "nyc"), null, "a dataset with no pair states nothing");
+  const t = prof.renderProfileTable(rows);
+  assert.match(t, /`readHeavyForPBI` \| \*\*33,098\*\* \| 92% \| \*\*1,618\*\* \| 41% /);
+  assert.match(t, /`writeHeavy` \| \*\*35,813\*\* \| 100% \| \*\*3,903\*\* \| 100% /);
+  assert.doesNotMatch(t, /builds at/, "the prose paragraph is replaced by the % columns");
+  assert.equal(prof.baseline(rows, "nyc"), null, "a dataset with no writeHeavy run has no baseline");
+  // No baseline — the % cells are dashes, never 0%: a percent of nothing is not a number.
+  const lone = prof.renderProfileTable([rows[0]]);
+  assert.match(lone, /\*\*33,098\*\* \| — \| \*\*1,618\*\* \| — /);
 });
 
 test("inject replaces between the markers and is idempotent", () => {
