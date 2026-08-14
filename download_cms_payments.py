@@ -232,8 +232,32 @@ PAYER_COLUMNS = [PAYER_ID,
                  "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country"]
 
 
+# ⚠️ CMS SERVES DATES AS MM/DD/YYYY, AND A PLAIN `CAST(x AS DATE)` THROWS ON EVERY ROW:
+#   Conversion Error: invalid date field format: "06/27/2023", expected format is (YYYY-MM-DD)
+# Verified against the real PY2023 file, and it applies to BOTH date columns. Two ways this hides:
+# `read_csv(all_varchar = true)` means DuckDB never gets a chance to infer the format, and a probe
+# written as `SELECT count(*) FROM (SELECT CAST(...) FROM ...)` PASSES because the projection is
+# pruned away — which is exactly how this survived a first look. Force the value out (max(), or a
+# GROUP BY) before believing a cast works.
+#
+# try_strptime, not strptime: an unparseable date then yields NULL and the row lands under
+# `cms_<year>-00` rather than raising and taking a whole multi-GB program year with it. Measured 0
+# unparseable in 187,750 rows of PY2023, so this is the guard rather than the expected path.
+DATE_FORMAT = "%m/%d/%Y"
+
+
 def canonical_type(col):
     return CANONICAL.get(col, "VARCHAR")
+
+
+def canonical_expr(col):
+    """The SELECT-list expression that lands `col` in its canonical type.
+
+    A per-column EXPRESSION rather than a type, because the two DATE columns need parsing and
+    everything else needs a plain cast."""
+    if CANONICAL.get(col) == "DATE":
+        return f"""CAST(try_strptime("{col}", '{DATE_FORMAT}') AS DATE) AS "{col}\""""
+    return f'CAST("{col}" AS {canonical_type(col)}) AS "{col}"'
 
 
 dr = duckrun.connect(FILES_PATH, read_only=False)
@@ -406,15 +430,36 @@ def land_year(year, source_filename, url):
             return []
 
         q = csv_path.replace("\\", "/")
-        select = ", ".join(f'CAST("{c}" AS {canonical_type(c)}) AS "{c}"' for c in CORE_COLUMNS)
+        select = ", ".join(canonical_expr(c) for c in CORE_COLUMNS)
         # ONE pass over the CSV — the expensive part — writing DuckDB's own hive partitions, then a
         # cheap consolidation per month below. `columns` is left to the default: this is the LANDING
         # format, not a layout under test, and a hand-picked row-group size here would be a second,
         # invisible geometry knob upstream of the one the dispatch controls.
+        #
+        # ⚠️ `_ym` PARSES Date_of_Payment ITSELF, and the expression in `select` above does NOT
+        # reach it. read_csv(all_varchar=true) means every column arrives VARCHAR, and DuckDB
+        # resolves a select-list column reference against the FROM rather than against a sibling
+        # alias — so `strftime("Date_of_Payment", …)` here saw the raw VARCHAR and failed to bind:
+        #   Could not choose a best candidate function for strftime(VARCHAR, STRING_LITERAL)
+        # That killed run 31810902120 after a 5.95 GB download had already been paid for. It is
+        # unreachable from a model render check, because it is this script's SQL, not a model's —
+        # `test_cms_landing_sql.py` executes this exact statement against a synthetic CSV instead.
+        #
+        # It must also use the same MM/DD/YYYY parse as canonical_expr(), or the partition and the
+        # stored date disagree about which month a row belongs to — silently, since both would
+        # still be valid dates. `02/03` is the cheap check: 3 February under %m/%d, 2 March under
+        # %d/%m.
+        #
+        # NULL is ROUTED, not dropped: an unparseable date would otherwise land in
+        # __HIVE_DEFAULT_PARTITION__, be skipped, and REFUSE the whole program year over one bad
+        # row. `cms_<year>-00` is a real landed file whose name says "no month", so the
+        # reconciliation stays exact and nothing is silently lost.
         con.sql(f"""
             COPY (
               SELECT {select},
-                     strftime("Date_of_Payment", '%Y-%m') AS _ym
+                     COALESCE(strftime(CAST(try_strptime("Date_of_Payment",
+                                                         '{DATE_FORMAT}') AS DATE), '%Y-%m'),
+                              "Program_Year" || '-00') AS _ym
               FROM read_csv('{q}', header = true, all_varchar = true,
                             strict_mode = false, parallel = true)
             ) TO '{part_dir.replace(chr(92), '/')}'
@@ -431,9 +476,15 @@ def land_year(year, source_filename, url):
                 continue
             ym = entry.removeprefix("_ym=")
             if ym in ("", "__HIVE_DEFAULT_PARTITION__"):
-                # A NULL Date_of_Payment has no month to belong to. Rows are not silently dropped:
-                # the reconciliation below counts them missing and refuses the whole year.
+                # Unreachable while the COALESCE above holds — kept so that if it ever stops
+                # holding, the rows are counted missing and the year is REFUSED, rather than
+                # silently dropped and the archive quietly short.
+                print(f"  WARN {year}: rows in {entry!r} have no month and are not landed; "
+                      f"the reconciliation below will refuse this year", flush=True)
                 continue
+            if ym.endswith("-00"):
+                print(f"  WARN {year}: some rows have an unparseable Date_of_Payment and are "
+                      f"landed as cms_{ym}; they will carry a NULL date in the fact", flush=True)
             stem = f"cms_{ym}"
             dst = os.path.join(out_dir, stem + ".parquet")
             src_glob = os.path.join(part_dir, entry, "*.parquet").replace("\\", "/")
