@@ -1877,6 +1877,30 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   It surfaced two things the old chart hid: V-Order on and off sit at a similar row-group size and differ
   2.8× (1,332 against 3,769), which is the sharpest experiment on the page; and NEE on and off
   produce the same layout, so the gap between them was never an NEE effect.
+- **THE LAYOUT TABLES SHOW ONLY duckrun's `auto` — `LAYOUTS_SHOWN`, and it is a DISPLAY rule that
+  drops no data.** duckrun is the only engine here whose write layout can be dispatched, so it
+  accumulates rows nobody else can have: six sort keys across four row-group sizes, **13 of aemo's 18
+  rows**, all of it one writer answering a question about itself, beside five rows that are the
+  cross-engine comparison the page exists to make. The four engines were outnumbered three to one by
+  one of them tuning. aemo now reads 7 rows.
+  **`auto` is the row kept, and not because it wins** — it is what the NIGHTLY dispatches
+  (`duckrun_auto`), so it is the only duckrun layout still being measured; every other row is a frozen
+  sample of whatever the archive looked like the week somebody ran it. Keeping the CHEAPEST instead
+  would put a row nothing refreshes beside engines that are refreshed nightly.
+  **The cost is real and is not hidden:** the sort-key sweep is duckrun's own finding and it leaves
+  these tables, **including the cheapest layout on the aemo page** (`date, time, price` at 2.0M, 1,557
+  CU against `auto`'s 1,738). Every one of those runs keeps its row in **Every run** with its own CU
+  and tiers, `history/` has all of it, and the count is NAMED under the table — the same discipline
+  the `ETL_VCORES` cut and the generation filter follow.
+  **`shownLayouts` is applied ONCE, to the groups all three layout renderers share** (the fit table,
+  the scatter inside it, the mart block), because they are one measurement described three ways;
+  filtering them separately is how a page plots a dot with no row under it.
+  **AN ENGINE IS NEVER THINNED TO NOTHING.** The rule says which of an engine's MANY layouts to keep
+  and only means anything while it HAS that one, so the condition is per engine: a dataset where
+  duckrun never dispatched `auto` keeps every duckrun row it has. Without that guard the filter would
+  erase an engine from a table comparing engines, over a rule about crowding. Keyed by engine, so it
+  changes nyc/bts/green not at all — duckrun is already `auto`-only there, which is the check that it
+  is the right rule rather than an aemo-shaped one.
 - **A LAYOUT ROW IS A WRITER, and `producer()` decides what that means.** `spark V-Order`,
   `spark default`, `duckrun` — not `spark·V-Order+NEE`, not `duckrun·64c`. `LAYOUT_CONFIG` is
   `("resource_profile", "sorted")` and the exclusions are **measured, not tidiness**: duckrun wrote 4

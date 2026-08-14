@@ -612,6 +612,62 @@ test("`auto` is ONE profile however the picker answers — the label IS the key"
   assert.deepEqual(two.map(([, ms]) => d.keyCells(ms).ordering).sort(), ["auto", "date, time"]);
 });
 
+test("duckrun's hand-dispatched sweep leaves the layout table, and the count is NAMED", () => {
+  // WHY THE FILTER EXISTS: duckrun is the only engine whose layout can be dispatched, so it
+  // accumulates rows nobody else can have — six sort keys across four row-group sizes, THIRTEEN of
+  // aemo's eighteen rows. Beside the five that are the cross-engine comparison, the four engines are
+  // outnumbered three to one by one of them tuning. `auto` is the row kept because it is what the
+  // NIGHTLY dispatches, so it is the only duckrun layout still being measured.
+  const mk = (key, file, opts = {}) => {
+    const r = sortedBy(4, 27, key, { file, timings: timings({ q1: [20000, 4000, 3000] }), ...opts });
+    r.items = { [`S${file}`]: gone("semantic_model", "aemo_duckrun"),
+      [`O${file}`]: gone("output", "dbt_delta") };
+    return r;
+  };
+  const runs = [
+    mk(["date", "time"], "a-1.json", { spelling: "sort_by_auto" }),
+    mk(["date", "time", "price"], "b-2.json"),
+    mk(["date", "DUID", "time"], "c-3.json"),
+  ];
+  const out = render(runs, ledger(Object.fromEntries(runs.flatMap((_, i) => {
+    const f = ["a-1.json", "b-2.json", "c-3.json"][i];
+    return [[`S${f}`, { "XMLA Read Operation": 1500 + i * 100 }], [`O${f}`, 1.0]];
+  }))));
+  assert.deepEqual(layoutTable(out).map((r) => r.ordering), ["auto"]);
+  // NAMED, NEVER SILENT — the larger of the section's two cuts, and on aemo it removes the CHEAPEST
+  // layout on the page. A table quietly showing 7 of 18 would read as "these are the layouts".
+  const text = plain(out);
+  assert.ok(/\*\*2\*\* hand-dispatched `delta_rs` layouts not shown/.test(text),
+    text.slice(text.indexOf("Cost and speed"), 1800));
+  assert.ok(/Every run/.test(text), "and it points at where those runs still are");
+  // ...where they are, in full: the filter is a DISPLAY rule and touches no run.
+  assert.equal(rows(block(out, "Every run on this page")).slice(1).length, 3);
+});
+
+test("an engine is never thinned to nothing", () => {
+  // `LAYOUTS_SHOWN` says which of an engine's MANY layouts to keep, which only means anything while
+  // it HAS that one. On a dataset where duckrun never dispatched `auto`, hiding every other row would
+  // erase the engine from a table comparing engines, over a rule about crowding.
+  const groups = d.layoutGroups([
+    { rec: sortedBy(4, 27, ["date", "time", "price"], { file: "a-1.json" }) },
+    { rec: sortedBy(4, 25, ["date", "DUID", "time"], { file: "b-2.json" }) },
+  ]);
+  const { shown, hidden } = d.shownLayouts(groups);
+  assert.equal(shown.length, 2, "no `auto` anywhere, so nothing is thinned");
+  assert.equal(hidden.length, 0);
+  // The condition is PER ENGINE: another engine's rows are never held back by duckrun having an auto.
+  const mixed = d.layoutGroups([
+    { rec: sortedBy(4, 27, ["date", "time"], { spelling: "sort_by_auto", file: "a-1.json" }) },
+    { rec: sortedBy(4, 25, ["date", "time", "price"], { file: "b-2.json" }) },
+    { rec: lay("spark", 11, 11, { vorder: true, cfg: { resource_profile: "readHeavyForPBI" },
+      file: "c-3.json" }) },
+    { rec: lay("dwh", 78, 78, { cfg: { vorder: "true" }, vorder: true, file: "d-4.json" }) },
+  ]);
+  const split = d.shownLayouts(mixed);
+  assert.equal(split.shown.length, 3, "auto, spark and dwh");
+  assert.equal(split.hidden.length, 1, "the hand-dispatched duckrun sort");
+});
+
 test("the declared GEOMETRY splits a row the sort cannot", () => {
   // `auto` at 2M row groups and `auto` at the default are two profiles — the dispatcher turned a
   // knob — even though `ordering` reads `auto` on both. This is the half of the key the layout table

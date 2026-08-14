@@ -444,6 +444,18 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   It surfaces two things a per-engine view hid: V-Order on and off differ 2.8x (1,332 against 3,769),
   the sharpest experiment on the page; and NEE on and off produce the same layout, so the gap between
   them was never an NEE effect.
+- **The layout tables show only duckrun's `auto` (`LAYOUTS_SHOWN`) — a DISPLAY rule that drops no
+  data.** duckrun is the only engine whose write layout can be dispatched, so it accumulates rows
+  nobody else can have: six sort keys across four row-group sizes, 13 of aemo's 18 rows, against five
+  that are the cross-engine comparison. `auto` is the one kept because it is what the NIGHTLY
+  dispatches, so it is the only duckrun layout still being measured — every other row is a frozen
+  sample of the week somebody ran it. The cost is stated rather than hidden: the sweep is duckrun's
+  own finding and it leaves these tables, including the cheapest layout on the aemo page
+  (`date, time, price` at 2.0M, 1,557 CU against `auto`'s 1,738). Those runs keep their rows in
+  *Every run*, `history/` has all of it, and the held count is NAMED under the table. Applied ONCE to
+  the groups the fit table, the scatter and the mart block share, so the three cannot disagree — and
+  **never to the point of erasing an engine**: the condition is per engine, so a dataset where
+  duckrun never dispatched `auto` keeps every duckrun row it has.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
   speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
   dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run

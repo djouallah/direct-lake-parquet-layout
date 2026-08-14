@@ -1070,6 +1070,61 @@ export function vorderOf(rec, table = DEFAULTS.table) {
  * and groups with the other default-profile runs of its engine. That branch existed only because the
  * key used to require a row-group count, and a run whose stats never landed had none.
  */
+/**
+ * The one engine whose layouts are a PARAMETER SWEEP rather than a result, and the one row of it the
+ * page shows: `{engine: sort-as-dispatched}`.
+ *
+ * duckrun is the only engine here whose write layout can be dispatched, so it accumulates rows nobody
+ * else can have — six sort keys across four row-group sizes, thirteen of aemo's eighteen rows, all of
+ * them one writer answering a question about itself. Beside five rows that are the cross-engine
+ * comparison this page exists to make, that is not a table a reader can scan: the four engines are
+ * outnumbered three to one by one of them tuning.
+ *
+ * **`auto` IS THE ROW TO KEEP, and not because it wins.** It is what the NIGHTLY dispatches
+ * (`duckrun_auto`), so it is the only duckrun layout that keeps being measured — every other row is a
+ * frozen sample of whatever the archive looked like the week somebody ran it. Keeping the cheapest
+ * instead would have put a row on the page that nothing is refreshing, ranked against engines that
+ * are.
+ *
+ * **WHAT THIS COSTS, stated because it is not small:** the sort-key sweep is duckrun's own finding and
+ * it leaves the layout tables, including the cheapest layout on the aemo page (`date, time, price` at
+ * 2.0M, 1,557 CU against `auto`'s 1,738). It is not deleted — every one of those runs keeps its row in
+ * **Every run**, with its own CU and its own tiers, and `history/` has all of it. The hidden count is
+ * NAMED under the table, the same discipline the `ETL_VCORES` cut and the generation filter follow.
+ *
+ * Keyed by engine, so it does nothing on nyc/bts/green, where duckrun only ever dispatched `auto` and
+ * the tables are 3-4 rows already.
+ */
+export const LAYOUTS_SHOWN = { duckrun: "auto" };
+
+/**
+ * `{shown, hidden}` — the layout groups the page renders, and the ones `LAYOUTS_SHOWN` held back.
+ *
+ * Applied ONCE, to the groups every layout renderer shares, so the fit table, the scatter and the
+ * mart block cannot disagree about which layouts exist. They are one measurement described three
+ * ways; filtering them separately is how a page ends up plotting a dot with no row under it.
+ *
+ * Reads the KEY, not the records: the engine and the sort are elements `[0]` and `[2]` of
+ * `layoutKey`, so every member of a group agrees on both by construction.
+ */
+export function shownLayouts(groups) {
+  const all = groups || [];
+  // AN ENGINE IS NEVER THINNED TO NOTHING. `LAYOUTS_SHOWN` says which of an engine's MANY layouts to
+  // keep, and that only means anything while it has that one — on a dataset where duckrun was never
+  // dispatched with `auto`, hiding every other row would erase the engine from a table comparing
+  // engines, over a rule about crowding. The condition is per engine, so aemo thins and a dataset
+  // with one duckrun layout keeps it whatever it was dispatched with.
+  const have = new Set(all.filter(([k]) => (k || [])[2] === LAYOUTS_SHOWN[(k || [])[0]])
+    .map(([k]) => k[0]));
+  const shown = [], hidden = [];
+  for (const g of all) {
+    const [engine, , sort] = g[0] || [];
+    const want = LAYOUTS_SHOWN[engine];
+    (want === undefined || !have.has(engine) || sort === want ? shown : hidden).push(g);
+  }
+  return { shown, hidden };
+}
+
 export function layoutGroups(entries, table = DEFAULTS.table) {
   const out = [], seen = new Map();
   for (const entry of entries) {
@@ -2267,7 +2322,8 @@ export function keyCells(members, table = DEFAULTS.table) {
  *
  * Same `martPoints` as the bars and the layout rows, so all three quote the same median.
  */
-export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULTS.table) {
+export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULTS.table,
+  held = []) {
   const measured = martPoints(groups, times).filter((p) => p.cu > 0);
   // A LAYOUT NOBODY BUILT AT `ETL_VCORES` LEAVES THE SECTION, rather than sitting in it with a dash.
   // The alternative was hiding the `etl CU` column while 7 of 17 rows could not fill it, and a cost
@@ -2348,7 +2404,33 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
     cut ? note(`${cut} layout${cut === 1 ? "" : "s"} not shown: never built at `
       + `${ETL_VCORES} vCores, so there is no build cost to compare. Their query numbers are in `
       + `**Every run**. See \`TODO.md\` for what filling them would take.`) : "",
+    // THE SWEEP IS NAMED TOO, and it has to be: it is the larger cut of the two and it removes the
+    // cheapest layout on the aemo page. A table quietly showing 7 of 18 would read as "these are the
+    // layouts", which is the one thing this page must never say. See `LAYOUTS_SHOWN`.
+    heldNote(held, martTable),
   ].filter(Boolean).join("\n");
+}
+
+/**
+ * What `LAYOUTS_SHOWN` held back, said under the table — never a silent filter.
+ *
+ * Names the ENGINE and the number of layouts, and points at the two places the data still is. It
+ * counts LAYOUTS rather than runs because that is what the reader is looking at a table of; the run
+ * count would answer a question the row above it does not ask.
+ */
+function heldNote(held, table = DEFAULTS.table) {
+  if (!held || !held.length) return "";
+  const by = new Map();
+  for (const [key, ms] of held) {
+    const name = producers(ms);
+    by.set(name, (by.get(name) || 0) + 1);
+  }
+  const parts = [...by].map(([name, n]) =>
+    `**${n}** hand-dispatched \`${name}\` layout${n === 1 ? "" : "s"}`);
+  return note(`${parts.join(", ")} not shown — this table compares ENGINES, and one engine tuning `
+    + `its own sort key and row-group size outnumbers them. Only the layout the nightly keeps `
+    + `measuring (\`auto\`) is here. Every one of the others has its own row in **Every run**, with `
+    + `its own CU and tiers.`);
 }
 
 
@@ -3723,7 +3805,10 @@ export function renderPage(cols, runs, ledger, opts = {}) {
       // this is where the ledger is in scope; `martPoints` filters it to one core count.
       etl: classTotal(cells, "etl") });
   }
-  const groups = layoutGroups(anaEntries, martTable);
+  // ONE FILTER, SHARED BY ALL THREE LAYOUT RENDERERS — see `shownLayouts`. The fit table, the
+  // scatter inside it and the mart block are one measurement described three ways, so they take the
+  // same array; `held` is what the note under the table names.
+  const { shown: groups, hidden: held } = shownLayouts(layoutGroups(anaEntries, martTable));
 
   // The mart block and the charts quote the SAME numbers as this table — the same groups, the same
   // members, the same median, all of it through `martPoints`. They are one measurement described
@@ -3748,7 +3833,7 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // claim before restoring one, because a chart restored for a number no table carries is a
   // different argument from the one that removed these.
   out.push(renderFit(groups, times,
-    [...TIERS, ...TIERS_DQ].map(([l]) => l).filter((l) => l in counts), counts, martTable));
+    [...TIERS, ...TIERS_DQ].map(([l]) => l).filter((l) => l in counts), counts, martTable, held));
 
   // The one place the ADAPTERS are named and linked. The chart does not caption them because the
   // column name already implies the adapter — this line is where that implication resolves.
