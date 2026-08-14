@@ -333,8 +333,6 @@ it is never staler than the ledger under it:
 | nyc | `readHeavyForPBI` | **12,068** | 109% | **5,968** | 68% | 10.4M | 5,850 |
 | nyc | `writeHeavy` | **11,052** | 100% | **8,726** | 100% | 10.4M | 9,291 |
 
-Medians per run, each dataset filtered to its largest source generation. `build %` and `query %` are against the dataset's `writeHeavy` row — the workspace default profile — so under 100% is cheaper than the default. `build` is Livy compute + OneLake storage CU; `avg row group` is the mart's rows per row group — the segment size Direct Lake transcodes — and `table size` sums every table the leg wrote, which is what OneLake storage bills for.
-
 V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes, `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes, `writeHeavy` no (bts yes).
 
 <!-- spark-profiles:end -->
