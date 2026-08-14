@@ -1,0 +1,53 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "false",
+  "build": "false",
+  "cores": "8",
+  "dataset": "cms",
+  "download_limit": "1",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "false",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "4E4331C2-643E-4D96-A8DE-19C40B4DA5A9": {
+   "at": "2026-08-14T15:01:04+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_cms_landing",
+   "role": "sql_endpoint"
+  },
+  "C8E333C0-58C6-4242-8320-327D4F312156": {
+   "at": "2026-08-14T15:01:02+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_cms_landing",
+   "role": "landing"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-14T15:01:00+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "run": {
+  "finished": "2026-08-14T15:12:53+00:00",
+  "id": "31812122716",
+  "sha": "f25967a6a2770401ce7f7ec55926437e721ee380",
+  "started": "2026-08-14T14:58:03+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/31812122716"
+ },
+ "schema": 1
+}
