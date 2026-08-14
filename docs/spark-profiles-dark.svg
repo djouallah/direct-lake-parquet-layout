@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="432" viewBox="0 0 920 432" role="img" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
   <line x1="410.36" y1="72" x2="410.36" y2="402" stroke="#4a4a46" stroke-width="1"/>
-  <text x="8" y="30" fill="#ffffff" font-size="20" font-weight="600">Switch Spark to readHeavyForPBI</text>
+  <text x="8" y="30" fill="#ffffff" font-size="20" font-weight="600">Spark readHeavyForPBI</text>
   <text x="8" y="56" fill="#c3c2b7" font-size="14">CU vs the default writeHeavy profile, median per dataset</text>
   <text x="76" y="113.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">aemo</text>
   <text x="158" y="97.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
