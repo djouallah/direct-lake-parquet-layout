@@ -76,18 +76,33 @@ on:
   # Three things to expect from an unattended run. GitHub DISABLES a schedule after 60 days of
   # repository inactivity, silently, and re-enabling is manual. `Capacity units` fires on this
   # workflow completing, which reads CU within a minute of the build finishing — that read is a LOWER
-  # BOUND (a CU hour keeps growing for ~70 minutes) and nothing raises it automatically since that
-  # workflow's own daily cron was removed, so a nightly's CU needs a hand-started `Capacity units`
-  # dispatch to settle.
+  # BOUND (a CU hour keeps growing for ~70 minutes) — and its own 10:17 cron is the settling read,
+  # timed off THIS nightly's start plus its measured duration plus the ~70-minute settle. A run that
+  # finishes after 10:17 (a long nyc night, say) stays a lower bound until the NEXT day's 10:17 read
+  # raises it — `max(old, new)` over a 14-day floor makes that late raise safe.
+  #
+  # **THE NIGHTLY ROTATES THE DATASET BY WEEKDAY — four cron lines, one loop over the surface.**
+  # `github.event.schedule` carries the cron string that fired, which is the ONLY schedule-time
+  # signal a workflow-level `env` expression can branch on (no shell runs there, and expressions
+  # have no arithmetic, so day-of-year-modulo is not expressible where `DATASET` has to live).
+  # The mapping lives in the `DATASET` env chain below and is duplicated in `RUNIN_DATASET` —
+  # the two must stay IDENTICAL, and the comparisons are exact-string against the cron AS WRITTEN
+  # here, whitespace included: editing a cron line without both env chains re-points that weekday
+  # at the fallback dataset (aemo — a real dataset, never blank, so the DATASET-typo trap stays
+  # unreachable). Seven days over four datasets does not divide: green, the smallest and cheapest
+  # build, takes the single Saturday slot.
   #
   # **Every scheduled value is the form default, `cores` included — 8, not the 64 a hand dispatch
-  # usually passes.** 64 is for an interactive run somebody is waiting on; a nightly is not waited
-  # on, so the wall clock does not buy anything worth the vCores. It does mean the nightly opens its
-  # own `duckrun·32c`-style column rather than joining the 64c history — `vcores` is part of
-  # `variant()` — which is correct: 8 and 64 are different machines and the CU rate (`cores / 2`)
-  # says so on the page.
+  # usually passes** — with `dataset` as the one exception, rotating as above. 64 is for an
+  # interactive run somebody is waiting on; a nightly is not waited on, so the wall clock does not
+  # buy anything worth the vCores. It does mean the nightly opens its own `duckrun·32c`-style column
+  # rather than joining the 64c history — `vcores` is part of `variant()` — which is correct: 8 and
+  # 64 are different machines and the CU rate (`cores / 2`) says so on the page.
   schedule:
-    - cron: "17 7 * * *"
+    - cron: "17 7 * * 0,3"   # aemo   Sun+Wed
+    - cron: "17 7 * * 1,4"   # nyc    Mon+Thu
+    - cron: "17 7 * * 2,5"   # bts    Tue+Fri
+    - cron: "17 7 * * 6"     # green  Sat
   workflow_dispatch:
     inputs:
       # THE TWO THAT GET CHANGED: which engine, and how big a machine.
@@ -296,10 +311,20 @@ env:
   # Which dataset every job builds, reads and records. Workflow-level so it reaches EVERY job and
   # step without being threaded one at a time — and so provision.py, fabric_run.py, stats.py,
   # benchmark/engines.py and dbt's own `+enabled` gates all take it from one place. The scheduled
-  # literal is spelled out because the `inputs` context is EMPTY on a schedule event and
+  # values are spelled out because the `inputs` context is EMPTY on a schedule event and
   # workflow_dispatch defaults do NOT apply: `inputs.dataset || 'aemo'` cannot tell an absent input
   # from a deliberate one, and a blank here would disable every model in the project.
-  DATASET: ${{ github.event_name == 'schedule' && 'aemo' || inputs.dataset }}
+  #
+  # ON A SCHEDULE THE DATASET ROTATES BY WEEKDAY — the mapping matches the cron lines at the top of
+  # the file, compared as EXACT strings against `github.event.schedule` (the cron that fired, as
+  # written there). The trailing 'aemo' is both Sun+Wed's value and the fallback for an unmatched
+  # cron — a real dataset, never blank. This chain is duplicated in RUNIN_DATASET below; the two
+  # must stay identical or the record claims a different dataset than the build used.
+  DATASET: ${{ github.event_name != 'schedule' && inputs.dataset
+    || github.event.schedule == '17 7 * * 1,4' && 'nyc'
+    || github.event.schedule == '17 7 * * 2,5' && 'bts'
+    || github.event.schedule == '17 7 * * 6' && 'green'
+    || 'aemo' }}
   AZURE_TRANSPORT_OPTION_TYPE: curl
   CURL_CA_INFO: /etc/ssl/certs/ca-certificates.crt
   DUCKDB_TEMP_DIR: /tmp/duckdb_spill
@@ -384,7 +409,12 @@ jobs:
           # fact, so a dispatch that asked for one dataset and built the other shows up as
           # a contradiction in the record rather than being taken on trust. That is the
           # same shape as dwh_vorder's declared/measured pair.
-          RUNIN_DATASET: ${{ github.event_name == 'schedule' && 'aemo' || inputs.dataset }}
+          # The weekday rotation, DUPLICATED from the workflow-level DATASET chain — keep identical.
+          RUNIN_DATASET: ${{ github.event_name != 'schedule' && inputs.dataset
+            || github.event.schedule == '17 7 * * 1,4' && 'nyc'
+            || github.event.schedule == '17 7 * * 2,5' && 'bts'
+            || github.event.schedule == '17 7 * * 6' && 'green'
+            || 'aemo' }}
           RUNIN_BUILD: ${{ github.event_name == 'schedule' && 'true' || inputs.build }}
           RUNIN_BENCHMARK: ${{ github.event_name == 'schedule' && 'true' || inputs.benchmark }}
           RUNIN_CORES: ${{ github.event_name == 'schedule' && '8' || inputs.cores }}

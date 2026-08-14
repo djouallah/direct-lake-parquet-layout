@@ -1335,6 +1335,13 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   is not a commit, which is why a nightly does not reopen that loop.
   07:17 UTC is 02:17 EST / 03:17 EDT — US Eastern asleep either side of the DST boundary — and 17:17
   in the metrics model's own +10 clock, so a night's results are there to read in the afternoon.
+  **The nightly ROTATES THE DATASET BY WEEKDAY — four cron lines, one per dataset**: aemo Sun+Wed,
+  nyc Mon+Thu, bts Tue+Fri, green Sat (the cheapest build takes the odd single slot). The mapping is
+  `github.event.schedule` compared exact-string against each cron as written, in the `DATASET` env
+  chain and duplicated in `RUNIN_DATASET` — edit a cron line and both chains together, or that
+  weekday falls to the chain's fallback, aemo (a real dataset, never blank, so the DATASET-typo trap
+  stays unreachable). The scheduled sort stays `duckrun_auto` → `auto`, which is dataset-neutral, so
+  rotation never trips `plan`'s sort-key-vs-mart refusal.
   ⚠️ **On a `schedule` event the `inputs` context is EMPTY and `workflow_dispatch` defaults do NOT
   apply**, so every input in that file carries its own scheduled value spelled
   `github.event_name == 'schedule' && '<value>' || inputs.<name>`. Never `inputs.x || 'default'`:
