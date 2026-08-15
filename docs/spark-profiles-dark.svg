@@ -28,8 +28,8 @@
   <rect x="431.84" y="340" width="105.79" height="22" rx="3" fill="#3987e5"/>
   <text x="546.63" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.2× cheaper</text>
   <text x="158" y="385.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="431.84" y="370" width="52.76" height="22" rx="3" fill="#3987e5"/>
-  <text x="493.6" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−9%</text>
+  <rect x="431.84" y="370" width="52.6" height="22" rx="3" fill="#3987e5"/>
+  <text x="493.45" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−9%</text>
   <text x="76" y="457.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">green</text>
   <text x="158" y="441.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
   <rect x="431.84" y="426" width="20.36" height="22" rx="3" fill="#3987e5"/>
