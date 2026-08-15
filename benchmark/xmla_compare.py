@@ -465,11 +465,21 @@ GREEN_QUERIES = [
 # CMS Open Payments — the WIDE and SPARSE suite.
 #
 # THIS SUITE HAS ONE THING THE OTHER FOUR DO NOT: A MATCHED SPARSE PAIR. probe_product_head and
-# probe_product_tail are the SAME column family, the same semantic type and the same DAX, differing
-# only in how much of the column is NULL — ~7% against ~99%, because CMS models a one-to-many
-# product list as five repeated groups and almost every payment names one product. Nothing else here
-# can isolate what sparsity costs to transcode, because nothing else here IS sparse; every other
-# probe in every other suite confounds NULL rate with cardinality. Keep them adjacent and keep both.
+# probe_product_tail are the SAME column family, the same semantic type and the same DAX, over a
+# column that is ~7% NULL and one that is ~99% NULL — because CMS models a one-to-many product list
+# as five repeated groups and almost every payment names one product.
+#
+# ⚠️ THE PAIR DOES NOT ISOLATE SPARSITY, AND AN EARLIER VERSION OF THIS COMMENT CLAIMED IT DID.
+# NULL rate and cardinality move TOGETHER here, necessarily: a column that is 99% NULL has far fewer
+# distinct values than its 7% sibling (~127 against ~3,194 in a 187,750-row sample of PY2023),
+# because the non-NULL rows are all there is to be distinct over. So the pair holds family, type and
+# query constant and varies BOTH — the measured gap is their combined effect and cannot be
+# attributed to sparsity alone. First measurement, run 31862268079 on 87.7M rows: 571 ms cold /
+# 128 ms warm for the head against 263 / 60 for the tail, so ~2.2x and ~2.1x cheaper.
+#
+# Separating the two would need a third probe — a mostly-populated column at the tail's cardinality,
+# or a sparse one at the head's — and no column family here offers that. Keep both of these
+# adjacent, and read the gap as "sparse and low-cardinality together", which is what it is.
 #
 # The rest of the probes cover the two skew regimes this dataset carries at once — probe_nature and
 # probe_form are the 92%/86% single-value columns (nyc's regime, where every column can win the sort)

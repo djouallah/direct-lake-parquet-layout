@@ -38,9 +38,18 @@ five repeated six-column groups plus a six-wide recipient group, and the tail me
 to gain and nothing else here exercises that at all. It is also the first table where the two skew
 regimes COMPETE inside one sort budget rather than being measured in separate datasets.
 **The DAX suite therefore carries the project's only MATCHED SPARSE PAIR** — `probe_product_head`
-and `probe_product_tail` are the same column family, type and query at ~7% and ~99% NULL, which is
-the only way here to separate what sparsity costs from what cardinality costs; every other probe in
-every other suite confounds the two. Read them together or neither.
+and `probe_product_tail` are the same column family, type and query over a ~7%-NULL column and a
+~99%-NULL one. First measurement, run 31862268079 on 87.7M rows: **571 ms cold / 128 ms warm against
+263 / 60**, so the sparse member reads ~2.2× cheaper cold and ~2.1× warm.
+
+**RETRACTED, and it was this file's own claim: the pair does NOT isolate sparsity from
+cardinality.** NULL rate and cardinality move TOGETHER here and cannot be separated by construction
+— the 99%-NULL member has ~127 distinct values against the head's ~3,194, because the non-NULL rows
+are all there is to be distinct over. So the pair holds family, type and query constant and varies
+BOTH; the gap above is their combined effect. Separating them would need a third probe — a
+mostly-populated column at the tail's cardinality, or a sparse one at the head's — and no column
+family in this source offers one. Read the gap as "sparse and low-cardinality together", read the
+two together or neither, and do not cite either number as the price of sparsity alone.
 
 Six cms facts that differ from the others mechanically. The mart takes its source **WHOLE** (91
 columns, the only one that does) because landing is the irreversible half and the star schema is a

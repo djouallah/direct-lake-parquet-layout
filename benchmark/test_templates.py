@@ -621,10 +621,14 @@ def test_the_cms_fact_carries_every_source_column():
 def test_the_cms_sparse_pair_is_both_declared_and_both_probed():
     """probe_product_head and probe_product_tail are the only matched sparse pair in the project.
 
-    They are the same column family, the same type and the same DAX, differing only in NULL rate
-    (~7% against ~99%), which is what makes them the only way here to isolate what sparsity costs
-    to transcode from what cardinality costs. Dropping either one leaves a probe whose number means
-    nothing on its own, so both the columns and both the queries are asserted together."""
+    They are the same column family, the same type and the same DAX over a ~7%-NULL column and a
+    ~99%-NULL one. The pair does NOT isolate sparsity — NULL rate and cardinality move together by
+    construction, since the non-NULL rows are all there is to be distinct over — so the gap it
+    measures is the two combined. What makes it worth pinning is that everything else IS held
+    constant, which no other pair in this project manages at all.
+
+    Dropping either one leaves a probe whose number means nothing on its own, so both the columns
+    and both the queries are asserted together."""
     m = json.loads(_raw(CMS))
     fact = next(t for t in m["model"]["tables"] if t["name"] == "fct_cms_payments")
     cols = {c["sourceColumn"] for c in fact["columns"]}
