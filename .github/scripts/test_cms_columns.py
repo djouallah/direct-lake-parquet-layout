@@ -106,6 +106,38 @@ def test_the_data_dictionary_typo_has_not_been_copied_in():
             "that spelling is the data dictionary's typo; the CSV header says 'Noncovered'"
 
 
+def test_every_dialect_guards_the_untransportable_dates():
+    """All three fact models must route Date_of_Payment through cms_payment_value().
+
+    CMS ships 75 payments in PY2024 dated `11/30/0002` — year two. Harmless in storage, fatal in
+    DAX: XMLA refuses a DateTime outside 1899-12-30..9999-12-31, and the first query touching the
+    column killed the whole benchmark leg of run 31850696469 AFTER the 87.6M-row build had
+    succeeded and the semantic model had been deployed.
+
+    Asserted per dialect for the same reason the whitespace guard is: a guard present on two
+    engines and missing on the third is a silent hole, and nothing reports which engine skipped
+    what. Here it is worse than silent — the leg that lacks it fails only in the QUERY phase, which
+    is the most expensive thing in the workflow and runs last."""
+    for dialect in ("duckdb", "dwh", "spark"):
+        path = os.path.join(ROOT, "models", "cms", dialect, "marts", "fct_cms_payments.sql")
+        body = open(path, encoding="utf-8").read()
+        assert "cms_payment_value(" in body, (
+            f"models/cms/{dialect}/marts/fct_cms_payments.sql does not route its columns through "
+            f"cms_payment_value(), so a year-0002 date reaches Power BI and the query phase dies")
+
+
+def test_the_date_guard_covers_both_date_columns():
+    """The guard keys on the type, not on a column name, so it must cover BOTH DATE columns.
+
+    Payment_Publication_Date is one value per publication today and looks safe — which is exactly
+    why naming Date_of_Payment explicitly would be the fragile spelling. CMS has already shipped one
+    impossible date; there is no reason the other column is immune."""
+    src = open(os.path.join(ROOT, "macros", "cms_payment_columns.sql"), encoding="utf-8").read()
+    body = re.search(r"macro cms_payment_non_strings\(\).*?return\(\{(.*?)\}\)", src, re.S).group(1)
+    dates = [c for c, k in re.findall(r"'([^']+)':\s*'([^']+)'", body) if k == "date"]
+    assert sorted(dates) == ["Date_of_Payment", "Payment_Publication_Date"]
+
+
 def test_the_merge_key_and_the_dimension_key_are_both_present():
     # (file, Record_ID) is the incremental key on all four engines — this dataset is the one that
     # returns to a real keyed merge, because unlike TLC's trip records CMS publishes a unique id.

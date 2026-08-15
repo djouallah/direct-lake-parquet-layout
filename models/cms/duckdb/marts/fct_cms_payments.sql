@@ -111,7 +111,7 @@ WITH payments AS (
 
 SELECT
   {%- for name in cols %}
-  CAST({{ name }} AS {{ cms_payment_type(name, 'duckdb') }}) AS {{ name }},
+  CAST({{ cms_payment_value(name, name, 'duckdb') }} AS {{ cms_payment_type(name, 'duckdb') }}) AS {{ name }},
   {%- endfor %}
   {{ parse_filename('filename') }} AS file
 FROM payments

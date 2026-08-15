@@ -68,6 +68,21 @@ asserts both the 91 and the absence of that spelling. The header is byte-identic
 PY2019-2025 (md5 of the literal header row on 2019, 2021, 2023, 2025), so unlike nyc and green there
 is no type drift to normalise around.
 
+**CMS SHIPS DATES POWER BI CANNOT TRANSPORT, AND THE FIX IS IN THE MART.** PY2024 carries 75
+payments dated `11/30/0002` — year TWO, confirmed against CMS's datastore API. They are why PY2024
+lands THIRTEEN monthly files (the extra is `cms_0002-11.parquet`) and they are harmless in storage
+and fatal in DAX: XMLA refuses a DateTime outside 1899-12-30..9999-12-31, so the first query
+touching the column dies with *"A DateTime value is outside of the transportation protocol's
+supported range"*. That killed the benchmark leg of run 31850696469 on `probe_date`, **after** the
+87.6M-row build had succeeded and the model had been deployed — i.e. the most expensive thing in the
+workflow, failing last. `cms_payment_value()` bounds both DATE columns to 1900-01-01..9999-12-31 in
+all three dialects, so an impossible date lands NULL. **The guard is in the MART, never at land
+time**: landing stays faithful to what CMS published (the downloader normalises TYPES and refuses
+files it cannot read, but never edits values), it costs no re-drain of the ~50 GB already landed,
+and the raw value stays recoverable. It changes no DAX answer that was previously right —
+`dim_cms_date` starts at 2013 and the fact's date relationship asserts referential integrity, so
+those rows were already outside every date-filtered query; what changes is that the queries RUN.
+
 **THE MONTH/YEAR SPLIT IS RECONCILED AT LAND TIME, NOT BY A dbt TEST.** A month cannot be fetched on
 its own, so the WATERMARK unit is the annual CSV (`source_filename`, repeated across a year's ~12 log
 rows) and the LANDED unit is the month (`file_stem`, unique, what the fact stores as `file`) — the

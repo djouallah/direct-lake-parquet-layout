@@ -53,7 +53,7 @@ SELECT * FROM {{ this }} WHERE 1 = 0
 {%- else -%}
 SELECT
   {%- for name in cols %}
-  TRY_CAST([{{ name }}] AS {{ cms_payment_type(name, 'fabric') }}) AS [{{ name }}],
+  TRY_CAST({{ cms_payment_value('[' ~ name ~ ']', name, 'fabric') }} AS {{ cms_payment_type(name, 'fabric') }}) AS [{{ name }}],
   {%- endfor %}
   {{ parse_filename('src.filepath()') }} AS [file]
 FROM {{ openrowset_parquet_files(new_files) }} AS src

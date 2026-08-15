@@ -48,7 +48,7 @@ SELECT * FROM {{ this }} WHERE 1 = 0
 {% else %}
 SELECT
   {%- for name in cols %}
-  CAST(t.{{ name }} AS {{ cms_payment_type(name, 'fabricspark') }}) AS {{ name }},
+  CAST({{ cms_payment_value('t.' ~ name, name, 'fabricspark') }} AS {{ cms_payment_type(name, 'fabricspark') }}) AS {{ name }},
   {%- endfor %}
   {{ parse_filename('t._metadata.file_name') }} AS file
 FROM parquet.`{{ cms_root }}{% if is_incremental() %}/{{ '{' ~ new_files | join(',') ~ '}' }}{% endif %}` AS t

@@ -200,6 +200,49 @@
   {%- endif -%}
 {%- endmacro -%}
 
+{#-- ⚠️ CMS SHIPS DATES POWER BI CANNOT TRANSPORT, AND THE ARCHIVE KEEPS THEM.
+
+     PY2024 carries 75 payments dated `11/30/0002` — year TWO, a data-entry artifact in CMS's own
+     file, confirmed against their datastore API. They are why PY2024 lands THIRTEEN monthly files
+     rather than twelve: the extra one is `cms_0002-11.parquet`.
+
+     They are harmless in storage and fatal in DAX. XMLA refuses to transport a DateTime outside
+     1899-12-30..9999-12-31, so the first query touching the column dies:
+
+       AdomdErrorResponseException: A DateTime value is outside of the transportation protocol's
+       supported range.
+
+     That killed the whole benchmark leg of run 31850696469 on `probe_date`, AFTER the 87.6M-row
+     build had succeeded and the model had been deployed.
+
+     THE GUARD BELONGS HERE, IN THE MART, NOT AT LAND TIME. Landing is the irreversible half and it
+     stays faithful to the source: the downloader normalises TYPES and refuses files it cannot read,
+     but it does not edit values, so `11/30/0002` is what CMS published and is what the archive
+     holds. Nulling it here is the ETL doing its job, costs no re-drain of the ~50 GB already
+     landed, and keeps the raw value recoverable.
+
+     NULLING RATHER THAN DROPPING THE ROW is the honest choice: the payment is real, only its date
+     is not. And it changes no DAX answer that was previously right — dim_cms_date starts at 2013
+     and the fact's date relationship asserts referential integrity, so those rows were already
+     outside every date-filtered query. What changes is that the queries now RUN.
+
+     1900-01-01 rather than XMLA's exact 1899-12-30 floor: a round bound, comfortably below the
+     2013 programme start, and no real payment can fall between the two. --#}
+{%- macro cms_payment_value(ref, column, dialect) -%}
+  {%- if cms_payment_non_strings().get(column) == 'date' -%}
+    {#-- BETWEEN with no ELSE yields NULL for anything outside the range, in all three dialects. --#}
+    {%- if dialect == 'fabric' -%}
+      CASE WHEN {{ ref }} BETWEEN CAST('1900-01-01' AS DATE) AND CAST('9999-12-31' AS DATE)
+           THEN {{ ref }} END
+    {%- else -%}
+      CASE WHEN {{ ref }} BETWEEN DATE '1900-01-01' AND DATE '9999-12-31'
+           THEN {{ ref }} END
+    {%- endif -%}
+  {%- else -%}
+    {{- ref -}}
+  {%- endif -%}
+{%- endmacro -%}
+
 {#-- The target type of each column, per dialect. Every column is cast explicitly rather than
      inherited — an inherited type would make the stored schema depend on which years a dispatch
      happened to land, and `layout` compares encodings across engines BY COLUMN.
