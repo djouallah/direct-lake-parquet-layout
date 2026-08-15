@@ -1,0 +1,2384 @@
+{
+ "benchmark": {
+  "analysis": {
+   "cold_column_cost": {},
+   "ranking": {},
+   "ranking_dq": {
+    "COLD": [
+     {
+      "engine": "duckrun_dq",
+      "query_wins": 24,
+      "rank": 1,
+      "total_ms": 96693.3,
+      "x_fastest": 1.0
+     }
+    ],
+    "HOT": [
+     {
+      "engine": "duckrun_dq",
+      "query_wins": 26,
+      "rank": 1,
+      "total_ms": 56626.5,
+      "x_fastest": 1.0
+     }
+    ],
+    "WARM": [
+     {
+      "engine": "duckrun_dq",
+      "query_wins": 26,
+      "rank": 1,
+      "total_ms": 60385.4,
+      "x_fastest": 1.0
+     }
+    ]
+   }
+  },
+  "deploy": {
+   "deployed": {
+    "cms_duckrun": {
+     "folder": "benchmark",
+     "item_id": "f4b400c9-b822-4828-9758-3a6650ebbaa0",
+     "model": "cms_duckrun",
+     "previous_item_id": null,
+     "seconds": 44.1
+    },
+    "cms_duckrun_dq": {
+     "folder": "benchmark",
+     "item_id": "770f3b10-c589-48e8-aa1c-52c6e5e16278",
+     "model": "cms_duckrun_dq",
+     "previous_item_id": null,
+     "seconds": 35.9
+    }
+   },
+   "failed": {}
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "1c6ff7af-5610-43f0-9e9e-498ead66dd05",
+    "item": "dbt_cms_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "ladder": {
+   "cms_duckrun_dq": {
+    "label": "top paying manufacturer",
+    "value": "100000971889"
+   }
+  },
+  "run": {
+   "date": "2026-08-15T00:24:38.377300+00:00",
+   "duckrun_version": "0.4.50",
+   "inputs": {
+    "engines": "duckrun",
+    "gap_seconds": 600,
+    "runs": 6,
+    "think_seconds": 4
+   },
+   "run_id": "31850696469",
+   "sha": "29251f1bb41ebbe02b40149840e1e0779d4066ce",
+   "workspace": "testing"
+  },
+  "timings": {
+   "cms_duckrun_dq": {
+    "filtered_2019_by_nature": {
+     "all_hot_ms": [
+      1032.5603489999367,
+      1399.2227679999587,
+      1030.2192750000359,
+      1031.546545000083
+     ],
+     "cold_ms": 1200.9492839999893,
+     "hot_median_ms": 1032.0534470000098,
+     "hot_spread_pct": 35.75430071693946,
+     "ms_by_pass": {
+      "1": 1200.9492839999893,
+      "2": 1067.8204450000521,
+      "3": 1032.5603489999367,
+      "4": 1399.2227679999587,
+      "5": 1030.2192750000359,
+      "6": 1031.546545000083
+     },
+     "rows": 15,
+     "tier": "composite",
+     "warm_ms": 1067.8204450000521
+    },
+    "narrow_one_measure": {
+     "all_hot_ms": [
+      979.6245730000237,
+      984.5868410000094,
+      1005.2753100001155,
+      970.606005000036
+     ],
+     "cold_ms": 975.5893779999951,
+     "hot_median_ms": 982.1057070000165,
+     "hot_spread_pct": 3.5300991281256136,
+     "ms_by_pass": {
+      "1": 975.5893779999951,
+      "2": 982.448919000035,
+      "3": 979.6245730000237,
+      "4": 984.5868410000094,
+      "5": 1005.2753100001155,
+      "6": 970.606005000036
+     },
+     "rows": 7,
+     "tier": "composite",
+     "warm_ms": 982.448919000035
+    },
+    "nature_x_year": {
+     "all_hot_ms": [
+      1833.6223649999965,
+      1824.1607400000248,
+      1805.0109410000914,
+      2036.4300619999085
+     ],
+     "cold_ms": 1862.6018260000023,
+     "hot_median_ms": 1828.8915525000107,
+     "hot_spread_pct": 12.653517956462634,
+     "ms_by_pass": {
+      "1": 1862.6018260000023,
+      "2": 1821.4036079999687,
+      "3": 1833.6223649999965,
+      "4": 1824.1607400000248,
+      "5": 1805.0109410000914,
+      "6": 2036.4300619999085
+     },
+     "rows": 112,
+     "tier": "composite",
+     "warm_ms": 1821.4036079999687
+    },
+    "payer_x_month": {
+     "all_hot_ms": [
+      5732.0401180001,
+      5669.899156000042,
+      5633.22687699997,
+      5584.659274999922
+     ],
+     "cold_ms": 5831.10512899998,
+     "hot_median_ms": 5651.563016500006,
+     "hot_spread_pct": 2.60778907657745,
+     "ms_by_pass": {
+      "1": 5831.10512899998,
+      "2": 5650.36678599995,
+      "3": 5732.0401180001,
+      "4": 5669.899156000042,
+      "5": 5633.22687699997,
+      "6": 5584.659274999922
+     },
+     "rows": 107551,
+     "tier": "composite",
+     "warm_ms": 5650.36678599995
+    },
+    "payer_x_year": {
+     "all_hot_ms": [
+      4038.705918000005,
+      4338.918724999985,
+      4091.167046999999,
+      4060.8224970001174
+     ],
+     "cold_ms": 16817.792243999975,
+     "hot_median_ms": 4075.994772000058,
+     "hot_spread_pct": 7.36538744019703,
+     "ms_by_pass": {
+      "1": 16817.792243999975,
+      "2": 4386.808211000016,
+      "3": 4038.705918000005,
+      "4": 4338.918724999985,
+      "5": 4091.167046999999,
+      "6": 4060.8224970001174
+     },
+     "rows": 12384,
+     "tier": "composite",
+     "warm_ms": 4386.808211000016
+    },
+    "probe_amount": {
+     "all_hot_ms": [
+      1543.3540799999719,
+      1489.467047000062,
+      1537.3238989999436,
+      1533.5329460001503
+     ],
+     "cold_ms": 4938.840891999973,
+     "hot_median_ms": 1535.428422500047,
+     "hot_spread_pct": 3.509576363850871,
+     "ms_by_pass": {
+      "1": 4938.840891999973,
+      "2": 1504.9686149999957,
+      "3": 1543.3540799999719,
+      "4": 1489.467047000062,
+      "5": 1537.3238989999436,
+      "6": 1533.5329460001503
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 1504.9686149999957
+    },
+    "probe_date": {
+     "all_hot_ms": [
+      552.6511670000218,
+      523.5628899999938,
+      883.0835640000032,
+      631.7668270000922
+     ],
+     "cold_ms": 1296.02956399998,
+     "hot_median_ms": 592.208997000057,
+     "hot_spread_pct": 60.70841135835949,
+     "ms_by_pass": {
+      "1": 1296.02956399998,
+      "2": 923.0271589999575,
+      "3": 552.6511670000218,
+      "4": 523.5628899999938,
+      "5": 883.0835640000032,
+      "6": 631.7668270000922
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 923.0271589999575
+    },
+    "probe_form": {
+     "all_hot_ms": [
+      1877.2227489999977,
+      1873.173329999986,
+      1867.3571909999964,
+      1888.342343999966
+     ],
+     "cold_ms": 2656.840020000004,
+     "hot_median_ms": 1875.1980394999919,
+     "hot_spread_pct": 1.1190899605230578,
+     "ms_by_pass": {
+      "1": 2656.840020000004,
+      "2": 1864.002859999971,
+      "3": 1877.2227489999977,
+      "4": 1873.173329999986,
+      "5": 1867.3571909999964,
+      "6": 1888.342343999966
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 1864.002859999971
+    },
+    "probe_nature": {
+     "all_hot_ms": [
+      2302.965667999956,
+      2310.7799869999326,
+      2312.2187799999665,
+      2291.421494000133
+     ],
+     "cold_ms": 6419.650353000008,
+     "hot_median_ms": 2306.8728274999444,
+     "hot_spread_pct": 0.9015358693340909,
+     "ms_by_pass": {
+      "1": 6419.650353000008,
+      "2": 2296.943219999946,
+      "3": 2302.965667999956,
+      "4": 2310.7799869999326,
+      "5": 2312.2187799999665,
+      "6": 2291.421494000133
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 2296.943219999946
+    },
+    "probe_payer": {
+     "all_hot_ms": [
+      2645.217721999984,
+      2650.145797999926,
+      2657.52507600007,
+      3391.183688999945
+     ],
+     "cold_ms": 3632.0221270000275,
+     "hot_median_ms": 2653.835436999998,
+     "hot_spread_pct": 28.108976035199486,
+     "ms_by_pass": {
+      "1": 3632.0221270000275,
+      "2": 2633.1959080000047,
+      "3": 2645.217721999984,
+      "4": 2650.145797999926,
+      "5": 2657.52507600007,
+      "6": 3391.183688999945
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 2633.1959080000047
+    },
+    "probe_product_head": {
+     "all_hot_ms": [
+      3883.564383000021,
+      3970.8210649999955,
+      3982.222494000098,
+      3898.706050999863
+     ],
+     "cold_ms": 4823.997765000002,
+     "hot_median_ms": 3934.763557999929,
+     "hot_spread_pct": 2.50734534733329,
+     "ms_by_pass": {
+      "1": 4823.997765000002,
+      "2": 3893.934967000007,
+      "3": 3883.564383000021,
+      "4": 3970.8210649999955,
+      "5": 3982.222494000098,
+      "6": 3898.706050999863
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 3893.934967000007
+    },
+    "probe_product_tail": {
+     "all_hot_ms": [
+      1038.579696999932,
+      1539.9463549999837,
+      1053.578825000045,
+      1072.4190610001187
+     ],
+     "cold_ms": 1544.819603999997,
+     "hot_median_ms": 1062.998943000082,
+     "hot_spread_pct": 47.16530164978848,
+     "ms_by_pass": {
+      "1": 1544.819603999997,
+      "2": 1059.241782000072,
+      "3": 1038.579696999932,
+      "4": 1539.9463549999837,
+      "5": 1053.578825000045,
+      "6": 1072.4190610001187
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 1059.241782000072
+    },
+    "probe_recipient": {
+     "all_hot_ms": [
+      4334.200444000089,
+      4374.222558999918,
+      4364.835330999995,
+      4346.43122500006
+     ],
+     "cold_ms": 5520.842569000024,
+     "hot_median_ms": 4355.6332780000275,
+     "hot_spread_pct": 0.9188586927640908,
+     "ms_by_pass": {
+      "1": 5520.842569000024,
+      "2": 4539.413215000081,
+      "3": 4334.200444000089,
+      "4": 4374.222558999918,
+      "5": 4364.835330999995,
+      "6": 4346.43122500006
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 4539.413215000081
+    },
+    "probe_rowcount": {
+     "all_hot_ms": [
+      191.3545489999251,
+      184.62710999995124,
+      185.508016999961,
+      177.40855699980784
+     ],
+     "cold_ms": 202.63421300001028,
+     "hot_median_ms": 185.06756349995612,
+     "hot_spread_pct": 7.535621983871076,
+     "ms_by_pass": {
+      "1": 202.63421300001028,
+      "2": 568.943420000096,
+      "3": 191.3545489999251,
+      "4": 184.62710999995124,
+      "5": 185.508016999961,
+      "6": 177.40855699980784
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 568.943420000096
+    },
+    "probe_specialty": {
+     "all_hot_ms": [
+      2593.613655000013,
+      2398.787150999965,
+      2214.014040000052,
+      2631.576148999784
+     ],
+     "cold_ms": 3996.4835000000107,
+     "hot_median_ms": 2496.200402999989,
+     "hot_spread_pct": 16.72790808373786,
+     "ms_by_pass": {
+      "1": 3996.4835000000107,
+      "2": 2214.986006999993,
+      "3": 2593.613655000013,
+      "4": 2398.787150999965,
+      "5": 2214.014040000052,
+      "6": 2631.576148999784
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 2214.986006999993
+    },
+    "probe_state": {
+     "all_hot_ms": [
+      2076.611215000071,
+      2075.6400660000054,
+      2110.9658930000705,
+      2074.138855000001
+     ],
+     "cold_ms": 2815.4994840000427,
+     "hot_median_ms": 2076.125640500038,
+     "hot_spread_pct": 1.773834746879752,
+     "ms_by_pass": {
+      "1": 2815.4994840000427,
+      "2": 2081.0089699999708,
+      "3": 2076.611215000071,
+      "4": 2075.6400660000054,
+      "5": 2110.9658930000705,
+      "6": 2074.138855000001
+     },
+     "rows": 1,
+     "tier": "probe",
+     "warm_ms": 2081.0089699999708
+    },
+    "raw_archive_log": {
+     "all_hot_ms": [
+      533.6975879999954,
+      178.03020999997443,
+      188.57095099997423,
+      556.2207880000187
+     ],
+     "cold_ms": 6274.291613000003,
+     "hot_median_ms": 361.13426949998484,
+     "hot_spread_pct": 104.72298254155584,
+     "ms_by_pass": {
+      "1": 6274.291613000003,
+      "2": 173.91326199992818,
+      "3": 533.6975879999954,
+      "4": 178.03020999997443,
+      "5": 188.57095099997423,
+      "6": 556.2207880000187
+     },
+     "rows": 2,
+     "tier": "raw",
+     "warm_ms": 173.91326199992818
+    },
+    "scalar_weighted_full_scan": {
+     "all_hot_ms": [
+      3819.5683630000303,
+      3784.722296000041,
+      3866.3515440000538,
+      3818.4822660000464
+     ],
+     "cold_ms": 4312.0832660000015,
+     "hot_median_ms": 3819.0253145000383,
+     "hot_spread_pct": 2.137436682864703,
+     "ms_by_pass": {
+      "1": 4312.0832660000015,
+      "2": 3810.809928999902,
+      "3": 3819.5683630000303,
+      "4": 3784.722296000041,
+      "5": 3866.3515440000538,
+      "6": 3818.4822660000464
+     },
+     "rows": 1,
+     "tier": "composite",
+     "warm_ms": 3810.809928999902
+    },
+    "sel_1mo": {
+     "all_hot_ms": [
+      236.43618899996,
+      239.1888630000949,
+      231.90361700017093,
+      235.65001400015717
+     ],
+     "cold_ms": 243.99295099999563,
+     "hot_median_ms": 236.04310150005858,
+     "hot_spread_pct": 3.0864049631724417,
+     "ms_by_pass": {
+      "1": 243.99295099999563,
+      "2": 227.98366999995778,
+      "3": 236.43618899996,
+      "4": 239.1888630000949,
+      "5": 231.90361700017093,
+      "6": 235.65001400015717
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 227.98366999995778
+    },
+    "sel_1payer": {
+     "all_hot_ms": [
+      233.14549400004125,
+      222.26039000008768,
+      259.9122939998324,
+      237.7617659999487
+     ],
+     "hot_median_ms": 235.45362999999497,
+     "hot_spread_pct": 15.991218313238798,
+     "ms_by_pass": {
+      "2": 228.552622000052,
+      "3": 233.14549400004125,
+      "4": 222.26039000008768,
+      "5": 259.9122939998324,
+      "6": 237.7617659999487
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 228.552622000052
+    },
+    "sel_1payer_1mo": {
+     "all_hot_ms": [
+      201.38148299997738,
+      210.51507200002106,
+      228.34195100017496,
+      204.0847920000033
+     ],
+     "hot_median_ms": 207.29993200001218,
+     "hot_spread_pct": 13.005536345374198,
+     "ms_by_pass": {
+      "2": 321.90555399995446,
+      "3": 201.38148299997738,
+      "4": 210.51507200002106,
+      "5": 228.34195100017496,
+      "6": 204.0847920000033
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 321.90555399995446
+    },
+    "sel_1yr": {
+     "all_hot_ms": [
+      411.3396189999321,
+      426.45006599991575,
+      424.69911200009847,
+      419.9885479999921
+     ],
+     "cold_ms": 418.24765299998035,
+     "hot_median_ms": 422.3438300000453,
+     "hot_spread_pct": 3.5777596182669535,
+     "ms_by_pass": {
+      "1": 418.24765299998035,
+      "2": 411.1231530000623,
+      "3": 411.3396189999321,
+      "4": 426.45006599991575,
+      "5": 424.69911200009847,
+      "6": 419.9885479999921
+     },
+     "rows": 1,
+     "tier": "hot_only",
+     "warm_ms": 411.1231530000623
+    },
+    "specialty_x_state": {
+     "all_hot_ms": [
+      3578.4760110000207,
+      3539.9528230000215,
+      3556.296418999864,
+      3486.5001319999465
+     ],
+     "cold_ms": 4221.931556000016,
+     "hot_median_ms": 3548.1246209999426,
+     "hot_spread_pct": 2.592239248184955,
+     "ms_by_pass": {
+      "1": 4221.931556000016,
+      "2": 3571.008349000067,
+      "3": 3578.4760110000207,
+      "4": 3539.9528230000215,
+      "5": 3556.296418999864,
+      "6": 3486.5001319999465
+     },
+     "rows": 14798,
+     "tier": "composite",
+     "warm_ms": 3571.008349000067
+    },
+    "topn_payer_by_amount": {
+     "all_hot_ms": [
+      3668.784899000002,
+      3662.3309110000264,
+      3666.5441009999995,
+      3671.0434019998957
+     ],
+     "cold_ms": 3657.727123999962,
+     "hot_median_ms": 3667.6645000000008,
+     "hot_spread_pct": 0.23754874525380548,
+     "ms_by_pass": {
+      "1": 3657.727123999962,
+      "2": 3670.1744350000354,
+      "3": 3668.784899000002,
+      "4": 3662.3309110000264,
+      "5": 3666.5441009999995,
+      "6": 3671.0434019998957
+     },
+     "rows": 50,
+     "tier": "composite",
+     "warm_ms": 3670.1744350000354
+    },
+    "wide_all_measures": {
+     "all_hot_ms": [
+      3329.417006999961,
+      3311.434881000082,
+      3467.087880000008,
+      3323.133721999966
+     ],
+     "cold_ms": 4191.57609399997,
+     "hot_median_ms": 3326.2753644999634,
+     "hot_spread_pct": 4.679498295936345,
+     "ms_by_pass": {
+      "1": 4191.57609399997,
+      "2": 6333.8867480000545,
+      "3": 3329.417006999961,
+      "4": 3311.434881000082,
+      "5": 3467.087880000008,
+      "6": 3323.133721999966
+     },
+     "rows": 7,
+     "tier": "composite",
+     "warm_ms": 6333.8867480000545
+    },
+    "wide_sparse_group": {
+     "all_hot_ms": [
+      4169.66319900007,
+      4136.931302999983,
+      4155.877888000077,
+      4160.535399000082
+     ],
+     "cold_ms": 8837.765117000003,
+     "hot_median_ms": 4158.20664350008,
+     "hot_spread_pct": 0.7871637656885487,
+     "ms_by_pass": {
+      "1": 8837.765117000003,
+      "2": 4147.49774400002,
+      "3": 4169.66319900007,
+      "4": 4136.931302999983,
+      "5": 4155.877888000077,
+      "6": 4160.535399000082
+     },
+     "rows": 477,
+     "tier": "composite",
+     "warm_ms": 4147.49774400002
+    }
+   }
+  },
+  "top_duid": {
+   "cms_duckrun_dq": "100000971889"
+  }
+ },
+ "dbt": {
+  "duckrun": {
+   "sort_by_auto": {
+    "fct_cms_payments": [
+     "Date_of_Payment",
+     "Charity_Indicator",
+     "Covered_Recipient_Type",
+     "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "cms",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "0963814F-361C-41DB-A8AF-38924D859887": {
+   "at": "2026-08-15T00:22:55+00:00",
+   "created": true,
+   "deleted": "2026-08-15T00:46:17+00:00",
+   "engine": "duckrun",
+   "kind": "Notebook",
+   "name": "dbt-duckrun-b39ba65b",
+   "role": "compute"
+  },
+  "1C6FF7AF-5610-43F0-9E9E-498EAD66DD05": {
+   "at": "2026-08-15T00:08:00+00:00",
+   "created": true,
+   "deleted": "2026-08-15T00:46:18+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_cms_delta",
+   "role": "output"
+  },
+  "2126532D-39F2-48AE-8C7D-802F37A1A4C9": {
+   "at": "2026-08-15T00:25:39+00:00",
+   "created": true,
+   "deleted": "2026-08-15T00:27:57+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_cms_delta_dl",
+   "role": "bench_dl"
+  },
+  "45476FA5-5673-4206-99BF-5479727283A0": {
+   "at": "2026-08-15T00:25:53+00:00",
+   "created": true,
+   "deleted": "2026-08-15T00:45:45+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_cms_delta_dq",
+   "role": "bench_dq"
+  },
+  "4E4331C2-643E-4D96-A8DE-19C40B4DA5A9": {
+   "at": "2026-08-15T00:07:16+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_cms_landing",
+   "role": "sql_endpoint"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-15T00:25:30+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "770F3B10-C589-48E8-AA1C-52C6E5E16278": {
+   "created": true,
+   "deleted": "2026-08-15T00:45:44+00:00",
+   "engine": "duckrun",
+   "kind": "SemanticModel",
+   "name": "cms_duckrun_dq",
+   "replaced": null,
+   "role": "semantic_model_dq"
+  },
+  "C8E333C0-58C6-4242-8320-327D4F312156": {
+   "at": "2026-08-15T00:07:14+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_cms_landing",
+   "role": "landing"
+  },
+  "CE8121CC-6547-4AE7-9455-F6265A116551": {
+   "at": "2026-08-15T00:26:10+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_cms_delta_dq",
+   "role": "sql_endpoint"
+  },
+  "F4B400C9-B822-4828-9758-3A6650EBBAA0": {
+   "created": true,
+   "deleted": "2026-08-15T00:27:56+00:00",
+   "engine": "duckrun",
+   "kind": "SemanticModel",
+   "name": "cms_duckrun",
+   "replaced": null,
+   "role": "semantic_model"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-15T00:07:12+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": "auto",
+    "row_group_size": "auto",
+    "sorted": "true",
+    "vcores": "8"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "duckrun": {
+    "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.01,
+     "type": "BYTE_ARRAY"
+    },
+    "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 111.63,
+     "type": "BYTE_ARRAY"
+    },
+    "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 112.17,
+     "type": "BYTE_ARRAY"
+    },
+    "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 61.06,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Device_or_Medical_Supply_PDI_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 17.34,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Device_or_Medical_Supply_PDI_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.79,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Device_or_Medical_Supply_PDI_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.93,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Device_or_Medical_Supply_PDI_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.31,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Device_or_Medical_Supply_PDI_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.9,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Drug_or_Biological_NDC_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 81.86,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Drug_or_Biological_NDC_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 23.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Drug_or_Biological_NDC_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 7.34,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Drug_or_Biological_NDC_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2.81,
+     "type": "BYTE_ARRAY"
+    },
+    "Associated_Drug_or_Biological_NDC_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.35,
+     "type": "BYTE_ARRAY"
+    },
+    "Change_Type": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Charity_Indicator": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.03,
+     "type": "BYTE_ARRAY"
+    },
+    "City_of_Travel": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 10.6,
+     "type": "BYTE_ARRAY"
+    },
+    "Contextual_Information": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 20.7,
+     "type": "BYTE_ARRAY"
+    },
+    "Country_of_Travel": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.94,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_First_Name": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 179.17,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Last_Name": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 217.1,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_License_State_code1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 62.71,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_License_State_code2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.64,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_License_State_code3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.56,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_License_State_code4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.57,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_License_State_code5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.22,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Middle_Name": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 99.4,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_NPI": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 259.26,
+     "type": "INT64"
+    },
+    "Covered_Recipient_Name_Suffix": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.46,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Primary_Type_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 22.45,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Primary_Type_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.03,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Primary_Type_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Primary_Type_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Primary_Type_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Primary_Type_6": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Profile_ID": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 251.37,
+     "type": "INT64"
+    },
+    "Covered_Recipient_Specialty_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 91.64,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Specialty_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Specialty_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Specialty_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Specialty_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Specialty_6": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_Recipient_Type": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.05,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_or_Noncovered_Indicator_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2.37,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_or_Noncovered_Indicator_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 11.82,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_or_Noncovered_Indicator_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 6.31,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_or_Noncovered_Indicator_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.23,
+     "type": "BYTE_ARRAY"
+    },
+    "Covered_or_Noncovered_Indicator_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.9,
+     "type": "BYTE_ARRAY"
+    },
+    "Date_of_Payment": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "INT32"
+    },
+    "Delay_in_Publication_Indicator": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    },
+    "Dispute_Status_for_Publication": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.02,
+     "type": "BYTE_ARRAY"
+    },
+    "Form_of_Payment_or_Transfer_of_Value": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 14.88,
+     "type": "BYTE_ARRAY"
+    },
+    "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.19,
+     "type": "BYTE_ARRAY"
+    },
+    "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 13.27,
+     "type": "BYTE_ARRAY"
+    },
+    "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 6.41,
+     "type": "BYTE_ARRAY"
+    },
+    "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.24,
+     "type": "BYTE_ARRAY"
+    },
+    "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.88,
+     "type": "BYTE_ARRAY"
+    },
+    "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 127.88,
+     "type": "BYTE_ARRAY"
+    },
+    "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 30.42,
+     "type": "BYTE_ARRAY"
+    },
+    "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 11.04,
+     "type": "BYTE_ARRAY"
+    },
+    "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.86,
+     "type": "BYTE_ARRAY"
+    },
+    "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2.64,
+     "type": "BYTE_ARRAY"
+    },
+    "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.87,
+     "type": "BYTE_ARRAY"
+    },
+    "Nature_of_Payment_or_Transfer_of_Value": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 14.64,
+     "type": "BYTE_ARRAY"
+    },
+    "Number_of_Payments_Included_in_Total_Amount": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.14,
+     "type": "INT32"
+    },
+    "Payment_Publication_Date": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "INT32"
+    },
+    "Physician_Ownership_Indicator": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 3.62,
+     "type": "BYTE_ARRAY"
+    },
+    "Product_Category_or_Therapeutic_Area_1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 107.04,
+     "type": "BYTE_ARRAY"
+    },
+    "Product_Category_or_Therapeutic_Area_2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 27.05,
+     "type": "BYTE_ARRAY"
+    },
+    "Product_Category_or_Therapeutic_Area_3": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 9.88,
+     "type": "BYTE_ARRAY"
+    },
+    "Product_Category_or_Therapeutic_Area_4": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 4.41,
+     "type": "BYTE_ARRAY"
+    },
+    "Product_Category_or_Therapeutic_Area_5": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2.37,
+     "type": "BYTE_ARRAY"
+    },
+    "Program_Year": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "INT32"
+    },
+    "Recipient_City": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 154.91,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_Country": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.03,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_Postal_Code": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.03,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_Primary_Business_Street_Address_Line1": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 329.47,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_Primary_Business_Street_Address_Line2": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 61.36,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_Province": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.03,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_State": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 62.88,
+     "type": "BYTE_ARRAY"
+    },
+    "Recipient_Zip_Code": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 212.09,
+     "type": "BYTE_ARRAY"
+    },
+    "Record_ID": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 713.46,
+     "type": "BYTE_ARRAY"
+    },
+    "Related_Product_Indicator": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.92,
+     "type": "BYTE_ARRAY"
+    },
+    "State_of_Travel": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 6.97,
+     "type": "BYTE_ARRAY"
+    },
+    "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 110.62,
+     "type": "BYTE_ARRAY"
+    },
+    "Teaching_Hospital_CCN": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.43,
+     "type": "BYTE_ARRAY"
+    },
+    "Teaching_Hospital_ID": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.44,
+     "type": "INT64"
+    },
+    "Teaching_Hospital_Name": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.74,
+     "type": "BYTE_ARRAY"
+    },
+    "Third_Party_Equals_Covered_Recipient_Indicator": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1.77,
+     "type": "BYTE_ARRAY"
+    },
+    "Third_Party_Payment_Recipient_Indicator": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 2.01,
+     "type": "BYTE_ARRAY"
+    },
+    "Total_Amount_of_Payment_USDollars": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 175.57,
+     "type": "DOUBLE"
+    },
+    "file": {
+     "chunks": 17,
+     "dict_pages": 17,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.0,
+     "type": "BYTE_ARRAY"
+    }
+   }
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "1c6ff7af-5610-43f0-9e9e-498ead66dd05",
+    "item": "dbt_cms_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "landing": {
+   "files": 87,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/cms": {
+     "files": 85,
+     "size_mb": 4135.23
+    },
+    "parquet_raw/payer": {
+     "files": 1,
+     "size_mb": 0.06
+    }
+   },
+   "guid": "c8e333c0-58c6-4242-8320-327d4f312156",
+   "item": "dbt_cms_landing",
+   "size_mb": 4135.3
+  },
+  "ordering": {
+   "duckrun": {
+    "columns": {
+     "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Country": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 18107
+     },
+     "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3188914
+     },
+     "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_Name": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3189309
+     },
+     "Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_State": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 2765333
+     },
+     "Associated_Device_or_Medical_Supply_PDI_1": {
+      "rg_overlap_pct": 93.8,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Associated_Device_or_Medical_Supply_PDI_2": {
+      "rg_overlap_pct": 87.5,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Associated_Device_or_Medical_Supply_PDI_3": {
+      "rg_overlap_pct": 87.5,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Associated_Device_or_Medical_Supply_PDI_4": {
+      "rg_overlap_pct": 87.5,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Associated_Device_or_Medical_Supply_PDI_5": {
+      "rg_overlap_pct": 87.5,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Associated_Drug_or_Biological_NDC_1": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 2611100
+     },
+     "Associated_Drug_or_Biological_NDC_2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1040213
+     },
+     "Associated_Drug_or_Biological_NDC_3": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 295565
+     },
+     "Associated_Drug_or_Biological_NDC_4": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 87060
+     },
+     "Associated_Drug_or_Biological_NDC_5": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 23094
+     },
+     "Change_Type": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 69560
+     },
+     "Charity_Indicator": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 634
+     },
+     "City_of_Travel": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 233431
+     },
+     "Contextual_Information": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 475272
+     },
+     "Country_of_Travel": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 222697
+     },
+     "Covered_Recipient_First_Name": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3958952
+     },
+     "Covered_Recipient_Last_Name": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3973587
+     },
+     "Covered_Recipient_License_State_code1": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3761400
+     },
+     "Covered_Recipient_License_State_code2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 342429
+     },
+     "Covered_Recipient_License_State_code3": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 72155
+     },
+     "Covered_Recipient_License_State_code4": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 17323
+     },
+     "Covered_Recipient_License_State_code5": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 4620
+     },
+     "Covered_Recipient_Middle_Name": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3364555
+     },
+     "Covered_Recipient_NPI": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3975100
+     },
+     "Covered_Recipient_Name_Suffix": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 210461
+     },
+     "Covered_Recipient_Primary_Type_1": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1090801
+     },
+     "Covered_Recipient_Primary_Type_2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 15,
+      "runs": 0
+     },
+     "Covered_Recipient_Primary_Type_3": {
+      "rg_overlap_pct": 50.0,
+      "rgs": 15,
+      "runs": 0
+     },
+     "Covered_Recipient_Primary_Type_4": {
+      "rg_overlap_pct": 35.7,
+      "rgs": 15,
+      "runs": 0
+     },
+     "Covered_Recipient_Primary_Type_5": {
+      "rg_overlap_pct": 42.9,
+      "rgs": 15,
+      "runs": 0
+     },
+     "Covered_Recipient_Primary_Type_6": {
+      "rg_overlap_pct": 35.7,
+      "rgs": 15,
+      "runs": 0
+     },
+     "Covered_Recipient_Profile_ID": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3975106
+     },
+     "Covered_Recipient_Specialty_1": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3559488
+     },
+     "Covered_Recipient_Specialty_2": {
+      "inexact": true,
+      "rg_overlap_pct": 92.3,
+      "rgs": 14,
+      "runs": 0
+     },
+     "Covered_Recipient_Specialty_3": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 2,
+      "runs": 0
+     },
+     "Covered_Recipient_Specialty_4": {
+      "runs": 0
+     },
+     "Covered_Recipient_Specialty_5": {
+      "runs": 0
+     },
+     "Covered_Recipient_Specialty_6": {
+      "runs": 0
+     },
+     "Covered_Recipient_Type": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1023
+     },
+     "Covered_or_Noncovered_Indicator_1": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 118797
+     },
+     "Covered_or_Noncovered_Indicator_2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1073456
+     },
+     "Covered_or_Noncovered_Indicator_3": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 413405
+     },
+     "Covered_or_Noncovered_Indicator_4": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 138036
+     },
+     "Covered_or_Noncovered_Indicator_5": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 54415
+     },
+     "Date_of_Payment": {
+      "rg_overlap_pct": 18.8,
+      "rgs": 17,
+      "runs": 261
+     },
+     "Delay_in_Publication_Indicator": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Dispute_Status_for_Publication": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 259
+     },
+     "Form_of_Payment_or_Transfer_of_Value": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 948691
+     },
+     "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_1": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 4101
+     },
+     "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1091068
+     },
+     "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_3": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 406522
+     },
+     "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_4": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 134744
+     },
+     "Indicate_Drug_or_Biological_or_Device_or_Medical_Supply_5": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 51504
+     },
+     "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_1": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3358760
+     },
+     "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1206510
+     },
+     "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_3": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 418780
+     },
+     "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_4": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 137208
+     },
+     "Name_of_Drug_or_Biological_or_Device_or_Medical_Supply_5": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 52086
+     },
+     "Name_of_Third_Party_Entity_Receiving_Payment_or_Transfer_of_Value": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 90664
+     },
+     "Nature_of_Payment_or_Transfer_of_Value": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 759978
+     },
+     "Number_of_Payments_Included_in_Total_Amount": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 32467
+     },
+     "Payment_Publication_Date": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Physician_Ownership_Indicator": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 5265
+     },
+     "Product_Category_or_Therapeutic_Area_1": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3214773
+     },
+     "Product_Category_or_Therapeutic_Area_2": {
+      "inexact": true,
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 1196853
+     },
+     "Product_Category_or_Therapeutic_Area_3": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 416576
+     },
+     "Product_Category_or_Therapeutic_Area_4": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 136302
+     },
+     "Product_Category_or_Therapeutic_Area_5": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 51887
+     },
+     "Program_Year": {
+      "rg_overlap_pct": 25.0,
+      "rgs": 17,
+      "runs": 1
+     },
+     "Recipient_City": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3979096
+     },
+     "Recipient_Country": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 363
+     },
+     "Recipient_Postal_Code": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 362
+     },
+     "Recipient_Primary_Business_Street_Address_Line1": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3989300
+     },
+     "Recipient_Primary_Business_Street_Address_Line2": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 2205451
+     },
+     "Recipient_Province": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 316
+     },
+     "Recipient_State": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3776458
+     },
+     "Recipient_Zip_Code": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3987914
+     },
+     "Record_ID": {
+      "rg_overlap_pct": 31.2,
+      "rgs": 17,
+      "runs": 4000000
+     },
+     "Related_Product_Indicator": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 89223
+     },
+     "State_of_Travel": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 228025
+     },
+     "Submitting_Applicable_Manufacturer_or_Applicable_GPO_Name": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3152139
+     },
+     "Teaching_Hospital_CCN": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 18931
+     },
+     "Teaching_Hospital_ID": {
+      "rg_overlap_pct": 93.8,
+      "rgs": 17,
+      "runs": 18931
+     },
+     "Teaching_Hospital_Name": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 18981
+     },
+     "Third_Party_Equals_Covered_Recipient_Indicator": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 106444
+     },
+     "Third_Party_Payment_Recipient_Indicator": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 106599
+     },
+     "Total_Amount_of_Payment_USDollars": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 17,
+      "runs": 3955237
+     },
+     "file": {
+      "rg_overlap_pct": 18.8,
+      "rgs": 17,
+      "runs": 10
+     }
+    },
+    "sample": {
+     "file": "part-00002-aea4ce76-5fdd-4126-bd8c-cdf99db5eaa9-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.fct_cms_payments",
+    "vorder_files": {
+     "files": 17,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "cms",
+   "id": "31850696469",
+   "sha": "29251f1bb41ebbe02b40149840e1e0779d4066ce",
+   "written": "2026-08-15T00:24:09.601031+00:00"
+  },
+  "stats": {
+   "duckrun": {
+    "dim_cms_date": {
+     "avg_row_group": 5478.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.03,
+     "total_rows": 5478,
+     "vorder": false
+    },
+    "dim_cms_payer": {
+     "avg_row_group": 2841.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.07,
+     "total_rows": 2841,
+     "vorder": false
+    },
+    "fct_cms_payments": {
+     "avg_row_group": 5156221.8,
+     "compression": "SNAPPY",
+     "num_files": 17,
+     "num_row_groups": 17,
+     "schema": "mart",
+     "size_mb": 3911.29,
+     "total_rows": 87655770,
+     "vorder": false
+    },
+    "stg_cms_archive_log": {
+     "avg_row_group": 86.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.01,
+     "total_rows": 86,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_cms_archive_log",
+   "dim_cms_date",
+   "dim_cms_payer",
+   "fct_cms_payments"
+  ]
+ },
+ "run": {
+  "finished": "2026-08-15T00:46:32+00:00",
+  "id": "31850696469",
+  "sha": "29251f1bb41ebbe02b40149840e1e0779d4066ce",
+  "started": "2026-08-15T00:04:21+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/31850696469"
+ },
+ "schema": 1
+}
