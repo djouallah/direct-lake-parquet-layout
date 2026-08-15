@@ -10,12 +10,14 @@ timings.** No table is built, no Delta log is read, no layout statistic is re-de
 slower reader of the same files. The only endpoints this touches are the Fabric control plane (to
 deploy) and XMLA (to query).
 
-**A nightly plus `workflow_dispatch`, on *Benchmark*
+**A weekly `schedule` GRID plus `workflow_dispatch`, on *Benchmark*
 ([benchmark.yml](../.github/workflows/benchmark.yml)) — the same workflow that builds the tables.**
-`cron: "17 7 * * *"` is 02:17 EST / 03:17 EDT, US Eastern asleep either side of the DST boundary,
-which is the point: the query passes are interactive CU on shared capacity and should not land while
-anyone is using it. This reverses a rule that said a human starts every run; what that rule protected
-is unchanged and now accepted rather than avoided, and the cron is one line to remove.
+20 slots a week, one per (dataset × write config) cell, at 05:17 / 06:57 / 08:37 / 10:17 UTC —
+00:17–06:17 US Eastern either side of the DST boundary, which is the point: the query passes are
+interactive CU on shared capacity and should not land while anyone is using it. The slots are 100
+minutes apart because runs must stay serial on one Fabric capacity. This reverses a rule that said a
+human starts every run; what that rule protected is unchanged and now accepted rather than avoided,
+and cells come out a cron line at a time.
 **`push`, `workflow_run` and `repository_dispatch` are still never used** — that workflow commits the
 run record, so a push trigger would let its own commit start the next paid build.
 ⚠️ A scheduled event supplies NO inputs (dispatch defaults do not apply to `schedule`), so every

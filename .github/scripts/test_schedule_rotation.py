@@ -1,25 +1,32 @@
-"""The nightly's weekday rotation is written THREE times — assert the three agree.
+"""The nightly schedule is a 5x4 GRID — assert the cron lines and the env chains agree about it.
 
-benchmark.yml carries the cron lines under `schedule:`, a `DATASET` env chain at workflow level,
-and a byte-identical `RUNIN_DATASET` chain inside the `record` step. CLAUDE.md says the two chains
-"must stay IDENTICAL" and nothing enforced it, which was survivable at four datasets and four cron
-lines and is not at five and five.
+`benchmark.yml` carries 20 cron lines under `schedule:`, each commented with the cell it means
+(`# <dataset> <config>`), and three workflow-level env chains that turn `github.event.schedule`
+back into that cell: `DATASET` (exact whole-cron matching), `BENCH_ENGINES` and
+`SPARK_RESOURCE_PROFILE` (hour-prefix matching). Nothing else in the run knows which cell fired.
 
 EVERY FAILURE THIS CATCHES IS SILENT AND SPENDS CAPACITY:
 
-  a cron with no branch          -> that weekday falls through to the fallback and quietly builds
-                                    aemo instead of the dataset the comment claims
-  the two chains disagreeing     -> the BUILD uses one dataset and the RECORD says another, so the
-                                    run's layout is filed under the wrong dataset's history and the
-                                    dashboard compares it against tables it was never built from
-  a branch naming an unknown cron-> dead branch, same fall-through as the first
-  a dataset with no slot         -> added to the registry, never measured, and nothing says so
+  a cron with no branch          -> falls through to the chain's fallback and quietly builds aemo
+                                    with duckrun instead of the cell the comment claims
+  a branch naming a dead cron    -> the mirror of the above: configuration that reads as live
+  a missing cell                 -> one (dataset, config) is never measured and nothing says so
+  a duplicated cell              -> two runs of one cell, and another cell silently dropped to fit
+  two crons at one (day, time)   -> two Benchmark runs at the same minute, which the concurrency
+                                    group turns into one queued and one run, on ONE Fabric capacity
+  slots too close together       -> an overrunning run queues the next, and a second overrun EVICTS
+                                    the pending one (cancel-in-progress: false keeps one pending
+                                    slot, not two), losing a cell for that week
+  a chain restated instead of
+    referenced                   -> the BUILD uses one cell and the RECORD files another
 
-The comparisons in the workflow are EXACT STRING matches against the cron as written, whitespace
-included, so this test compares the same way rather than parsing cron semantics. A cron rewritten
-from '17 7 * * 3,6' to '17 7 * * 6,3' fires on the same days and matches nothing — which is
-precisely the class of edit that looks harmless in review.
+`DATASET` compares EXACT STRINGS against the cron as written, whitespace included, so this test
+compares the same way rather than parsing cron semantics: a cron rewritten from '17 5 * * 0' to
+'17 05 * * 0' fires on the same minute and matches nothing — precisely the class of edit that looks
+harmless in review. The two hour-keyed chains use `startsWith`, so this test simulates that instead
+of comparing text, and separately asserts the prefixes cannot be ambiguous.
 """
+import itertools
 import os
 import re
 
@@ -29,95 +36,205 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 WORKFLOW = os.path.join(ROOT, ".github", "workflows", "benchmark.yml")
 
+# The config axis of the grid, keyed by the token each cron line's comment carries. The value is
+# what the two hour-keyed chains must resolve that cron to. `spark_default` is writeHeavy — the
+# workspace default, no V-Order — and is the other half of the pair `spark_vorder` makes.
+CONFIGS = {
+    "duckrun":       ("duckrun", "writeHeavy"),
+    "dwh":           ("dwh", "writeHeavy"),
+    "spark_vorder":  ("spark", "readHeavyForPBI"),
+    "spark_default": ("spark", "writeHeavy"),
+}
+
+# Minutes a same-day pair of slots must stay apart. The longest run ever recorded in history/runs/
+# is 84 minutes (the median is 32), and runs must stay serial — one Fabric capacity.
+MIN_GAP_MINUTES = 100
+
+_BRANCH = re.compile(
+    r"\|\|\s*(?:github\.event\.schedule == '(?P<exact>[^']+)'"
+    r"|startsWith\(github\.event\.schedule, '(?P<prefix>[^']+)'\))"
+    r"\s*&& '(?P<value>[^']+)'")
+
 
 def _src():
     return open(WORKFLOW, encoding="utf-8").read()
 
 
 def _crons():
-    """[(cron string, the dataset its trailing comment claims)] in file order."""
-    block = re.search(r"^  schedule:\n((?:    - cron:.*\n)+)", _src(), re.M)
+    """[(cron string, dataset, config token)] in file order."""
+    block = re.search(r"^  schedule:\n((?:    (?:-|#).*\n)+)", _src(), re.M)
     assert block, "no schedule: block of cron lines in benchmark.yml"
     out = []
     for line in block.group(1).splitlines():
-        m = re.match(r'\s*- cron: "([^"]+)"\s*#\s*(\S+)', line)
-        assert m, f"cron line without a trailing dataset comment: {line!r}"
-        out.append((m.group(1), m.group(2)))
+        if re.match(r"\s*#", line):          # the hour->config legend above the lines
+            continue
+        m = re.match(r'\s*- cron: "([^"]+)"\s*#\s*(\S+)\s+(\S+)\s*$', line)
+        assert m, f"cron line without a `# <dataset> <config>` comment: {line!r}"
+        out.append((m.group(1), m.group(2), m.group(3)))
     return out
 
 
-def _chain(var):
-    """[(cron string, dataset)] for one env chain, plus its fallback, in file order."""
+def _chain(var, input_name):
+    """([(kind, key, value)], fallback) for one workflow-level env chain, in file order."""
     m = re.search(
-        rf"{var}: \$\{{\{{ github\.event_name != 'schedule' && inputs\.dataset(.*?)\}}\}}",
-        _src(), re.S)
-    assert m, f"no {var} chain in benchmark.yml"
+        rf"^  {var}: \$\{{\{{ github\.event_name != 'schedule' && inputs\.{input_name}\n(.*?)\}}\}}",
+        _src(), re.S | re.M)
+    assert m, f"no {var} chain in benchmark.yml (or it no longer opens with the dispatch branch)"
     body = m.group(1)
-    pairs = re.findall(r"github\.event\.schedule == '([^']+)' && '([^']+)'", body)
+    branches = [("exact", b.group("exact"), b.group("value")) if b.group("exact")
+                else ("prefix", b.group("prefix"), b.group("value"))
+                for b in _BRANCH.finditer(body)]
     fallback = re.findall(r"\|\|\s*'([^']+)'\s*$", body.strip())
-    assert fallback, f"{var} has no trailing fallback dataset"
-    return pairs, fallback[-1]
+    assert fallback, f"{var} has no trailing fallback value"
+    return branches, fallback[-1]
 
 
-def test_the_two_env_chains_are_identical():
-    """DATASET drives the BUILD; RUNIN_DATASET drives the RECORD. If they disagree the run builds
-    one dataset and files the result under another — and both halves look fine on their own."""
-    assert _chain("DATASET") == _chain("RUNIN_DATASET")
+def _resolve(chain, cron):
+    """What GitHub would evaluate the chain to for this cron: first match wins, else the fallback."""
+    branches, fallback = chain
+    for kind, key, value in branches:
+        if (kind == "exact" and cron == key) or (kind == "prefix" and cron.startswith(key)):
+            return value
+    return fallback
 
 
-def test_every_cron_is_reachable():
-    """A cron with no matching branch is not an error anywhere — it just silently becomes the
-    fallback dataset, on the one day a week that was meant to measure something else."""
-    pairs, fallback = _chain("DATASET")
-    mapped = dict(pairs)
-    for cron, claimed in _crons():
-        resolved = mapped.get(cron, fallback)
-        assert resolved == claimed, (
-            f"cron {cron!r} is commented {claimed!r} but the DATASET chain resolves it to "
-            f"{resolved!r}" + ("" if cron in mapped else " (no branch matches it, so it falls "
-                               "through to the fallback)"))
+def _minutes(cron):
+    minute, hour, _dom, _mon, _dow = cron.split()
+    return int(hour) * 60 + int(minute)
+
+
+def _weekdays(cron):
+    return cron.split()[4].split(",")
+
+
+def test_every_cron_resolves_to_the_cell_its_comment_claims():
+    """The comment is documentation; the three chains are what the run actually reads. A cron whose
+    branch was dropped or mistyped falls through to the fallback and builds a different cell —
+    green, on paid capacity, filed under the wrong name."""
+    ds_chain = _chain("DATASET", "dataset")
+    eng_chain = _chain("BENCH_ENGINES", "engines")
+    prof_chain = _chain("SPARK_RESOURCE_PROFILE", "spark_resource_profile")
+    for cron, dataset, config in _crons():
+        assert config in CONFIGS, f"cron {cron!r} names unknown config {config!r}"
+        engine, profile = CONFIGS[config]
+        assert _resolve(ds_chain, cron) == dataset, (
+            f"cron {cron!r} is commented {dataset!r} but DATASET resolves it to "
+            f"{_resolve(ds_chain, cron)!r}")
+        assert _resolve(eng_chain, cron) == engine, (
+            f"cron {cron!r} is commented {config!r} but BENCH_ENGINES resolves it to "
+            f"{_resolve(eng_chain, cron)!r}")
+        assert _resolve(prof_chain, cron) == profile, (
+            f"cron {cron!r} is commented {config!r} but SPARK_RESOURCE_PROFILE resolves it to "
+            f"{_resolve(prof_chain, cron)!r}")
+
+
+def test_the_grid_is_complete_and_fires_each_cell_once():
+    """Every dataset against every config, exactly once a week. A missing cell is an engine the page
+    compares against others while nothing refreshes it; a duplicated one spends a run twice."""
+    cells = [(ds, cfg) for _cron, ds, cfg in _crons()]
+    want = set(itertools.product(datasets.DATASETS, CONFIGS))
+    assert set(cells) == want, (
+        f"missing {sorted(want - set(cells))}, unexpected {sorted(set(cells) - want)}")
+    dupes = {c for c in cells if cells.count(c) > 1}
+    assert not dupes, f"cells scheduled more than once: {sorted(dupes)}"
 
 
 def test_no_branch_names_a_cron_that_does_not_exist():
-    """The mirror of the above: a branch left behind after a cron was rewritten is dead code that
-    reads as live configuration."""
-    crons = {c for c, _ in _crons()}
-    for cron, ds in _chain("DATASET")[0]:
-        assert cron in crons, f"the chain maps {cron!r} -> {ds!r}, but no such cron line exists"
+    """A branch left behind after a cron was rewritten is dead code that reads as live config — and
+    a PREFIX that matches nothing is the same failure wearing a shape grep will not find."""
+    crons = [c for c, _ds, _cfg in _crons()]
+    for var, inp in (("DATASET", "dataset"), ("BENCH_ENGINES", "engines"),
+                     ("SPARK_RESOURCE_PROFILE", "spark_resource_profile")):
+        for kind, key, value in _chain(var, inp)[0]:
+            hits = [c for c in crons
+                    if (c == key if kind == "exact" else c.startswith(key))]
+            assert hits, f"{var} maps {kind} {key!r} -> {value!r}, but no cron line matches it"
 
 
-def test_every_dataset_named_is_a_real_one():
-    """A typo here is the DATASET-typo trap arriving by a route the `choice` input cannot guard:
+def test_hour_prefixes_cannot_be_ambiguous():
+    """The two hour-keyed chains lean on `startsWith`. If one prefix were a prefix of another the
+    earlier branch would silently swallow the later hour's slots — '17 1' would eat both 01:17 and
+    10:17 — and every affected run would build the wrong engine without erroring."""
+    for var, inp in (("BENCH_ENGINES", "engines"),
+                     ("SPARK_RESOURCE_PROFILE", "spark_resource_profile")):
+        prefixes = [k for kind, k, _v in _chain(var, inp)[0] if kind == "prefix"]
+        for a, b in itertools.permutations(prefixes, 2):
+            assert not b.startswith(a), f"{var}: prefix {a!r} swallows {b!r}"
+
+
+def test_every_value_named_is_a_real_one():
+    """A dataset typo is the DATASET-typo trap arriving by a route the `choice` input cannot guard:
     every `+enabled` gate goes false, `dbt build` reports "Nothing to do" and exits 0."""
-    pairs, fallback = _chain("DATASET")
-    for _cron, ds in pairs:
+    branches, fallback = _chain("DATASET", "dataset")
+    for _kind, _key, ds in branches:
         assert ds in datasets.DATASETS, f"{ds!r} is not a known dataset"
     assert fallback in datasets.DATASETS, f"fallback {fallback!r} is not a known dataset"
-    for _cron, claimed in _crons():
-        assert claimed in datasets.DATASETS, f"cron comment names unknown dataset {claimed!r}"
+    for _cron, ds, _cfg in _crons():
+        assert ds in datasets.DATASETS, f"cron comment names unknown dataset {ds!r}"
+
+    engines = {e for e, _p in CONFIGS.values()}
+    eng_branches, eng_fallback = _chain("BENCH_ENGINES", "engines")
+    for _kind, _key, e in eng_branches + [(None, None, eng_fallback)]:
+        assert e in engines, f"BENCH_ENGINES names {e!r}, which is not one of {sorted(engines)}"
 
 
-def test_every_dataset_gets_a_nightly_slot():
-    """Adding a dataset and forgetting the rotation leaves it measured only when someone remembers
-    to dispatch it by hand — which, on a page whose whole argument is comparing datasets, reads as
-    'this one has no data' rather than 'nobody ran it'."""
-    covered = {claimed for _cron, claimed in _crons()}
-    missing = set(datasets.DATASETS) - covered
-    assert not missing, f"no nightly slot for {sorted(missing)}"
-
-
-def test_the_week_is_covered_exactly_once():
-    """Seven days, no gaps and no double-bookings. Two crons firing on the same weekday would start
-    two Benchmark runs at the same minute — which the concurrency group turns into one cancelled
-    run, but only after both have been queued, and which CLAUDE.md forbids outright because two
-    concurrent runs share one Fabric capacity and throttle each other into wrong numbers."""
+def test_no_two_crons_share_a_weekday_and_time():
+    """Two crons at one minute start two Benchmark runs at once. The concurrency group makes one
+    queue rather than run, but both were dispatched and one cell's measurement is at the mercy of
+    the other's length — and CLAUDE.md forbids concurrent runs outright: one Fabric capacity."""
     seen = {}
-    for cron, claimed in _crons():
-        minute, hour, dom, mon, dow = cron.split()
-        assert (dom, mon) == ("*", "*"), f"{cron!r}: the rotation is weekday-only"
-        for d in dow.split(","):
-            assert d not in seen, (
-                f"weekday {d} is claimed by both {seen[d]!r} and {claimed!r}")
-            seen[d] = claimed
-    assert set(seen) == {str(d) for d in range(7)}, \
-        f"the week is not fully covered: have {sorted(seen)}"
+    for cron, ds, cfg in _crons():
+        for d in _weekdays(cron):
+            slot = (d, _minutes(cron))
+            assert slot not in seen, (
+                f"weekday {d} at {_minutes(cron) // 60:02d}:{_minutes(cron) % 60:02d} is claimed by "
+                f"both {seen[slot]} and {(ds, cfg)}")
+            seen[slot] = (ds, cfg)
+
+
+def test_same_day_slots_stay_far_enough_apart():
+    """Runs are serial. `cancel-in-progress: false` keeps ONE pending run, so an overrun makes the
+    next slot wait — but a second overrun evicts that pending run and the cell is simply not
+    measured that week. The gap is the whole guard; the old one-cron-per-weekday rule gave it for
+    free and the grid does not."""
+    per_day = {}
+    for cron, _ds, _cfg in _crons():
+        for d in _weekdays(cron):
+            per_day.setdefault(d, []).append(_minutes(cron))
+    for day, mins in per_day.items():
+        mins.sort()
+        for a, b in zip(mins, mins[1:]):
+            assert b - a >= MIN_GAP_MINUTES, (
+                f"weekday {day}: slots at {a // 60:02d}:{a % 60:02d} and {b // 60:02d}:{b % 60:02d} "
+                f"are {b - a} min apart, under the {MIN_GAP_MINUTES} min the longest recorded run "
+                f"needs")
+
+
+def test_the_rotation_is_weekday_only():
+    """A day-of-month restriction alongside a weekday one is ORed by cron, not ANDed — the grid
+    would fire cells it never claimed."""
+    for cron, _ds, _cfg in _crons():
+        _minute, _hour, dom, mon, _dow = cron.split()
+        assert (dom, mon) == ("*", "*"), f"{cron!r}: the grid is weekday-only"
+
+
+def test_the_record_and_the_plan_read_the_env_back_rather_than_restating_it():
+    """The scheduled dataset, engine and spark profile are each spelled ONCE, in the workflow-level
+    env. Every other consumer references it. A restated chain is a chain that can drift, and the
+    drift is silent: the build takes one cell and the record files another."""
+    src = _src()
+    for line in ("RUNIN_DATASET: ${{ env.DATASET }}",
+                 "RUN_ENGINE: ${{ env.BENCH_ENGINES }}",
+                 "RUNIN_SPARK_RESOURCE_PROFILE: ${{ env.SPARK_RESOURCE_PROFILE }}",
+                 "ENGINES: ${{ env.BENCH_ENGINES }}"):
+        assert line in src, f"expected {line!r} — a restated chain would drift from the build"
+    # Exactly three chains branch on the cron. A fourth is a copy someone will forget to edit.
+    owners = re.findall(r"^  (\w+): \$\{\{ github\.event_name != 'schedule'", src, re.M)
+    assert set(owners) == {"DATASET", "BENCH_ENGINES", "SPARK_RESOURCE_PROFILE"}, owners
+    # Prose mentions it too, so count only lines that are not comments.
+    live = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+    assert len(re.findall(r"github\.event\.schedule", live)) == sum(
+        len(_chain(v, i)[0]) for v, i in (("DATASET", "dataset"),
+                                          ("BENCH_ENGINES", "engines"),
+                                          ("SPARK_RESOURCE_PROFILE", "spark_resource_profile"))), \
+        "github.event.schedule is read somewhere outside the three env chains"

@@ -12,8 +12,8 @@ name: Capacity units
 # the published page fetches `history/cu.json` at view time, so committing it IS how the numbers
 # reach a reader.
 #
-#   Benchmark        builds, benchmarks, tears down, commits the run record   nightly cron · dispatch
-#   Capacity units   this — reads the model, commits the ledger               after Benchmark · 10:17 cron · dispatch
+#   Benchmark        builds, benchmarks, tears down, commits the run record   grid cron · dispatch
+#   Capacity units   this — reads the model, commits the ledger               after Benchmark · 13:17 cron · dispatch
 #   Dashboard        builds and deploys the page                              push to dashboard/ · dispatch
 #
 # **THE `workflow_run` TRIGGER IS A REVERSAL OF A STANDING RULE, AND IT IS SCOPED.** The rule was
@@ -21,7 +21,7 @@ name: Capacity units
 # *publishing is a decision*: a page that republishes itself whenever a measurement lands will
 # eventually publish one nobody looked at, on a public repo. The dynamic page severed that link and
 # this split completes it. **An automatic measurement now publishes nothing.** What is untouched:
-# `Benchmark` now runs nightly itself, so this fires after it — but within a minute of the build
+# `Benchmark` now runs on its own schedule, so this fires after it — but within a minute of the build
 # finishing, which is why that read is a lower bound and not a settled number.
 #
 # **Why `workflow_run` and not `workflow_call`.** A called workflow can never hold MORE permission
@@ -46,13 +46,14 @@ name: Capacity units
 #
 #   `workflow_run`, ~1 min after a Benchmark   a deliberate LOWER BOUND, so a fresh run's column is
 #                                              populated immediately instead of sitting blank
-#   `cron: 17 10 * * *`                        the settling read for the NIGHTLY, timed from the
-#                                              measured run length plus the smoothing window
+#   `cron: 17 13 * * *`                        the settling read for the day's SCHEDULED runs, timed
+#                                              from the last slot plus the run length plus smoothing
 #
-# **A dispatch you started by hand still needs a dispatch to settle it.** The 10:17 cron is aimed at
-# the 07:17 nightly, not at any run at any hour — that was the old daily `17 21 * * *`, which is not
-# coming back. Watch the page's `may still rise` caveat: it is derived from the clock and expires
-# after two hours, so past that a hand-started run's number reads as settled whether or not it is.
+# **A dispatch you started by hand still needs a dispatch to settle it.** The 13:17 cron is aimed at
+# `Benchmark`'s schedule grid — 2-3 slots a day, the last at 10:17 UTC — not at any run at any hour;
+# that was the old daily `17 21 * * *`, which is not coming back. Watch the page's `may still rise`
+# caveat: it is derived from the clock and expires after two hours, so past that a hand-started run's
+# number reads as settled whether or not it is.
 #
 # GitHub DISABLES a schedule after 60 days of repository inactivity, silently; re-enabling is manual.
 # If that ever bites, the `workflow_run` read still fires and still populates the column — it just
@@ -71,25 +72,28 @@ on:
         description: "workspace GUID; blank = the repo secret"
         type: string
         default: ""
-  # THE SETTLING READ, and its time is arithmetic rather than a round number. `Benchmark`'s nightly
-  # starts at 07:17 UTC; measured over 47 duckrun records its run is a MEDIAN of 31 minutes and a MAX
-  # of 84, so it finishes between ~07:48 and ~08:41. A CU hour then keeps growing for up to ~70
-  # minutes (~6 min ingestion lag, 5–64 min smoothing), which puts the worst case settled at ~09:51.
-  # 10:17 clears it with margin.
+  # THE SETTLING READ, and its time is arithmetic rather than a round number. `Benchmark`'s schedule
+  # is a GRID — 2-3 slots a day at 05:17 / 06:57 / 08:37 / 10:17 UTC, one per (dataset, config) cell
+  # — so this is timed off the LAST slot of the day, not off a single nightly. Measured over 47
+  # duckrun records a run is a MEDIAN of 31 minutes and a MAX of 84, so the 10:17 slot finishes by
+  # ~11:41 worst case. A CU hour then keeps growing for up to ~70 minutes (~6 min ingestion lag,
+  # 5–64 min smoothing), which puts that worst case settled at ~12:51. 13:17 clears it, and every
+  # earlier slot of the day is long settled by then — ONE read finishes the whole day.
   #
-  # An 08:17 read — "an hour after the nightly" — would land mid-smoothing on a typical run and
-  # measure almost nothing the `workflow_run` read had not already seen. This is why the delay is
-  # anchored to the run FINISHING plus the settle, not to the cron that started it.
+  # An earlier read — "an hour after the first slot" — would land mid-smoothing on a typical run,
+  # measure almost nothing the `workflow_run` read had not already seen, and say nothing at all
+  # about the three slots still to come. This is why the delay is anchored to the last run FINISHING
+  # plus the settle, not to the cron that started anything.
   #
   # It is NOT the old daily top-up that used to live here (`17 21 * * *`), which existed to settle
-  # anything measured at any hour. This one has a single job: raise the nightly's own numbers off the
-  # lower bound the `workflow_run` read leaves. A hand-started dispatch is still what settles a
-  # dispatch you started by hand.
+  # anything measured at any hour. This one has a single job: raise the scheduled runs' own numbers
+  # off the lower bound the `workflow_run` read leaves. A hand-started dispatch is still what settles
+  # a dispatch you started by hand.
   schedule:
-    - cron: "17 10 * * *"
+    - cron: "17 13 * * *"
   # Fires within a minute of a Benchmark finishing, so it is deliberately a LOWER BOUND — there to
   # populate a fresh run's column immediately, not to be final. The cron above is what finishes the
-  # job for the nightly.
+  # job for the day's scheduled runs.
   workflow_run:
     workflows: [Benchmark]
     types: [completed]
