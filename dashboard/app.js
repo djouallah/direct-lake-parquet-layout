@@ -602,6 +602,19 @@ export function incomplete(rec) {
   if (!Object.keys(timings).length) {
     return "no benchmark timings — the query half did not run";
   }
+  // ...and the DIRECT LAKE half specifically, not merely SOME timings. The two phases are
+  // separate steps, so a run can lose the `dl` one and still record a full `_dq` set — which is
+  // exactly what run 31850696469 did when its Direct Lake pass died on an untransportable date
+  // after the build had succeeded. `timings` was non-empty, this check passed, and the run reached
+  // the page with a populated ETL half and an EMPTY cold/warm/hot — the "querying this engine was
+  // free" shape that put run 30743411308 in legacy/.
+  //
+  // Direct Lake is THE ranking here: every layout table, the scatter and the tier columns read the
+  // non-_dq models, and `splitTimings` partitions on exactly this suffix. A record with only the
+  // DQ side has nothing those blocks can show.
+  if (!Object.keys(timings).some((m) => !String(m).endsWith("_dq"))) {
+    return "no Direct Lake timings — only the DirectQuery phase reported";
+  }
   return null;
 }
 

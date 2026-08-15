@@ -2836,6 +2836,34 @@ test("a skipped record is named on the page, with its reason", () => {
     "visible, never folded — same rule as the generation exclusions");
 });
 
+test("a run that recorded only its DirectQuery phase is skipped, not shown query-free", () => {
+  // Run 31850696469 is the live case. Its build succeeded and its Direct Lake pass then died on an
+  // untransportable date, but the DQ phase is a SEPARATE step and recorded a full set — so
+  // `benchmark.timings` was non-empty, the old "are there any timings" check passed, and the run
+  // reached the page with a populated ETL half and an empty cold/warm/hot.
+  //
+  // That is the exact shape that put run 30743411308 in legacy/: on a chart it reads as "querying
+  // this engine was free". Direct Lake is the ranking every layout block renders, so a record
+  // holding only the DQ side has nothing to show and must be skipped BY NAME.
+  const good = full("a-1.json", "spark");
+  const dqOnly = full("b-2.json", "duckrun");
+  const dl = Object.keys(dqOnly.benchmark.timings);
+  dqOnly.benchmark.timings = Object.fromEntries(
+    dl.map((m) => [`${m}_dq`, dqOnly.benchmark.timings[m]]));
+  assert.equal(d.incomplete(dqOnly),
+    "no Direct Lake timings — only the DirectQuery phase reported");
+  const { html } = d.compose([good, dqOnly], ledger({ OUT: 1.0, SEM: 2.0 }), {});
+  const text = plain(html);
+  assert.ok(text.includes("`b-2.json` — no Direct Lake timings — only the DirectQuery phase reported"),
+    "named on the page with its reason, like every other skip");
+  // ...and a record carrying BOTH phases is still perfectly fine.
+  const both = full("c-3.json", "dwh");
+  for (const m of Object.keys(both.benchmark.timings)) {
+    both.benchmark.timings[`${m}_dq`] = both.benchmark.timings[m];
+  }
+  assert.equal(d.incomplete(both), null, "dl + dq is complete, not a duplicate-phase problem");
+});
+
 test("a still-billing drifter is a visible note, not a folded one", () => {
   // The one state that never resolves by waiting must not sit behind a click.
   const good = full("a-1.json", "spark");
