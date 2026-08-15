@@ -329,6 +329,7 @@ it is never staler than the ledger under it:
 | bts | `readHeavyForPBI` | **3,045** | 100% | **869** | 100% | 180.5M | 6.7M | 2,585 |
 | bts | `writeHeavy` | **3,954** | 130% | **1,093** | 126% | 180.5M | 6.9M | 2,441 |
 | cms | `readHeavyForPBI` | **9,737** | 100% | **1,083** | 100% | 87.7M | 1.6M | 3,032 |
+| cms | `writeHeavy` | **7,424** | 76% | **1,940** | 179% | 87.7M | 1.3M | 5,582 |
 | green | `readHeavyForPBI` | **1,897** | 100% | **2,556** | 100% | 84.3M | 2.3M | 1,546 |
 | green | `writeHeavy` | **1,506** | 79% | **2,644** | 103% | 84.3M | 3.4M | 1,623 |
 | nyc | `readHeavyForPBI` | **12,068** | 100% | **5,968** | 100% | 591.7M | 10.4M | 5,850 |
