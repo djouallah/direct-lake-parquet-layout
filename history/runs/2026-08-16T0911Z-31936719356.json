@@ -1,0 +1,68 @@
+{
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "4",
+  "dataset": "nyc",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "2000000",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "21C38AB1-7B89-4FC7-B0C4-E0B3A9B51C58": {
+   "at": "2026-08-16T08:36:08+00:00",
+   "created": true,
+   "deleted": "2026-08-16T09:11:41+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_delta",
+   "role": "output"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-08-16T08:35:58+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "C8D2A513-076A-4A61-8952-AD37F9B2E6D7": {
+   "at": "2026-08-16T08:35:26+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_nyc_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-08-16T08:35:22+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  },
+  "F7F0AB6F-2C5F-4D48-BDAD-7517F2545E54": {
+   "at": "2026-08-16T08:35:24+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_nyc_landing",
+   "role": "landing"
+  }
+ },
+ "run": {
+  "finished": "2026-08-16T09:11:50+00:00",
+  "id": "31936719356",
+  "sha": "6e944c7e8f53d33af85168608030f31116ee741b",
+  "started": "2026-08-16T08:32:50+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/31936719356"
+ },
+ "schema": 1
+}
