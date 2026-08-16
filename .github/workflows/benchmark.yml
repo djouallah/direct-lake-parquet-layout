@@ -247,21 +247,24 @@ on:
         description: "duckrun: sort the mart by — blank for no sort (ignored if duckrun auto)"
         type: string
         default: "date,time,price"
-      # 2M, not 16M. 16M was spark `readHeavyForPBI`'s measured segment size (9 x 16.0M on this
-      # table) and VertiPaq's ceiling, i.e. the largest segment Direct Lake would take whole. 2M is
-      # the other end of that trade: ~72 row groups instead of ~9, so a query that touches a narrow
-      # slice of the sort key scans far less, at the cost of more segments to open. Already measured
-      # here rather than guessed — a `date, time, price` run at 2.0M / 72 RG is in `history/`, which
-      # is why this is a default change and not an experiment.
+      # 16M, i.e. VertiPaq's segment ceiling — the largest segment Direct Lake takes whole, and on
+      # this table 143,980,961 / 16M = ~9 row groups, the fewest reachable. It was 2M / ~72 RG on the
+      # argument that a query touching a narrow slice of the sort key scans less; the CU measurement
+      # does not support that. Direct Lake CU by row-group band over 60 aemo duckrun runs: 1,561 at
+      # 8-10 RG, 1,593 at 72-73, 1,765 at 19-27 and 2,190 at 144 — and 144's p25 (2,165) clears every
+      # other band's p75, so the only separation that survives the run-to-run spread is that MORE
+      # segments cost more. Build CU is flat across all four bands at `cores=8` (9,700-10,300), so
+      # the write side does not pay for it. 9-73 is a tie within noise; the ceiling is the end of the
+      # only measured direction.
       row_group_size:
         description: "duckrun: rows per row group"
         type: string
-        default: "2000000"
+        default: "16000000"
       file_size_mb:
         description: "duckrun: parquet file size MB"
         type: choice
-        options: ["1024", "512", "128"]
-        default: "1024"
+        options: ["1024", "512", "128", "64", "32"]
+        default: "64"
       # writeHeavy is the WORKSPACE default, so it is the no-op value and a bare dispatch writes what
       # a plain Fabric session writes. readHeavyForPBI is the only profile that turns V-Order on, and
       # it also flips optimizeWrite to a 1 GB bin size — so it rewrites file layout well beyond
@@ -562,8 +565,8 @@ jobs:
           RUNIN_DUCKRUN_AUTO: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto)
             && 'true' || 'false' }}
           RUNIN_SORT_BY: ${{ github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by }}
-          RUNIN_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '2000000' || inputs.row_group_size }}
-          RUNIN_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '1024' || inputs.file_size_mb }}
+          RUNIN_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '16000000' || inputs.row_group_size }}
+          RUNIN_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '64' || inputs.file_size_mb }}
           RUNIN_SKIP_DOWNLOAD: ${{ github.event_name == 'schedule' && 'true'
             || inputs.skip_download }}
           RUNIN_DOWNLOAD_LIMIT: ${{ github.event_name == 'schedule' && '200' || inputs.download_limit }}

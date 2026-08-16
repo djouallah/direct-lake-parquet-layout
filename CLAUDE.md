@@ -1039,28 +1039,39 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   **The `sorted` dispatch input is a KNOWING exception, and the only one.** With it on, duckrun
   writes `fct_summary` sorted and declares geometry, and **all three values are now dispatch inputs
   rather than literals in the model**: `sort_by` (default `date,time,price`), `row_group_size`
-  (default `2000000`) and `file_size_mb` (default `1024`; choice of 1024/512/128).
-  **BOTH OF THE FIRST TWO DEFAULTS HAVE MOVED, so a bare dispatch no longer reproduces the older
-  history.** `sort_by` was `date,time` — the key the retired `'auto'` picker kept choosing, without
-  its +19% profiling pass, with DUID's ~16% of size deliberately left on the table — and now carries
-  `price` as well. `row_group_size` was `16000000`, spark `readHeavyForPBI`'s measured segment size
-  (9×16.0M on this table) and VertiPaq's ceiling, the largest segment Direct Lake takes whole; 48M
-  was declared first and was over it. 2M is the other end of that trade: ~72 row groups instead of
-  ~9, so a query touching a narrow slice of the sort key scans far less, at the cost of more segments
-  to open. Neither is a guess — a `date, time, price` run at 2.0M / 72 RG is already in `history/`.
-  **The dashboard consequence is a NEW COLUMN AND A NEW GROUP, not drift — and nothing in `stats.py`
-  had to change for that, BY DESIGN.** `_nonbaseline`'s baseline is pinned to `16000000`, the
-  geometry `history/` was written under, and is deliberately NOT the live dispatch default: a 2M run
-  therefore records `row_group_size: "2000000"` explicitly and `variant()` splits it into its own
-  column, while the 16M history keeps the column it has. Had the baseline read the default, a 2M run
-  would have recorded `None`, shared a column with the 16M history, and `columnsFor` — latest run per
-  column — would have hidden nine runs of 9-RG history behind one 72-RG run, with the bars still
-  separating so nothing looked broken. `layoutKey` carries the DECLARED `row_group_size` and the sort
-  as dispatched, so 2M and the 16M baseline can never merge and neither can two sort keys — note that
-  is the declaration doing the work, not the 72-vs-9 row groups it produced. **Do not "tidy"
-  the baseline to match this new default** — that is the trap, and `test_sort_key.py` pins it.
-  Read a jump in the layout table as the defaults changing, and check the record's `inputs` block
-  before calling it a regression.
+  (default `16000000`) and `file_size_mb` (default `64`; choice of 1024/512/128/64/32).
+  **ALL THREE DEFAULTS HAVE MOVED AT SOME POINT, so a bare dispatch does not reproduce every
+  generation of the history.** `sort_by` was `date,time` — the key the retired `'auto'` picker kept
+  choosing, without its +19% profiling pass, with DUID's ~16% of size deliberately left on the table
+  — and now carries `price` as well. `row_group_size` went `16000000` → `2000000` → **back to
+  `16000000`**, and the round trip is worth reading rather than repeating: 2M was chosen on the
+  argument that ~72 row groups instead of ~9 lets a query touching a narrow slice of the sort key
+  scan far less, at the cost of more segments to open. **The CU measurement does not support that
+  half of the trade.** Direct Lake CU by row-group band over 60 aemo duckrun runs — 1,561 at 8-10 RG,
+  1,593 at 72-73, 1,765 at 19-27, **2,190 at 144** — and only 144 separates, its p25 (2,165) clearing
+  every other band's p75. Build CU is flat across all four bands at `cores=8` (9,700-10,300), so the
+  write side does not pay for it either. 9-73 is a tie inside the run-to-run spread; 16M is the
+  VertiPaq segment ceiling (the largest segment Direct Lake takes whole; 48M was declared once and
+  was over it), so ~9 row groups is the fewest reachable and the end of the only measured direction.
+  `file_size_mb` moved `1024` → `64`, and that one is **not** backed by a measurement here: every
+  aemo run in `history/` was written at 1024, so there is no file-size band table to point at.
+  ⚠️ **The two geometry knobs INTERACT, and the file cap binds first.** `fct_summary` at 9 row groups
+  is ~775 MB, i.e. ~86 MB per row group, so a 64 MB file target cannot hold one — expect roughly one
+  row group per file and ~9-12 files where 1024 MB produced a single file. Read the resulting
+  `num_files` in the record rather than assuming the dispatch got what it asked for.
+  **The dashboard consequence differs per knob now, and nothing in `stats.py` changed for either.**
+  `_nonbaseline`'s baselines are pinned to `16000000` / `1024`, the geometry `history/` was written
+  under, and are deliberately NOT read from the live dispatch defaults. So `row_group_size` is back
+  AT its baseline: a bare dispatch records `None` and joins the 16M history's column, while the 2M
+  runs keep the separate column they earned. `file_size_mb` is now BELOW its baseline: every bare
+  dispatch records `file_size_mb: "64"` explicitly, `variant()` splits it into a new column and
+  `variantTag` spells it `64MB` — so expect a fresh column with no history behind it, and read that
+  as the default moving rather than as drift. Had either baseline been "tidied" to match a default,
+  runs of two geometries would have shared one column and `columnsFor` — latest run per column —
+  would have hidden the older generation behind the newer, with the bars still separating so nothing
+  looked broken. **Do not "tidy" a baseline to match a default** — that is the trap, and
+  `test_sort_key.py` pins both spellings. Check the record's `inputs` block before calling a jump in
+  the layout table a regression.
   Three consequences worth holding. **`row_group_size` and `sort_by` are FREE TEXT**, so the `plan`
   job validates them — a positive integer, and comma-separated plain identifiers — because `plan` is
   free and runs before any leg spends capacity, whereas a typo reaching duckrun dies mid-write with
