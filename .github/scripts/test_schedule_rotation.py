@@ -17,14 +17,14 @@ EVERY FAILURE THIS CATCHES IS SILENT AND SPENDS CAPACITY:
   slots too close together       -> an overrunning run queues the next, and a second overrun EVICTS
                                     the pending one (cancel-in-progress: false keeps one pending
                                     slot, not two), losing a cell for that week
-  a slot in East US daylight   -> interactive CU on a shared capacity while people are on it, which
+  a slot in East US work hours   -> interactive CU on a shared capacity while people are on it, which
                                     the run cannot report: it goes green, just slower and dearer
   a chain restated instead of
     referenced                   -> the BUILD uses one cell and the RECORD files another
 
 `DATASET` compares EXACT STRINGS against the cron as written, whitespace included, so this test
-compares the same way rather than parsing cron semantics: a cron rewritten from '17 4 * * 0' to
-'17 04 * * 0' fires on the same minute and matches nothing — precisely the class of edit that looks
+compares the same way rather than parsing cron semantics: a cron rewritten from '17 3 * * 0' to
+'17 03 * * 0' fires on the same minute and matches nothing — precisely the class of edit that looks
 harmless in review. The two hour-keyed chains use `startsWith`, so this test simulates that instead
 of comparing text, and separately asserts the prefixes cannot be ambiguous.
 """
@@ -52,14 +52,18 @@ CONFIGS = {
 # is 84 minutes (the median is 32), and runs must stay serial — one Fabric capacity.
 MIN_GAP_MINUTES = 100
 
-# Every slot must START while East US is asleep, on BOTH sides of the DST boundary — the capacity is
+# Every slot must run while East US is off work, on BOTH sides of the DST boundary — the capacity is
 # shared and the query passes are INTERACTIVE CU, the class of usage a capacity admin notices. This
-# is asserted rather than left to the comment because it is exactly what drifted: the grid sat an
-# hour later for a while and its last slot, 10:17 UTC, is 06:17 EDT. That is morning, it read as a
-# night slot in every comment, and run 31941551767 fired there. NIGHT_END is the binding one; both
-# offsets are checked, so no season can be the one that is wrong.
+# is asserted rather than left to the comment because it is exactly what drifted: the grid sat two
+# hours later for a while and its last slot, 10:17 UTC, is 06:17 EDT. That is morning, it read as a
+# night slot in every comment, and run 31941551767 fired there.
+#
+# The window is AFTER WORK rather than dead of night, which is what makes the whole run fit and not
+# just its start: at a 23:00 floor the earliest legal grid ended its last slot 06:41 EDT on a
+# worst-case run, and that overrun had to be accepted. NIGHT_END is still the binding side.
 US_EAST_OFFSETS = {"EST": -5, "EDT": -4}   # America/New_York, the East US region's clock
-NIGHT_START, NIGHT_END = 23 * 60, 6 * 60   # local 23:00-06:00
+NIGHT_START, NIGHT_END = 22 * 60, 6 * 60   # local 22:00-06:00
+MAX_RUN_MINUTES = 84                       # longest run in history/runs/; the median is 32
 
 _BRANCH = re.compile(
     r"\|\|\s*(?:github\.event\.schedule == '(?P<exact>[^']+)'"
@@ -221,20 +225,30 @@ def test_same_day_slots_stay_far_enough_apart():
                 f"needs")
 
 
-def test_every_slot_starts_while_east_us_is_asleep():
+def test_every_slot_runs_to_completion_while_east_us_is_off_work():
     """The whole reason the times are not round. A slot landing in East US working hours puts
     interactive CU on a shared capacity while people are on it — and the failure is invisible from
-    the run itself, which goes green having simply been slower and more expensive. Checked at BOTH
-    UTC offsets because the grid outlives the DST boundary and a slot legal in winter can be an
-    hour into the morning in summer: that is precisely how 10:17 UTC (05:17 EST, 06:17 EDT) stood
-    as a night slot for as long as it did."""
+    the run itself, which goes green having simply been slower and more expensive.
+
+    BOTH ENDPOINTS are checked, not just the start: a slot that begins at 04:17 and runs 84 minutes
+    has spent half its query passes in the morning. The window is 8 hours and the worst run is 84
+    minutes, so start and end inside it means the whole run is.
+
+    And at BOTH UTC offsets, because the grid outlives the DST boundary and a slot legal in winter
+    can be an hour into the morning in summer — precisely how 10:17 UTC (05:17 EST, 06:17 EDT)
+    stood as a night slot for as long as it did."""
+    def local(minutes, offset):
+        return (minutes + offset * 60) % (24 * 60)
+
     for cron, ds, cfg in _crons():
+        start = _minutes(cron)
         for name, offset in US_EAST_OFFSETS.items():
-            local = (_minutes(cron) + offset * 60) % (24 * 60)
-            assert local >= NIGHT_START or local < NIGHT_END, (
-                f"{cron!r} ({ds} {cfg}) is {_minutes(cron) // 60:02d}:{_minutes(cron) % 60:02d} UTC "
-                f"= {local // 60:02d}:{local % 60:02d} {name}, outside the "
-                f"{NIGHT_START // 60:02d}:00-{NIGHT_END // 60:02d}:00 East US night window")
+            for label, at in (("starts", local(start, offset)),
+                              ("ends", local(start + MAX_RUN_MINUTES, offset))):
+                assert at >= NIGHT_START or at < NIGHT_END, (
+                    f"{cron!r} ({ds} {cfg}) is {start // 60:02d}:{start % 60:02d} UTC and {label} at "
+                    f"{at // 60:02d}:{at % 60:02d} {name} on the {MAX_RUN_MINUTES}-minute worst case, "
+                    f"outside the {NIGHT_START // 60:02d}:00-{NIGHT_END // 60:02d}:00 East US window")
 
 
 def test_the_rotation_is_weekday_only():

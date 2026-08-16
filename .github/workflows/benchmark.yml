@@ -92,30 +92,34 @@ on:
   # day, which is the arrangement that leaves the weekend empty. Cell (dataset i, hour j) fires on
   # weekday (i + 2j) mod 7, which puts five DISTINCT weekdays in every hour column:
   #
-  #     Sun   04:17 aemo  duckrun    07:37 green spark V-Order   09:17 nyc   spark default
-  #     Mon   04:17 nyc   duckrun    07:37 cms   spark V-Order   09:17 bts   spark default
-  #     Tue   04:17 bts   duckrun    05:57 aemo  dwh             09:17 green spark default
-  #     Wed   04:17 green duckrun    05:57 nyc   dwh             09:17 cms   spark default
-  #     Thu   04:17 cms   duckrun    05:57 bts   dwh             07:37 aemo  spark V-Order
-  #     Fri   05:57 green dwh        07:37 nyc   spark V-Order
-  #     Sat   05:57 cms   dwh        07:37 bts   spark V-Order   09:17 aemo  spark default
+  #     Sun   03:17 aemo  duckrun    06:37 green spark V-Order   08:17 nyc   spark default
+  #     Mon   03:17 nyc   duckrun    06:37 cms   spark V-Order   08:17 bts   spark default
+  #     Tue   03:17 bts   duckrun    04:57 aemo  dwh             08:17 green spark default
+  #     Wed   03:17 green duckrun    04:57 nyc   dwh             08:17 cms   spark default
+  #     Thu   03:17 cms   duckrun    04:57 bts   dwh             06:37 aemo  spark V-Order
+  #     Fri   04:57 green dwh        06:37 nyc   spark V-Order
+  #     Sat   04:57 cms   dwh        06:37 bts   spark V-Order   08:17 aemo  spark default
   #
   # **THE TIMES ARE NOT ROUND AND THE MINUTES ARE NOT DECORATIVE.** The query passes draw interactive
   # CU on shared capacity, so no slot may land while anyone is using it — and the only window asleep
-  # on BOTH sides of the DST boundary is 04:17-09:17 UTC (23:17-04:17 EST, 00:17-05:17 EDT; 14:17-19:17
+  # on BOTH sides of the DST boundary is 03:17-08:17 UTC (22:17-03:17 EST, 23:17-04:17 EDT; 13:17-18:17
   # in the metrics model's own +10 clock, so a night's results are there to read the same evening).
   # Four slots inside five hours is 100 minutes apart, hence 17/57/37/17 — which also keeps every one
   # of them OFF the top of the hour, where GitHub delays scheduled runs most.
   #
-  # **04:17 IS THE EARLIEST LEGAL START AND THE GRID IS PINNED TO IT — it does not float, and it must
-  # not drift later again.** 23:00 local is 04:00 UTC under EST and 03:00 under EDT, so 04:00 is where
-  # the two windows start to overlap; 100-minute spacing then fixes all four. The grid ran an hour
-  # later for a while and the LAST slot was the casualty — 10:17 UTC is 06:17 EDT, which is not night
-  # in East US by any reading, and run 31941551767 fired there at 06:23 EDT. Every slot's local time
-  # is checked by `test_schedule_rotation.py`, on both sides of DST, so this cannot come back
-  # silently. What it costs: a 09:17 start plus the 84-minute worst case ends 06:41 EDT, ~40 minutes
-  # into the morning. The MEDIAN 32-minute run ends 05:49 EDT. Containing the worst case too would
-  # need the gaps down to 92 minutes, under the serial-overrun guard, which is the worse trade.
+  # **THE WINDOW IS AFTER WORK, NOT MIDNIGHT: local 22:00-06:00.** 22:00 is 03:00 UTC under EST and
+  # 02:00 under EDT, so 03:00 is where the two seasons' windows begin to overlap and **03:17 is the
+  # EARLIEST LEGAL START. The grid is pinned to it — it does not float, and it must not drift later
+  # again.** It sat two hours later for a while and the LAST slot was the casualty: 10:17 UTC is
+  # 06:17 EDT, which is morning in East US by any reading, and it read as a night slot in every
+  # comment here until run 31941551767 fired at 06:23 EDT.
+  #
+  # **THE WHOLE RUN FITS, NOT JUST ITS START, AND THAT IS WHAT THE EXTRA HOUR BOUGHT.** The 08:17
+  # slot plus the 84-minute worst case ends 05:41 EDT / 04:41 EST — inside the window on both sides,
+  # with the median 32-minute run ending 04:49 EDT. At the 23:00 floor this was NOT true (a 09:17
+  # start ran to 06:41 EDT) and the overrun was an accepted cost; it is now a guarantee, and
+  # `test_schedule_rotation.py` asserts both endpoints of every slot at BOTH offsets, so neither the
+  # start nor the tail can drift out and no season can be the one that is wrong.
   #
   # 100 minutes clears the worst run ever recorded here (84 min; the median is 32) by 16. Runs must
   # stay SERIAL — one Fabric capacity, and two overlapping runs throttle each other into quietly
@@ -126,11 +130,12 @@ on:
   # **THE TRAILING COMMENT ON EACH CRON LINE IS LOAD-BEARING**: `# <dataset> <config>`, parsed by
   # `.github/scripts/test_schedule_rotation.py`, which resolves every cron through the three env
   # chains below and asserts the result is the cell the comment claims — plus that all 20 cells are
-  # present exactly once, that no two crons share a (weekday, time), and that same-day slots stay
-  # >= 100 minutes apart. `github.event.schedule` carries the cron string that fired, which is the
+  # present exactly once, that no two crons share a (weekday, time), that same-day slots stay
+  # >= 100 minutes apart, and that every slot both STARTS and FINISHES inside the East US 22:00-06:00
+  # window at BOTH UTC offsets. `github.event.schedule` carries the cron string that fired, which is the
   # ONLY schedule-time signal a workflow-level `env` expression can branch on (no shell runs there,
   # and expressions have no arithmetic, so day-of-year-modulo is not expressible where `DATASET` has
-  # to live). `DATASET` matches it EXACTLY, whitespace included — rewriting '17 4 * * 0' as
+  # to live). `DATASET` matches it EXACTLY, whitespace included — rewriting '17 3 * * 0' as
   # '17 04 * * 0' fires on the same minute and matches nothing, falling through to aemo silently.
   # The engine and profile chains match on the HOUR PREFIX instead, which is what keeps them four
   # branches rather than twenty.
@@ -139,9 +144,10 @@ on:
   # repository inactivity, silently, and re-enabling is manual. `Capacity units` fires on this
   # workflow completing, which reads CU within a minute of the build finishing — that read is a LOWER
   # BOUND (a CU hour keeps growing for ~70 minutes) — and its own 13:17 cron is the settling read,
-  # timed off the LAST slot of the day (09:17 + the 84-minute worst case + the ~70-minute settle,
-  # i.e. settled by 11:51, so 13:17 clears it by 86 minutes — it was moved off 10:17 with an hour of
-  # slack to spare, which is why capacity.yml's own cron did not have to move with the grid).
+  # timed off the LAST slot of the day (08:17 + the 84-minute worst case + the ~70-minute settle,
+  # i.e. settled by 10:51, so 13:17 clears it by 146 minutes — it was derived off a 10:17 last slot
+  # with 26 minutes of slack, so moving the grid EARLIER only widened it and capacity.yml's own cron
+  # did not have to follow).
   # `max(old, new)` over a 14-day floor makes a late raise safe.
   #
   # **Every scheduled value is the form default, `cores` included — 8, not the 64 a hand dispatch
@@ -152,27 +158,27 @@ on:
   # `variant()` — which is correct: 8 and 64 are different machines and the CU rate (`cores / 2`)
   # says so on the page.
   schedule:
-    # 04:17 duckrun · 05:57 dwh · 07:37 spark V-Order · 09:17 spark default  (all UTC; night in East US)
-    - cron: "17 4 * * 0"     # aemo  duckrun
-    - cron: "57 5 * * 2"     # aemo  dwh
-    - cron: "37 7 * * 4"     # aemo  spark_vorder
-    - cron: "17 9 * * 6"    # aemo  spark_default
-    - cron: "17 4 * * 1"     # nyc   duckrun
-    - cron: "57 5 * * 3"     # nyc   dwh
-    - cron: "37 7 * * 5"     # nyc   spark_vorder
-    - cron: "17 9 * * 0"    # nyc   spark_default
-    - cron: "17 4 * * 2"     # bts   duckrun
-    - cron: "57 5 * * 4"     # bts   dwh
-    - cron: "37 7 * * 6"     # bts   spark_vorder
-    - cron: "17 9 * * 1"    # bts   spark_default
-    - cron: "17 4 * * 3"     # green duckrun
-    - cron: "57 5 * * 5"     # green dwh
-    - cron: "37 7 * * 0"     # green spark_vorder
-    - cron: "17 9 * * 2"    # green spark_default
-    - cron: "17 4 * * 4"     # cms   duckrun
-    - cron: "57 5 * * 6"     # cms   dwh
-    - cron: "37 7 * * 1"     # cms   spark_vorder
-    - cron: "17 9 * * 3"    # cms   spark_default
+    # 03:17 duckrun · 04:57 dwh · 06:37 spark V-Order · 08:17 spark default  (all UTC; night in East US)
+    - cron: "17 3 * * 0"     # aemo  duckrun
+    - cron: "57 4 * * 2"     # aemo  dwh
+    - cron: "37 6 * * 4"     # aemo  spark_vorder
+    - cron: "17 8 * * 6"    # aemo  spark_default
+    - cron: "17 3 * * 1"     # nyc   duckrun
+    - cron: "57 4 * * 3"     # nyc   dwh
+    - cron: "37 6 * * 5"     # nyc   spark_vorder
+    - cron: "17 8 * * 0"    # nyc   spark_default
+    - cron: "17 3 * * 2"     # bts   duckrun
+    - cron: "57 4 * * 4"     # bts   dwh
+    - cron: "37 6 * * 6"     # bts   spark_vorder
+    - cron: "17 8 * * 1"    # bts   spark_default
+    - cron: "17 3 * * 3"     # green duckrun
+    - cron: "57 4 * * 5"     # green dwh
+    - cron: "37 6 * * 0"     # green spark_vorder
+    - cron: "17 8 * * 2"    # green spark_default
+    - cron: "17 3 * * 4"     # cms   duckrun
+    - cron: "57 4 * * 6"     # cms   dwh
+    - cron: "37 6 * * 1"     # cms   spark_vorder
+    - cron: "17 8 * * 3"    # cms   spark_default
   workflow_dispatch:
     inputs:
       # THE TWO THAT GET CHANGED: which engine, and how big a machine.
@@ -404,26 +410,26 @@ env:
   # built nothing. `RUNIN_DATASET` in the `open` job REFERENCES this value rather than restating it,
   # so the build and the record cannot claim different datasets.
   DATASET: ${{ github.event_name != 'schedule' && inputs.dataset
-    || github.event.schedule == '17 4 * * 0' && 'aemo'
-    || github.event.schedule == '57 5 * * 2' && 'aemo'
-    || github.event.schedule == '37 7 * * 4' && 'aemo'
-    || github.event.schedule == '17 9 * * 6' && 'aemo'
-    || github.event.schedule == '17 4 * * 1' && 'nyc'
-    || github.event.schedule == '57 5 * * 3' && 'nyc'
-    || github.event.schedule == '37 7 * * 5' && 'nyc'
-    || github.event.schedule == '17 9 * * 0' && 'nyc'
-    || github.event.schedule == '17 4 * * 2' && 'bts'
-    || github.event.schedule == '57 5 * * 4' && 'bts'
-    || github.event.schedule == '37 7 * * 6' && 'bts'
-    || github.event.schedule == '17 9 * * 1' && 'bts'
-    || github.event.schedule == '17 4 * * 3' && 'green'
-    || github.event.schedule == '57 5 * * 5' && 'green'
-    || github.event.schedule == '37 7 * * 0' && 'green'
-    || github.event.schedule == '17 9 * * 2' && 'green'
-    || github.event.schedule == '17 4 * * 4' && 'cms'
-    || github.event.schedule == '57 5 * * 6' && 'cms'
-    || github.event.schedule == '37 7 * * 1' && 'cms'
-    || github.event.schedule == '17 9 * * 3' && 'cms'
+    || github.event.schedule == '17 3 * * 0' && 'aemo'
+    || github.event.schedule == '57 4 * * 2' && 'aemo'
+    || github.event.schedule == '37 6 * * 4' && 'aemo'
+    || github.event.schedule == '17 8 * * 6' && 'aemo'
+    || github.event.schedule == '17 3 * * 1' && 'nyc'
+    || github.event.schedule == '57 4 * * 3' && 'nyc'
+    || github.event.schedule == '37 6 * * 5' && 'nyc'
+    || github.event.schedule == '17 8 * * 0' && 'nyc'
+    || github.event.schedule == '17 3 * * 2' && 'bts'
+    || github.event.schedule == '57 4 * * 4' && 'bts'
+    || github.event.schedule == '37 6 * * 6' && 'bts'
+    || github.event.schedule == '17 8 * * 1' && 'bts'
+    || github.event.schedule == '17 3 * * 3' && 'green'
+    || github.event.schedule == '57 4 * * 5' && 'green'
+    || github.event.schedule == '37 6 * * 0' && 'green'
+    || github.event.schedule == '17 8 * * 2' && 'green'
+    || github.event.schedule == '17 3 * * 4' && 'cms'
+    || github.event.schedule == '57 4 * * 6' && 'cms'
+    || github.event.schedule == '37 6 * * 1' && 'cms'
+    || github.event.schedule == '17 8 * * 3' && 'cms'
     || 'aemo' }}
   AZURE_TRANSPORT_OPTION_TYPE: curl
   CURL_CA_INFO: /etc/ssl/certs/ca-certificates.crt
@@ -444,15 +450,15 @@ env:
   # Spark leg only. writeHeavy is the workspace default, so the default dispatch writes what a plain
   # Fabric session writes — and therefore NO V-Order, which readHeavyForPBI alone enables.
   #
-  # ON A SCHEDULE THE PROFILE COMES FROM THE HOUR: the 07:37 slots are the V-Order half of the pair
-  # and the 09:17 slots the default half, which is what keeps both sides of the sharpest experiment
+  # ON A SCHEDULE THE PROFILE COMES FROM THE HOUR: the 06:37 slots are the V-Order half of the pair
+  # and the 08:17 slots the default half, which is what keeps both sides of the sharpest experiment
   # on the page the same generation on every dataset. Matched on the hour PREFIX rather than the
-  # whole cron — the four prefixes ('17 4 ', '57 5 ', '37 7 ', '17 9 ') are distinct and none is a
+  # whole cron — the four prefixes ('17 3 ', '57 4 ', '37 6 ', '17 8 ') are distinct and none is a
   # prefix of another, so one branch covers all five of that hour's datasets. Every other slot reads
   # writeHeavy, which is inert on a duckrun or dwh night and is what `stats.py` records either way.
   # `RUNIN_SPARK_RESOURCE_PROFILE` REFERENCES this rather than restating it.
   SPARK_RESOURCE_PROFILE: ${{ github.event_name != 'schedule' && inputs.spark_resource_profile
-    || startsWith(github.event.schedule, '37 7 ') && 'readHeavyForPBI'
+    || startsWith(github.event.schedule, '37 6 ') && 'readHeavyForPBI'
     || 'writeHeavy' }}
   # dwh leg only. Same boolean spelling as SPARK_NATIVE_ENABLED above, and normalised to the STRINGS
   # 'true'/'false' because two readers compare it as one: the `server` job decides whether to run the
@@ -490,15 +496,15 @@ env:
     || inputs.file_size_mb }}
   # ON A SCHEDULE THE ENGINE COMES FROM THE HOUR — see the grid at the top of the file. Matched on
   # the hour PREFIX, so three branches cover twenty crons; the two spark hours differ only in
-  # SPARK_RESOURCE_PROFILE above. `duckrun` is the trailing value, which makes it both the 04:17
+  # SPARK_RESOURCE_PROFILE above. `duckrun` is the trailing value, which makes it both the 03:17
   # slots' engine and the fallback for an unmatched cron — safe here in a way the DATASET fallback is
   # not, because an engine name reaching `plan` is validated against LEGS and a wrong-but-valid one
   # builds a real leg that the record names correctly. This is the ONE place the scheduled engine is
   # spelled: `RUN_ENGINE`, `plan`'s `ENGINES` and the record's commit message all read it back.
   BENCH_ENGINES: ${{ github.event_name != 'schedule' && inputs.engines
-    || startsWith(github.event.schedule, '57 5 ') && 'dwh'
-    || startsWith(github.event.schedule, '37 7 ') && 'spark'
-    || startsWith(github.event.schedule, '17 9 ') && 'spark'
+    || startsWith(github.event.schedule, '57 4 ') && 'dwh'
+    || startsWith(github.event.schedule, '37 6 ') && 'spark'
+    || startsWith(github.event.schedule, '17 8 ') && 'spark'
     || 'duckrun' }}
   BENCH_RUNS: ${{ github.event_name == 'schedule' && '6' || inputs.runs }}
   BENCH_THINK_SECONDS: ${{ github.event_name == 'schedule' && '4' || inputs.think_seconds }}

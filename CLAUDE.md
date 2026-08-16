@@ -1422,28 +1422,31 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   **THE HOUR SELECTS THE CONFIG; THE DATASET IS NO LONGER A FUNCTION OF THE WEEKDAY.** It cannot be:
   20 cells over 7 days only divides while a dataset's whole row fires on its own day, which is the
   arrangement that leaves the weekend empty. Cell (dataset i, hour j) fires on weekday `(i + 2j) % 7`
-  — five distinct weekdays in every hour column, 2–3 slots a day, no day idle. Slots are 04:17 /
-  05:57 / 07:37 / 09:17 UTC: that is the only window asleep on BOTH sides of the DST boundary
-  (23:17–04:17 EST, 00:17–05:17 EDT; 14:17–19:17 in the metrics model's +10 clock), and four slots
+  — five distinct weekdays in every hour column, 2–3 slots a day, no day idle. Slots are 03:17 /
+  04:57 / 06:37 / 08:17 UTC: that is the only window off work on BOTH sides of the DST boundary
+  (22:17–03:17 EST, 23:17–04:17 EDT; 13:17–18:17 in the metrics model's +10 clock), and four slots
   inside five hours is **100 minutes apart** — hence the ragged minutes, which also keep every slot
   off the top of the hour where GitHub delays scheduled runs most. 100 minutes clears the longest
   run ever recorded here (84 min; median 32) by 16, and `cancel-in-progress: false` makes an overrun
   QUEUE the next slot rather than kill it — only a **second** consecutive overrun evicts the pending
   run and costs one cell that week.
-  **04:17 IS THE EARLIEST LEGAL START AND THE GRID IS PINNED THERE — do not let it drift later
-  again.** It sat an hour later (05:17/06:57/08:37/10:17) and the last slot was 06:17 EDT, which is
-  morning in East US and read as a night slot in every comment in the file; run 31941551767 fired
-  there at 06:23 EDT. 23:00 local is 04:00 UTC under EST and 03:00 under EDT, so 04:00 is where the
-  two windows begin to overlap and 100-minute spacing fixes the other three.
-  `test_schedule_rotation.py::test_every_slot_starts_while_east_us_is_asleep` checks every slot at
-  BOTH offsets, so a season cannot be the one that is wrong. Accepted cost, stated rather than
-  hidden: only the START is guaranteed dark — a 09:17 slot plus the 84-minute worst case ends 06:41
-  EDT, though the median 32-minute run ends 05:49. Containing the worst case as well would need the
-  gaps at 92 minutes, under the serial-overrun guard, which is the worse trade.
+  **THE WINDOW IS AFTER WORK, NOT MIDNIGHT — local 22:00–06:00 — AND 03:17 IS THE EARLIEST LEGAL
+  START, WHICH THE GRID IS PINNED TO. Do not let it drift later again.** It sat two hours later
+  (05:17/06:57/08:37/10:17) and the last slot was 06:17 EDT, morning in East US, reading as a night
+  slot in every comment in the file until run 31941551767 fired there at 06:23 EDT. 22:00 local is
+  03:00 UTC under EST and 02:00 under EDT, so 03:00 is where the two seasons overlap and 100-minute
+  spacing fixes the other three.
+  **The extra hour bought CONTAINMENT, which is the part worth keeping: the whole run fits, not just
+  its start.** 08:17 plus the 84-minute worst case ends 05:41 EDT / 04:41 EST, median 32 minutes
+  ends 04:49 EDT. At a 23:00 floor that was NOT true — the earliest legal grid there ended 06:41 EDT
+  and the overrun had to be accepted as a cost. `test_schedule_rotation.py`'s
+  `test_every_slot_runs_to_completion_while_east_us_is_off_work` asserts BOTH endpoints of every
+  slot at BOTH offsets, so neither the start nor the tail can drift out and no season can be the
+  one that is wrong.
   **THREE ENV CHAINS BRANCH ON `github.event.schedule`, AND EACH IS SPELLED EXACTLY ONCE.** `DATASET`
   matches the cron **exact-string, whitespace included** (20 branches — no factorization exists, the
   dataset varies with both axes); `BENCH_ENGINES` and `SPARK_RESOURCE_PROFILE` match the **hour
-  prefix** (`'57 5 '`, `'37 7 '`, `'17 9 '`), which is what keeps them three branches rather than
+  prefix** (`'57 4 '`, `'37 6 '`, `'17 8 '`), which is what keeps them three branches rather than
   twenty. `RUNIN_DATASET`, `RUN_ENGINE`, `RUNIN_SPARK_RESOURCE_PROFILE`, `plan`'s `ENGINES` and the
   record's commit message all **read the env back** (`${{ env.DATASET }}` and friends) rather than
   restating the chain — the duplicated `RUNIN_DATASET` copy is gone, and with it the whole class of
@@ -1661,10 +1664,10 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   a `Benchmark` finishing and is a deliberate LOWER BOUND, there so a fresh run's column is populated
   immediately; `cron: "17 13 * * *"` is the settling read.
   **ITS TIME IS ARITHMETIC, NOT A ROUND NUMBER.** `Benchmark`'s schedule is a grid of 2–3 slots a day,
-  the LAST at 09:17; a run is a measured median of 31 minutes and max of 84 across 47 duckrun records,
-  so that slot finishes by ~10:41 worst case, and plus the ~70 minute settle that is ~11:51. 13:17
-  clears it by 86 minutes — it was derived off a 10:17 last slot and did not have to move when the
-  grid shifted an hour earlier — and every earlier slot of the day is long settled by then, so ONE read finishes the
+  the LAST at 08:17; a run is a measured median of 31 minutes and max of 84 across 47 duckrun records,
+  so that slot finishes by ~09:41 worst case, and plus the ~70 minute settle that is ~10:51. 13:17
+  clears it by 146 minutes — it was derived off a 10:17 last slot and did not have to move when the
+  grid shifted earlier — and every earlier slot of the day is long settled by then, so ONE read finishes the
   whole day. An earlier read would land mid-smoothing on a typical run, add almost nothing, and say
   nothing at all about the slots still to come.
   **It is aimed at the SCHEDULED runs, not at every run** — that was the old daily `17 21 * * *`, which
