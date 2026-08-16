@@ -50,7 +50,7 @@ name: Capacity units
 #                                              from the last slot plus the run length plus smoothing
 #
 # **A dispatch you started by hand still needs a dispatch to settle it.** The 13:17 cron is aimed at
-# `Benchmark`'s schedule grid — 2-3 slots a day, the last at 10:17 UTC — not at any run at any hour;
+# `Benchmark`'s schedule grid — 2-3 slots a day, the last at 09:17 UTC — not at any run at any hour;
 # that was the old daily `17 21 * * *`, which is not coming back. Watch the page's `may still rise`
 # caveat: it is derived from the clock and expires after two hours, so past that a hand-started run's
 # number reads as settled whether or not it is.
@@ -73,12 +73,16 @@ on:
         type: string
         default: ""
   # THE SETTLING READ, and its time is arithmetic rather than a round number. `Benchmark`'s schedule
-  # is a GRID — 2-3 slots a day at 05:17 / 06:57 / 08:37 / 10:17 UTC, one per (dataset, config) cell
+  # is a GRID — 2-3 slots a day at 04:17 / 05:57 / 07:37 / 09:17 UTC, one per (dataset, config) cell
   # — so this is timed off the LAST slot of the day, not off a single nightly. Measured over 47
-  # duckrun records a run is a MEDIAN of 31 minutes and a MAX of 84, so the 10:17 slot finishes by
-  # ~11:41 worst case. A CU hour then keeps growing for up to ~70 minutes (~6 min ingestion lag,
-  # 5–64 min smoothing), which puts that worst case settled at ~12:51. 13:17 clears it, and every
-  # earlier slot of the day is long settled by then — ONE read finishes the whole day.
+  # duckrun records a run is a MEDIAN of 31 minutes and a MAX of 84, so the 09:17 slot finishes by
+  # ~10:41 worst case. A CU hour then keeps growing for up to ~70 minutes (~6 min ingestion lag,
+  # 5–64 min smoothing), which puts that worst case settled at ~11:51. 13:17 clears it by 86
+  # minutes, and every earlier slot of the day is long settled by then — ONE read finishes the day.
+  #
+  # THE GRID MOVED AN HOUR EARLIER AND THIS CRON DID NOT HAVE TO FOLLOW: it was derived off a
+  # 10:17 last slot with 26 minutes of slack, so shifting the grid only widened that to 86. Leave
+  # it here — an earlier read buys nothing and a `workflow_run` read already fires per build.
   #
   # An earlier read — "an hour after the first slot" — would land mid-smoothing on a typical run,
   # measure almost nothing the `workflow_run` read had not already seen, and say nothing at all
