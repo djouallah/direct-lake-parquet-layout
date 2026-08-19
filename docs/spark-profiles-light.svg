@@ -14,8 +14,8 @@
   <rect x="475.22" y="168" width="247.51" height="22" rx="3" fill="#2a78d6"/>
   <text x="731.73" y="184" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="start">1.8× cheaper</text>
   <text x="158" y="213.5" fill="#52514e" font-size="13" text-anchor="end">build</text>
-  <rect x="300.25" y="198" width="174.97" height="22" rx="3" fill="#e34948"/>
-  <text x="291.25" y="214" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="end">+32%</text>
+  <rect x="300.64" y="198" width="174.58" height="22" rx="3" fill="#e34948"/>
+  <text x="291.64" y="214" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="end">+32%</text>
   <text x="76" y="285.5" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="end">nyc</text>
   <text x="158" y="269.5" fill="#52514e" font-size="13" text-anchor="end">queries</text>
   <rect x="475.22" y="254" width="172.72" height="22" rx="3" fill="#2a78d6"/>
