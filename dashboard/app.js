@@ -581,6 +581,9 @@ export function pagesUrl(repo) {
  *   rather than "nobody measured it". Run 30743411308 is exactly that: the `bench` job was skipped by
  *   a `needs` bug and only the ETL half exists.
  * - **no layout** means the build half never reported.
+ * - **a model that deployed and was never measured** is that same shape one phase down. Run
+ *   32142825399 deployed a DirectQuery model, spent 537 CU against it and recorded not one timing,
+ *   so it rendered with three dashes where its `dq` tiers go.
  *
  * A run that was never TORN DOWN is not rejected — see `drifting()`. Its numbers do keep creeping, but
  * the creep is small and a missing column costs more than a caveated one; the page says so instead of
@@ -614,6 +617,32 @@ export function incomplete(rec) {
   // DQ side has nothing those blocks can show.
   if (!Object.keys(timings).some((m) => !String(m).endsWith("_dq"))) {
     return "no Direct Lake timings — only the DirectQuery phase reported";
+  }
+  // ...and every model that DEPLOYED must have been MEASURED, which is the other half of the same
+  // rule. Run 32142825399 is the check above wearing its mirror image: the Direct Lake pass recorded
+  // a full set, the DQ model deployed in 36.2s, and it then never became queryable — 16 warm-up
+  // attempts, each `Mashup 10061: The key didn't match any rows in the table` — so `timings` holds
+  // the DL side alone while 537 CU was billed against the DQ items. On the page that is three dashes
+  // in `dq cold/warm/hot` beside a populated `directquery CU`, the "querying this was free" shape
+  // that put run 30743411308 in legacy/, on the axis the check above does not watch.
+  //
+  // It matters past one ugly row because `variant()` reads only `layout.config`, which such a run
+  // shares byte-for-byte with the healthy nightly: `columnsFor` is latest-wins, so the failed run
+  // SUPERSEDES the good one, and its contended tiers (hot 7,353ms against warm 5,215ms) enter the
+  // layout median.
+  //
+  // Structural, never a plausibility test on a value — it holds what the run DEPLOYED against what it
+  // MEASURED, both written by the same job, and fires only where a model was created and produced
+  // nothing. Read the `model` field, NEVER the dict key: older records key by ENGINE, so
+  // `deployed.spark.model` is `aemo_spark`. A record carrying no `deploy` block compares nothing and
+  // is untouched — 32 of them predate the block, and unmeasured is not the same claim as defective.
+  const deployed = (((rec.benchmark || {}).deploy || {}).deployed) || {};
+  const unmeasured = Object.values(deployed)
+    .map((d) => (d || {}).model)
+    .filter((m) => m && !(m in timings))
+    .sort();
+  if (unmeasured.length) {
+    return `deployed but never measured — ${unmeasured.join(", ")}`;
   }
   return null;
 }

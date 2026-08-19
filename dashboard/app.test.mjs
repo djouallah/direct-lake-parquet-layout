@@ -2864,6 +2864,54 @@ test("a run that recorded only its DirectQuery phase is skipped, not shown query
   assert.equal(d.incomplete(both), null, "dl + dq is complete, not a duplicate-phase problem");
 });
 
+test("a model that deployed and never answered a query is skipped, not shown half-measured", () => {
+  // Run 32142825399 is the live case and the exact mirror of the one above. Its Direct Lake pass
+  // recorded a full set, its DirectQuery model deployed in 36.2s, and that model then never became
+  // queryable — 16 warm-up attempts, each `Mashup 10061: The key didn't match any rows in the table`.
+  // So `timings` holds the DL side alone while 537 CU was billed against the DQ items, and the run
+  // rendered with three dashes in `dq cold/warm/hot` beside a populated `directquery CU`.
+  //
+  // Left in it does worse than look odd: `variant()` reads only `layout.config`, which this run
+  // shares byte-for-byte with the healthy nightly, so `columnsFor`'s latest-wins hands it the column
+  // and its contended tiers enter the layout median.
+  const good = full("a-1.json", "spark");
+  const dqLost = full("b-2.json", "duckrun");
+  dqLost.benchmark.deploy = {
+    deployed: {
+      aemo_duckrun: { model: "aemo_duckrun", seconds: 45.1 },
+      aemo_duckrun_dq: { model: "aemo_duckrun_dq", seconds: 36.2 },
+    },
+    failed: {},
+  };
+  assert.equal(d.incomplete(dqLost), "deployed but never measured — aemo_duckrun_dq");
+  const { html } = d.compose([good, dqLost], ledger({ OUT: 1.0, SEM: 2.0 }), {});
+  assert.ok(plain(html).includes("`b-2.json` — deployed but never measured — aemo_duckrun_dq"),
+    "named on the page with its reason, like every other skip");
+  // ...and once the DQ model has timings of its own it is a whole run again.
+  dqLost.benchmark.timings.aemo_duckrun_dq = dqLost.benchmark.timings.aemo_duckrun;
+  assert.equal(d.incomplete(dqLost), null, "deployed and measured is exactly what is wanted");
+});
+
+test("the deployed model is read from its `model` field, never the dict key", () => {
+  // Older records key `deployed` by ENGINE and name the model inside — `deployed.spark.model` is
+  // `aemo_spark`. Read off the key instead, every one of them would report its own model unmeasured
+  // and the page would empty itself.
+  const r = full("a-1.json", "spark");
+  r.benchmark.deploy = { deployed: { spark: { model: "aemo_spark", seconds: 267.9 } }, failed: {} };
+  assert.equal(d.incomplete(r), null,
+    "`spark` is not a model name — `aemo_spark` is, and it was measured");
+});
+
+test("a record predating the deploy block is untouched by the deployed-vs-measured check", () => {
+  // 32 records carry no `benchmark.deploy` at all. There is nothing to hold the timings against, and
+  // unmeasured is not the same claim as defective, so the check compares nothing and passes.
+  const r = full("a-1.json", "spark");
+  assert.ok(!("deploy" in r.benchmark), "the fixture really is the pre-block shape");
+  assert.equal(d.incomplete(r), null);
+  r.benchmark.deploy = { deployed: {}, failed: {} };
+  assert.equal(d.incomplete(r), null, "an empty deploy block compares nothing either");
+});
+
 test("a still-billing drifter is a visible note, not a folded one", () => {
   // The one state that never resolves by waiting must not sit behind a click.
   const good = full("a-1.json", "spark");
