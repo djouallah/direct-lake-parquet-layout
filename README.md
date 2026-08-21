@@ -45,6 +45,9 @@ almost every number below:
    segments want **millions of rows each** ([Microsoft says 1–16M][dl-perf]). The same DuckDB,
    same notebook, same SQL was **3.5× slower cold** (96,503 ms vs 27,785) when a library
    default of 122,880 rows per row group reached OneLake: 1,172 tiny segments instead of ~25.
+   ⚠️ Read that with the encoding result below it, though — when the same leg's row groups were
+   later fixed at the source (3 files / 53 groups at 2.7M rows), its CU moved only ~15%. Segment
+   count was the loud problem; the dictionary was the expensive one.
 3. **Within a segment the scan is run-length driven.** VertiPaq inherits the parquet row order
    during transcoding, and [VertiScan computes directly on the compressed data][dl-perf], so
    sorted data gives long RLE runs in the resident columns — which is why sorting speeds up
@@ -161,8 +164,8 @@ table.
 
 ### And with DuckDB's own writer, where the defaults cost the most
 
-DuckDB writing parquet directly is the worst measured layout in this repo, and both mechanics
-fail from the same [documented default][ddb-copy]: `ROW_GROUP_SIZE` is **122,880 rows**. That
+DuckDB writing parquet directly was the worst measured layout in this repo, and both mechanics
+failed from the same [documented default][ddb-copy]: `ROW_GROUP_SIZE` is **122,880 rows**. That
 reached OneLake intact on the iceberg leg — 1,172 row groups, 122,851 rows each, **96,503 ms
 cold** against the same DuckDB in the same notebook writing through delta-rs at 27,785 ms.
 
@@ -170,8 +173,29 @@ The second failure is downstream of the first, and it is the answer to "how do I
 column dictionary-encoded": **`DICTIONARY_SIZE_LIMIT` defaults to `ROW_GROUP_SIZE / 5`** — 24,576
 distinct values at the default geometry. A column with more distinct values than that *inside one
 row group* falls back to `PLAIN`. That is exactly the column from rule #3: read back off this
-table's own footers, `mw` carries **0 dictionary pages across all 1,172 chunks** while every other
+table's own footers, `mw` carried **0 dictionary pages across all 1,172 chunks** while every other
 column kept `PLAIN_DICTIONARY` — one column, one derived default, ~200 MB and a rebuild-at-load.
+
+**THE ROW GROUP IS FIXED UPSTREAM NOW, AND THAT SEPARATED THE TWO MECHANICS CLEANLY.** DuckDB
+`1.6.0.dev365` reworked the iceberg writer; the leg pins it, and run 32444969823 wrote the same
+143,980,961 rows as **3 files / 53 row groups at 2.7M rows** — in family with delta-rs's 9–73 and
+Spark's 10–11, on identical bytes (1,129 MB against 1,119). So geometry stopped being the variable.
+**The cost barely moved**: directlake CU 9,288 → 7,923, about −15%, against delta-rs's 1,618–3,903.
+
+What is left is the encoding, and the bigger row group only half-fixed it. `mw` now carries a
+dictionary page on **43 of 53 chunks** instead of 0 of 1,172 — but 10 chunks still fall to raw
+`PLAIN`, and iceberg remains the only writer here emitting **no RLE at all** on the indices:
+
+| writer | `mw` encodings | chunks with a dict page | `mw` |
+|---|---|---:|---:|
+| delta-rs (duckrun) | `PLAIN+RLE+RLE_DICTIONARY` | 25/25 | 418.1 MB |
+| Fabric Warehouse | `PLAIN+RLE+RLE_DICTIONARY` | 73/73 | 454.2 MB |
+| Spark | `PLAIN_DICTIONARY+RLE` | 15/15 | 420.5 MB |
+| DuckDB → Iceberg | `PLAIN+PLAIN_DICTIONARY` | 43/53 | 483.9 MB |
+
+Read that as the point of this whole section rather than a footnote about one adapter: **a plain
+dictionary is what the engine on the other side wants, and everything else is a rebuild at load.**
+Segment count was the loud problem and it was never the expensive one.
 
 ```sql
 COPY (SELECT * FROM fct_summary ORDER BY date, time, price)  -- #2: sort is yours to do
@@ -224,9 +248,21 @@ has to be passed, and it is not in a release yet — DuckDB 1.5.5 answers
 why it needs no row-count backstop alongside it — unlike delta-rs, whose cap is checked on
 *encoded* bytes and therefore ships `data_page_row_count_limit` too.
 
-Neither geometry knob is reachable from dbt-duckdb, which is why the iceberg leg here is stuck at
-122,880 and stays the outlier: these are `COPY` options, and that adapter exposes no writer
-config at all.
+**None of these knobs is reachable from dbt-duckdb** — they are `COPY` options and that adapter
+exposes no writer config at all — so the iceberg leg gets whatever the DuckDB build does by default.
+That used to mean 122,880 and the outlier row-group count; `1.6.0.dev365` moved the default and the
+leg pins it, which is why the geometry is now in family and the *encoding* is what is left. The
+knobs are still worth knowing for a DuckDB you drive yourself; the leg here cannot pass them.
+
+Two routes exist if it ever needs to. DuckDB's iceberg extension honours the Iceberg **table
+properties** `write.target-file-size-bytes` and `write.parquet.row-group-size-bytes` (settable at
+`CREATE TABLE … WITH (…)`, or afterwards via `set_iceberg_table_properties()`, which a dbt
+`post_hook` can call) on unpartitioned tables — they raise on partitioned ones, suppressible with
+`ignore_row_group_size_for_partitioned_tables`. There is **no** equivalent for the sort: Iceberg's
+own `sort-orders` metadata is not exposed by the extension ([duckdb-iceberg#1292][ddb-ice-sort] is
+open), and per its own author declaring one would not sort the data anyway.
+
+[ddb-ice-sort]: https://github.com/duckdb/duckdb-iceberg/pull/1292
 
 [ddb-copy]: https://duckdb.org/docs/current/sql/statements/copy.html
 [ddb-pr]: https://github.com/duckdb/duckdb/pull/24645

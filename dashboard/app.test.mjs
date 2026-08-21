@@ -684,12 +684,17 @@ test("`readHeavyForSpark` leaves the layout table — it is neither side of the 
   assert.equal(alone.hidden.length, 0);
 });
 
-test("iceberg leaves the LAYOUT tables and keeps its column and its runs", () => {
-  // A layout nobody chose: dbt-duckdb can express neither a sort nor a row-group size, so what
-  // iceberg writes is whatever the catalog path defaults to — 1,172 row groups at 0.1M rows, an order
-  // of magnitude off every other writer. Ranking that against three dispatched layouts is not this
-  // table's comparison.
-  const ice = lay("iceberg", 357, 1172, { file: "a-1.json",
+test("iceberg is IN the layout tables — the row groups were the reason, and they are fixed", () => {
+  // REVERSED, and the reversal is measured. It was held out because dbt-duckdb can express neither a
+  // sort nor a row-group size, so what iceberg wrote was the catalog path's DEFAULT — 1,172 row
+  // groups at 0.1M rows, an order of magnitude off every other writer. Pinning duckdb 1.6.0.dev365
+  // on that leg fixed the writer: 3 files / 53 row groups at 2.7M rows (run 32444969823), in family
+  // with duckrun's 9–73 and spark's 10–11. What did NOT follow is the cost — directlake CU moved
+  // only 9,288 -> 7,923 against duckrun's 1,618–3,903 — because the difference is the ENCODING, not
+  // the geometry: iceberg is the only writer here emitting no RLE and leaving 10 of 53 `mw` chunks
+  // with no dictionary page at all. That is a real difference between writers, which is what this
+  // table is for.
+  const ice = lay("iceberg", 3, 53, { file: "a-1.json",
     timings: timings({ q1: [90000, 5000, 4000] }) });
   const spark = lay("spark", 11, 11, { vorder: true, cfg: { resource_profile: "readHeavyForPBI" },
     file: "b-2.json", timings: timings({ q1: [20000, 4000, 3000] }) });
@@ -699,21 +704,18 @@ test("iceberg leaves the LAYOUT tables and keeps its column and its runs", () =>
     Si: { "XMLA Read Operation": 8600 }, Oi: { "Jupyter Notebook Scheduled Run": 11183 },
     Ss: { "XMLA Read Operation": 1600 }, Os: { "High Concurrency Session Livy Run": 33339 },
   }));
-  assert.deepEqual(layoutTable(out).map((r) => r.writer), ["spark readHeavyForPBI"]);
-  // NOT ERASED, and that is what makes hiding it admissible at all — `SCATTER_OMIT` kept iceberg off
-  // one figure while it held a column in every table, which CLAUDE.md records as the worst of the
-  // three states. Here the layout tables curate AND SAY SO, and the engine keeps its cost and its
-  // runs where those are the subject.
+  assert.deepEqual(layoutTable(out).map((r) => r.writer).sort(),
+    ["duckdb iceberg", "spark readHeavyForPBI"]);
+  // ...and nothing is held back, so no engine sentence is printed under the table.
   const text = plain(out);
-  assert.ok(/\*\*1\*\* `duckdb iceberg` layout not shown/.test(text),
-    text.slice(text.indexOf("Cost and speed"), 2200));
+  assert.ok(!/`duckdb iceberg` layout not shown/.test(text), "nothing to hold back any more");
   assert.ok(rows(block(out, "Cost by engine"))[0].includes("duckdb iceberg"), "keeps its column");
   assert.equal(rows(block(out, "Every run on this page")).slice(1).length, 2, "keeps its run row");
-  // It is a whole-ENGINE rule, so the never-thinned-to-nothing guard must NOT hand it back when it is
-  // the only engine there — the guard is about a rule hiding SOME of an engine's layouts.
-  const alone = d.shownLayouts(d.layoutGroups([{ rec: lay("iceberg", 357, 1172) }]));
-  assert.equal(alone.shown.length, 0);
-  assert.equal(alone.hidden.length, 1);
+  // The constant survives empty so a future regression is one string away. Alone, it still shows.
+  assert.deepEqual(d.ENGINES_HIDDEN, []);
+  const alone = d.shownLayouts(d.layoutGroups([{ rec: lay("iceberg", 3, 53) }]));
+  assert.equal(alone.shown.length, 1);
+  assert.equal(alone.hidden.length, 0);
 });
 
 test("an engine is never thinned to nothing", () => {

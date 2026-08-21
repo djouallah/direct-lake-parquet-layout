@@ -1233,28 +1233,45 @@ export const PROFILES_HIDDEN = { spark: ["readHeavyForSpark"] };
 /**
  * Engines held out of the LAYOUT tables entirely — not out of the page.
  *
- * `iceberg` is here because its layout is not a layout anyone chose. dbt-duckdb can express neither a
- * sort nor a row-group size (`sort_by` and the geometry keys occur ZERO times in that adapter and its
- * macro package), so what it writes is whatever the Iceberg REST catalog path defaults to — 1,172 row
- * groups at 0.1M rows each, an order of magnitude off every other writer, and the reason it reads
- * 8,641 CU against 1,618–3,903. Ranking a default nobody dispatched against three deliberately
- * dispatched layouts is not the comparison this table makes. Re-add it when those defaults improve:
- * deleting the entry is the whole change, and its history is still in `history/`.
+ * **EMPTY, AND `iceberg` COMING BACK IS WHY.** It was held out because its parquet was not a layout
+ * anyone chose: dbt-duckdb can express neither a sort nor a row-group size, so what it wrote was the
+ * Iceberg catalog path's DEFAULT — **1,172 row groups at 0.1M rows**, an order of magnitude off every
+ * other writer. That reason is void. Pinning `duckdb==1.6.0.dev365` on the iceberg leg fixed the
+ * writer: run 32444969823 wrote **3 files / 53 row groups at 2.7M rows**, in family with duckrun's
+ * 9–73 and spark's 10–11, on the identical 143,980,961 rows. The comparison the table makes is now
+ * one iceberg belongs in.
  *
- * **SCOPE IS THE LAYOUT TABLES, AND THAT IS A DELIBERATE NARROWING OF A DELETED RULE.** `PAGE_OMIT`
+ * **WHAT DID NOT FOLLOW, AND IT IS THE INTERESTING PART: the cost barely moved.** directlake CU went
+ * 9,288 → 7,923, about −15%, against duckrun's 1,618–3,903 — so geometry was never what made iceberg
+ * expensive. **The ENCODING is.** VertiPaq wants a plain dictionary and iceberg is the only writer
+ * here that does not hand it one. Measured on the aemo mart's biggest column, `mw`:
+ *
+ *     duckrun   PLAIN+RLE+RLE_DICTIONARY   dict page on 25/25 chunks   418.1 MB
+ *     dwh       PLAIN+RLE+RLE_DICTIONARY   dict page on 73/73 chunks   454.2 MB
+ *     spark     PLAIN_DICTIONARY+RLE       dict page on 15/15 chunks   420.5 MB
+ *     iceberg   PLAIN+PLAIN_DICTIONARY     dict page on 43/53 chunks   483.9 MB
+ *
+ * iceberg is the only one emitting **no RLE at all** on the dictionary indices, and the only one with
+ * chunks carrying **no dictionary page** — 10 of 53 fall back to raw PLAIN, which Direct Lake has to
+ * re-encode on load rather than adopt. It is also the largest. That is a real, measured difference
+ * between writers and exactly what a table comparing writers should show, so it stays IN.
+ *
+ * Keeping the array (rather than deleting the constant) is deliberate: `shownLayouts` and `heldNote`
+ * still branch on it, and an engine whose defaults regress again is one string away from being held
+ * out with the reason written here. Read the two paragraphs above before adding one — "its numbers
+ * are bad" is not a reason, "its numbers describe something nobody dispatched" was.
+ *
+ * **SCOPE WAS THE LAYOUT TABLES, AND THAT NARROWING IS WHY THIS WAS ADMISSIBLE AT ALL.** `PAGE_OMIT`
  * once removed iceberg from the whole page and `SCATTER_OMIT` from one figure while it held a column
  * in every table — the second is recorded in CLAUDE.md as the worst of the three states, and both
- * were deleted. What makes this admissible where `SCATTER_OMIT` was not: the layout tables now
- * CURATE and SAY SO — the duckrun sweep and `readHeavyForSpark` already leave them under a named
- * note — so a reader is told what is missing and why, in the table it is missing from. `Cost by
- * engine`, `Every run` and the sources table keep every iceberg column and row, so the page still
- * records that it was built, what it cost and when.
+ * were deleted. What made this different: the layout tables CURATE and SAY SO, so a reader was told
+ * what was missing and why, in the table it was missing from.
  *
  * **NOT SUBJECT TO THE never-thinned-to-nothing GUARD**, unlike the other two rules, and it cannot
  * be: that guard exists to stop a rule about SOME of an engine's layouts erasing the engine, and this
  * rule is about the engine. Applied after it, for that reason.
  */
-export const ENGINES_HIDDEN = ["iceberg"];
+export const ENGINES_HIDDEN = [];
 
 /**
  * Does the page's LAYOUT half show this key? `[engine, resource_profile, sort, …]` — see `layoutKey`.
@@ -2622,11 +2639,15 @@ function heldNote(held, table = DEFAULTS.table) {
       + `neither side of the comparison the spark rows make — \`readHeavyForPBI\` turns V-Order on, `
       + `\`writeHeavy\` is the workspace default it is measured against.`);
   }
+  // `ENGINES_HIDDEN` is EMPTY today — iceberg came back once the DuckDB pin fixed its row groups —
+  // so this branch renders on no current dataset. It stays because the constant does: an engine
+  // written out again needs a sentence here, and a rule that hides rows with nothing said under the
+  // table is the silent filter this whole function exists to prevent.
   if (engine.size) {
-    out.push(`${say(engine)} not shown: dbt-duckdb can express neither a sort nor a row-group size, `
-      + `so what it writes is the Iceberg catalog path's DEFAULT — 1,172 row groups at 0.1M rows — `
-      + `rather than a layout anyone dispatched. It is here to be re-added when those defaults `
-      + `improve; its cost and its runs are in **Cost by engine** and **Every run** meanwhile.`);
+    out.push(`${say(engine)} not shown: what that writer produces is its catalog path's DEFAULT `
+      + `rather than a layout anyone dispatched, so ranking it against dispatched ones is not the `
+      + `comparison this table makes. Its cost and its runs are in **Cost by engine** and `
+      + `**Every run** meanwhile.`);
   }
   return note(`${out.join(" ")} Every held run keeps its own row in **Every run**, with its own CU `
     + `and tiers.`);

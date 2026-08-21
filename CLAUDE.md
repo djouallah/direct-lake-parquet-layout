@@ -1441,9 +1441,11 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   five datasets every week and `dwh` and `spark` only when somebody dispatched them — which put
   engine columns weeks apart in age on a page whose whole argument is comparing them side by side.
   The config axis is `duckrun` (auto) · `dwh` (V-Order) · `spark readHeavyForPBI` ·
-  `spark writeHeavy`. **`iceberg` is deliberately not in it** — its layout is whatever the Iceberg
-  REST catalog path defaults to rather than anything anyone dispatched, which is why
-  `ENGINES_HIDDEN` already keeps it out of the layout tables. **Both spark profiles ARE**, so the
+  `spark writeHeavy`. **`iceberg` is deliberately not in it** — its layout is whatever the DuckDB
+  build writes rather than anything anyone dispatched, so there is no config axis to rotate it on.
+  (That used to double as the reason it was out of the layout tables; the `duckdb==1.6.0.dev365` pin
+  ended that half and `ENGINES_HIDDEN` is empty now, so iceberg IS in those tables — it just still
+  has nothing to vary, and every iceberg run is a hand dispatch.) **Both spark profiles ARE**, so the
   V-Order pair — the sharpest experiment on the page — stays same-generation on every dataset.
   **THE HOUR SELECTS THE CONFIG; THE DATASET IS NO LONGER A FUNCTION OF THE WEEKDAY.** It cannot be:
   20 cells over 7 days only divides while a dataset's whole row fires on its own day, which is the
@@ -1900,11 +1902,11 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   22,823-45,010. A DOT occupies one point on a log axis, so the outlier costs a little axis and moves
   nothing else: **the reason to exclude it was a property of the MARK, not of the engine**, and that
   reason is dead.
-  What replaced it is a different argument and lives with `ENGINES_HIDDEN`: iceberg's layout is the
-  catalog path's DEFAULT rather than one anyone dispatched, so it is out of the LAYOUT tables (all
-  three of them, consistently) and keeps its column and its runs everywhere else. The
-  worst-of-three-states objection does not apply because those tables now curate and SAY SO. Do not
-  read this bullet as licence to widen it back to the page.
+  What replaced it was a different argument living with `ENGINES_HIDDEN` — iceberg's layout being the
+  catalog path's DEFAULT rather than one anyone dispatched — and **that is now gone too**: the
+  `duckdb==1.6.0.dev365` pin fixed the writer, so iceberg is in all three layout tables again and
+  `ENGINES_HIDDEN` is empty. Every rule that has ever removed iceberg from a figure has been retired
+  on its own evidence. Do not read any of this as licence to add a fourth.
   **The `ETL_VCORES` filter drops one layout today**; a new sort key or row-group size re-opens that
   gap, and `TODO.md` has the recipe.
   They were `Capacity units per parquet layout` and `Capacity units per engine build`, stacked,
@@ -2081,25 +2083,47 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   engine's many layouts (crowding, so it names what to KEEP), `PROFILES_HIDDEN` drops a NAMED profile
   whatever else exists (relevance, so it names what to DROP). `heldNote` states each reason
   separately — "3 layouts not shown" over two rules tells a reader neither of them.
-  **`duckdb iceberg` IS OUT OF THE LAYOUT TABLES ENTIRELY — a THIRD rule, `ENGINES_HIDDEN`, and the
-  narrowest one.** Its layout is not a layout anyone chose: dbt-duckdb can express neither a sort nor
-  a row-group size (`sort_by` and the geometry keys occur ZERO times in that adapter and its macro
-  package), so what it writes is whatever the Iceberg REST catalog path defaults to — **1,172 row
-  groups at 0.1M rows**, an order of magnitude off every other writer, and the reason it reads 8,641
-  CU against 1,618–3,903. Ranking a default nobody dispatched against three dispatched layouts is not
-  the comparison the table makes. **Re-add it when those defaults improve: deleting the entry is the
-  whole change**, and every iceberg run is still in `history/`. aemo reads 5 rows with all three
-  rules applied.
-  **SCOPE IS THE LAYOUT TABLES AND THAT NARROWING IS THE POINT.** `PAGE_OMIT` once removed iceberg
-  from the whole page and `SCATTER_OMIT` from one figure while it held a column in every table — this
-  file records the second as *the worst of the three states*, and both were deleted. What makes this
-  admissible where `SCATTER_OMIT` was not: the layout tables now CURATE AND SAY SO, so a reader is
-  told what is missing and why, in the table it is missing from. `Cost by engine`, `Every run` and the
-  sources table keep every iceberg column and row, so the page still records that it was built, what
-  it cost and when. Do not widen it to the page without re-reading why `PAGE_OMIT` was deleted.
+  **`ENGINES_HIDDEN` IS EMPTY — `duckdb iceberg` IS BACK IN THE LAYOUT TABLES, AND THE REVERSAL IS
+  MEASURED.** It was the third rule and the narrowest: iceberg's layout was not a layout anyone chose,
+  because dbt-duckdb can express neither a sort nor a row-group size (`sort_by` and the geometry keys
+  occur ZERO times in that adapter and its macro package), so what it wrote was whatever the Iceberg
+  REST catalog path defaulted to — **1,172 row groups at 0.1M rows**, an order of magnitude off every
+  other writer.
+  **That reason is void.** `fabric_run.py` pins `duckdb==1.6.0.dev365` on the iceberg leg (and only
+  that leg — duckrun writes Delta through delta-rs and is untouched), which reworked the iceberg
+  writer: run 32444969823 wrote the same 143,980,961 rows as **3 files / 53 row groups at 2.7M rows**,
+  in family with duckrun's 9-73 and spark's 10-11, at 1,129 MB against the old 1,119.
+  ⚠️ **AND THE COST BARELY MOVED, WHICH IS THE FINDING.** directlake CU went **9,288 → 7,923**, about
+  −15%, against duckrun's 1,618-3,903. **Geometry was never what made iceberg expensive; the ENCODING
+  is.** VertiPaq wants a plain dictionary and iceberg is the only writer here that does not hand it
+  one — measured on the aemo mart's biggest column, `mw`:
+
+  | writer | `mw` encodings | chunks with a dict page | `mw` |
+  |---|---|---:|---:|
+  | duckrun (delta-rs) | `PLAIN+RLE+RLE_DICTIONARY` | 25/25 | 418.1 MB |
+  | dwh | `PLAIN+RLE+RLE_DICTIONARY` | 73/73 | 454.2 MB |
+  | spark | `PLAIN_DICTIONARY+RLE` | 15/15 | 420.5 MB |
+  | iceberg | `PLAIN+PLAIN_DICTIONARY` | **43/53** | **483.9 MB** |
+
+  iceberg alone emits **no RLE** on the indices, and alone leaves chunks with **no dictionary page at
+  all** — 10 of 53 fall to raw `PLAIN`, which Direct Lake must re-encode on load rather than adopt.
+  It is also the largest. That is a real difference between writers, which is exactly what a table
+  comparing writers should show, so it stays IN. aemo reads 6 rows with the two surviving rules.
+  **THE CONSTANT SURVIVES EMPTY ON PURPOSE.** `shownLayouts` and `heldNote` still branch on it, so an
+  engine whose defaults regress is one string away from being held out again — and `heldNote`'s engine
+  sentence was rewritten to be writer-neutral rather than deleted, because a rule that hides rows with
+  nothing said under the table is the silent filter that function exists to prevent. Before adding
+  one: *"its numbers are bad"* is not a reason, *"its numbers describe something nobody dispatched"*
+  was.
+  **SCOPE WAS THE LAYOUT TABLES AND THAT NARROWING IS WHY IT WAS ADMISSIBLE.** `PAGE_OMIT` once
+  removed iceberg from the whole page and `SCATTER_OMIT` from one figure while it held a column in
+  every table — this file records the second as *the worst of the three states*, and both were
+  deleted. What made this different: the layout tables CURATE AND SAY SO, so a reader was told what
+  was missing and why, in the table it was missing from. Do not widen a future entry to the page
+  without re-reading why `PAGE_OMIT` was deleted.
   **It is NOT subject to the guard below, and cannot be:** that guard stops a rule about SOME of an
   engine's layouts from erasing the engine, and this rule is about the engine — under it, hiding all
-  of iceberg would leave iceberg with nothing and the guard would hand it straight back. Applied
+  of an engine would leave it with nothing and the guard would hand it straight back. Applied
   first, outside it.
   **AN ENGINE IS NEVER THINNED TO NOTHING, and the guard covers the OTHER TWO rules.** Each says which of an
   engine's layouts to drop, which only means anything while something of that engine survives, so the

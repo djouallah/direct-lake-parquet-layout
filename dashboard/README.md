@@ -466,16 +466,19 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   V-Order doc page itself invites. The two rules are kept apart because they differ in kind — one
   names what to KEEP (crowding), the other what to DROP (relevance) — and the note under the table
   states each reason separately.
-- **`duckdb iceberg` is out of the layout tables entirely (`ENGINES_HIDDEN`), and only those.** Its
-  layout is not one anyone chose: dbt-duckdb can express neither a sort nor a row-group size, so what
-  it writes is the Iceberg catalog path's default — 1,172 row groups at 0.1M rows, an order of
-  magnitude off every other writer, and why it reads 8,641 CU against 1,618–3,903. Re-add it when
-  those defaults improve; deleting the entry is the whole change. It keeps its *Cost by engine*
-  column and its *Every run* rows, so the page still records that it was built and what it cost —
-  the narrowing that makes this admissible where the deleted `SCATTER_OMIT` was not, since the layout
-  tables now curate and say so. Unlike the other two rules it sits OUTSIDE the never-erase guard,
-  which exists to stop a rule about some of an engine's layouts from erasing the engine. aemo reads
-  5 rows with all three applied.
+- **`ENGINES_HIDDEN` is EMPTY, and `duckdb iceberg` coming back is why.** It was held out because its
+  layout was not one anyone chose: dbt-duckdb can express neither a sort nor a row-group size, so what
+  it wrote was the Iceberg catalog path's default — 1,172 row groups at 0.1M rows, an order of
+  magnitude off every other writer. Pinning `duckdb==1.6.0.dev365` on that leg fixed the writer:
+  3 files / 53 row groups at 2.7M rows, in family with duckrun's 9–73 and spark's 10–11.
+  **The cost barely followed** — directlake CU 9,288 → 7,923 against duckrun's 1,618–3,903 — because
+  the difference was never geometry, it is the **encoding**. On the aemo mart's `mw`, iceberg is the
+  only writer emitting no RLE on the dictionary indices and the only one leaving chunks with no
+  dictionary page at all (43 of 53 have one; the rest fall to raw `PLAIN`). VertiPaq adopts a plain
+  dictionary and rebuilds anything else at load. That is a real difference between writers, so it
+  belongs in a table comparing writers. aemo reads 6 rows with the two surviving rules.
+  The constant stays (empty) because `shownLayouts` and `heldNote` branch on it — an engine whose
+  defaults regress is one string away from being held out, with a note under the table saying so.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
   speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
   dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run
@@ -693,9 +696,11 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   one point and both axes are log, so a 4x outlier costs a little under a decade of axis and moves
   nothing else — the reason to exclude it was a property of the segment, not of the engine. A test
   pins that the other dots still spread with it in.
-  **It plots as the biggest dot as well** (8,641 CU), which is the honest picture: it is genuinely
-  the dearest and slowest layout here, and a page comparing four adapters should say so rather than
-  quietly drop the one that loses.
+  **It plots as the biggest dot as well** (8,641 CU, 7,923 since the DuckDB pin), which is the honest
+  picture: it is genuinely the dearest and slowest layout here, and a page comparing four adapters
+  should say so rather than quietly drop the one that loses. The pin is also what makes that dot
+  worth reading — its row groups are now in family with everyone else's, so what the dot shows is an
+  encoding difference rather than a segment-count one.
 - **A run that was never TORN DOWN still renders, with a caveat.** Its items are alive and Fabric
   keeps billing them, so its total creeps upward and is an upper bound on that run rather than a
   measurement of it. It was briefly rejected outright; the creep is small and a column that
