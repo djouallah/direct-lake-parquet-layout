@@ -2364,9 +2364,16 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   never contains the column separator (`baseEngine` splits on it, so a tag carrying one would make a
   column id unparseable back to its engine and every `STACK` lookup would silently miss) — and runs in
   `page`, which installs no Python. Both are offline, tokenless and about a second.
-- **`history/legacy/` holds five records from the name-matching era.** Nothing reads them. They carry
-  no item GUIDs so they cannot be joined to a ledger, and their numbers were measured under an
-  attribution that put whole notebooks in `shared`. Kept for a human, not for the code.
+- **THERE IS ONE LEGACY DIRECTORY, `history/runs/legacy/`, and it is the only place a parked record
+  goes.** It holds the five name-matching-era records — no item GUIDs, so they cannot be joined to a
+  ledger at all, and their numbers were measured under an attribution that put whole notebooks in
+  `shared` — alongside every later record parked for a reason of its own (see that directory's
+  README, which states one per row). Nothing reads any of them; they are kept for a human.
+  **`history/legacy/` is GONE, merged in.** Two directories both meaning "parked record" was one more
+  than anything needed: the loader and `build.mjs` only ever skipped `runs/legacy/`, so the outer one
+  was invisible to the code and to anyone reading the code to find out what was parked. Do not
+  recreate it — `record.reindex` excludes subdirectories by `os.path.isfile`, so `runs/legacy/` is
+  where a record belongs whatever era produced it.
 - **The isolation is the design, not an accident.** No imports from `benchmark/`, no `run_report.json`,
   no shared concurrency group, no ADOMD, no .NET, no duckrun — `requests` is the whole runtime
   dependency of the measurement and the render layer has none at all. It is built to be deleted by
