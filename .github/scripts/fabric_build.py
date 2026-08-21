@@ -209,9 +209,12 @@ def main() -> int:
     scratch = os.environ.get("TMPDIR") or "/tmp"
     os.environ.setdefault("DUCKDB_TEMP_DIR", os.path.join(scratch, "duckdb_spill"))
 
-    # No `pip install --pre duckdb` here, and it is not an oversight: a nightly resolves fine for
-    # both adapters (dbt-duckdb wants duckdb>=1.0.0, duckrun >=1.5.4) but its extensions come from
-    # a nightly repo that does not carry `azure` — and every read here goes through OneLake.
+    # Nothing installs anything here — `fabric_run.py`'s `pip=` list is the whole package set, and
+    # it is where the DuckDB pin lives (an EXACT `duckdb==1.6.0.dev365` on the ICEBERG leg only,
+    # because there dbt-duckdb is the writer). Still no `--pre` anywhere: an exact pre-release
+    # specifier resolves on its own, so only duckdb moves and every other dependency stays on a
+    # release. If a pinned build's extension repo ever lacks `azure`/`iceberg`, the leg dies at the
+    # first OneLake read — loud, and the versions line below names the build that did it.
     _log_node_facts(engine)
 
     # `dbt build`: models and their tests in one DAG walk. The singular tests in tests/ are gated to

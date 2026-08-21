@@ -136,6 +136,19 @@ def main() -> int:
     print(f"[fabric_run] engine={engine} cores={cores} notebook={name} "
           f"forwarding: {', '.join(sorted(env))}", flush=True)
 
+    # The iceberg target is `type: duckdb`, so on THAT leg the DuckDB build IS the writer — and
+    # dbt-duckdb exposes no writer config at all, so every iceberg run so far came out at DuckDB's
+    # default 122,880-row group: 1,172 row groups on fct_summary, an order of magnitude off every
+    # other engine. 1.6.0.dev365 fixes the iceberg writer. An EXACT pre-release specifier resolves
+    # without `--pre`, so nothing else floats to a nightly. Drop it for `duckdb>=1.6.0` on release.
+    #
+    # FIRST in the list, not appended: duckrun brings duckdb in as a dependency, so a pin behind it
+    # is a second install replacing the one pip just resolved.
+    #
+    # duckrun's own leg is deliberately NOT pinned — it writes Delta through delta-rs and already
+    # has row_group_size / file_size_mb as dispatch inputs.
+    pip = (["duckdb==1.6.0.dev365"] if engine == "iceberg" else []) + ["duckrun>=0.4.50", "pytz"]
+
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
     # throttling). That item was created and did bill, so it is recorded before the failure
     # propagates — duckrun sets `item_id` on the exception for exactly this case.
@@ -158,7 +171,7 @@ def main() -> int:
             # silently OMITS — the DL phase passes and the DQ phase dies on the first query naming
             # the column (run 31755603899, duckrun#42). A bare "duckrun" would not upgrade a
             # preinstalled older copy; the floor forces it.
-            pip=["duckrun>=0.4.50", "pytz"],
+            pip=pip,
         )
     except BaseException as ex:
         _record_notebook(getattr(ex, "item_id", None), engine, name)
