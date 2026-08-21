@@ -23,12 +23,15 @@
 -- mistake in it. Full story: LEARNINGS.md, "Two branches of one model, two different unit
 -- universes"; CLAUDE.md, "fct_summary must be a pure function of its inputs".
 --
--- sort_by is THE `sort_by` DISPATCH INPUT AND ITS OWN SWITCH: a non-blank value declares the write
--- layout, a blank one declares nothing and the model writes unsorted. There is no `sorted` boolean
--- any more -- a gate sitting apart from the fields it gated let run 31158671699 be dispatched with
--- a key and a geometry that were both inert, silently, for the price of a full build and query pass.
+-- sort_by IS ALWAYS `auto` OR NOTHING NOW, AND THE KEY IS NO LONGER SPELLABLE HERE. There was a
+-- `sort_by` dispatch input carrying a literal column list; one form field naming one key could not
+-- serve five different marts (its default was the aemo key, so every other dataset had to override
+-- or blank it), so it is gone and duckrun's picker -- which profiles the staged relation PER
+-- DATASET -- is the only sort path. `duckrun_auto` is the switch: on means `auto`, off means
+-- unsorted at the pinned geometry. The chosen columns survive only in the leg log, scraped into
+-- `dbt.<engine>.sort_by_auto` by fabric_run.py.
 --
--- Defaults are ['date','time','price'] at max_row_group_size 16000000 / target_file_size_mb 1024.
+-- Geometry defaults are max_row_group_size 16000000 / target_file_size_mb 1024.
 -- READ THE NEXT PARAGRAPH BEFORE TREATING 16M AS SETTLED: it is the geometry the measurements below
 -- call the WORST of those tried, on a `date,time` sort. It is the default because `date,time,price`
 -- at 16M is the open question -- price has only ever been measured at 24 RG (596 MB, 3,544 ms warm,
@@ -108,9 +111,10 @@
 --   auto -> `date, time`    777.2 MB  4f/25RG  cold 27,740  warm 3,498  hot 3,056  etl 26,991
 --   ['date','time','DUID']  652.6 MB  3f/26RG  cold 24,523  warm 3,141  hot 3,572  etl 23,465
 --   ['date','time','DUID']  651.1 MB  3f/19RG  (geometry declared 48M/1GB and silently dropped)
--- (runs 30752070535, 30796667149, 30805417412, 30955591822. The key is spelled in this config,
--- durably; fabric_run.py's sort_by_auto scrape still exists but matches nothing unless someone
--- hand-sets 'auto' again.)
+-- (runs 30752070535, 30796667149, 30805417412, 30955591822. The three hand-declared keys in that
+-- table are no longer dispatchable — the input that spelled them is gone — so `auto` is the only
+-- row of it a new run can reproduce, and fabric_run.py's sort_by_auto scrape is now the only
+-- witness to which columns any of them used.)
 --
 -- READ THAT TABLE CAREFULLY, because the obvious reading is wrong. auto did NOT pick `date` alone —
 -- it picked `date, time`, the same first two columns the query suite argues for. So the picker got
@@ -163,9 +167,7 @@
     incremental_strategy='merge',
     unique_key=['date', 'time', 'DUID'],
     merge_clauses={'when_matched': [{'action': 'do_nothing'}]},
-    sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
-              else env_var('DUCKDB_SORT_BY', 'auto').split(','))
-             if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    sort_by=('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'

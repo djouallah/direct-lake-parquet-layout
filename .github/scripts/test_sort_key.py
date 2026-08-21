@@ -1,14 +1,17 @@
 """Offline tests for the recorded sort key. No Fabric, no network, no credentials.
 
 WHAT THIS PINS IS A SILENT GAP. The dashboard captions a sorted bar with the columns the run
-ordered by, and the key is a property of the COMMIT — the model declared `['date','time','DUID']`
-for a while and `['date','time']` since. A constant in the render layer was right for today's model
-only, and captioned run 30955591822, a DUID sort, `by date, time`. Nothing errored; the page just
-said something untrue.
+ordered by, and the key is a property of the RUN — the model declared `['date','time','DUID']` for a
+while and `['date','time']` since. A constant in the render layer was right for today's model only,
+and captioned run 30955591822, a DUID sort, `by date, time`. Nothing errored; the page just said
+something untrue.
 
-So the run has to write its own key down, and every way that can quietly stop happening is here:
-the model path resolving off the CWD, the regex missing a respelt config, `'auto'` being recorded as
-if it named columns, and the merge landing under `layout` where the page does not read it.
+So the run has to write its own key down. `stats.py` no longer does — the `sort_by` dispatch input
+it read is deleted, one field naming one key being unable to serve five marts — so the ONLY witness
+is `fabric_run.py`'s scrape of duckrun's own picker, pinned in `test_record.py`. What is left here
+is the other half of that write config: that no revived `declared_sort_key` sneaks back in, that
+`stats.py` writes no `dbt` branch, and that the GEOMETRY is recorded on a run whose sort is off —
+which the old `DUCKDB_SORTED` gate would have silently dropped.
 
     python -m pytest .github/scripts/test_sort_key.py -q
 """
@@ -31,15 +34,16 @@ def _no_ambient_duckdb_env(monkeypatch):
     """Clear every write-config var before each test.
 
     THE GATE MUST NOT BE A FUNCTION OF THE DISPATCH IT IS GATING. `benchmark.yml` puts
-    `DUCKDB_SORTED` / `DUCKDB_SORT_BY` / the geometry into the job env, so a test that reads one
-    without setting it asserts against whatever the human happened to type into the dispatch form.
-    That is exactly what killed run 31073309328: a `sort_by=date,time,DUID` dispatch failed the free
-    checks on a test that hardcoded `date,time`, and the run never reached a paid leg.
+    `DUCKDB_SORTED` and the geometry into the job env, so a test that reads one without setting it
+    asserts against whatever the human happened to type into the dispatch form. That is exactly what
+    killed run 31073309328: a `sort_by=date,time,DUID` dispatch failed the free checks on a test that
+    hardcoded `date,time`, and the run never reached a paid leg. (That input no longer exists; the
+    rule it taught applies to every var in this tuple.)
 
     `DWH_VORDER` is here for the same reason and not because it is a DuckDB knob — it is the dwh
     leg's V-Order input, and it reaches `stats.py` through that same workflow-level env.
     """
-    for k in ("DUCKDB_SORTED", "DUCKDB_SORT_BY", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
+    for k in ("DUCKDB_SORTED", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
               "DWH_VORDER"):
         monkeypatch.delenv(k, raising=False)
 
@@ -65,8 +69,8 @@ def stats():
 def test_every_name_stats_py_calls_is_defined(stats):
     """The one that would have saved run 31067443454.
 
-    A rewrite of `declared_sort_key` replaced a text RANGE that `encoding_table` happened to sit
-    inside, deleting it. Nothing here caught it: the function only prints to the step summary, so no
+    A rewrite of the since-deleted `declared_sort_key` replaced a text RANGE that `encoding_table`
+    happened to sit inside, deleting it. Nothing here caught it: the function only prints to the step summary, so no
     test calls it, and `main()` is the only caller — which no offline test reaches either. The layout
     job then died on `NameError: name 'encoding_table' is not defined`, ten minutes into a paid run,
     after the build had already been paid for.
@@ -94,44 +98,34 @@ def test_every_name_stats_py_calls_is_defined(stats):
     assert not (called - bound), f"stats.py calls undefined name(s): {sorted(called - bound)}"
 
 
-def test_the_declared_key_comes_from_the_env_the_model_reads(stats, monkeypatch):
-    """It used to regex a literal list out of `fct_summary.sql`. The model now renders `sort_by` from
-    `DUCKDB_SORT_BY`, so there is no literal left to match and that regex would silently return {} —
-    the same quiet gap this whole path exists to close. Reading the SAME env the model reads means
-    the two cannot disagree."""
-    monkeypatch.setenv("DUCKDB_SORTED", "true")
-    monkeypatch.setenv("DUCKDB_SORT_BY", "date,time")
-    assert stats.declared_sort_key() == {"fct_summary": ["date", "time"]}
-    monkeypatch.setenv("DUCKDB_SORT_BY", "date, time, DUID")     # spaces are the dispatch's problem
-    assert stats.declared_sort_key() == {"fct_summary": ["date", "time", "DUID"]}
-    # `auto` is duckrun's own picker and DECLARES NO COLUMNS — it names none, and what it
-    # resolved to is recorded separately, from fabric_run.py's log scrape, as
-    # `dbt.<engine>.sort_by_auto`. Returning the literal "auto" here would caption the
-    # dashboard's sort `by auto`, which is worse than the absence: absent, the page reads the
-    # run as sorted with an unrecorded key and says exactly that.
-    monkeypatch.setenv("DUCKDB_SORT_BY", "auto")
-    assert stats.declared_sort_key() == {}
-    monkeypatch.setenv("DUCKDB_SORT_BY", "AUTO")     # duckrun compares case-insensitively
-    assert stats.declared_sort_key() == {}
-    # ...and with the var unset the fallback must still be the MODEL's own env_var default,
-    # which is `auto` now — a stale literal here would record a key the write never used.
-    monkeypatch.delenv("DUCKDB_SORT_BY")
-    assert stats.declared_sort_key() == {}, (
-        "must equal the model's own env_var default, or a hand run records a key it did not write")
+def test_nothing_declares_a_sort_key_any_more(stats, monkeypatch):
+    """`declared_sort_key()` is GONE and must not come back, on any spelling.
+
+    It read a dispatched column list out of `DUCKDB_SORT_BY` and wrote it as `dbt.duckrun.sort_by`.
+    That input is deleted — one form field naming one key could not serve five marts — so the model
+    declares `auto` or nothing and a revived version could only ever return `{}`: dead code that
+    looks live. The chosen columns now reach the record ONLY through `fabric_run.py`'s log scrape,
+    as `dbt.<engine>.sort_by_auto`, which `test_record.py` pins.
+    """
+    assert not hasattr(stats, "declared_sort_key")
+    src = pathlib.Path(stats.__file__).read_text(encoding="utf-8")
+    for line in src.splitlines():
+        if line.lstrip().startswith("#"):
+            continue
+        assert "DUCKDB_SORT_BY" not in line, f"stats.py reads the deleted input again: {line!r}"
 
 
-def test_an_unsorted_run_declares_no_key(stats, monkeypatch):
-    """Recording one would caption an unsorted bar `by date, time`."""
-    monkeypatch.setenv("DUCKDB_SORT_BY", "date,time")
-    monkeypatch.delenv("DUCKDB_SORTED", raising=False)
-    assert stats.declared_sort_key() == {}
-    monkeypatch.setenv("DUCKDB_SORTED", "false")
-    assert stats.declared_sort_key() == {}
-
-
-def test_geometry_is_recorded_only_when_it_differs_from_the_baseline(stats, monkeypatch):
+def test_geometry_is_recorded_even_when_the_run_is_unsorted(stats, monkeypatch):
     """A run that wrote the parquet the history wrote must key to the SAME dashboard column.
-    `variant()` skips null, so absence keeps the column; a value splits it."""
+    `variant()` skips null, so absence keeps the column; a value splits it.
+
+    THE UNSORTED HALF IS THE REGRESSION THIS EXISTS FOR, and it is a reversal. `_nonbaseline` was
+    gated on `DUCKDB_SORTED`, which was correct while blanking `sort_by` was how an unsorted run was
+    dispatched — blanking it declared no geometry either. `duckrun_auto` carries the sort now, so
+    OFF means "unsorted AT the pinned row group / file size", i.e. the case where the geometry is
+    most deliberately chosen. Under the old gate both keys would vanish from the record on exactly
+    those runs, the run would join the baseline column, and nothing would look broken.
+    """
     monkeypatch.setenv("DUCKDB_SORTED", "true")
     monkeypatch.setenv("DUCKDB_ROW_GROUP_SIZE", "16000000")
     monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "1024")
@@ -141,9 +135,12 @@ def test_geometry_is_recorded_only_when_it_differs_from_the_baseline(stats, monk
     monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "128")
     assert stats._nonbaseline("DUCKDB_ROW_GROUP_SIZE", "16000000") == "4000000"
     assert stats._nonbaseline("DUCKDB_FILE_SIZE_MB", "1024") == "128"
-    # ...and neither is in force while the model declares no geometry at all.
+    # ...and an UNSORTED run at a pinned geometry still records it, on every spelling of unsorted.
     monkeypatch.setenv("DUCKDB_SORTED", "false")
-    assert stats._nonbaseline("DUCKDB_ROW_GROUP_SIZE", "16000000") is None
+    assert stats._nonbaseline("DUCKDB_ROW_GROUP_SIZE", "16000000") == "4000000"
+    assert stats._nonbaseline("DUCKDB_FILE_SIZE_MB", "1024") == "128"
+    monkeypatch.delenv("DUCKDB_SORTED", raising=False)
+    assert stats._nonbaseline("DUCKDB_ROW_GROUP_SIZE", "16000000") == "4000000"
 
 
 def test_the_baseline_is_history_not_the_current_dispatch_default(stats, monkeypatch):
@@ -167,19 +164,18 @@ def test_the_baseline_is_history_not_the_current_dispatch_default(stats, monkeyp
     assert '_nonbaseline("DUCKDB_FILE_SIZE_MB", "1024")' in src
 
 
-def test_the_key_lands_at_the_top_LEVEL_dbt_branch_not_under_layout(stats, tmp_path, monkeypatch):
-    """`build_doc`'s output is merged as `{"layout": doc}`, so a key placed inside it would render
-    as `layout.dbt` — which `sortKeyOf` does not read. It has to be a sibling merge, and it must not
-    go in `layout.config`, whose every entry the dashboard's `variant()` walks into column names."""
+def test_write_json_records_no_sort_key_of_its_own(stats, tmp_path, monkeypatch):
+    """`write_json` used to merge `dbt.duckrun.sort_by` beside the layout doc. It writes no `dbt`
+    branch at all now — the only sort witness is `fabric_run.py`'s scrape — and the layout doc must
+    still land under `layout`, never `layout.dbt`, which the page does not read."""
     import record
     rec = tmp_path / "run.json"
     monkeypatch.setenv("RUN_RECORD", str(rec))
     monkeypatch.setenv("DUCKDB_SORTED", "true")
-    monkeypatch.setenv("DUCKDB_SORT_BY", "date,time")   # PINNED — never the dispatch's own value
     monkeypatch.setattr(stats, "build_doc", lambda *a, **k: {"stats": {}})
     stats.write_json({"stats": {"duckrun": {}}}, ["duckrun"])
     doc = json.loads(rec.read_text(encoding="utf-8"))
-    assert doc["dbt"]["duckrun"]["sort_by"] == {"fct_summary": ["date", "time"]}
+    assert "dbt" not in doc, "stats.py must not write a sort key; fabric_run.py owns that now"
     assert "dbt" not in doc.get("layout", {}), "layout.dbt is invisible to the page"
     assert "sort_by" not in doc.get("layout", {}).get("config", {}).get("duckrun", {}), \
         "layout.config is walked by variant() — a commit-varying key would split the column"
@@ -308,7 +304,9 @@ def test_the_declared_vorder_and_the_measured_one_are_separate_keys(stats, monke
 
 def test_an_unsorted_run_records_no_key_at_all(stats, tmp_path, monkeypatch):
     """Absence is what tells the page a run wrote unsorted parquet. A key here would caption an
-    unsorted bar `by date, time`."""
+    unsorted bar `by date, time`. Its sorted counterpart is
+    `test_write_json_records_no_sort_key_of_its_own` — neither writes a `dbt` branch now, and the
+    pair is kept because they reach it from opposite sides of the switch."""
     rec = tmp_path / "run.json"
     monkeypatch.setenv("RUN_RECORD", str(rec))
     monkeypatch.delenv("DUCKDB_SORTED", raising=False)

@@ -70,15 +70,17 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 
 {%- set cols = nyc_trip_columns() -%}
 
-{#-- The sort and geometry knobs are the SAME dispatch inputs the AEMO mart reads, so a layout
-     question can be asked of either dataset with one workflow. The env default below is
-     NYC-shaped: pickup_date first (every composite query groups or filters THROUGH the date
-     relationship, and a date is far lower cardinality than the timestamp, so it RLEs where the
-     timestamp would not), then PULocationID (the widest skewed categorical, and what the
-     selectivity ladder filters on). The plan job REFUSES a sort_by naming columns this dataset's
-     mart does not have -- which is what a dispatch gets by leaving the field at the other
-     dataset's key -- rather than substituting, because a run that quietly measured a layout other
-     than the one the form described is the failure that reshaped that field. --#}
+{#-- The geometry knobs are the SAME dispatch inputs the AEMO mart reads, so a layout question can
+     be asked of either dataset with one workflow. The key this table WANTS is NYC-shaped:
+     pickup_date first (every composite query groups or filters THROUGH the date relationship, and
+     a date is far lower cardinality than the timestamp, so it RLEs where the timestamp would not),
+     then PULocationID (the widest skewed categorical, and what the selectivity ladder filters on)
+     — a note for reading duckrun's choice, not something a dispatch can ask for.
+
+     THE SORT IS `auto` OR NOTHING. A `sort_by` input took a literal column list, and one field
+     naming one key could not serve five marts: its default was the aemo key, so this dataset got
+     it by leaving the field alone, and the plan job carried a per-dataset column check purely to
+     refuse that. duckrun's picker answers per dataset instead. --#}
 -- pickup_date IS A STORED COLUMN AND IT IS NOT THE month_key MISTAKE. Direct Lake cannot relate a
 -- DATETIME column to a DATE dimension key, and it has no calculated columns to bridge one, so a
 -- date dimension is only reachable if the fact carries a DATE. month_key was rejected because
@@ -96,9 +98,7 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
-    sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
-              else env_var('DUCKDB_SORT_BY', 'auto').split(','))
-             if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    sort_by=('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'

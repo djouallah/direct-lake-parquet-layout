@@ -46,8 +46,12 @@ this dataset**, and no run has drained more than three months.
 
 ```bash
 gh workflow run Benchmark -f dataset=nyc -f engines=duckrun -f cores=8 \
-   -f skip_download=false -f download_limit=3 -f sort_by=pickup_date,PULocationID
+   -f skip_download=false -f download_limit=3
 ```
+
+(This used to pass `-f sort_by=pickup_date,PULocationID`. That input is gone — one field naming one
+key could not serve five marts — and duckrun's picker chooses per dataset now, which on the taxi
+mart resolves to `pickup_date, VendorID, store_and_fwd_flag, payment_type`.)
 
 Three months is minutes of download and a few million rows. What to read afterwards, in order:
 
@@ -126,21 +130,24 @@ at 8 vCores against 22,547 blended** across 8/16/32/64). **A group with no run a
 the section entirely**, table and chart alike, with the count named in a note under the table. So a
 layout dispatched only at 64 cores is measured and invisible.
 
-A group is keyed on `(V-Order, band of the row-group count, sort columns, engine)`, so a NEW sort key
-or a row-group count in a new power-of-two band opens a group of its own. Filling it is one dispatch:
+A group is keyed on `(V-Order, band of the row-group count, sort columns, engine)`, so a row-group
+count in a new power-of-two band opens a group of its own. Filling it is one dispatch:
 
 ```bash
-gh workflow run Benchmark -f engines=duckrun -f cores=8 \
-   -f sort_by=<columns> -f row_group_size=<rows>
+gh workflow run Benchmark -f engines=duckrun -f cores=8 -f row_group_size=<rows>
 ```
 
 `row_group_size` is derived — `<mart rows> ÷ the row groups you want`. That held exactly for all
 seven runs that closed this item on aemo: `6000000` → 24 RG, `2000000` → 72, `1000000` → 144.
 
-**⚠️ The nightly does NOT fill these in.** It builds one layout — `aemo`, `sort_by=date,time,price`
-at `row_group_size=2000000`, 72 row groups — and that group already has 8-core runs. Every other
-group needs a deliberate dispatch, and **the nyc groups are all empty**, since nothing has been
-dispatched there at all.
+**⚠️ A NEW SORT KEY IS NO LONGER DISPATCHABLE.** The `sort_by` input is deleted — one field naming
+one key could not serve five marts — so `duckrun_auto` is the whole sort control: on means duckrun
+picks, off means unsorted at the geometry above. The seven keys in the table below are a closed set,
+and `LAYOUTS_SHOWN` hides them from the layout tables anyway.
+
+**⚠️ The scheduled grid does NOT fill these in.** It builds `duckrun_auto` at the form's geometry
+defaults, and that group already has 8-core runs. Every other group needs a deliberate dispatch, and
+**the nyc groups are all empty**, since nothing has been dispatched there at all.
 
 ### What closed it
 

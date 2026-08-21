@@ -65,9 +65,8 @@ name: Benchmark
 # `github.event_name == 'schedule' && '<value>' || inputs.<name>` — or, for the three that ROTATE,
 # `github.event_name != 'schedule' && inputs.<name> || <cron branches> || '<fallback>'`. Read that
 # shape before adding an input, because the failures are silent and expensive: blank `engines` is
-# fatal in `plan`, blank `build`/`benchmark` are FALSY so a scheduled run would spend a runner and
-# build nothing, and blank `sort_by` means NO SORT — it would quietly measure a different layout
-# than the form describes.
+# fatal in `plan`, and blank `build`/`benchmark` are FALSY so a scheduled run would spend a runner
+# and build nothing.
 # It is deliberately NOT written `inputs.x || 'default'`: that form cannot tell an absent input from
 # a deliberate one, so it would override `build: false` and turn the documented scouting recipe's
 # `gap_seconds: 0` back into 600.
@@ -228,25 +227,16 @@ on:
       # rest are inert — which is exactly why they sit together below the two fields that always
       # matter, instead of being interleaved with them. Every one of them defaults to what a bare
       # dispatch already writes, so an untouched form measures the plain layout on every engine.
-      # THE SORT IS THE FIELD ITSELF — there is no `sorted` checkbox any more, and that is the fix
-      # for the way this went wrong. A boolean gate sitting apart from the three fields it gated let
-      # run 31158671699 be dispatched with a sort key and a row-group size that were both inert,
-      # and nothing said so: it spent a full build and query pass rewriting the parquet it already
-      # had. Blank `sort_by` is now the only way to ask for no sort, so the field a user fills in is
-      # the field that takes effect.
-      # THE DEFAULT IS THE AEMO KEY, so a `dataset: nyc` dispatch MUST set this (or blank it). The
-      # `plan` job validates the columns against the selected dataset's mart and refuses a key that
-      # does not belong to it — free, before any leg spends capacity, where the alternative is
-      # duckrun failing mid-write with the build already paid for. It is not silently substituted:
-      # a run that quietly measured a different layout than the form described is the failure this
-      # whole field was reshaped to prevent (run 31158671699).
-      # These three are IGNORED while `duckrun_auto` is on, which it is by default — duckrun picks
-      # the key and sizes the geometry itself then. They are what a dispatch reaches for to pin a
-      # SPECIFIC layout, which is how every group on the layout chart was filled.
-      sort_by:
-        description: "duckrun: sort the mart by — blank for no sort (ignored if duckrun auto)"
-        type: string
-        default: "date,time,price"
+      # THERE IS NO `sort_by` FIELD, AND ONE DATASET IS WHY THERE USED TO BE. With aemo alone,
+      # `date,time,price` was simply THE key and a form field naming it described itself. It does
+      # not survive five marts: the default was the aemo key on a form that dispatches five
+      # different tables, so every non-aemo dispatch had to override or blank it, `plan` carried a
+      # per-dataset column list purely to refuse the mismatch, and a scheduled nyc/bts/green/cms run
+      # recorded an intent naming columns its table does not have. A single key-shaped input cannot
+      # be right for five marts at once. `duckrun_auto` answers per dataset instead — see below.
+      # These two are IGNORED while `duckrun_auto` is on, which it is by default — duckrun sizes the
+      # geometry itself then. They are what a dispatch reaches for to pin a SPECIFIC layout, which
+      # is how every group on the layout chart was filled.
       # 16M, i.e. VertiPaq's segment ceiling — the largest segment Direct Lake takes whole, and on
       # this table 143,980,961 / 16M = ~9 row groups, the fewest reachable. It was 2M / ~72 RG on the
       # argument that a query touching a narrow slice of the sort key scans less; the CU measurement
@@ -305,18 +295,21 @@ on:
       #
       # It covers BOTH knobs, by two different mechanisms, and the difference is worth knowing:
       #   sort      duckrun's `sort_by='auto'` REALLY profiles the staged relation and chooses
-      #             columns (engine.auto_sort_cols), logging what it picked. It can also decide
-      #             nothing pays off and write unsorted.
+      #             columns (engine.auto_sort_cols), logging what it picked — PER DATASET, which is
+      #             what a single form field naming one key could never do. It can also decide
+      #             nothing pays off and write unsorted. `fabric_run.py` scrapes the choice out of
+      #             the leg log into `dbt.<engine>.sort_by_auto`, the only witness to what it wrote.
       #   geometry  there is NO `auto` for row groups — `_geometry_config` takes positive integers
       #             or nothing — so "duckrun sizes it" means the config is OMITTED and delta_rs's
       #             own estimator sizes the write. Same outcome, different route.
       #
-      # Turning it OFF is what makes `sort_by` / `row_group_size` / `file_size_mb` above take
-      # effect, which is how a specific layout gets pinned and how every group on the layout chart
-      # was filled. The three carry `auto` through the env when it is on, so one spelling means
-      # "duckrun decides" for all of them and no knob can be half-applied.
+      # ⚠️ IT IS ALSO THE UNSORTED LEVER, which is not obvious from the name: turning it OFF means
+      # UNSORTED with the pinned `row_group_size` / `file_size_mb` above. Blanking a `sort_by` field
+      # used to be how an unsorted run was dispatched; that field is gone (see the note above it),
+      # so this is the only remaining way to ask for one — and the unsorted arm is half of the
+      # comparison the layout tables make.
       duckrun_auto:
-        description: "duckrun auto"
+        description: "duckrun auto — off means UNSORTED at the row group / file size below"
         type: boolean
         default: true
 
@@ -468,31 +461,38 @@ env:
   # `ALTER`, and `stats.py` records it under `layout.config.dwh` so the page can put a V-Ordered dwh
   # column beside an un-V-Ordered one. Both take the same value from here, so they cannot disagree.
   DWH_VORDER: ${{ (github.event_name == 'schedule' || inputs.dwh_vorder) && 'true' || 'false' }}
-  # DuckDB legs only. `sort_by` is the switch AND the value: non-blank means the model declares a
-  # sort and the geometry beside it, blank means it declares neither. DUCKDB_SORTED is DERIVED here
-  # and is not an input — it stays because the model, `stats.py`'s `_nonbaseline` /
-  # `declared_sort_key`, and the dashboard's `sorted` layout key all already read it, and deriving
-  # it in one place is what makes the three impossible to disagree with the form.
+  # DuckDB legs only, and all three now say the same thing: `duckrun_auto`. There was a
+  # `DUCKDB_SORT_BY` carrying a dispatched key, and `DUCKDB_SORTED` was DERIVED from whether that
+  # key was blank; the key is gone (one field cannot name a sort for five different marts — see the
+  # input block) so `DUCKDB_SORTED` now carries `duckrun_auto` directly. ON means duckrun profiles
+  # the data and picks, OFF means unsorted. It stays a var of its own rather than folding into the
+  # geometry pair because three readers compare it as one — the model, `stats.py`'s `layout.config`
+  # `sorted` flag, and the dashboard's `sorted` layout key — and deriving it in one place is what
+  # makes them impossible to disagree with the form.
   #
-  # All four reach the notebook through fabric_run.py's `_FORWARD`, and a var missing from that
+  # ⚠️ `stats.py`'s `_nonbaseline` DELIBERATELY DOES NOT READ IT. It used to, back when unsorted
+  # implied no declared geometry either; with OFF now meaning "unsorted AT the pinned geometry",
+  # that gate would drop `row_group_size` and `file_size_mb` from the record on exactly the runs
+  # that pinned them, and the run would join the baseline dashboard column with nothing looking
+  # broken.
+  #
+  # All three reach the notebook through fabric_run.py's `_FORWARD`, and a var missing from that
   # tuple is SILENTLY INERT — how a 4GB DUCKDB_MEMORY_LIMIT nobody could dispatch around stood for
   # months. They reach the `layout` job through this env, which is what puts them in the record and
   # therefore in the dashboard's column and bar keys. iceberg parses the same model and has no sort
   # or geometry config at all, so only duckrun's parquet moves; see the model header for the cost.
   #
-  # `row_group_size` and `sort_by` are free text and are VALIDATED IN `plan`, not here: a typo would
-  # otherwise reach duckrun as a string and fail mid-write, after the legs have spent capacity.
-  # `auto` on all three when duckrun_auto is on — ONE spelling meaning "duckrun decides", so no
-  # knob can be half-applied. It is a sentinel VALUE rather than an empty string on purpose:
+  # `row_group_size` is free text and is VALIDATED IN `plan`, not here: a typo would otherwise reach
+  # duckrun as a string and fail mid-write, after the legs have spent capacity.
+  # `auto` on both geometry keys when duckrun_auto is on — ONE spelling meaning "duckrun decides",
+  # so no knob can be half-applied. It is a sentinel VALUE rather than an empty string on purpose:
   # `<cond> && '' || <other>` reads the empty string as FALSY in a GitHub expression and silently
   # yields <other>, which would apply the pinned geometry to a run that asked for auto.
   #
   # `duckrun_auto` defaults true, so on a `schedule` — where the inputs context is EMPTY and
   # dispatch defaults do NOT apply — the scheduled literal is the auto branch.
-  DUCKDB_SORT_BY: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
-    || inputs.sort_by }}
-  DUCKDB_SORTED: ${{ ((github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
-    || inputs.sort_by) != '' && 'true' || 'false' }}
+  DUCKDB_SORTED: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'true'
+    || 'false' }}
   DUCKDB_ROW_GROUP_SIZE: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
     || inputs.row_group_size }}
   DUCKDB_FILE_SIZE_MB: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
@@ -557,16 +557,20 @@ jobs:
             && 'true' || 'false' }}
           RUNIN_NATIVE_EXECUTION_ENGINE: ${{ github.event_name == 'schedule' && 'true'
             || inputs.native_execution_engine }}
-          # The three duckdb write knobs, which this block did NOT carry — so a record could not say
-          # what sort or geometry its dispatch asked for, and answering "what did that run request?"
-          # meant reading the workflow file at that SHA. `_init()` skips an empty value, so a blank
-          # `sort_by` (no sort) correctly records no key rather than an empty string. These are the
-          # INTENT; `layout.config` is what was measured, and the dashboard groups on that.
+          # The duckdb write knobs, which this block did NOT carry — so a record could not say what
+          # geometry its dispatch asked for, and answering "what did that run request?" meant reading
+          # the workflow file at that SHA. These are the INTENT; `layout.config` is what was measured,
+          # and the dashboard groups on that.
+          #
+          # ⚠️ THE GEOMETRY PAIR MIRRORS THE AUTO BRANCH ON A SCHEDULE, and must keep doing so. They
+          # carried the form literals (`16000000` / `64`) while `duckrun_auto` is true on a schedule
+          # and the build therefore ran `auto` — an intent block contradicting the run it describes,
+          # which is the one thing it exists not to do. Same reason `RUNIN_SORT_BY` was deleted rather
+          # than fixed: it claimed the aemo key on every nyc/bts/green/cms night.
           RUNIN_DUCKRUN_AUTO: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto)
             && 'true' || 'false' }}
-          RUNIN_SORT_BY: ${{ github.event_name == 'schedule' && 'date,time,price' || inputs.sort_by }}
-          RUNIN_ROW_GROUP_SIZE: ${{ github.event_name == 'schedule' && '16000000' || inputs.row_group_size }}
-          RUNIN_FILE_SIZE_MB: ${{ github.event_name == 'schedule' && '64' || inputs.file_size_mb }}
+          RUNIN_ROW_GROUP_SIZE: ${{ env.DUCKDB_ROW_GROUP_SIZE }}
+          RUNIN_FILE_SIZE_MB: ${{ env.DUCKDB_FILE_SIZE_MB }}
           RUNIN_SKIP_DOWNLOAD: ${{ github.event_name == 'schedule' && 'true'
             || inputs.skip_download }}
           RUNIN_DOWNLOAD_LIMIT: ${{ github.event_name == 'schedule' && '200' || inputs.download_limit }}
@@ -665,63 +669,39 @@ jobs:
       fabric: ${{ steps.p.outputs.fabric }}
       server: ${{ steps.p.outputs.server }}
     steps:
-      # Checked out so the validation below can import the dataset registry instead of carrying a
-      # second copy of every mart's column list. A free runner, seconds, and the alternative is the
-      # kind of duplicate that drifts silently — which is the whole failure class this job exists
-      # to catch before capacity is spent.
+      # Checked out so the validation below can import the dataset registry — `datasets.selected()`
+      # is the DATASET typo guard, and a typo there makes every model gate false, so `dbt build`
+      # reports "Nothing to do" and exits 0 having built nothing. A free runner and seconds.
       - uses: actions/checkout@v4
       - id: p
         env:
           ENGINES: ${{ env.BENCH_ENGINES }}
           ROW_GROUP_SIZE: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
             || inputs.row_group_size }}
-          SORT_BY: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
-            || inputs.sort_by }}
+          # Reported, not validated — it is a boolean the form cannot get wrong. Declared here
+          # rather than read off the workflow env so the extracted heredoc `test_plan.py` runs can
+          # drive it, same as ROW_GROUP_SIZE.
+          SORTED: ${{ env.DUCKDB_SORTED }}
         run: |
           python3 - >> "$GITHUB_OUTPUT" <<'EOF'
           import json, os, re, sys
-          # `row_group_size` and `sort_by` are FREE TEXT, so this is the only thing standing between a
-          # typo and a leg that dies mid-write with capacity already spent. `plan` is free and runs
-          # before every paid job, which is why the check lives here rather than in the model.
+          # `row_group_size` is FREE TEXT, so this is the only thing standing between a typo and a
+          # leg that dies mid-write with capacity already spent. `plan` is free and runs before
+          # every paid job, which is why the check lives here rather than in the model.
+          #
+          # There was a `sort_by` check beside it — shape, whitespace, and membership of the selected
+          # dataset's `mart_columns` — and it went with the input it validated. The membership half
+          # is the reason `mart_columns` exists; the registry keeps the field because the per-dataset
+          # column tests pin it against the staging macros, but nothing reads it here any more.
           rg = (os.environ.get("ROW_GROUP_SIZE") or "").strip()
           # `auto` means duckrun sizes the write (the config is omitted and delta_rs's estimator
           # decides), so there is no integer to validate.
           if rg.lower() != "auto" and (not rg.isdigit() or int(rg) < 1):
               sys.exit(f"row_group_size must be a positive integer or 'auto', got {rg!r}")
-          # BLANK IS LEGAL AND MEANS NO SORT — it is the only way to ask for one now that the
-          # `sorted` checkbox is gone, so rejecting it here would make an unsorted run undispatchable.
-          # Anything NON-blank must be well formed: plain identifiers, comma separated. A name that
-          # is well-formed but not a column of the model still fails in the leg; that needs the
-          # manifest, which lives in the notebook. This catches the typo class (`date;time`, `date, `,
-          # quoting, injection) — and it catches whitespace-only, which would otherwise read as
-          # "sorted" to the workflow env while giving the model no usable key.
-          raw = os.environ.get("SORT_BY") or ""
-          # `auto` is duckrun's picker, not a key: it names no column, so the shape and column
-          # checks below do not apply to it. Compared case-insensitively because duckrun does.
-          auto = raw.strip().lower() == "auto"
-          cols = [] if auto else [c.strip() for c in raw.split(",") if c.strip()]
-          if raw.strip() and not auto and not all(
-                  re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", c) for c in cols):
-              sys.exit(f"sort_by must be comma-separated column names, got {raw!r}")
-          if raw and not raw.strip():
-              sys.exit(f"sort_by is whitespace, which reads as sorted but names no column; "
-                       f"leave it EMPTY for no sort")
-          # ...and now the check that shape alone cannot make: are these columns of THIS DATASET's
-          # mart? With two datasets sharing one form, a well-formed-but-wrong key is no longer a
-          # typo — it is exactly what a `dataset: nyc` dispatch gets by leaving sort_by at the aemo
-          # default. Refused here, for free; NOT silently substituted, because a run that quietly
-          # measured a layout other than the one the form described is the failure this field was
-          # reshaped to prevent (run 31158671699).
           sys.path.insert(0, ".github/scripts")
           import datasets
           ds = datasets.selected()          # refuses an unknown DATASET, loudly
           spec = datasets.spec(ds)
-          known = set(spec["mart_columns"])
-          strays = [c for c in cols if c not in known]
-          if strays:
-              sys.exit(f"sort_by names {strays}, which are not columns of {ds}'s "
-                       f"{spec['mart']}. Known: {sorted(known)}. "
-                       f"This dataset's usual key is {spec['sort_by']!r}.")
           # `int(rg)` UNCONDITIONALLY was the bug. The check above correctly exempts `auto`
           # from being an integer, and then this line parsed it anyway and killed the job with
           # `invalid literal for int() with base 10: 'auto'`. `plan` is a `needs:` gate, so
@@ -730,7 +710,7 @@ jobs:
           # validates and the branch that PRINTS cannot drift apart again.
           rg_says = "auto (duckrun sizes it)" if rg.lower() == "auto" else f"{int(rg):,} rows"
           sys.stderr.write(f"dataset={ds} mart={spec['mart']} row_group_size={rg_says}, "
-                           f"sort_by={'auto (duckrun picks)' if auto else (cols or 'none (unsorted)')}\n")
+                           f"sort={'auto (duckrun picks)' if os.environ.get('SORTED') == 'true' else 'none (unsorted)'}\n")
           # THE dwh PIN IS EXACT, AND THAT IS THE GUARD RATHER THAN A PREFERENCE. This was
           # `dbt-fabric-samdebruyn`, a fork whose ONLY reason to exist here was that it had moved to
           # `mssql-python` (which bundles its own driver) while Microsoft's own adapter was still

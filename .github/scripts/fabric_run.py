@@ -44,7 +44,7 @@ import record
 # failure in this file costs one un-attributed CU row; that one costs the wrong table.
 _FORWARD = ("DATASET", "FILES_PATH", "ONELAKE_TABLES_PATH", "WAREHOUSE_PATH", "ONELAKE_ENDPOINT",
             "DBT_SCHEMA", "DUCKDB_SORTED", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
-            "DUCKDB_SORT_BY", "download_limit", "daily_download_limit")
+            "download_limit", "daily_download_limit")
 
 
 def _record_notebook(item_id, engine, name):
@@ -74,6 +74,11 @@ def _record_notebook(item_id, engine, name):
 # or the same with `-> no sort (nothing pays off)`. The line is the ONLY place the chosen key
 # appears — the adapter does not return it and nothing writes it to disk — so it is scraped from
 # the log rather than reported. `\S+` for the relation because it is dot-quoted and never spaced.
+#
+# THIS IS NOW THE ONLY WITNESS TO ANY SORT KEY, on every sorted run rather than only the ones that
+# asked for `auto`. The `sort_by` dispatch input that let a run DECLARE a key is gone (one field
+# naming one key could not serve five marts), so `stats.py` writes no `dbt.duckrun.sort_by` any
+# more and this scrape is what fills the dashboard's sort caption.
 _SORT_KEY_LINE = re.compile(r"sort_by=auto for (\S+) -> (.*)")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 

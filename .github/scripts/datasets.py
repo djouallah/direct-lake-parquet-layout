@@ -53,8 +53,18 @@ matcher is not the only thing that has ever matched a Fabric item name loosely.
 import os
 import sys
 
-# dataset -> what its landing lakehouse is called, what each engine's output item is called, which
-# table the layout instrumentation profiles, and what a default `sort_by` means on it.
+# dataset -> what its landing lakehouse is called, what each engine's output item is called, and
+# which table the layout instrumentation profiles.
+#
+# There was a `sort_by` field here — the key a dispatch of this dataset would use — read by the
+# `plan` job's validation and by `stats.py`'s declared-key fallback. Both are gone with the
+# `sort_by` dispatch input: one form field naming one key could not serve five marts, so duckrun's
+# picker chooses per dataset now and nothing here has to hold an opinion about the key.
+#
+# `mart_columns` OUTLIVED ITS ONLY CONSUMER and is kept deliberately: `plan` validated a dispatched
+# key against it, and nothing does now, but `test_{bts,nyc,green,cms}_columns.py` pin it against the
+# staging macros and catch column drift on their own (the cms 91-column count and the
+# `Nonccovered` misspelling guard both live there).
 DATASETS = {
     "aemo": {
         "landing": "dbt_landing",
@@ -67,12 +77,9 @@ DATASETS = {
         "tables": ["stg_csv_archive_log", "dim_calendar", "dim_duid",
                    "fct_price", "fct_scada", "fct_price_today", "fct_scada_today", "fct_summary"],
         "mart": "fct_summary",
-        # The mart's own columns, and the ONLY thing that can validate a `sort_by` before capacity
-        # is spent. `plan` already checks the input's SHAPE (comma-separated identifiers); a
-        # well-formed name that is not a column of this dataset's mart still dies mid-write, and
-        # with two datasets sharing one form that is no longer a typo — it is what happens when a
-        # `dataset: nyc` dispatch leaves `sort_by` at the aemo default. Kept here rather than read
-        # from the manifest because the manifest only exists inside the notebook.
+        # The mart's own columns. This was `plan`'s check that a dispatched `sort_by` named columns
+        # of THIS dataset's mart; that input is gone, so nothing reads it at run time now — see the
+        # note above `DATASETS` for why it stays.
         "mart_columns": ["date", "time", "DUID", "mw", "price"],
         # Which of `tables` dbt writes into the `landing` schema; the rest live in `mart`. The
         # semantic-model templates read the same two schemas, and test_datasets.py pins this split
@@ -81,7 +88,6 @@ DATASETS = {
         # at a path that does not exist.
         "landing_tables": ["stg_csv_archive_log", "fct_price", "fct_scada",
                            "fct_price_today", "fct_scada_today"],
-        "sort_by": "auto",
         "download": "download_aemo.py",
         "model_prefix": "aemo_",
     },
@@ -108,7 +114,6 @@ DATASETS = {
         # substituting, because a run that quietly measured a layout other than the one the form
         # described is exactly the failure that reshaped that field.
         "landing_tables": ["stg_parquet_archive_log"],
-        "sort_by": "auto",
         "download": "download_nyc_taxi.py",
         "model_prefix": "nyc_",
     },
@@ -133,7 +138,6 @@ DATASETS = {
                          "total_amount", "payment_type", "trip_type", "congestion_surcharge",
                          "pickup_date", "file"],
         "landing_tables": ["stg_green_archive_log"],
-        "sort_by": "auto",
         "download": "download_green_taxi.py",
         "model_prefix": "green_",
     },
@@ -215,7 +219,6 @@ DATASETS = {
             "Associated_Drug_or_Biological_NDC_5", "Associated_Device_or_Medical_Supply_PDI_5",
             "Program_Year", "Payment_Publication_Date", "file"],
         "landing_tables": ["stg_cms_archive_log"],
-        "sort_by": "auto",
         "download": "download_cms_payments.py",
         "model_prefix": "cms_",
     },
@@ -236,7 +239,6 @@ DATASETS = {
                          "ArrDelay", "ArrDel15", "Cancelled", "CancellationCode", "Diverted",
                          "AirTime", "Distance", "DistanceGroup", "file"],
         "landing_tables": ["stg_flights_archive_log"],
-        "sort_by": "auto",
         "download": "download_bts_flights.py",
         "model_prefix": "bts_",
     },

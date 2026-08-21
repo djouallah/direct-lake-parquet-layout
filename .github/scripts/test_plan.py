@@ -37,48 +37,33 @@ def plan_script():
     return textwrap.dedent(m.group(1))
 
 
-def run(dataset="aemo", engines="duckrun", row_group_size="auto", sort_by="auto"):
+def run(dataset="aemo", engines="duckrun", row_group_size="auto", sorted_="true"):
     env = dict(os.environ, DATASET=dataset, ENGINES=engines,
-               ROW_GROUP_SIZE=row_group_size, SORT_BY=sort_by)
+               ROW_GROUP_SIZE=row_group_size, SORTED=sorted_)
     return subprocess.run([sys.executable, "-c", plan_script()], env=env, cwd=ROOT,
                           capture_output=True, text=True)
 
 
 # (label, kwargs, should the job succeed)
+#
+# THIRTEEN SORT CASES USED TO LIVE HERE and went with the input they exercised — a per-dataset
+# `sort_by` key, its shape and whitespace refusals, and the "names columns this dataset's mart does
+# not have" refusal in both directions. `duckrun_auto` carries the sort now: a boolean the form
+# cannot get wrong, so there is nothing left to validate and `SORTED` is only reported.
 CASES = [
-    # `auto` on both knobs is the DEFAULT dispatch, and it is what crashed.
+    # `auto` geometry is the DEFAULT dispatch, and it is what crashed.
     ("auto everywhere", {}, True),
-    ("pinned aemo layout", {"row_group_size": "2000000", "sort_by": "date,time,price"}, True),
+    ("pinned aemo layout", {"row_group_size": "2000000"}, True),
     ("auto on nyc", {"dataset": "nyc", "engines": "spark"}, True),
-    ("pinned nyc layout",
-     {"dataset": "nyc", "row_group_size": "2000000", "sort_by": "pickup_date,PULocationID"}, True),
     ("auto on bts", {"dataset": "bts", "engines": "spark"}, True),
-    ("pinned bts layout",
-     {"dataset": "bts", "row_group_size": "2000000",
-      "sort_by": "FlightDate,Reporting_Airline,Origin"}, True),
     ("auto on green", {"dataset": "green", "engines": "spark"}, True),
-    ("pinned green layout",
-     {"dataset": "green", "row_group_size": "2000000",
-      "sort_by": "pickup_date,PULocationID"}, True),
     ("auto on cms", {"dataset": "cms", "engines": "spark"}, True),
-    ("pinned cms layout",
-     {"dataset": "cms", "row_group_size": "2000000",
-      "sort_by": "Date_of_Payment,Nature_of_Payment_or_Transfer_of_Value"}, True),
-    # Blank sort is the only way to ask for NO sort, so it must stay legal.
-    ("unsorted", {"sort_by": ""}, True),
-    ("AUTO uppercase", {"row_group_size": "AUTO", "sort_by": "AUTO"}, True),
+    # duckrun_auto off: unsorted at a pinned geometry, which is the whole unsorted arm now.
+    ("unsorted at a pinned geometry", {"row_group_size": "2000000", "sorted_": "false"}, True),
+    ("AUTO uppercase", {"row_group_size": "AUTO"}, True),
     # ...and the refusals, each of which saves a dispatch.
     ("non-numeric geometry", {"row_group_size": "abc"}, False),
     ("zero geometry", {"row_group_size": "0"}, False),
-    ("the other dataset's sort key", {"dataset": "nyc", "sort_by": "date,time,price"}, False),
-    ("the aemo key on bts", {"dataset": "bts", "sort_by": "date,time,price"}, False),
-    ("the aemo key on green", {"dataset": "green", "sort_by": "date,time,price"}, False),
-    ("the aemo key on cms", {"dataset": "cms", "sort_by": "date,time,price"}, False),
-    # cms's own key on another dataset — the refusal has to work in both directions, and this one
-    # is the likelier mistake now that cms's column names are the longest here to retype.
-    ("the cms key on nyc", {"dataset": "nyc", "sort_by": "Date_of_Payment"}, False),
-    ("malformed sort key", {"sort_by": "date;time"}, False),
-    ("whitespace sort key", {"sort_by": "   "}, False),
     ("unknown engine", {"engines": "nope"}, False),
     ("unknown dataset", {"dataset": "taxi"}, False),
 ]

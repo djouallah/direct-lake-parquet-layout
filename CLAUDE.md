@@ -13,7 +13,7 @@ only changes when the tables are rewritten.
 
 `DATASET` is a dispatch input (`aemo` | `nyc` | `bts` | `green` | `cms`, default `aemo`) and reaches everything from
 one workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list,
-mart, mart columns, default sort key, downloader. **It is the single source for names that
+mart, mart columns, downloader. **It is the single source for names that
 provision.py CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would
 notice, with several it silently records another dataset's layout under this run's id.
 `benchmark/engines.py` carries a deliberate copy (that directory must stay deletable) and
@@ -186,10 +186,16 @@ here and still disable everything; `plan` validates; and `.github/scripts/check_
 whole (dataset × target) matrix through `dbt parse` in the free `checks` job, asserting the enabled
 model **and test** sets plus every fqn.
 
-**`sort_by` is NOT dataset-neutral.** Its form default is the AEMO key, so a `dataset: nyc` dispatch
-must pass its own (or blank it). `plan` REFUSES a key naming columns the selected dataset's mart does
-not have — it does not substitute, because a run that quietly measured a layout other than the one
-the form described is the failure that reshaped that field.
+**THERE IS NO `sort_by` INPUT, AND THE FIFTH DATASET IS WHY.** It took a literal column list and its
+form default was the AEMO key, so a `dataset: nyc` dispatch had to pass its own or blank it, `plan`
+carried a per-dataset `mart_columns` check purely to REFUSE a key naming columns the selected mart
+does not have, and a scheduled nyc/bts/green/cms run still recorded `RUNIN_SORT_BY: date,time,price`
+— an intent naming columns its table has never had. One key-shaped field cannot be right for five
+marts at once. **`duckrun_auto` is the whole duckrun sort control now**: ON (the default, and every
+scheduled run) means duckrun's picker profiles the staged relation and chooses PER DATASET, OFF
+means unsorted at the pinned `row_group_size` / `file_size_mb`. The chosen columns exist only in the
+leg log, scraped into `dbt.<engine>.sort_by_auto`. `mart_columns` stays in the registry — nothing
+reads it at run time, but the per-dataset column tests pin it against the staging macros.
 
 **The page shows ONE dataset at a time**, `?dataset=nyc` to switch, and it carries its mart with it.
 Absence in a record means `aemo` — every record committed before the input existed was an AEMO build.
@@ -1036,14 +1042,20 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   The line is gone. Note the knock-on: duckrun's merge budget is a **0.3 share of the global
   limit** (`set_merge_memory_limit`), so the routed anti-join now gets 0.3 × default instead of
   0.3 × 4GB. Spill is unaffected — `temp_directory` is still set for both.
-  **The `sorted` dispatch input is a KNOWING exception, and the only one.** With it on, duckrun
-  writes `fct_summary` sorted and declares geometry, and **all three values are now dispatch inputs
-  rather than literals in the model**: `sort_by` (default `date,time,price`), `row_group_size`
-  (default `16000000`) and `file_size_mb` (default `64`; choice of 1024/512/128/64/32).
-  **ALL THREE DEFAULTS HAVE MOVED AT SOME POINT, so a bare dispatch does not reproduce every
-  generation of the history.** `sort_by` was `date,time` — the key the retired `'auto'` picker kept
-  choosing, without its +19% profiling pass, with DUID's ~16% of size deliberately left on the table
-  — and now carries `price` as well. `row_group_size` went `16000000` → `2000000` → **back to
+  **The `duckrun_auto` dispatch input is a KNOWING exception, and the only one.** ON — the default —
+  duckrun picks its own sort and lets delta-rs size the write. OFF, `fct_summary` is written
+  **unsorted** at the two dispatched geometry values, `row_group_size` (default `16000000`) and
+  `file_size_mb` (default `64`; choice of 1024/512/128/64/32).
+  ⚠️ **OFF IS THE ONLY WAY TO DISPATCH AN UNSORTED RUN, which the name does not say.** Blanking a
+  `sort_by` field used to be; that field is gone (see the note under the gating rules), and the
+  unsorted arm is half the comparison the layout tables make.
+  ⚠️ **`stats.py`'s `_nonbaseline` is therefore NOT gated on `DUCKDB_SORTED`, and it used to be.**
+  That gate was right while unsorted implied no declared geometry either. Now OFF means unsorted AT
+  a pinned geometry — the case where it is most deliberately chosen — so the gate would drop
+  `row_group_size` and `file_size_mb` from the record on exactly those runs and fold them into the
+  baseline dashboard column with nothing looking broken.
+  **BOTH GEOMETRY DEFAULTS HAVE MOVED AT SOME POINT, so a bare dispatch does not reproduce every
+  generation of the history.** `row_group_size` went `16000000` → `2000000` → **back to
   `16000000`**, and the round trip is worth reading rather than repeating: 2M was chosen on the
   argument that ~72 row groups instead of ~9 lets a query touching a narrow slice of the sort key
   scan far less, at the cost of more segments to open. **The CU measurement does not support that
@@ -1072,14 +1084,17 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   looked broken. **Do not "tidy" a baseline to match a default** — that is the trap, and
   `test_sort_key.py` pins both spellings. Check the record's `inputs` block before calling a jump in
   the layout table a regression.
-  Three consequences worth holding. **`row_group_size` and `sort_by` are FREE TEXT**, so the `plan`
-  job validates them — a positive integer, and comma-separated plain identifiers — because `plan` is
-  free and runs before any leg spends capacity, whereas a typo reaching duckrun dies mid-write with
-  the money already gone. A well-formed name that is not a column of the model still fails in the
-  leg; catching that needs the manifest, which only exists in the notebook.
-  **`stats.py`'s `declared_sort_key()` reads `DUCKDB_SORT_BY`, NOT the model** — it used to regex a
-  literal list out of `fct_summary.sql`, and there is no literal left to match, so that regex would
-  have returned `{}` and the page would have silently lost every sort caption.
+  Two consequences worth holding. **`row_group_size` is FREE TEXT**, so the `plan` job validates it
+  as a positive integer or `auto`, because `plan` is free and runs before any leg spends capacity,
+  whereas a typo reaching duckrun dies mid-write with the money already gone. It is the only thing
+  left for `plan` to check there — the sort's shape, whitespace and per-dataset column refusals all
+  went with the `sort_by` input, `duckrun_auto` being a boolean the form cannot get wrong.
+  **Nothing writes `dbt.<engine>.sort_by` any more.** `stats.py`'s `declared_sort_key()` read the
+  dispatched key and is deleted; a revived one could only return `{}`. `fabric_run.py`'s log scrape
+  of duckrun's picker (`dbt.<engine>.sort_by_auto`) is now the ONLY witness to any sort key, on
+  every sorted run rather than only the ones that asked for `auto`. The dashboard's `sortLabelOf`
+  still reads the old key and must keep doing so — 51 committed records render their columns from
+  it — but no new record can produce one.
   **The geometry is recorded only when it differs from the default**, exactly as `sorted` is recorded
   only when on: `variant()` skips null, so a default run keys to the same dashboard column as all the
   history, and a non-default one splits into its own — which `variantTag` then has to spell
@@ -1467,17 +1482,17 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   load-bearing** — plus that all 20 cells fire exactly once, that no branch names a dead cron, that
   the hour prefixes cannot be ambiguous, that no two crons share a (weekday, time), and that
   same-day slots stay ≥100 minutes apart. It runs in the free `checks` job before any capacity is
-  spent. The scheduled sort stays `duckrun_auto` → `auto`, which is dataset-neutral, so rotation
-  never trips `plan`'s sort-key-vs-mart refusal.
+  spent. The scheduled sort is `duckrun_auto` on, i.e. `auto`, which is dataset-neutral — rotation
+  cannot hand a mart a key belonging to another dataset. That used to be a live hazard the `plan`
+  job refused; the field that made it possible is gone.
   ⚠️ **On a `schedule` event the `inputs` context is EMPTY and `workflow_dispatch` defaults do NOT
   apply**, so every input in that file carries its own scheduled value spelled
   `github.event_name == 'schedule' && '<value>' || inputs.<name>` — or, for the three that rotate,
   `github.event_name != 'schedule' && inputs.<name> || <cron branches> || '<fallback>'`. Never
   `inputs.x || 'default'`: that cannot tell an absent input from a deliberate one, so it would
   override `build: false` and turn the scouting recipe's `gap_seconds: 0` back into 600. The failures
-  are silent and expensive — blank `engines` is fatal in `plan`, blank `build`/`benchmark` are falsy
-  so a scheduled run would spend a runner and build nothing, and blank `sort_by` means NO SORT, i.e.
-  quietly measuring a different layout than the form describes. **Every scheduled value is the form
+  are silent and expensive — blank `engines` is fatal in `plan`, and blank `build`/`benchmark` are
+  falsy so a scheduled run would spend a runner and build nothing. **Every scheduled value is the form
   default, `cores` included — 8, not the 64 a hand dispatch usually passes** — with `dataset`,
   `engines` and `spark_resource_profile` as the three exceptions: 64 is for a run somebody is waiting
   on, and nobody waits on a scheduled one. So it opens its own `·8c` column rather than joining the
@@ -1918,15 +1933,18 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   while and `['date','time']` since, so a constant in `app.js` is right only for today's model, and
   briefly was not — it captioned run 30955591822, a DUID sort, `by date, time`, which is the exact
   class of quiet lie this page is built against. Two spellings, both read, neither preferred:
-  `dbt.<engine>.sort_by` is what the run DECLARED (`stats.py`'s `declared_sort_key()`, a literal-list
-  regex over the model in its own checkout — the notebook cannot write to the record, so the
-  manifest never reaches here), `dbt.<engine>.sort_by_auto` is what duckrun's picker RESOLVED
-  (`fabric_run.py`'s log scrape, and the only witness for an `'auto'` run, whose declaration names no
-  columns). **A sorted run with no key recorded reads `true`** — it shares a group with neither an
-  unsorted run nor any named sort, and it adds no columns to say, because the label already says
-  `sorted`. The five records predating `declared_sort_key()` were **backfilled** from the model at
-  the SHA each ran; the two `'auto'` ones were deliberately left alone, their scrape being the better
-  source.
+  `dbt.<engine>.sort_by` is what the run DECLARED, `dbt.<engine>.sort_by_auto` is what duckrun's
+  picker RESOLVED (`fabric_run.py`'s log scrape).
+  ⚠️ **ONLY THE SECOND IS STILL PRODUCIBLE, AND THE FIRST MUST KEEP BEING READ.** The `sort_by`
+  dispatch input that let a run declare a key is deleted — one field naming one key could not serve
+  five marts — so `stats.py` writes no declared key any more and the scrape is the only witness on
+  every sorted run. But **51 committed records carry a declared key** and render their columns from
+  it, and those files are frozen, so deleting that branch of `sortLabelOf` would silently blank
+  every one of their captions.
+  **A sorted run with no key recorded reads `true`** — it shares a group with neither an unsorted run
+  nor any named sort, and it adds no columns to say, because the label already says `sorted`. The
+  five records predating the declared-key recording were **backfilled** from the model at the SHA
+  each ran; the two `'auto'` ones were deliberately left alone, their scrape being the better source.
   **THE LABEL AND THE KEY ARE ONE FUNCTION AGAIN — `sortLabelOf` — AND SPLITTING THEM WAS THE BUG.**
   They were two for a release: `sortLabelOf` printed `auto` while `sortKeyOf` grouped on the columns
   duckrun's picker had RESOLVED to, on the reasoning that the picker answers **per dataset**
@@ -2019,6 +2037,10 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   (`duckrun_auto`), so it is the only duckrun layout still being measured; every other row is a frozen
   sample of whatever the archive looked like the week somebody ran it. Keeping the CHEAPEST instead
   would put a row nothing refreshes beside engines the grid now refreshes every week.
+  **THIS RULE IS NOW ALSO A FACT RATHER THAN A CHOICE**: the `sort_by` input that produced those six
+  keys is deleted, so no new hand-keyed row can appear at all and the sweep is a closed set. The
+  filter stays — its 13 rows are still in `history/` and still crowd the table — but re-opening it
+  means re-adding the field, not flipping a constant.
   **WHAT LEAVES THE TABLE COSTS LESS THAN IT LOOKS, AND THAT IS MEASURED.** The obvious objection is
   that the sweep holds duckrun's own finding — the cheapest layout on the aemo page is
   `date, time, price` at 2.0M, **1,557 CU against `auto`'s 1,738**, so hand-tuning appears to beat the

@@ -42,21 +42,21 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 
 {%- set cols = bts_flight_columns() -%}
 
-{#-- The sort and geometry knobs are the SAME dispatch inputs the other marts read, so a layout
-     question can be asked of any dataset with one workflow. The plan job refuses a sort_by naming
-     columns this dataset's mart does not have. NO DERIVED DATE COLUMN, unlike nyc's pickup_date:
+{#-- The geometry knobs are the SAME dispatch inputs the other marts read, so a layout question can
+     be asked of any dataset with one workflow. NO DERIVED DATE COLUMN, unlike nyc's pickup_date:
      FlightDate ships as a DATE, so it IS the dim_flight_date join key and nothing needs bridging.
 
-     `auto` is duckrun's own picker and the dispatch default; it must be passed as a SCALAR —
-     duckrun raises on ['auto']. Any other value is a comma-separated column list; blank means no
-     sort. The comment sits ABOVE the config tag: dbt parses config(...) as an expression and a
-     Jinja comment between its arguments is a parse error pointing at the wrong line. --#}
+     THE SORT IS `auto` OR NOTHING. There was a `sort_by` input taking a literal column list, and
+     it could not serve five marts from one field — its default was the aemo key, so this dataset's
+     dispatches existed mainly to override it, and the plan job carried a per-dataset column check
+     purely to refuse the mismatch. duckrun's picker profiles this table itself. `auto` must be
+     passed as a SCALAR — duckrun raises on ['auto']. The comment sits ABOVE the config tag: dbt
+     parses config(...) as an expression and a Jinja comment between its arguments is a parse error
+     pointing at the wrong line. --#}
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
-    sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
-              else env_var('DUCKDB_SORT_BY', 'auto').split(','))
-             if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    sort_by=('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'

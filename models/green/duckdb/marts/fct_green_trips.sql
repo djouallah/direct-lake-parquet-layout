@@ -38,13 +38,16 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 
 {%- set cols = green_trip_columns() -%}
 
-{#-- The sort and geometry knobs are the SAME dispatch inputs the AEMO and NYC marts read, so a
-     layout question can be asked of any dataset with one workflow. A useful hand key here is
-     NYC-shaped for the same reasons: pickup_date first (every composite query groups or filters
-     THROUGH the date relationship, and a date RLEs where the timestamp would not), then
-     PULocationID (the widest skewed categorical, and what the selectivity ladder filters on). The
-     plan job REFUSES a sort_by naming columns this dataset's mart does not have rather than
-     substituting. --#}
+{#-- The geometry knobs are the SAME dispatch inputs the AEMO and NYC marts read, so a layout
+     question can be asked of any dataset with one workflow. The key this table WANTS is NYC-shaped
+     for the same reasons: pickup_date first (every composite query groups or filters THROUGH the
+     date relationship, and a date RLEs where the timestamp would not), then PULocationID (the
+     widest skewed categorical, and what the selectivity ladder filters on) — a note for reading
+     duckrun's choice, not something a dispatch can ask for.
+
+     THE SORT IS `auto` OR NOTHING: the `sort_by` input taking a literal column list is gone, one
+     field naming one key being unable to serve five marts. duckrun's picker profiles this table
+     itself, per dataset. --#}
 -- pickup_date IS A STORED COLUMN AND IT IS NOT THE month_key MISTAKE. Direct Lake cannot relate a
 -- DATETIME column to a DATE dimension key, and it has no calculated columns to bridge one, so a
 -- date dimension is only reachable if the fact carries a DATE. This one is read by the
@@ -61,9 +64,7 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
-    sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
-              else env_var('DUCKDB_SORT_BY', 'auto').split(','))
-             if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    sort_by=('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'

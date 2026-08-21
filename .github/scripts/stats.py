@@ -733,8 +733,12 @@ def _nonbaseline(var, baseline):
     the wrong geometry's numbers. Pin the baseline to what history holds and let every new default
     record itself explicitly.
     """
-    if os.environ.get("DUCKDB_SORTED") != "true":
-        return None
+    # ⚠️ DELIBERATELY NOT GATED ON `DUCKDB_SORTED`, and it used to be. That gate was correct while
+    # blanking `sort_by` was how an unsorted run was dispatched, because blanking it declared no
+    # geometry either. `sort_by` is gone and `duckrun_auto` carries the sort now, so OFF means
+    # "unsorted AT the pinned row group / file size" — the one case where the geometry is most
+    # deliberately chosen. Under the old gate those two keys would vanish from the record on exactly
+    # those runs, the run would join the baseline dashboard column, and nothing would look broken.
     v = (os.environ.get(var) or "").strip()
     # `auto` is recorded EXPLICITLY, never folded into the baseline: it is a different layout from
     # any pinned geometry — duckrun's estimator sizes the write rather than the dispatch — so it
@@ -743,36 +747,17 @@ def _nonbaseline(var, baseline):
     return v if v and v != baseline else None
 
 
-def declared_sort_key():
-    """`{table: [cols]}` for the sort the duckrun run DECLARED, or `{}` when it declared none.
-
-    WHY THIS IS RECORDED AT ALL: the key is a property of the RUN — the model declared
-    `['date','time','DUID']` for a while and `['date','time']` since, and it is now a dispatch input
-    that can be anything — so anything downstream holding one constant is right only by luck. The
-    dashboard held exactly that constant and captioned run 30955591822, a DUID sort, `by date, time`.
-
-    READ FROM THE ENV, not from the model. It used to regex a literal list out of
-    `fct_summary.sql`; the model now renders `sort_by` from `DUCKDB_SORT_BY`, so there is no literal
-    left to match and that regex would silently return `{}` — the same quiet gap this exists to
-    close. The env var is what the model itself reads, so the two cannot disagree.
-
-    Gated on `DUCKDB_SORTED`: an unsorted run declares no key, and recording one would caption an
-    unsorted bar `by date, time`. Absent, never empty.
-    """
-    if os.environ.get("DUCKDB_SORTED") != "true":
-        return {}
-    # Fallback MUST match the model's own `env_var('DUCKDB_SORT_BY', ...)` default, or a hand run
-    # with the var unset records a key it did not write. CI always sets it from the input.
-    raw = os.environ.get("DUCKDB_SORT_BY", SPEC["sort_by"])
-    # `auto` DECLARES NO COLUMNS — duckrun picks them at write time by profiling the data, so the
-    # only witness to what it actually chose is fabric_run.py's log scrape, recorded separately as
-    # `dbt.<engine>.sort_by_auto`. Recording the literal "auto" here as though it were a column
-    # name would put `by auto` in the dashboard's sort caption, which is worse than no caption:
-    # absent, the page reads the run as `sorted` with an unrecorded key and says so.
-    if raw.strip().lower() == "auto":
-        return {}
-    cols = [c.strip() for c in raw.split(",") if c.strip()]
-    return {MART: cols} if cols else {}
+# THERE IS NO `declared_sort_key()` ANY MORE, AND NOTHING SHOULD WRITE `dbt.duckrun.sort_by` AGAIN.
+# It read a dispatched column list out of `DUCKDB_SORT_BY` and recorded it as the run's declared key.
+# That input is gone — one form field naming one key could not serve five marts — so the model
+# declares `auto` or nothing, and `auto` DECLARES NO COLUMNS: duckrun picks them at write time by
+# profiling the data, and the only witness to what it chose is fabric_run.py's log scrape, recorded
+# separately as `dbt.<engine>.sort_by_auto`. A revived version of this function could only ever
+# return `{}`, which is dead code that looks live.
+#
+# The dashboard's `sortLabelOf` still READS `dbt.<engine>.sort_by` and must keep doing so: 51
+# records in `history/` carry a declared key and render their columns from it. Frozen files, so
+# they cannot stop being right — but nothing new produces one.
 
 
 def encoding_table(encodings, engines):
@@ -972,15 +957,9 @@ def write_json(doc, engines):
     is what the page joins against the CU ledger.
     """
     record.merge({"layout": doc})
-    # WHICH columns a sorted duckrun run ordered by, as a SIBLING of the layout doc rather than a
-    # branch of it. It belongs beside `fabric_run.py`'s `sort_by_auto` — `dbt.<engine>` is where a
-    # fact about the dbt run lives — and it must stay out of `layout.config`, whose every entry the
-    # dashboard's `variant()` walks: a key that changes commit to commit would split an engine's
-    # column and its layout bar. Gated on the same env as `config.sorted`, and duckrun-only for the
-    # same reason: iceberg parses the same model and has no `sort_by` config at all.
-    sort_key = declared_sort_key() if os.environ.get("DUCKDB_SORTED") == "true" else {}
-    if sort_key:
-        record.merge({"dbt": {"duckrun": {"sort_by": sort_key}}})
+    # This used to also write `dbt.duckrun.sort_by` — WHICH columns a sorted run ordered by, from
+    # the dispatched key. There is no dispatched key now; see the note where `declared_sort_key()`
+    # used to be, and `fabric_run.py`'s `sort_by_auto` scrape for what replaced it.
     path = os.environ.get("STATS_JSON", "").strip()
     if not path:
         return

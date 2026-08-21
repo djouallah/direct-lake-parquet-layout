@@ -2,16 +2,19 @@
 
 `download_bts_flights.py:CORE_COLUMNS` is the LAND-time guard: a month whose CSV header lacks any
 of these is refused rather than archived. `macros/bts_flight_columns.sql` is what the three model
-trees generate their SELECT lists from. `datasets.py`'s `mart_columns` is what the `plan` job
-validates a `sort_by` against. None can import the others — Python on a runner, Jinja inside dbt,
-and a registry the workflow reads — so this is the only thing holding them together.
+trees generate their SELECT lists from. `datasets.py`'s `mart_columns` is the registry's statement
+of the same list. None can import the others — Python on a runner, Jinja inside dbt, and a registry
+the workflow reads — so this is the only thing holding them together.
+
+`mart_columns` OUTLIVED ITS ONLY RUN-TIME CONSUMER: `plan` validated a dispatched `sort_by` against
+it, and that input is gone (one field naming one key could not serve five marts). It stays as the
+registry's description of the mart, and this file is now what gives it its value.
 
 Drift is silent in every direction and all are expensive:
   a column in the macro but not the guard      -> a month missing it is archived, and every
                                                   engine's read fails mid-write, on paid capacity
   a column in the guard but not the macro      -> months are refused for a column nothing reads
-  a column in the macro but not mart_columns   -> `plan` refuses a legitimate sort_by, or worse,
-                                                  accepts one naming a column the mart lacks
+  a column in the macro but not mart_columns   -> the registry misdescribes the stored table
 
 Same pattern as test_nyc_columns.py, extended to the registry because bts's list was born in three
 places where nyc's was born in two.
@@ -48,9 +51,9 @@ def test_the_macro_and_the_downloader_agree_in_order():
 
 
 def test_the_registry_is_the_core_list_plus_file():
-    # `mart_columns` is the STORED table — the 22 core columns plus the derived `file` — and it is
-    # what `plan` validates a sort_by against, so a drift here either refuses a real column or
-    # admits a missing one.
+    # `mart_columns` is the STORED table — the 22 core columns plus the derived `file`. Nothing
+    # reads it at run time since the `sort_by` input it validated was deleted, so this assertion is
+    # what keeps it honest.
     assert datasets.DATASETS["bts"]["mart_columns"] == _macro_list() + ["file"]
 
 

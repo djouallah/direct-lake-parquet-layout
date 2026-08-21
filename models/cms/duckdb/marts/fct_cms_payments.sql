@@ -56,18 +56,19 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 
 {%- set cols = cms_payment_columns() -%}
 
-{#-- The sort and geometry knobs are the SAME dispatch inputs every other mart reads, so a layout
-     question can be asked of any dataset with one workflow. A useful hand key here is neither
-     nyc's nor bts's: Date_of_Payment first (every composite query groups or filters THROUGH the
-     date relationship), then Nature_of_Payment_or_Transfer_of_Value — which at 92% single-value is
-     the cheapest column in the table to run-length encode and the one the composite queries slice
-     on. The plan job REFUSES a sort_by naming columns this dataset's mart does not have rather
-     than substituting.
+{#-- The geometry knobs are the SAME dispatch inputs every other mart reads, so a layout question
+     can be asked of any dataset with one workflow. The key this table WANTS is neither nyc's nor
+     bts's: Date_of_Payment first (every composite query groups or filters THROUGH the date
+     relationship), then Nature_of_Payment_or_Transfer_of_Value — which at 92% single-value is the
+     cheapest column in the table to run-length encode and the one the composite queries slice on.
+     That is a note for reading duckrun's choice, not something a dispatch can ask for any more.
 
-     `auto` is duckrun's own picker: it profiles the data and chooses the key, and it is the
-     dispatch default. It must be passed as a SCALAR — duckrun raises on `['auto']`, because a list
-     means "these columns are the key". Any other value is a comma-separated column list, and blank
-     means no sort at all.
+     THE SORT IS `auto` OR NOTHING. There was a `sort_by` input taking a literal column list, and
+     one field naming one key cannot serve five marts — its default was the aemo key, none of whose
+     columns exist here, so the plan job carried a per-dataset column check purely to refuse the
+     mismatch. duckrun's picker profiles the data and chooses per dataset instead. `auto` must be
+     passed as a SCALAR — duckrun raises on `['auto']`, because a list means "these columns are the
+     key".
 
      The comment sits ABOVE the tag, not inside it: dbt parses `config(...)` as an expression, and
      a Jinja comment between its arguments is `invalid syntax for function call expression` — an
@@ -78,9 +79,7 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
     merge_clauses={'when_matched': [{'action': 'do_nothing'}]},
     unique_key=['file', 'Record_ID'],
     incremental_predicates=file_predicate,
-    sort_by=(('auto' if env_var('DUCKDB_SORT_BY', 'auto').lower() == 'auto'
-              else env_var('DUCKDB_SORT_BY', 'auto').split(','))
-             if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    sort_by=('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
     max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'
