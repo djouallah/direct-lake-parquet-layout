@@ -476,7 +476,10 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   only writer emitting no RLE on the dictionary indices and the only one leaving chunks with no
   dictionary page at all (43 of 53 have one; the rest fall to raw `PLAIN`). VertiPaq adopts a plain
   dictionary and rebuilds anything else at load. That is a real difference between writers, so it
-  belongs in a table comparing writers. aemo reads 6 rows with the two surviving rules.
+  belongs in a table comparing writers. The six pre-pin iceberg runs moved to `history/runs/legacy/`
+  in the same change: row-group count is not part of `layoutKey`, so all seven would have collapsed
+  into one row and `groupMid` would have printed a `53–1,172 RG` span across two writers' parquet.
+  As of 2026-08-21 aemo holds 28 layout groups and shows 8; the count moves every week the grid runs.
   The constant stays (empty) because `shownLayouts` and `heldNote` branch on it — an engine whose
   defaults regress is one string away from being held out, with a note under the table saying so.
 - **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and

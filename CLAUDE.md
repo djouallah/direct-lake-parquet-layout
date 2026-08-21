@@ -2108,7 +2108,16 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   iceberg alone emits **no RLE** on the indices, and alone leaves chunks with **no dictionary page at
   all** — 10 of 53 fall to raw `PLAIN`, which Direct Lake must re-encode on load rather than adopt.
   It is also the largest. That is a real difference between writers, which is exactly what a table
-  comparing writers should show, so it stays IN. aemo reads 6 rows with the two surviving rules.
+  comparing writers should show, so it stays IN. **THE SIX PRE-PIN ICEBERG RUNS WENT TO
+  `history/runs/legacy/` IN THE SAME CHANGE, AND THAT MOVE IS PART OF THE FIX, NOT TIDYING.**
+  Row-group count is not part of `layoutKey` — the power-of-two banding was deleted — so all seven
+  iceberg runs collapsed into ONE row, and `groupMid` would have taken a median across two writers'
+  parquet and printed a `53–1,172 RG` span for a difference nobody dispatched. Hiding the engine used
+  to prevent exactly that; with the hiding gone, the old generation has to leave instead. Their
+  numbers are in this file and README.md, which is what they were for.
+  Counts as of 2026-08-21, and they move every week the grid runs: aemo holds **28** layout groups,
+  of which the two surviving rules show **8** — one per engine plus duckrun's `auto` and both spark
+  profiles. Do not treat any count in these bullets as current; recompute it before quoting one.
   **THE CONSTANT SURVIVES EMPTY ON PURPOSE.** `shownLayouts` and `heldNote` still branch on it, so an
   engine whose defaults regress is one string away from being held out again — and `heldNote`'s engine
   sentence was rewritten to be writer-neutral rather than deleted, because a rule that hides rows with
