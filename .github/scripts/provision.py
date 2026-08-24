@@ -116,6 +116,15 @@ TEARDOWN_KEEP = {"landing", "folder", "sql_endpoint"}
 # ENGINE's own mode rather than once in `land`: at `land` time the lakehouse that hosts it may not
 # exist yet.
 DWH_SRC = SPEC["dwh_src"]
+
+# The `DuckDB main smoke` workflow's own lakehouse, and the NAME is the whole reason it exists.
+# `ensure()` REUSES an item it finds by display name and `teardown` DELETES by GUID whatever the
+# record holds — so pointing that workflow at `dbt_iceberg` would let a smoke dispatch fired
+# alongside a hand-dispatched iceberg build share the leg's lakehouse and then delete it mid-run.
+# Nothing else in this repo names this item. It is NOT dataset-scoped, unlike every name in the
+# registry: the smoke test writes its own handful of rows and reads nothing that was ever landed,
+# so there is no dataset for it to belong to.
+SMOKE = "dbt_duckdb_main_smoke"
 LANDING_SHORTCUT = "landing"
 ws = os.environ["WS_ID"]
 FAB = "https://api.fabric.microsoft.com/v1"
@@ -599,6 +608,17 @@ elif mode == "iceberg":
     out += [f"WAREHOUSE_PATH={ws}/{lh}",
             "ONELAKE_ENDPOINT=https://onelake.table.fabric.microsoft.com/iceberg",
             f"FILES_PATH={ensure_landing_shortcut(lh)}"]
+
+elif mode == "smoke":
+    # `DuckDB main smoke`'s lakehouse. Same shape as the `iceberg` mode above and deliberately NOT
+    # that mode — see SMOKE for why the name must not be the leg's. No landing shortcut: the smoke
+    # test creates its own rows and reads nothing from the archive, so it needs no FILES_PATH.
+    # `SMOKE_TABLE_PATH` is the direct abfss path the footer read globs, because the REST catalog
+    # hands back no file list and the smoke test has to look at the parquet it just wrote.
+    lh = ensure("lakehouses", SMOKE, lh_payload)
+    out += [f"WAREHOUSE_PATH={ws}/{lh}",
+            "ONELAKE_ENDPOINT=https://onelake.table.fabric.microsoft.com/iceberg",
+            f"SMOKE_TABLE_PATH={base}/{lh}/Tables"]
 
 elif mode == "spark":
     lh = ensure("lakehouses", datasets.item("spark", DATASET), lh_payload)

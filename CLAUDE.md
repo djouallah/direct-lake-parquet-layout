@@ -1265,14 +1265,27 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   broad one's worst case is a free deploy for a README edit.
   Start a build with `gh workflow run Benchmark` when you actually want one; that one is still
   dispatch-only and always will be.
-- **THERE ARE THREE WORKFLOWS: `Benchmark`, `Capacity units` and `Dashboard`.** `all.yml`, `dbt.yml`
-  and `cu.yml` are deleted. **They share nothing but the JSON in `history/`.**
+- **THERE ARE FOUR WORKFLOWS: `Benchmark`, `Capacity units`, `Dashboard` and `DuckDB main smoke`.**
+  `all.yml`, `dbt.yml` and `cu.yml` are deleted. **The first three share nothing but the JSON in
+  `history/`; the fourth shares nothing with any of them at all.**
 
   | workflow | file | does | triggered by |
   |---|---|---|---|
-  | `Benchmark` | `benchmark.yml` | open the record, offline checks, plan, land, build, layout, resolve, bench, report, teardown, record | 20-slot weekly `cron` grid · dispatch — it is the only one that spends capacity |
+  | `Benchmark` | `benchmark.yml` | open the record, offline checks, plan, land, build, layout, resolve, bench, report, teardown, record | 20-slot weekly `cron` grid · dispatch — it is the only one that spends BUILD capacity |
   | `Capacity units` | `capacity.yml` | `cu/measure.py` → commits `history/cu.json` | `workflow_run` after Benchmark · `17 13 * * *` · dispatch |
   | `Dashboard` | `dashboard.yml` | `dashboard/build.mjs` → deploys the page | `push` to `dashboard/**` · dispatch |
+  | `DuckDB main smoke` | `duckdb-main.yml` | run the `main` DuckDB CLI: load `iceberg`, attach OneLake, assert parquet `encoding_stats` | dispatch only |
+
+  **The fourth writes no record, reads no ledger and publishes nothing** — it exists to answer
+  "has `main` broken iceberg, and does it still carry duckdb/duckdb#24957's `encoding_stats`" before
+  anyone moves the `duckdb==` pin in `fabric_run.py`. Three things about it are deliberate and easy
+  to undo by accident. It provisions **`dbt_duckdb_main_smoke`** via `provision.py smoke`, never
+  `dbt_iceberg`: `ensure()` reuses an item by display name and `teardown` deletes by GUID, so
+  borrowing the leg's item would let a smoke dispatch share a hand-dispatched iceberg build's
+  lakehouse and then delete it mid-run. It is **NOT on the `onelake-<ref>` concurrency group** —
+  that group holds at most one pending run, so joining it would let a free five-minute check EVICT a
+  queued `Benchmark`; it has its own group instead. And it is **dispatch-only**, like `Benchmark`:
+  it creates a Fabric item, and the question it answers is one a human asks, not a nightly.
 
   In the normal case a human starts nothing but a `Benchmark`: the ledger tops itself up after every
   build, and the page publishes itself when its code changes. The one thing a human now has to

@@ -1,0 +1,260 @@
+name: DuckDB main smoke
+
+# A DUMMY CI. It builds nothing, commits nothing, and spends no Fabric build capacity — it fetches
+# the DuckDB CLI built from `main`, loads `iceberg`, and asks two questions this repo cannot answer
+# from a release:
+#
+#   1. does the iceberg extension still load and still talk to the OneLake Iceberg REST catalog on
+#      a `main` build, and
+#   2. does the parquet that build writes — locally AND through the iceberg writer — carry
+#      `ColumnMetaData.encoding_stats`.
+#
+# **WHY (2) IS THE POINT.** duckdb/duckdb#24957 (`9d360460a4`, 2026-08-24) makes the Parquet writer
+# emit `encoding_stats` / `PageEncodingStats`. That list is the only footer structure letting a
+# reader prove a chunk is entirely dictionary-encoded WITHOUT decoding pages, and Direct Lake uses
+# it: the PR measures a cold first-touch of a 142M-row dictionary string column going
+# **10,857.5 ms -> 689.3 ms**. CLAUDE.md records iceberg as the one writer here that emits no RLE
+# and leaves 10 of 53 chunks with no dictionary page at all, which is exactly the transcode this
+# fixes. It is in NO release — stable is 1.5.5, the fix is v2.0.0-alpha (`main`) only — so the only
+# way to see it is to run a `main` build, which is what this does.
+#
+# **`main` IS VERSIONED v2.0.0-alpha<N> NOW, NOT v1.6.0-dev<N>.** Measured: the CLI from the run
+# that carried #24957 reports `v2.0.0-alpha38837` / `42b8522dc4`. Two consequences worth not
+# rediscovering. `nightly-extensions.duckdb.org/<sha10>/…` and `…/v1.6.0-dev<N>/…` are 403 (that
+# host returns AccessDenied for a missing key, and refuses HEAD and range requests outright, so
+# only a full GET distinguishes present from missing) — but the ORDINARY repo
+# `extensions.duckdb.org/v2.0.0-alpha38837/linux_amd64/iceberg.duckdb_extension.gz` is a 200. So a
+# plain `INSTALL iceberg` resolves from `core` on a main build and there is nothing special to do.
+# If that ever stops being true, the fallback is the same run's own extension bundle, which
+# `artifacts.duckdb.org` proxies UNAUTHENTICATED by artifact name:
+#   https://artifacts.duckdb.org/latest/main-extensions-cloud-<40-char-sha>-extension-linux_amd64.zip
+# unzips to `<version>/<platform>/iceberg.duckdb_extension` and loads with the CLI's `-unsigned`.
+# Do not reach for a PAT and `gh run download -R duckdb/duckdb`; the proxy needs no token.
+#
+# **IT PROVISIONS ITS OWN LAKEHOUSE AND THE NAME IS LOAD-BEARING** — `provision.py smoke` ensures
+# `dbt_duckdb_main_smoke`, never `dbt_iceberg`. `ensure()` REUSES an item it finds by display name
+# and `teardown` DELETES by GUID whatever the record names, so borrowing the iceberg leg's item
+# would let a smoke dispatch fired next to a hand-dispatched iceberg build share that lakehouse and
+# then delete it mid-run. With its own name there is no collision to reason about.
+#
+# **DELIBERATELY NOT ON THE `onelake-<ref>` CONCURRENCY GROUP.** That group holds at most ONE
+# pending run, so joining it would let this smoke test EVICT a queued `Benchmark` — a free
+# 5-minute check displacing an hour of paid capacity. It writes ~1M rows into an item nothing else
+# touches and reads no table any other workflow owns, so there is nothing for it to race on.
+#
+# **`workflow_dispatch` ONLY.** No `push` (this repo's rule is that nothing which commits or spends
+# answers a push, and while this commits nothing it does create a Fabric item), no `schedule` (the
+# question is "has main broken iceberg / kept the fix", which a human asks before moving the
+# `duckdb==` pin in fabric_run.py, not nightly), no `workflow_run`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      onelake:
+        description: "Attach the OneLake Iceberg REST catalog (needs the Fabric secrets)"
+        type: boolean
+        default: true
+
+permissions:
+  id-token: write        # OIDC for azure/login
+  contents: read
+
+concurrency:
+  # Its OWN group, so two smoke dispatches cannot both ensure/teardown the one lakehouse — and so
+  # it never queues behind, or evicts, a Benchmark. See the header.
+  group: duckdb-main-smoke-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Job-level, not workflow-level: the `secrets` context is unavailable in a workflow-level
+      # `env` block. Same arrangement as benchmark.yml.
+      WS_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      GH_TOKEN: ${{ github.token }}
+      # The commit under test. A public read of duckdb/duckdb needs no more than the default token.
+      ENCODING_STATS_COMMIT: 9d360460a4
+      # `ensure()` writes the lakehouse GUID here; the teardown step reads it back. Same mechanism
+      # as every job in benchmark.yml — no bespoke deletion code anywhere in this file.
+      RUN_RECORD: ${{ github.workspace }}/record/record-00-smoke.json
+      SMOKE_TABLE: duckdb_main_smoke
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install requests
+
+      # ---------------------------------------------------------------- the binary under test
+      - name: Fetch the DuckDB CLI built from main
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/duckdb"
+          # `artifacts.duckdb.org/latest/<artifact name>` proxies the newest main build's own CI
+          # artifacts, unauthenticated. `duckdb-cli-linux-amd64.tar.gz` unpacks to a bare `duckdb`.
+          curl -fsSL --retry 3 --retry-delay 5 \
+            https://artifacts.duckdb.org/latest/duckdb-cli-linux-amd64.tar.gz \
+            | tar -xz -C "$RUNNER_TEMP/duckdb"
+          echo "$RUNNER_TEMP/duckdb" >> "$GITHUB_PATH"
+          # `version()` is a scalar but `source_id` is NOT — it only exists on pragma_version(), and
+          # `SELECT version(), source_id` fails with a binder error that reads like a missing table.
+          V=$("$RUNNER_TEMP/duckdb/duckdb" -noheader -list \
+                -c "SELECT library_version || '|' || source_id FROM pragma_version();")
+          echo "DUCKDB_VERSION=${V%%|*}" >> "$GITHUB_ENV"
+          echo "DUCKDB_SHA10=${V##*|}"   >> "$GITHUB_ENV"
+          echo "### DuckDB main smoke" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| check | result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CLI build | \`${V%%|*}\` / [\`${V##*|}\`](https://github.com/duckdb/duckdb/commit/${V##*|}) |" \
+            >> "$GITHUB_STEP_SUMMARY"
+
+      # FATAL, and it runs BEFORE anything is provisioned. Without it, a build predating #24957
+      # fails the encoding_stats assertions below and reads as "the fix regressed" when it simply
+      # is not in there — the most expensive kind of wrong answer this workflow could give.
+      - name: The encoding_stats commit is in this build
+        run: |
+          set -euo pipefail
+          SHA=$(gh api "repos/duckdb/duckdb/commits/$DUCKDB_SHA10" -q .sha)
+          echo "DUCKDB_SHA=$SHA" >> "$GITHUB_ENV"
+          ST=$(gh api "repos/duckdb/duckdb/compare/$ENCODING_STATS_COMMIT...$SHA" -q .status)
+          case "$ST" in
+            ahead|identical)
+              echo "| #24957 present | yes (\`$ST\`) |" >> "$GITHUB_STEP_SUMMARY" ;;
+            *)
+              echo "| #24957 present | NO (\`$ST\`) |" >> "$GITHUB_STEP_SUMMARY"
+              echo "::error::this main build predates duckdb/duckdb#24957 ($ENCODING_STATS_COMMIT)"
+              exit 1 ;;
+          esac
+
+      # ---------------------------------------------------------------- does iceberg load at all
+      - name: INSTALL iceberg
+        run: |
+          set -euo pipefail
+          duckdb -c "INSTALL iceberg; INSTALL azure; LOAD iceberg; LOAD azure;"
+          EXT=$(duckdb -noheader -list -c "
+            SELECT string_agg(extension_name || ' ' || extension_version || ' (' || installed_from || ')', ', ')
+            FROM duckdb_extensions() WHERE extension_name IN ('iceberg','azure') AND installed;")
+          echo "| extensions | $EXT |" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------- the control, no secrets
+      # This proves the BINARY has the fix, independently of anything Fabric-side, so a red step
+      # below can only be about the iceberg writer or the catalog. `duid` is low-cardinality and
+      # must be dictionary-encoded; `mw` is unique and must not be, which is what makes the
+      # assertion a measurement rather than a tautology (it fails on a column with no dictionary).
+      - name: Locally written parquet carries encoding_stats
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          duckdb -noheader -list -c "
+            COPY (SELECT ['AAA','BBB','CCC','DDD'][(i % 4) + 1] AS duid, i AS mw
+                  FROM range(2000000) t(i)) TO 'local.parquet' (FORMAT parquet);
+            SELECT CASE WHEN count(*) = 0
+                        THEN error('encoding_stats carries no DICTIONARY_PAGE for duid')
+                        ELSE 'local: ' || count(*) || ' dictionary-encoded chunk(s)' END
+            FROM parquet_metadata('local.parquet')
+            WHERE path_in_schema = 'duid'
+              AND len(list_filter(encoding_stats, lambda x: x.page_type = 'DICTIONARY_PAGE')) > 0;"
+          echo "| local parquet encoding_stats | present |" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------- OneLake
+      - uses: azure/login@v2
+        if: inputs.onelake
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Provision the smoke lakehouse
+        if: inputs.onelake
+        run: |
+          set -euo pipefail
+          # `record.item()` writes the fragment to this path and will not create its directory.
+          mkdir -p "$(dirname "$RUN_RECORD")"
+          python .github/scripts/provision.py smoke >> "$GITHUB_ENV"
+
+      - name: Mint a OneLake token
+        if: inputs.onelake
+        run: |
+          ST=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
+          echo "::add-mask::$ST"; echo "ONELAKE_TOKEN=$ST" >> "$GITHUB_ENV"
+
+      # The integration proof. Every secret is read with `getenv()` INSIDE DuckDB — verified to work
+      # in both `CREATE SECRET` and `ATTACH` options on this build — so the token never lands in a
+      # file on the runner, which a heredoc'd .sql would have done.
+      #
+      # The ATTACH options are copied from the `iceberg` target in profiles.yml. Keep them in step:
+      # if that target changes, this stops testing what the leg actually does.
+      - name: Attach the OneLake Iceberg REST catalog and round-trip a table
+        if: inputs.onelake
+        run: |
+          set -euo pipefail
+          duckdb -noheader -list -c "
+            LOAD iceberg; LOAD azure;
+            CREATE SECRET onelake_storage (
+              TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
+            ATTACH getenv('WAREHOUSE_PATH') AS onelake (
+              TYPE iceberg,
+              endpoint getenv('ONELAKE_ENDPOINT'),
+              token getenv('ONELAKE_TOKEN'),
+              access_delegation_mode 'none',
+              stage_create_tables 0,
+              skip_create_table_metadata_updates 1,
+              default_schema 'dbo');
+            DROP TABLE IF EXISTS onelake.dbo.$SMOKE_TABLE;
+            CREATE TABLE onelake.dbo.$SMOKE_TABLE AS
+              SELECT ['AAA','BBB','CCC','DDD'][(i % 4) + 1] AS duid, i AS mw
+              FROM range(1000000) t(i);
+            SELECT CASE WHEN count(*) = 1000000
+                        THEN 'round-trip: ' || count(*) || ' rows'
+                        ELSE error('round-trip read back ' || count(*) || ' rows, expected 1000000') END
+            FROM onelake.dbo.$SMOKE_TABLE;"
+          echo "| OneLake Iceberg REST attach | ok |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| iceberg round-trip | 1,000,000 rows |" >> "$GITHUB_STEP_SUMMARY"
+
+      # THE STEP THAT ANSWERS THE QUESTION. The one above proves the catalog works; this reads the
+      # footer of the parquet the ICEBERG writer just produced and asserts the core writer's
+      # encoding_stats survived that path. A red here with a green "local parquet" step is the
+      # interesting failure and belongs in a duckdb-iceberg issue.
+      #
+      # The REST catalog hands back no file list, hence the glob over the direct abfss path
+      # `provision.py smoke` printed. The listing is printed first and unfiltered: if OneLake ever
+      # lays an iceberg table out differently, that shows as an empty list rather than as a
+      # mysterious assertion failure.
+      - name: Iceberg-written parquet carries encoding_stats
+        if: inputs.onelake
+        run: |
+          set -euo pipefail
+          GLOB="$SMOKE_TABLE_PATH/dbo/$SMOKE_TABLE/**/*.parquet"
+          duckdb -c "
+            LOAD azure;
+            CREATE SECRET onelake_storage (
+              TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
+            SELECT file FROM glob('$GLOB');"
+          duckdb -noheader -list -c "
+            LOAD azure;
+            CREATE SECRET onelake_storage (
+              TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
+            SELECT CASE WHEN count(*) = 0
+                        THEN error('iceberg-written parquet carries no DICTIONARY_PAGE encoding_stats for duid')
+                        ELSE 'iceberg: ' || count(*) || ' dictionary-encoded chunk(s)' END
+            FROM parquet_metadata('$GLOB')
+            WHERE path_in_schema = 'duid'
+              AND len(list_filter(encoding_stats, lambda x: x.page_type = 'DICTIONARY_PAGE')) > 0;"
+          echo "| iceberg parquet encoding_stats | present |" >> "$GITHUB_STEP_SUMMARY"
+
+      # ---------------------------------------------------------------- always
+      # `always()`, and it deletes BY GUID from the record `ensure()` wrote — so a failure anywhere
+      # above still removes the lakehouse rather than leaving it drawing background CU into the next
+      # dispatch's measurement window. Exits non-zero if anything survived, same as benchmark.yml's.
+      - name: Teardown
+        if: always() && inputs.onelake
+        run: |
+          if [ -f "$RUN_RECORD" ]; then
+            python .github/scripts/provision.py teardown "$RUN_RECORD"
+          else
+            echo "no run record — nothing was provisioned"
+          fi
