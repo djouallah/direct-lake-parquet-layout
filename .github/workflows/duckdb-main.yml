@@ -160,6 +160,52 @@ jobs:
               AND len(list_filter(encoding_stats, lambda x: x.page_type = 'DICTIONARY_PAGE')) > 0;"
           echo "| local parquet encoding_stats | present |" >> "$GITHUB_STEP_SUMMARY"
 
+      # ---------------------------------------------------------------- what actually SHIPS
+      # **THE CLI IS NOT WHAT THE ICEBERG LEG RUNS, AND EVERY GREEN ROW ABOVE IS ABOUT THE CLI.**
+      # `duckdb` the CLI comes from duckdb/duckdb's own CI; `duckdb` the wheel comes from
+      # duckdb/duckdb-python, which vendors a duckdb submodule at ITS OWN pin — so the two are
+      # different builds of different core commits on different schedules, and the wheel is what
+      # dbt-duckdb loads on the iceberg leg (fabric_run.py's `duckdb==` pin). Measured at the time
+      # of writing: the CLI was v2.0.0-alpha38837 while the newest wheel on PyPI was 1.6.0.dev365,
+      # uploaded 2026-08-20 — FOUR DAYS BEFORE #24957 landed. The Python line had not even moved to
+      # the 2.0.0-alpha versioning.
+      #
+      # **REPORTS, NEVER ASSERTS.** Today this is expected to read `absent`, and a red run there
+      # would say "iceberg is broken" when the true statement is "the wheel has not caught up".
+      # The whole value is the day that summary line flips to `present`: that is when the pin can
+      # move and the leg starts writing footers Direct Lake can adopt. `continue-on-error` covers
+      # the other half — a pre-release that has been yanked, or a pin that no longer resolves at
+      # all, must not fail a workflow whose subject is the CLI.
+      #
+      # The pin is READ OUT OF fabric_run.py, never restated here: two copies of a version would
+      # drift, and this step would then measure a wheel the leg does not use.
+      - name: What the iceberg leg actually installs (report only)
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          PIN=$(grep -oE 'duckdb==[0-9][^"]*' .github/scripts/fabric_run.py | head -1)
+          echo "pin in fabric_run.py: ${PIN:-<none found>}"
+          python -m venv "$RUNNER_TEMP/wheel" && . "$RUNNER_TEMP/wheel/bin/activate"
+          # Both: the pin the leg uses, and the newest pre-release there is — so the summary says
+          # whether bumping the pin would even help, not just whether today's pin lacks the fix.
+          for SPEC in "${PIN:-duckdb}" "duckdb"; do
+            pip install -q --pre --upgrade "$SPEC" 2>&1 | tail -2 || { echo "  $SPEC: did not resolve"; continue; }
+            python - "$SPEC" <<'EOF'
+          import sys, duckdb
+          c = duckdb.connect()
+          core = c.sql("SELECT library_version || ' / ' || source_id FROM pragma_version()").fetchone()[0]
+          c.sql("COPY (SELECT ['AAA','BBB'][(i%2)+1] AS duid FROM range(100000) t(i)) TO 'w.parquet'")
+          cols = {d[0] for d in c.sql("SELECT * FROM parquet_metadata('w.parquet') LIMIT 0").description}
+          has = "encoding_stats" in cols
+          print(f"WHEEL|{sys.argv[1]}|{duckdb.__version__}|{core}|{'present' if has else 'ABSENT'}")
+          EOF
+          done | tee "$RUNNER_TEMP/wheel.txt"
+          deactivate
+          # One summary row per spec that reported. `|| true` so an empty report is not fatal.
+          grep '^WHEEL|' "$RUNNER_TEMP/wheel.txt" | while IFS='|' read -r _ spec pkg core enc; do
+            echo "| wheel \`$spec\` -> \`$pkg\` ($core) | encoding_stats **$enc** |" >> "$GITHUB_STEP_SUMMARY"
+          done || true
+
       # ---------------------------------------------------------------- OneLake
       - uses: azure/login@v2
         if: inputs.onelake
