@@ -109,8 +109,8 @@ without a build, a token or a dispatch.
 
 ### One dataset per page, always
 
-`?dataset=` and `?rows=` are the two with a visible control — pill switches above the lede, one link
-per dataset (or per generation) with its record count beside it. The `?rows=` switch renders **only
+`?dataset=` and `?rows=` are the two with a visible control — pill switches at the very top of the
+page, one link per dataset (or per generation) with its record count beside it. The `?rows=` switch renders **only
 where there is a choice**: aemo has one row count across all 79 of its runs, nyc has two. Plain anchors, no JavaScript: it works with
 scripts off, in print, and in the offline snapshot, which already inlines **both** datasets' records
 (`build.mjs` filters only `index.json`), so a query-param link re-renders the same file against the
@@ -198,7 +198,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   Pages URL, because the offline copy is one loose file with no sibling to point at — and a 404 off
   a local disk looks like nothing happened at all. The build fails if that link ever stops matching.
 - **EVERY CHART AND TABLE COMES BEFORE EVERY PARAGRAPH, and the methodology is LAST.** The order is
-  *Cost and speed by layout* (its scatter, then its table), *Cost by engine*,
+  *Cost and speed by parquet layout* (its scatter, then its table), *Cost by engine*,
   *Table layout*, *Input archive*,
   *Every run*, then *About these numbers* and the provenance line. `About these numbers` used to sit
   between the layout tables and the run table, so the last table on the page was below a screen of
@@ -206,6 +206,24 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   looking for it. Pinned by a test that asserts the section order outright.
   *Every run* gained an `<h3>` of its own in the same move: it opened with a bare note, so it read as
   a continuation of whatever sat above it.
+- **NOTHING BUT THE TWO SWITCHES SITS ABOVE THE CHART, so the whole of it is on the first screen.**
+  The scatter is drawn at a 920×610 viewBox and stretches to its card, so at the flat 86rem cap it
+  was ~886px tall under ~500px of chrome — a 1080p reader met the title, the status line, the
+  switches, the lede and a ruled `<h3>` and then half a plot. Three things fixed it, and each is the
+  cheap half of a trade:
+  - **The `<h3>` is gone when there is a chart** — the section name is the figure's own caption title
+    instead, which is also what `save PNG` bakes into the exported image, so the name moved rather
+    than went. `scatterSvg` draws nothing below two plottable points, so a page with one measured
+    layout has no figure to carry it and the heading comes back as the fallback; the name is on the
+    page either way.
+  - **The lede moved to the foot**, opening *About these numbers*. It is a statement about the
+    numbers rather than one of them, and it is still the first prose on the page — everything above
+    it is a chart or a table.
+  - **`figure.chart.wide` is capped by the viewport height**, not a flat 86rem:
+    `clamp(48rem, calc((100dvh - 20rem) * 1.508), 86rem)`, where 1.508 is the viewBox aspect that
+    turns the height left over back into a width. The figure shrinks as a whole on a short window and
+    is untouched on a tall one — sizing the width is what avoids letterboxing inside the card. The
+    48rem floor cannot overflow a narrow screen; `max-width` only caps a width, never forces one.
 - **Numbers are visible, methodology is opt-in.** The long how-to-read notes are folded behind a
   one-line `<details>` each (`fold()` in `app.js`); every sentence stays in the DOM — the tests and
   ctrl-F still see it all — but the page reads numbers-first. Two things are deliberately NEVER

@@ -1870,12 +1870,29 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   from `run.finished` being under two hours old — a property of the clock, not a flag written into a
   file that then has to be kept in step.
 - **THE TWO CU BAR CHARTS ARE DELETED. There is ONE chart on the page** — the SCATTER that now
-  LEADS *Cost and speed by parquet layout* (chart first, its table under it — reversing the older
+  IS *Cost and speed by parquet layout* (chart first, its table under it — reversing the older
   "the table, then its chart", which was written for the bar charts, whose lengths were columns
   printed a block away and which could therefore only follow; this one answers AGAINST the table's
   ranking, so it introduces), one DOT per layout: cold ms across, warm ms up, both log, with
   its AREA the directlake CU and its colour the writer. `chartSvg`, `barPath`, `groupRows` and the
   `.bar` rules went with them.
+  **THE SECTION NAME IS THE FIGURE'S CAPTION TITLE, NOT AN `<h3>` — and the heading is the FALLBACK,
+  not deleted.** The chart is the first block on the page, so a ruled `<h3>` above it cost ~115px of
+  the one screen a reader gets, to print a string the figcaption carries for nothing; and the
+  figcaption is what `save PNG` bakes into the exported image, so the export gained the name. But
+  `scatterSvg` returns nothing below two plottable points, so a page with ONE measured layout — a
+  fresh dataset, `?record=` pinning a run — has no figure to carry it, and `renderFit` emits the
+  `<h3>` in exactly that case. The name is on the page either way; do not "simplify" the fallback
+  away, and do not anchor a test on `<h3>` without knowing which case the fixture is in.
+  **The LEDE moved with it, to the head of *About these numbers*.** It is a statement about the
+  numbers rather than one of them, and it is still the first prose on the page — every block above
+  it is a chart or a table. `p.lede` keeps its size for that reason.
+  **`figure.chart.wide` IS CAPPED BY THE VIEWPORT HEIGHT**, not a flat 86rem:
+  `clamp(48rem, calc((100dvh - 20rem) * 1.508), 86rem)`, two declarations so `vh` is the fallback.
+  1.508 is the 920/610 viewBox aspect, which turns the height left over into a width, so the whole
+  figure shrinks on a short window and is untouched on a tall one — capping the WIDTH is what avoids
+  letterboxing inside the card, which a `max-height` on the svg would produce. Changing `H` in
+  `scatterSvg` changes that constant; the two have to move together.
   **The dot replaced a LINE** — each layout was a segment from its warm ms to its cold ms at the
   height of its CU, all three numbers in one mark, with the cold/warm trade readable as the LENGTH.
   That read well at eleven layouts and hatched at seventeen: a line is a WIDE mark spanning most of a

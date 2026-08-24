@@ -2435,7 +2435,12 @@ export function scatterFit(pts, martTable = DEFAULTS.table) {
   // TWO OF `LABEL_BEST_ONLY`'s LAYOUTS CARRY TEXT — the cheapest and the fastest, which are not the
   // same dot and on today's records are nearly opposites. See `bestDots`.
   const best = bestDots(rows);
-  return scatterSvg("Cold against warm",
+  // THE TITLE IS THE SECTION NAME, not a description of the axes — this figure opens the page and
+  // carries the `<h3>` that used to sit above it (see `renderFit`). It read `Cold against warm`,
+  // which the subtitle directly under it already says in full and at more length; the one thing the
+  // caption could not say was what section a reader had arrived in. It is also the figure's
+  // `aria-label` and the caption `save PNG` bakes into the exported image, so both gain the name.
+  return scatterSvg("Cost and speed by parquet layout",
     "one dot per layout — cold ms across, warm ms up, both log; its AREA is the directlake CU it "
     + `cost and its colour is the writer. ${LABEL_BEST_ONLY} labels only its cheapest layout and `
     + "its fastest (cold + warm)"
@@ -2532,7 +2537,23 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
   if (!pts.length) return "";
   const cols = (tiers || []).filter((l) => pts.some((p) => p.ms[l]));
   pts.sort((a, b) => a.cu - b.cu);
-  return ["<h3>Cost and speed by parquet layout</h3>",
+  const chart = scatterFit(pts, martTable);
+  return [
+    // NO `<h3>` WHEN THERE IS A CHART — the section name is the figure's own caption title instead.
+    // This section leads the page, and a ruled heading costs ~115px there (3rem margin, 1.4rem
+    // padding, the rule and its own line) to print a string the figcaption can carry for nothing,
+    // pushing the bottom of the plot below the fold. The name is not dropped, only moved: it is
+    // `scatterFit`'s title, which is also what `save PNG` writes into the standalone image, so the
+    // exported chart gains the section's name rather than losing it.
+    //
+    // THE HEADING IS THE FALLBACK, AND IT HAS TO EXIST. `scatterSvg` returns nothing below two
+    // plottable points, so a page with one measured layout — a fresh dataset, or `?record=` pinning
+    // a single run — has no figure to carry the name, and a table under no heading at all reads as a
+    // continuation of whatever precedes it. That is the same defect `renderSources` was given its own
+    // `<h3>` to fix. So the name is on the page either way and the space is saved exactly when there
+    // is a chart to save it for. Everything pointing a reader at this section by name — the notes
+    // below, `README.md`, the tests' `block()` — resolves against whichever carried it.
+    chart ? "" : "<h3>Cost and speed by parquet layout</h3>",
     // THE CHART FIRST, THE TABLE UNDER IT — and this REVERSES the older "the table, then its chart".
     // That rule read the chart as a scannable restatement of numbers the table had already given,
     // which was true of the two bar charts it was written for: their lengths WERE columns printed a
@@ -2543,7 +2564,7 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
     // scatter disagree.
     // The table stays directly beneath, unchanged and complete, which is what the labels, the
     // hovers and every caption point back into.
-    scatterFit(pts, martTable),
+    chart,
     // THE KEY IS PRINTED, not just grouped on. Six rows reading `duckrun sorted` with nothing to
     // tell them apart is a table asking the reader to trust a grouping it will not show. `parquet
     // writer` and `ordering` ARE `layoutKey` — the engine and the sort as dispatched. What the key
@@ -3892,11 +3913,18 @@ export function totalRows(rec, names = tableNames(rec)) {
  * never its SUBJECT: a reader arriving on a link saw four columns of CU with no statement of the
  * scale any of it describes. The `<h1>` in the shell says what the project is; this says how big.
  *
+ * **IT OPENS `About these numbers` NOW, NOT THE PAGE.** It led for as long as the page's first
+ * screen was tables, and the cost of that changed when the scatter became the first thing on it:
+ * three lines of prose plus the section heading under them put the figure's bottom half below the
+ * fold. This sentence is a statement about the numbers rather than one of them, so the methodology
+ * section is a home it reads from just as well — and a reader who wants the scale still meets it as
+ * the first prose on the page, because every block above is a chart or a table.
+ *
  * **Every number is DERIVED from the records the page already loaded.** A hardcoded `170 GB` goes
  * stale the first dispatch that runs with `skip_download` off, and goes stale SILENTLY — the exact
  * failure this repo is built against. It also reads the landing block through `landingBlocks`, the
- * same call the `Input archive` table makes, so the top and the foot of the page cannot quote
- * different archives.
+ * same call the `Input archive` table makes, so this sentence and the `Input archive` table cannot
+ * quote different archives.
  *
  * **An absent input is an absent clause, never a zero** — the rule the `compute seconds` row and the
  * `cold`/`warm`/`hot` columns already follow. With nothing measurable at all it renders nothing
@@ -3984,11 +4012,16 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   const perCol = {};
   for (const { col, rec } of cols) perCol[col] = runCu(rec, ledger).cells;
 
-  // NO `Capacity units` HEADING. The shell's `<h1>` already names the page, the lede below says what
-  // it measures, and the `as of` stamp restated a date the `built` column carries per run — a line
-  // of furniture between the reader and the first table. The `<h3>` sections now hang off that
-  // `<h1>`, which skips a heading level; the alternative is promoting eight `<h3>`s to `<h2>` to
-  // reinstate a level nothing needs.
+  // NO `Capacity units` HEADING. The shell's `<h1>` already names the page and the `as of` stamp
+  // restated a date the `built` column carries per run — a line of furniture between the reader and
+  // the first table. The `<h3>` sections hang off that `<h1>`, which skips a heading level; the
+  // alternative is promoting every one of them to `<h2>` to reinstate a level nothing needs.
+  //
+  // NOTHING BUT THE TWO SWITCHES IS ABOVE THE CHART. The lede used to sit here and now opens
+  // `About these numbers` at the foot of the page: the figure is what this page is FOR, and the
+  // scale sentence plus the section heading that used to precede it cost ~200px of the one screen
+  // a reader gets before scrolling. It is a statement about the numbers, so it reads as well from
+  // the section that explains them, and it is still the first prose either way.
   const dataset = opts.dataset || DEFAULTS.dataset;
   // The switch renders from the SAME value `compose` filtered on, so the marked link and the
   // content can never disagree about which dataset is on screen.
@@ -3996,8 +4029,7 @@ export function renderPage(cols, runs, ledger, opts = {}) {
     // Under the dataset switch, and only when the dataset HAS two generations. Same rule as above:
     // it renders from `opts.reference`, the value `sameGeneration` actually filtered on, so a
     // fallback from a stale `?rows=` marks the link the page really shows.
-    sizeLinks(opts.sizes, opts.reference, opts),
-               pageLede(cols, { table: martTable, dataset })];
+    sizeLinks(opts.sizes, opts.reference, opts)];
 
   // EVERY run maps to its column, not just the one the column was named after: the chart's mean is
   // over an engine's whole history at that configuration, and matching on the chosen record's filename
@@ -4117,6 +4149,12 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // page they came for.
   const n = new Set(cols.map(({ col }) => baseEngine(col))).size;
   out.push("<h3>About these numbers</h3>");
+  // THE LEDE OPENS THIS SECTION, and it used to open the PAGE. What it states — the engines, the
+  // archive, the table inventory, the row total — is the SCALE of the numbers rather than one of
+  // them, and this section is the one that explains them, so it lost nothing by moving and it bought
+  // the chart a screen. It stays a `.lede` rather than becoming a `.note`: it is the scale of the
+  // whole thing, and the one line here that should not read as an aside.
+  out.push(pageLede(cols, { table: martTable, dataset }));
   out.push(para("**Capacity units (CU-seconds) are what this page leads with** — Fabric's own " +
     "billing measure, read from the Capacity Metrics model. Not milliseconds and not rows: what the " +
     `work COST. One dbt project, ${n} engine${n !== 1 ? "s" : ""}, one landed copy of the data: this ` +

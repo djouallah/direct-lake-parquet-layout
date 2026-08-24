@@ -1035,7 +1035,7 @@ const scaled = (file, engine, opts = {}) => {
   return full(file, engine, { landing, tables: names, stats: { [engine]: stats }, ...rest });
 };
 
-test("the lede states the scale of the thing, and leads the page", () => {
+test("the lede states the scale of the thing, and opens the methodology", () => {
   // The page named its MEASURE and never its SUBJECT: four columns of CU with no statement of how
   // much data any of it describes.
   const out = render([scaled("a-1.json", "spark")], ledger({ OUT: 1.0, SEM: 2.0 }));
@@ -1049,13 +1049,21 @@ test("the lede states the scale of the thing, and leads the page", () => {
   assert.ok(said.includes(
     "1 fact (144.0M), 2 dimensions (3.9K), 4 staging (375.4M) and a log (8.2K)"));
   assert.ok(said.includes("totalling **519,377,319 rows**"));
-  // FIRST, and now the only thing above the first table — the `Capacity units` heading that used
-  // to sit between them is gone: the shell's `<h1>` names the page and the `as of` stamp restated
-  // a date the `built` column carries per run.
-  assert.ok(out.indexOf('<p class="lede">') >= 0);
+  // LAST, and it used to lead. It led while the page's first screen was tables; the scatter is the
+  // first block now, and three lines of prose plus the heading under them put the bottom of the plot
+  // below the fold. It is a statement ABOUT the numbers rather than one of them, so it opens
+  // `About these numbers` — where it is still the first prose a reader meets, every block above it
+  // being a chart or a table.
+  const lede = out.indexOf('<p class="lede">');
+  assert.ok(lede >= 0);
   assert.ok(!out.includes("<h2>Capacity units"), "no section heading, and no as-of stamp");
-  assert.ok(out.indexOf('<p class="lede">')
-    < out.indexOf("<h3>Cost and speed by parquet layout"));
+  assert.ok(out.indexOf("<h3>About these numbers") < lede, "under the methodology heading");
+  assert.ok(lede < out.indexOf("Capacity units (CU-seconds) are what this page leads with"),
+    "and above the paragraph that explains the measure");
+  // NOTHING BUT THE SWITCHES ABOVE THE FIRST BLOCK. The dataset switch is a control, not prose.
+  const first = Math.min(...[out.indexOf("<figure"), out.indexOf("<h3"), out.indexOf("<div class=\"scroll\"")]
+    .filter((i) => i >= 0));
+  assert.ok(first < lede, "the numbers come first");
 });
 
 test("the lede counts engines, not columns", () => {
@@ -2683,17 +2691,22 @@ test("cost and speed is one table, cheapest first, with a title and nothing else
     ["spark", 20000, 4000, 3000], ["duckrun", 40000, 5000, 4000],
     ["dwh", 80000, 3000, 5000],
   ]), ledger({ OUT: 1.0, SEM: 2.0 }));
-  const at = out.indexOf("<h3>Cost and speed by parquet layout</h3>");
-  assert.ok(at > 0, "the table is on the page");
-  // FIRST, above the charts. It carries what a bar does — the same median from the same
-  // `martPoints` — plus the grouping key, the sample size and the tiers, as numbers rather than bar
-  // lengths, so it is what a reader wanting one thing from this page should meet first.
+  // THE SECTION NAME IS THE CHART'S CAPTION TITLE, not an `<h3>`. On a fixture with two plottable
+  // layouts there IS a figure, so the heading is not emitted at all — it is the fallback for a page
+  // whose single layout gives `scatterSvg` nothing to draw. Anchoring on `<h3>` here asserted the
+  // absent case while claiming to test this one.
+  const at = out.indexOf('<span class="chart-title">Cost and speed by parquet layout');
+  assert.ok(at > 0, "the section is named on the page");
+  assert.ok(!out.includes("<h3>Cost and speed by parquet layout"),
+    "and named once — no heading beside the caption");
+  // The name opens the section, so it is above the table it introduces and above the next section.
   // The selector is UNTERMINATED — the only figure left is `class="chart wide"`, and a selector
   // closing the quote matches nothing. This line read `<div class="charts">` for as long as it
   // existed, which is in no version of the page, so it compared -1 against a positive index and
   // passed whatever the order was; then it read `class="chart">`, which was right until the bar
   // charts went. Twice now, the same silent-pass shape.
-  assert.ok(at < out.indexOf('<figure class="chart'), "above its chart");
+  assert.ok(out.indexOf('<figure class="chart') < at, "the caption is inside its figure");
+  assert.ok(at < out.indexOf("<table"), "above the table it introduces");
   assert.ok(at < out.indexOf("<h3>Cost by engine</h3>"), "and above the cost table");
   // The GROUPING KEY is printed between the label and the numbers — six rows reading
   // `duckrun sorted` with nothing to tell them apart is a table hiding what it grouped on.

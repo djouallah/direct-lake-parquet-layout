@@ -97,8 +97,21 @@ figure.chart { max-width: 62rem; }
    what keeps them legible. A scatter carries only axis ticks and three point labels, and it is drawn
    at a proportionally wider viewBox (920 against 660), so the scale factor into its box is the SAME
    1.5x: the text renders identically and every extra rem goes to plot area. Twelve dots in a dense
-   cluster is the one figure on this page that gains from it. */
-figure.chart.wide { max-width: 86rem; }
+   cluster is the one figure on this page that gains from it.
+
+   THE CAP IS ALSO A HEIGHT BUDGET, because this figure LEADS the page and the whole of it should be
+   on the first screen. The svg is `width:100%; height:auto` over a 920x610 viewBox, so its height is
+   the card's width divided by 1.508 — at a flat 86rem that is ~886px, and no amount of trimming the
+   prose above fits ~886 plus its chrome into a 1080p viewport. Sizing the WIDTH by the height left
+   over is what makes the figure shrink as a whole instead of overflowing or letterboxing: 20rem is
+   the chrome above the plot (title, status, the switches, the figcaption and this card's own
+   padding), and 1.508 is the viewBox aspect that turns the remaining height back into a width.
+   On a tall window the 86rem cap binds and nothing has changed. Below the 48rem floor shrinking
+   stops buying legibility, so the page simply scrolls; the floor cannot overflow a narrow screen,
+   `max-width` only caps a width and never forces one. `dvh` second so it wins where supported —
+   on mobile the address bar moves the viewport and `vh` does not notice. */
+figure.chart.wide { max-width: clamp(48rem, calc((100vh - 20rem) * 1.508), 86rem); }
+figure.chart.wide { max-width: clamp(48rem, calc((100dvh - 20rem) * 1.508), 86rem); }
 /* A bounded card, so the chart reads as a designed panel and its trailing whitespace ends at its own
    border instead of mid-page. */
 figure.chart { border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem .65rem; }
@@ -115,7 +128,10 @@ h2 .asof { display:block; font-size:.82rem; font-weight:400; color:var(--dim);
    as one sub-line instead of stacking. */
 h1 .repo { display:block; font-size:.82rem; font-weight:400; letter-spacing:0; margin-top:.4rem; }
 /* The summary sentence: body prose, not a `.note`. It is the one line stating the SCALE of what
-   every number below it describes, so it is the last thing that should read as an aside. */
+   every number on the page describes, so it is the last thing that should read as an aside — which
+   is why it keeps this size after moving from the head of the page to the head of
+   `About these numbers`. The zero top margin still holds: it follows an `h3` there, whose own
+   bottom margin sets the gap. */
 p.lede { font-size:1.02rem; margin:0 0 1.6rem; }
 /* A ruled heading per section is what gives the page its rhythm — the sections used to run into
    each other and the only cue was font size. */
@@ -205,7 +221,8 @@ details.note p, details.note p.note { margin:.5rem 0 0; max-width:none; }
   box-shadow: inset 0 0 0 1px var(--series); }
 .datasets .muted { color:var(--dim); }
 /* Two switches stacked (dataset, then source rows) read as one control block rather than as two
-   paragraphs — the 1.1rem gap between them is sized to separate a switch from the LEDE below it. */
+   paragraphs — the 1.1rem gap below them separated a switch from the lede, and now separates the
+   control block from the chart card, which is the whole of what follows it. */
 .datasets + .datasets { margin-top:-.75rem; }
 .tabs { margin:.9rem 0 .5rem; }
 .tabs > input { position:absolute; opacity:0; pointer-events:none; }
@@ -328,8 +345,9 @@ figure.chart svg { max-width:100%; height:auto; display:block; overflow:visible;
 <main>
   <!-- The TITLE lives in the shell, not in `app.js`, because it needs no data: it is then already
        there while the page says Loading…, on the empty-records page and on the boot error page,
-       and there is only one copy of it to keep in step. The summary line under it does need data,
-       so `app.js` renders that one — see `pageLede`.
+       and there is only one copy of it to keep in step. NOTHING SITS UNDER IT BUT THE SWITCHES AND
+       THE CHART: the summary sentence that used to (`pageLede`, which needs data and so is
+       `app.js`'s) now opens `About these numbers` at the foot, so the figure gets the first screen.
        The repo link is hardcoded exactly as the footer's is. `?repo=` redirects where the DATA is
        read from, not what this page is; the `[source]` line `app.js` renders is the one that
        follows it. -->
