@@ -188,12 +188,24 @@ jobs:
       #
       # The ATTACH options are copied from the `iceberg` target in profiles.yml. Keep them in step:
       # if that target changes, this stops testing what the leg actually does.
+      #
+      # **`SET azure_transport_option_type = 'curl'` IS REQUIRED ON A BARE RUNNER**, and it appears
+      # in every duckdb invocation below that touches OneLake — a setting is per session, so one
+      # copy would not cover the others. Without it, run 32788719423 attached fine, CREATED the
+      # table fine, and then died READING IT BACK with
+      #   Fail to get a new connection for: https://onelake.blob.fabric.microsoft.com.
+      #   Problem with the SSL CA cert (path? access rights?)
+      # which is the exact string the azure extension's docs name: on Linux the default transport
+      # does not locate a CA bundle, and asking for `curl` makes it search the standard paths.
+      # `CURL_CA_INFO` / `CURL_CA_PATH` are the env-var escape hatch if a future image defeats that.
+      # This never bit the iceberg LEG because that runs in a Fabric notebook, not on ubuntu-latest.
       - name: Attach the OneLake Iceberg REST catalog and round-trip a table
         if: inputs.onelake
         run: |
           set -euo pipefail
           duckdb -noheader -list -c "
             LOAD iceberg; LOAD azure;
+            SET azure_transport_option_type = 'curl';
             CREATE SECRET onelake_storage (
               TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
             ATTACH getenv('WAREHOUSE_PATH') AS onelake (
@@ -231,11 +243,13 @@ jobs:
           GLOB="$SMOKE_TABLE_PATH/dbo/$SMOKE_TABLE/**/*.parquet"
           duckdb -c "
             LOAD azure;
+            SET azure_transport_option_type = 'curl';
             CREATE SECRET onelake_storage (
               TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
             SELECT file FROM glob('$GLOB');"
           duckdb -noheader -list -c "
             LOAD azure;
+            SET azure_transport_option_type = 'curl';
             CREATE SECRET onelake_storage (
               TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
             SELECT CASE WHEN count(*) = 0
