@@ -236,17 +236,28 @@ jobs:
       # `provision.py smoke` printed. The listing is printed first and unfiltered: if OneLake ever
       # lays an iceberg table out differently, that shows as an empty list rather than as a
       # mysterious assertion failure.
+      #
+      # **TWO PATTERNS, AND `**/*.parquet` IS ILLEGAL HERE.** The abfss filesystem refuses a
+      # recursive wildcard anywhere but the END — run 32788966089 died on
+      #   Not implemented Error: abfss do not manage recursive lookup patterns … only pattern
+      #   ending by ** are allowed
+      # so the LISTING uses a trailing `**` (which is legal, and shows the whole table directory
+      # whatever its shape) while the footer read uses the literal `data/*.parquet` that run
+      # 32788719423 proved is where OneLake puts an iceberg table's parquet. Handing the trailing
+      # `**` to parquet_metadata instead would drag in the `metadata/` side and fail on the first
+      # non-parquet file.
       - name: Iceberg-written parquet carries encoding_stats
         if: inputs.onelake
         run: |
           set -euo pipefail
-          GLOB="$SMOKE_TABLE_PATH/dbo/$SMOKE_TABLE/**/*.parquet"
+          LIST="$SMOKE_TABLE_PATH/dbo/$SMOKE_TABLE/**"
+          GLOB="$SMOKE_TABLE_PATH/dbo/$SMOKE_TABLE/data/*.parquet"
           duckdb -c "
             LOAD azure;
             SET azure_transport_option_type = 'curl';
             CREATE SECRET onelake_storage (
               TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
-            SELECT file FROM glob('$GLOB');"
+            SELECT file FROM glob('$LIST');"
           duckdb -noheader -list -c "
             LOAD azure;
             SET azure_transport_option_type = 'curl';
