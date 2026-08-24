@@ -103,30 +103,33 @@ figure.chart { max-width: 62rem; }
    on the first screen. The svg is `width:100%; height:auto` over a 920x610 viewBox, so its height is
    the card's width divided by 1.508 — at a flat 86rem that is ~886px, and no amount of trimming the
    prose above fits ~886 plus its chrome into a 1080p viewport. Sizing the WIDTH by the height left
-   over is what makes the figure shrink as a whole instead of overflowing or letterboxing: 20rem is
-   the chrome above the plot (title, status, the switches, the figcaption and this card's own
-   padding), and 1.508 is the viewBox aspect that turns the remaining height back into a width.
+   over is what makes the figure shrink as a whole instead of overflowing or letterboxing: 15rem is
+   the chrome above the plot (the nav line, the status, the switches, the one-line figcaption and
+   this card's own padding, ~215px measured, plus slack), and 1.508 is the viewBox aspect that turns
+   the remaining height back into a width. IT TRACKS WHAT IS ABOVE THE CHART — it was 20rem while an
+   `h1` and a two-line caption were, and shrinking it is what turns removing those into plot area
+   rather than into white space.
    On a tall window the 86rem cap binds and nothing has changed. Below the 48rem floor shrinking
    stops buying legibility, so the page simply scrolls; the floor cannot overflow a narrow screen,
    `max-width` only caps a width and never forces one. `dvh` second so it wins where supported —
    on mobile the address bar moves the viewport and `vh` does not notice. */
-figure.chart.wide { max-width: clamp(48rem, calc((100vh - 20rem) * 1.508), 86rem); }
-figure.chart.wide { max-width: clamp(48rem, calc((100dvh - 20rem) * 1.508), 86rem); }
+figure.chart.wide { max-width: clamp(48rem, calc((100vh - 15rem) * 1.508), 86rem); }
+figure.chart.wide { max-width: clamp(48rem, calc((100dvh - 15rem) * 1.508), 86rem); }
 /* A bounded card, so the chart reads as a designed panel and its trailing whitespace ends at its own
    border instead of mid-page. */
 figure.chart { border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem .65rem; }
-/* What this page IS, above what it measures. The h2 under it used to lead, which named the measure
-   and never the project — a reader arriving from a link had no statement of either. */
+/* `h1` KEEPS ITS RULE THOUGH THE PAGE HAS NONE — `renderEmpty` and the boot error path still open
+   with a heading, and this is what sizes them. */
 h1 { font-size:2rem; line-height:1.15; margin:0 0 .6rem; letter-spacing:-0.02em; }
 h2 { font-size:1.65rem; line-height:1.2; margin:0 0 1.5rem; letter-spacing:-0.015em; }
 /* The dateline rides inside the h2 so the title stays one element, but it reads as a sub-line. */
 h2 .asof { display:block; font-size:.82rem; font-weight:400; color:var(--dim);
   letter-spacing:0; margin-top:.4rem; }
-/* The links ride inside the h1 the same way — same idiom, same metrics — but they KEEP the link
-   colour rather than going dim like the dateline: they are the only way to the source and to the
-   DAG, and have to look clickable rather than like a caption. One block holding both, so they read
-   as one sub-line instead of stacking. */
-h1 .repo { display:block; font-size:.82rem; font-weight:400; letter-spacing:0; margin-top:.4rem; }
+/* The navigation line. Same metrics it had as a sub-line of the `h1` that used to sit above it, and
+   it KEEPS the link colour rather than going dim like a caption: these are the only way to the
+   source and to the DAG, so they have to look clickable. One block holding both, so they read as
+   one line instead of stacking. Selector unqualified now that no `h1` wraps it. */
+.repo { display:block; font-size:.82rem; font-weight:400; letter-spacing:0; margin:0 0 .5rem; }
 /* The summary sentence: body prose, not a `.note`. It is the one line stating the SCALE of what
    every number on the page describes, so it is the last thing that should read as an aside — which
    is why it keeps this size after moving from the head of the page to the head of
@@ -294,14 +297,17 @@ figure.chart figcaption { display:flex; flex-wrap:wrap; align-items:baseline; ga
   margin-bottom:.35rem; }
 .chart-title { font-weight:600; font-size:.95rem; }
 .chart-sub { color:var(--dim); font-size:.78rem; }
-/* WHAT WAS QUERIED. Its own span rather than more `.chart-sub` text, so it breaks onto its own line
-   when the caption wraps and so `figureSvg` can put it on a line of its own in the saved image. */
-.chart-note { color:var(--dim); font-size:.78rem; flex-basis:100%; order:2; }
-/* SAVE THE CHART AS AN IMAGE. Hard right on the caption's FIRST line, the same place the row count
-   sits on a filter bar — a control, not part of the title. `order` rather than markup position: the
-   button is appended last so the caption stays a pure string function, and the note claims a whole
-   row, so without it the control would land underneath. It wears the `copy` button's chrome because
-   it is the same kind of thing: take this away with you. */
+/* WHAT WAS QUERIED. Its own span rather than more `.chart-sub` text, so `figureSvg` can put it on a
+   line of its own in the saved image — where vertical room is free and the page's is not.
+   ON THE CAPTION'S FIRST LINE, though, because that caption is now ONE line: it had
+   `flex-basis:100%`, which claimed a whole row for 52 characters and put a second line of prose
+   above the plot. `order:0` rather than `2` so it follows the subtitle instead of the save button,
+   which keeps `margin-left:auto` pushing that control hard right with both texts to its left. */
+.chart-note { color:var(--dim); font-size:.78rem; }
+/* SAVE THE CHART AS AN IMAGE. Hard right on the caption's only line, the same place the row count
+   sits on a filter bar — a control, not part of the title. `margin-left:auto` is what puts it there;
+   `order:1` keeps it last now that the note no longer claims a row of its own. It wears the `copy`
+   button's chrome because it is the same kind of thing: take this away with you. */
 .savebtn { margin-left:auto; order:1; }
 figure.chart svg { max-width:100%; height:auto; display:block; overflow:visible; }
 /* A 2px ring in the SURFACE colour, so two dots that overlap still read as two. */
@@ -343,25 +349,28 @@ figure.chart svg { max-width:100%; height:auto; display:block; overflow:visible;
 </head>
 <body>
 <main>
-  <!-- The TITLE lives in the shell, not in `app.js`, because it needs no data: it is then already
+  <!-- NO `<h1>`, AND THE PAGE STILL HAS A TITLE — it is the `<title>` in the head, which names the
+       browser tab, the bookmark and every link preview. There was an `<h1>Direct Lake parquet
+       layout` here and it cost ~46px at the top of a page whose first block is a chart nobody could
+       see the bottom of. It said what the `<title>` says, to a reader already looking at it.
+       WHAT SURVIVES IS THE NAVIGATION, because nothing else on the page carries it: the repo link
+       is also in the footer, but the DAG link exists nowhere else. Same two links, same metrics,
+       now a standalone line instead of a sub-line of a heading.
+       It lives in the shell rather than in `app.js` because it needs no data: it is then already
        there while the page says Loading…, on the empty-records page and on the boot error page,
-       and there is only one copy of it to keep in step. NOTHING SITS UNDER IT BUT THE SWITCHES AND
-       THE CHART: the summary sentence that used to (`pageLede`, which needs data and so is
-       `app.js`'s) now opens `About these numbers` at the foot, so the figure gets the first screen.
+       and there is only one copy of it to keep in step.
        The repo link is hardcoded exactly as the footer's is. `?repo=` redirects where the DATA is
        read from, not what this page is; the `[source]` line `app.js` renders is the one that
-       follows it. -->
-  <!-- One sub-line, two links. The DAG is the real `dbt docs generate --static` output committed as
-       `dashboard/dag.html` and copied into `site/` by the workflow — not a drawing of one, so it
-       cannot drift from the models. The href is RELATIVE, which works on Pages and under a local
-       `http.server` alike; `build.mjs --snapshot` rewrites it to the absolute Pages URL, because
-       the offline copy has no sibling file to point at. -->
-  <h1>Direct Lake parquet layout
-    <span class="repo">
-      <a href="https://github.com/djouallah/direct-lake-parquet-layout">djouallah/direct-lake-parquet-layout</a>
-      · <a id="daglink" href="dag.html">the dbt DAG</a>
-    </span>
-  </h1>
+       follows it.
+       The DAG is the real `dbt docs generate --static` output committed as `dashboard/dag.html` and
+       copied into `site/` by the workflow — not a drawing of one, so it cannot drift from the
+       models. The href is RELATIVE, which works on Pages and under a local `http.server` alike;
+       `build.mjs --snapshot` rewrites it to the absolute Pages URL, because the offline copy has no
+       sibling file to point at. -->
+  <p class="repo">
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout">djouallah/direct-lake-parquet-layout</a>
+    · <a id="daglink" href="dag.html">the dbt DAG</a>
+  </p>
   <div class="status" id="status"></div>
   <div id="app"><p class="note">Loading…</p></div>
   <footer id="foot">

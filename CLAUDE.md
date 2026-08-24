@@ -1876,23 +1876,38 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   ranking, so it introduces), one DOT per layout: cold ms across, warm ms up, both log, with
   its AREA the directlake CU and its colour the writer. `chartSvg`, `barPath`, `groupRows` and the
   `.bar` rules went with them.
-  **THE SECTION NAME IS THE FIGURE'S CAPTION TITLE, NOT AN `<h3>` — and the heading is the FALLBACK,
-  not deleted.** The chart is the first block on the page, so a ruled `<h3>` above it cost ~115px of
-  the one screen a reader gets, to print a string the figcaption carries for nothing; and the
-  figcaption is what `save PNG` bakes into the exported image, so the export gained the name. But
+  **THE SECTION IS UNNAMED WHEN THE CHART DRAWS — no `<h3>`, no caption title — and the `<h3>` is
+  the FALLBACK, not deleted.** The figure is the first block on the page, so everything above the
+  plot is measured in lines of chart lost below the fold: the heading cost ~115px and a caption title
+  another ~24px, both to name a chart to a reader who has just arrived and can see it. But
   `scatterSvg` returns nothing below two plottable points, so a page with ONE measured layout — a
-  fresh dataset, `?record=` pinning a run — has no figure to carry it, and `renderFit` emits the
-  `<h3>` in exactly that case. The name is on the page either way; do not "simplify" the fallback
-  away, and do not anchor a test on `<h3>` without knowing which case the fixture is in.
-  **The LEDE moved with it, to the head of *About these numbers*.** It is a statement about the
-  numbers rather than one of them, and it is still the first prose on the page — every block above
-  it is a chart or a table. `p.lede` keeps its size for that reason.
+  fresh dataset, `?record=` pinning a run — opens with a bare TABLE, and a table under no heading
+  reads as a continuation of what precedes it. `renderFit` emits the `<h3>` in exactly that case.
+  Do not "simplify" the fallback away, and **do not anchor a test on the `<h3>`** — a fixture with
+  one plottable layout takes the fallback, so such a test silently asserts the DEGENERATE case; that
+  happened twice. `app.test.mjs`'s `fitBlock` covers both shapes and is what the assertions use.
+  **The CAPTION IS ONE LINE and carries the ENCODING ONLY** — what a dot is, what each axis holds,
+  what the area and the hue mean, 93 characters against 196. The labelling rule (`LABEL_BEST_ONLY`
+  labels only its cheapest and fastest) moved to the note under the table; it is worth stating and
+  not worth stating above the plot. `.chart-note` lost its `flex-basis:100%` so *what was queried*
+  shares that line — it still gets a line of its own in the `save PNG` export, where height is free.
+  **THE `<h1>` IS GONE TOO.** `<title>` names the tab, the bookmark and every link preview; the
+  `<h1>` said the same to a reader already looking at it, for ~46px. Its two links survive as a
+  standalone `.repo` line, because **the dbt DAG link exists nowhere else on the page** — the repo
+  link is also in the footer, that one is not. The `h1` CSS rule stays: `renderEmpty` and the boot
+  error path still open with a heading.
+  **The LEDE moved to the head of *About these numbers*.** It is a statement about the numbers
+  rather than one of them, and it is still the first prose on the page — every block above it is a
+  chart or a table. `p.lede` keeps its size for that reason.
   **`figure.chart.wide` IS CAPPED BY THE VIEWPORT HEIGHT**, not a flat 86rem:
-  `clamp(48rem, calc((100dvh - 20rem) * 1.508), 86rem)`, two declarations so `vh` is the fallback.
+  `clamp(48rem, calc((100dvh - 15rem) * 1.508), 86rem)`, two declarations so `vh` is the fallback.
   1.508 is the 920/610 viewBox aspect, which turns the height left over into a width, so the whole
   figure shrinks on a short window and is untouched on a tall one — capping the WIDTH is what avoids
   letterboxing inside the card, which a `max-height` on the svg would produce. Changing `H` in
-  `scatterSvg` changes that constant; the two have to move together.
+  `scatterSvg` changes that constant; the two have to move together. **The 15rem is the chrome above
+  the plot** (~215px measured, plus slack) and it was 20rem while the `<h1>` and the two-line caption
+  were there — anything put back above the figure has to raise it again, or the figure overflows the
+  fold rather than shrinking.
   **The dot replaced a LINE** — each layout was a segment from its warm ms to its cold ms at the
   height of its CU, all three numbers in one mark, with the cold/warm trade readable as the LENGTH.
   That read well at eleven layouts and hatched at seventeen: a line is a WIDE mark spanning most of a

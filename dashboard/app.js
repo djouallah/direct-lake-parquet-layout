@@ -1786,7 +1786,12 @@ export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = ""
   const py = (v) => T + PH * (1 - frac(Y, v));
   const out = [
     '<figure class="chart wide">' +
-    `<figcaption><span class="chart-title">${esc(title)}</span>` +
+    // AN EMPTY TITLE EMITS NO SPAN, rather than an empty one. A `<span class="chart-title"></span>`
+    // still takes the caption's `gap` and still answers `querySelector`, so the export would read a
+    // blank title and `chartFilename` would name the file after it. Absent is the honest shape, and
+    // both readers already handle it: `wrapSvg` branches on the title, `savebtn` falls back to
+    // `chart`. The `aria-label` falls through to the subtitle so the figure is never unlabelled.
+    "<figcaption>" + (title ? `<span class="chart-title">${esc(title)}</span>` : "") +
     `<span class="chart-sub">${esc(subtitle)}</span>` +
     // WHAT WAS QUERIED, on the figure rather than only in the lede — and it is here because the
     // chart LEAVES THE PAGE. `save PNG` writes a standalone image carrying this figcaption and
@@ -1794,7 +1799,7 @@ export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = ""
     // pasted into a deck with its subject left behind on a web page nobody opened.
     (note ? `<span class="chart-note">${esc(note)}</span>` : "") + "</figcaption>",
     `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" ` +
-    `aria-label="${esc(title)}">`,
+    `aria-label="${esc(title || subtitle)}">`,
   ];
   for (const t of Y.ticks) {
     out.push(`<line class="axis" x1="${L}" y1="${py(t).toFixed(1)}" x2="${W - R}" ` +
@@ -2435,15 +2440,22 @@ export function scatterFit(pts, martTable = DEFAULTS.table) {
   // TWO OF `LABEL_BEST_ONLY`'s LAYOUTS CARRY TEXT — the cheapest and the fastest, which are not the
   // same dot and on today's records are nearly opposites. See `bestDots`.
   const best = bestDots(rows);
-  // THE TITLE IS THE SECTION NAME, not a description of the axes — this figure opens the page and
-  // carries the `<h3>` that used to sit above it (see `renderFit`). It read `Cold against warm`,
-  // which the subtitle directly under it already says in full and at more length; the one thing the
-  // caption could not say was what section a reader had arrived in. It is also the figure's
-  // `aria-label` and the caption `save PNG` bakes into the exported image, so both gain the name.
-  return scatterSvg("Cost and speed by parquet layout",
-    "one dot per layout — cold ms across, warm ms up, both log; its AREA is the directlake CU it "
-    + `cost and its colour is the writer. ${LABEL_BEST_ONLY} labels only its cheapest layout and `
-    + "its fastest (cold + warm)"
+  // NO TITLE, AND THE SUBTITLE IS ONE LINE. This figure is the first block on the page, so every
+  // line of caption above the plot is a line of plot below the fold — the same trade that took the
+  // `<h3>` and the lede off the top. What a caption owes a reader is the ENCODING and nothing else:
+  // what a dot is, what each axis carries, what the area and the hue mean. It carried a title
+  // (`Cold against warm`, then the section name) and a sentence explaining the labelling rule as
+  // well, at 196 characters and two wrapped lines.
+  //
+  // THE LABELLING RULE MOVED, IT WAS NOT DROPPED — it is in the note under the table now, which is
+  // where the rest of "how to read this section" already lives. A rule that governs the figure is
+  // worth stating; it is not worth stating ABOVE the figure, in the one place on this page where a
+  // line costs a line of chart.
+  //
+  // `scatterSvg` skips the title span when it is empty, so the caption is one flex row and the
+  // export's own header collapses with it — `wrapSvg` already branches on an absent title.
+  return scatterSvg("",
+    "one dot per layout · cold ms across, warm ms up, log · area = directlake CU · colour = writer"
     + cutNote(cut),
     rows.map((p) => ({
       x: p.ms.cold, y: p.ms.warm, label: p.name, n: p.n,
@@ -2539,20 +2551,21 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
   pts.sort((a, b) => a.cu - b.cu);
   const chart = scatterFit(pts, martTable);
   return [
-    // NO `<h3>` WHEN THERE IS A CHART — the section name is the figure's own caption title instead.
-    // This section leads the page, and a ruled heading costs ~115px there (3rem margin, 1.4rem
-    // padding, the rule and its own line) to print a string the figcaption can carry for nothing,
-    // pushing the bottom of the plot below the fold. The name is not dropped, only moved: it is
-    // `scatterFit`'s title, which is also what `save PNG` writes into the standalone image, so the
-    // exported chart gains the section's name rather than losing it.
+    // NO `<h3>` WHEN THERE IS A CHART, AND THE FIGURE IS UNTITLED TOO. This section is the first
+    // block on the page and the figure is what the page is FOR, so everything above the plot is
+    // measured in lines of chart lost below the fold: a ruled heading costs ~115px (3rem margin,
+    // 1.4rem padding, the rule and its own line) and a caption title another ~24px, both of them to
+    // print a name to a reader who has just arrived and can see what they are looking at. A chart
+    // that opens a page needs no sign over it saying it is the chart.
     //
     // THE HEADING IS THE FALLBACK, AND IT HAS TO EXIST. `scatterSvg` returns nothing below two
     // plottable points, so a page with one measured layout — a fresh dataset, or `?record=` pinning
-    // a single run — has no figure to carry the name, and a table under no heading at all reads as a
+    // a single run — opens with a bare TABLE, and a table under no heading at all reads as a
     // continuation of whatever precedes it. That is the same defect `renderSources` was given its own
-    // `<h3>` to fix. So the name is on the page either way and the space is saved exactly when there
-    // is a chart to save it for. Everything pointing a reader at this section by name — the notes
-    // below, `README.md`, the tests' `block()` — resolves against whichever carried it.
+    // `<h3>` to fix. So the section is named exactly when there is no figure to open it, and the
+    // space is saved exactly when there is. The tests' `block()` anchors on the heading, so a fixture
+    // with a drawn chart has to anchor on the figure instead — one of them was asserting the absent
+    // case while claiming to test the drawn one.
     chart ? "" : "<h3>Cost and speed by parquet layout</h3>",
     // THE CHART FIRST, THE TABLE UNDER IT — and this REVERSES the older "the table, then its chart".
     // That rule read the chart as a scannable restatement of numbers the table had already given,
@@ -2612,7 +2625,13 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
     note("**A row is a WRITE CONFIG as dispatched** — the writer, the sort it was asked for and the "
       + "row-group and file sizes it was given — and its numbers are the MEDIAN over the runs behind "
       + "it. A cell printed as a RANGE is that config not writing the same parquet twice: `auto` "
-      + "leaves the sort columns to the writer, and it does not always choose the same ones."),
+      + "leaves the sort columns to the writer, and it does not always choose the same ones. "
+      // THE LABELLING RULE LIVES HERE, not in the figure's caption — see `scatterFit`. It is a rule
+      // worth stating and not worth stating above the plot, where a line of prose costs a line of
+      // chart; every other "how to read this section" sentence is already in this note.
+      + `Every row is a dot on the chart above, and ${LABEL_BEST_ONLY} labels only two of its own — `
+      + "its cheapest layout and its fastest (cold + warm) — because one writer's nine labels in a "
+      + "cluster is the crowding the dots were adopted to fix."),
     // THE EXCLUSION IS NAMED, because a dropped run on this page is always a named run — the same
     // discipline `renderSources` follows for the generation filter. Silently showing 10 of 17
     // layouts would read as "these are the layouts", which is the one thing it must not say.

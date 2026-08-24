@@ -206,24 +206,36 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   looking for it. Pinned by a test that asserts the section order outright.
   *Every run* gained an `<h3>` of its own in the same move: it opened with a bare note, so it read as
   a continuation of whatever sat above it.
-- **NOTHING BUT THE TWO SWITCHES SITS ABOVE THE CHART, so the whole of it is on the first screen.**
-  The scatter is drawn at a 920×610 viewBox and stretches to its card, so at the flat 86rem cap it
-  was ~886px tall under ~500px of chrome — a 1080p reader met the title, the status line, the
-  switches, the lede and a ruled `<h3>` and then half a plot. Three things fixed it, and each is the
-  cheap half of a trade:
-  - **The `<h3>` is gone when there is a chart** — the section name is the figure's own caption title
-    instead, which is also what `save PNG` bakes into the exported image, so the name moved rather
-    than went. `scatterSvg` draws nothing below two plottable points, so a page with one measured
-    layout has no figure to carry it and the heading comes back as the fallback; the name is on the
-    page either way.
+- **NOTHING BUT THE NAV LINE, THE STATUS AND THE SWITCHES SITS ABOVE THE CHART, so the whole of it
+  is on the first screen.** The scatter is drawn at a 920×610 viewBox and stretches to its card, so
+  at the flat 86rem cap it was ~886px tall under ~500px of chrome — a 1080p reader met an `<h1>`, the
+  status line, the switches, the lede, a ruled `<h3>` and a two-line caption, and then half a plot.
+  ~215px of chrome now. Five things, each the cheap half of a trade:
+  - **The `<h3>` is gone when there is a chart**, and so is the figure's caption title. A chart that
+    opens a page needs no sign over it saying it is the chart. `scatterSvg` draws nothing below two
+    plottable points, so a page with one measured layout opens with a bare TABLE instead — and a
+    table under no heading reads as a continuation of what precedes it, so `renderFit` emits the
+    heading in exactly that case. Named when there is no figure, unnamed when there is.
+  - **The caption is ONE LINE and carries the encoding only** — what a dot is, what each axis holds,
+    what the area and the hue mean, at 93 characters against 196. The labelling rule it used to
+    explain moved to the note under the table, where the rest of "how to read this section" lives.
+    `.chart-note` lost its `flex-basis:100%` so *what was queried* shares that line rather than
+    claiming a second one; it still gets its own line in the `save PNG` export, where height is free.
+  - **The `<h1>` is gone.** `<title>` names the tab, the bookmark and every link preview, and the
+    `<h1>` said the same thing to a reader already looking at it. Its two links — the repo and the
+    dbt DAG — survive as a standalone `.repo` line, because the DAG link exists nowhere else on the
+    page. `h1` keeps its CSS rule: `renderEmpty` and the boot error path still open with a heading.
   - **The lede moved to the foot**, opening *About these numbers*. It is a statement about the
     numbers rather than one of them, and it is still the first prose on the page — everything above
     it is a chart or a table.
   - **`figure.chart.wide` is capped by the viewport height**, not a flat 86rem:
-    `clamp(48rem, calc((100dvh - 20rem) * 1.508), 86rem)`, where 1.508 is the viewBox aspect that
+    `clamp(48rem, calc((100dvh - 15rem) * 1.508), 86rem)`, where 1.508 is the viewBox aspect that
     turns the height left over back into a width. The figure shrinks as a whole on a short window and
     is untouched on a tall one — sizing the width is what avoids letterboxing inside the card. The
     48rem floor cannot overflow a narrow screen; `max-width` only caps a width, never forces one.
+    **The 15rem tracks what is above the chart** — it was 20rem while the `<h1>` and the two-line
+    caption were there. Shrinking it is what turns removing those into plot area rather than into
+    white space, so anything added back above the figure has to raise it again.
 - **Numbers are visible, methodology is opt-in.** The long how-to-read notes are folded behind a
   one-line `<details>` each (`fold()` in `app.js`); every sentence stays in the DOM — the tests and
   ctrl-F still see it all — but the page reads numbers-first. Two things are deliberately NEVER

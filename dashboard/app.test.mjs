@@ -75,6 +75,28 @@ function block(html, heading) {
 }
 
 /**
+ * The *Cost and speed by parquet layout* section, WHICHEVER SHAPE IT TOOK.
+ *
+ * It is the one section on the page with no heading of its own when it renders in full: it opens the
+ * page, so the `<h3>` and the figure's caption title were both dropped for the vertical room, and
+ * `renderFit` emits the heading only as the fallback for a fixture with too few plottable points for
+ * `scatterSvg` to draw. So a test anchoring on the heading is anchoring on the DEGENERATE case —
+ * which is exactly how one of them came to assert the absent chart while claiming to test the drawn
+ * one. Take the heading when it is there, the figure when it is not, and cut at the next heading
+ * either way.
+ */
+function fitBlock(html) {
+  const s = String(html);
+  const named = block(s, "Cost and speed by parquet layout");
+  if (named) return named;
+  const at = s.indexOf('<figure class="chart wide"');
+  if (at < 0) return "";
+  const rest = s.slice(at);
+  const end = rest.search(/<h[234][\s>]/);
+  return end < 0 ? rest : rest.slice(0, end);
+}
+
+/**
  * `[{writer, runs, cu}]` from *Cost and speed by parquet layout* — one entry per layout group, in
  * page order (cheapest first).
  *
@@ -83,7 +105,7 @@ function block(html, heading) {
  * is gone and the grouping is not, so they read the table that always carried the same numbers.
  */
 function layoutTable(html) {
-  return rows(block(html, "Cost and speed by parquet layout"))
+  return rows(fitBlock(html))
     .map((r) => r.split("|").map((c) => c.trim()))
     .filter((c) => c.length > 7 && c[1] && c[1] !== "parquet writer")
     // Column order is: writer, ordering, dictionary, rg size, MB, runs, cores, etl CU, directlake CU,
@@ -922,7 +944,10 @@ test("the page renders end to end with charts and a layout", () => {
   const t = layoutTable(out);
   assert.deepEqual(t.map((r) => r.writer), ["delta_rs"]);
   assert.equal(t[0].cu, "2,041");
-  assert.ok(text.includes("Cost and speed by parquet layout"));
+  // ONE RUN IS ONE LAYOUT, so `scatterSvg` has nothing to draw and the section falls back to its
+  // heading — the only shape in which it is named at all. `fitBlock` covers both; this asserts the
+  // fallback specifically, because a single-record page is what it exists for.
+  assert.ok(text.includes("Cost and speed by parquet layout"), "named, there being no figure");
   assert.ok(!/Capacity units per (parquet layout|engine build)/.test(text), "no bar charts");
   // The ETL total is still on the page, in the table that reports it per bucket.
   assert.ok(rr.some((r) => r.startsWith("| **etl** |") && r.includes("31,080.0")), rr.join(" / "));
@@ -1011,10 +1036,15 @@ test("EVERY table comes before the methodology, and the methodology is last", ()
   // `Analysis` renders here on two ties — two ETL candidates at identical CU and two layout groups
   // ditto. That depends on a tie being REPORTED rather than dropped, which is the design: two
   // indistinguishable numbers is a finding, not a missing one.
+  // THE FIRST SECTION IS ANCHORED ON EITHER SHAPE, because it is the one with no heading when it
+  // renders in full — see `fitBlock`. `Math.max` picks whichever is present: the absent one is -1.
+  // Pinning it to the `<h3>` would silently make this a test of the degenerate fixture the day the
+  // fixture gained a second plottable layout.
   const order = ["<h3>Cost and speed by parquet layout", "<h3>Cost by engine",
     "<h3>Table layout", "<h3>Input archive", "<h3>Every run", "<h3>Analysis",
     "<h3>About these numbers"];
-  const at = order.map((h) => out.indexOf(h));
+  const at = order.map((h, i) => (i ? out.indexOf(h)
+    : Math.max(out.indexOf(h), out.indexOf('<figure class="chart'))));
   for (const [i, v] of at.entries()) assert.ok(v > 0, `${order[i]} is missing`);
   assert.deepEqual([...at].sort((a, b) => a - b), at,
     `sections are out of order: ${order.map((h, i) => `${h}@${at[i]}`)}`);
@@ -2635,7 +2665,7 @@ test("the cores column reports duckrun's vCores and dashes everyone else", () =>
   assert.equal(cores([mk("dwh", null, "d-4.json")]), "—");
   // And the header carries no core count, because it could only ever be right for some rows.
   const out = render(fitRuns([["duckrun", 20000, 4000, 3000]]), ledger({ OUT: 1.0, SEM: 2.0 }));
-  const head = rows(block(out, "Cost and speed by parquet layout"))[0];
+  const head = rows(fitBlock(out))[0];
   assert.ok(/\| etl CU \|/.test(head), `no parenthetical on the header: ${head}`);
   assert.ok(!/vCores/.test(head), head);
 });
@@ -2663,7 +2693,7 @@ test("a layout never built at ETL_VCORES leaves the section, and is NAMED as exc
   const t = layoutTable(out);
   assert.equal(t.length, 1, "the 64-core-only layout is not a row");
   assert.equal(t[0].cu, "1,500", "the surviving row is the one built at 8");
-  const head = rows(block(out, "Cost and speed by parquet layout"))[0];
+  const head = rows(fitBlock(out))[0];
   assert.ok(/\| cores \| etl CU \| directlake CU \|/.test(head), `the column is SHOWN now: ${head}`);
   assert.equal(t[0].cores, "8", "and the row states the compute it was measured on");
   // NAMED, never silent — the same discipline the generation filter follows. A page quietly showing
@@ -2681,7 +2711,7 @@ test("a layout never built at ETL_VCORES leaves the section, and is NAMED as exc
   // row and dashes that one cell. "Measured, not yet costed" is not "never built at this size".
   const unread = render([at("8", "a-1.json", 9)],
     ledger({ "Sa-1.json": { "XMLA Read Operation": 1500.0 } }));
-  const kept = rows(block(unread, "Cost and speed by parquet layout")).slice(1);
+  const kept = rows(fitBlock(unread)).slice(1);
   assert.equal(kept.length, 1, "still a row");
   assert.equal(kept[0].split("|")[8].trim(), "—", `etl unread is a dash: ${kept[0]}`);
 });
@@ -2691,21 +2721,20 @@ test("cost and speed is one table, cheapest first, with a title and nothing else
     ["spark", 20000, 4000, 3000], ["duckrun", 40000, 5000, 4000],
     ["dwh", 80000, 3000, 5000],
   ]), ledger({ OUT: 1.0, SEM: 2.0 }));
-  // THE SECTION NAME IS THE CHART'S CAPTION TITLE, not an `<h3>`. On a fixture with two plottable
-  // layouts there IS a figure, so the heading is not emitted at all — it is the fallback for a page
-  // whose single layout gives `scatterSvg` nothing to draw. Anchoring on `<h3>` here asserted the
-  // absent case while claiming to test this one.
-  const at = out.indexOf('<span class="chart-title">Cost and speed by parquet layout');
-  assert.ok(at > 0, "the section is named on the page");
-  assert.ok(!out.includes("<h3>Cost and speed by parquet layout"),
-    "and named once — no heading beside the caption");
-  // The name opens the section, so it is above the table it introduces and above the next section.
+  // NO NAME ABOVE THE PLOT AT ALL — no `<h3>`, and no caption title either. This section opens the
+  // page, so both were dropped for the vertical room; the heading is the fallback for a fixture with
+  // too few plottable points to draw, and this one has three. Anchoring on `<h3>` here asserted the
+  // DEGENERATE case while claiming to test this one, which it did for as long as it stood.
   // The selector is UNTERMINATED — the only figure left is `class="chart wide"`, and a selector
   // closing the quote matches nothing. This line read `<div class="charts">` for as long as it
   // existed, which is in no version of the page, so it compared -1 against a positive index and
   // passed whatever the order was; then it read `class="chart">`, which was right until the bar
   // charts went. Twice now, the same silent-pass shape.
-  assert.ok(out.indexOf('<figure class="chart') < at, "the caption is inside its figure");
+  const at = out.indexOf('<figure class="chart');
+  assert.ok(at > 0, "the section is on the page");
+  assert.ok(!out.includes("<h3>Cost and speed by parquet layout"), "and carries no heading");
+  assert.ok(!out.includes('<span class="chart-title">'), "and the figure carries no title");
+  // The figure opens the section, so it is above the table it ranks and above the next section.
   assert.ok(at < out.indexOf("<table"), "above the table it introduces");
   assert.ok(at < out.indexOf("<h3>Cost by engine</h3>"), "and above the cost table");
   // The GROUPING KEY is printed between the label and the numbers — six rows reading
@@ -3510,7 +3539,9 @@ test("the scatter LEADS its section — chart, then the table it ranks", () => {
   const out = render(fitRuns([
     ["spark", 80000, 4000, 3000], ["duckrun", 40000, 5000, 4000], ["dwh", 20000, 3000, 5000],
   ]), ledger({ OUT: 1.0, SEM: 2.0 }));
-  const at = out.indexOf("Cost and speed by parquet layout");
+  // ANCHORED ON THE FIGURE, because the section carries no name when it renders in full — see
+  // `fitBlock`. Three plottable layouts means a chart, which means no `<h3>` and no caption title.
+  const at = out.indexOf('<figure class="chart');
   assert.ok(at > 0, "the section is rendered");
   const svg = out.indexOf("<svg", at), tbl = out.indexOf("<table", at);
   assert.ok(svg > 0 && tbl > 0, "it has both a chart and a table");
