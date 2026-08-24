@@ -165,10 +165,16 @@ jobs:
       # `duckdb` the CLI comes from duckdb/duckdb's own CI; `duckdb` the wheel comes from
       # duckdb/duckdb-python, which vendors a duckdb submodule at ITS OWN pin — so the two are
       # different builds of different core commits on different schedules, and the wheel is what
-      # dbt-duckdb loads on the iceberg leg (fabric_run.py's `duckdb==` pin). Measured at the time
-      # of writing: the CLI was v2.0.0-alpha38837 while the newest wheel on PyPI was 1.6.0.dev365,
-      # uploaded 2026-08-20 — FOUR DAYS BEFORE #24957 landed. The Python line had not even moved to
-      # the 2.0.0-alpha versioning.
+      # dbt-duckdb loads on the iceberg leg (fabric_run.py's `duckdb==` pin).
+      #
+      # **THE WHEEL'S PyPI VERSION DOES NOT NAME ITS CORE, WHICH IS THE WHOLE REASON THIS STEP
+      # READS `pragma_version()` INSTEAD OF `duckdb.__version__`.** Measured on run 32789694020:
+      # `duckdb==1.6.0.dev365` — a `1.6.0.dev` version string — carries core
+      # **`v2.0.0-alpha38615 / 16980de6d3`**, committed 2026-08-20, i.e. 102 commits BEFORE #24957
+      # and 222 dev iterations behind the CLI's alpha38837. `encoding_stats` reads ABSENT. So the
+      # PyPI version being on the old `1.6.0.devN` scheme says nothing about which core is inside;
+      # only the pragma does. Bumping does not help yet either — `pip install --pre duckdb`
+      # resolves to that same dev365, which is why this step reports both.
       #
       # **REPORTS, NEVER ASSERTS.** Today this is expected to read `absent`, and a red run there
       # would say "iceberg is broken" when the true statement is "the wheel has not caught up".
