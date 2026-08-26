@@ -5,10 +5,58 @@ transcodes each parquet **row group into a VertiPaq segment, one to one**; every
 that scans the segments the transcoding produced. So query latency — and, more importantly,
 **capacity-unit consumption** — is a property of how the parquet was written.
 
-This repo measures exactly that, on real Fabric capacity: two datasets, four writers producing
-the **same rows**, one semantic model and one DAX suite over each, capacity units (the bill) as
-the primary metric. Results are live at
+This repo measures exactly that, on real Fabric capacity: five datasets (84M–592M-row marts,
+~1.1B rows in all), four writers producing the **same rows**, one semantic model and one DAX
+suite over each, capacity units (the bill) as the primary metric. Results are live at
 **<https://djouallah.github.io/direct-lake-parquet-layout/>**.
+
+## The short version
+
+Queries come in tiers — **cold** (first touch: transcode the parquet into VertiPaq), **warm and
+hot** (scan the segments already resident) — and each write knob pays at a different tier:
+
+| knob | cold — the transcode | warm / hot — the scan |
+|---|---|---|
+| row-group size | degrades as groups shrink: each group is one more dictionary merge and segment setup | degrades when groups are too *few*: the scan needs at least as many segments as it has threads |
+| dictionary encoding, declared in the footer | the whole cost lives here | irrelevant — segments are VertiPaq-native by then |
+| global sort (which is what V-Order's reorder is) | cheaper encode | keeps paying — VertiPaq inherits the row order |
+
+The rules, each measured in a section below:
+
+- **Row groups: millions of rows each — never a library default.** DuckDB's 122,880-row default
+  reaching OneLake made the same table 3.5× slower cold. The two failure modes bound a wide
+  plateau: on a 144M-row table, 144 groups of 1M was the only band in a 60-run sweep with
+  measurably worse directlake CU, 9 groups of 16M starved the warm scan, and everything from ~10
+  to ~73 groups was a statistical tie — so 2–6M rows per group clears both ends, with the big
+  end favouring cold and the small end favouring hot.
+  [Details](#1-row-groups-millions-of-rows-each-and-more-of-them-than-the-engine-has-threads)
+- **Sort the table globally, by the columns your queries filter.** Most of what V-Order does,
+  and the one knob that keeps paying when hot — the row order survives transcoding into the
+  resident segments. Sort for the workload's run lengths, not for file size: a 30% smaller file
+  bought zero query time.
+  [Details](#2-sort-the-table-globally-by-what-your-queries-filter)
+- **Keep dictionary encoding on every column — and make the footer say so.** The engine takes
+  the cheap remap path only when the footer's `encoding_stats` prove a chunk is
+  dictionary-encoded without decoding it; DuckDB's writer gained that one footer list in
+  [duckdb#24957](https://github.com/duckdb/duckdb/pull/24957) and the PR measures a 142M-row
+  dictionary string column's cold first-touch falling **10,857.5 → 689.3 ms** — same pages, ~15×
+  on the transcode. Cold-only: once resident, the parquet encoding is out of the picture.
+  [Details](#3-keep-dictionary-encoding-on-every-column--and-declared-in-the-footer)
+- **Writing with a Fabric engine? Turn V-Order on.** On Spark only the `readHeavyForPBI`
+  resource profile enables it — the default `writeHeavy` doesn't, and `readHeavyForSpark`
+  doesn't despite the name — measured at up to **2.8× less directlake CU** for ~8% build CU. The
+  Warehouse has it on by default; leave it.
+  [Details](#writing-with-a-fabric-engine-turn-v-order-on)
+- **File count and file size don't matter.** Direct Lake does no file or row-group skipping at
+  load, so they never separated engines in the CU data. The one file rule is a floor, not a
+  target: never cap a file below one row group's bytes, or the writer truncates the group.
+  [Details](#what-doesnt-matter-file-count-and-file-size)
+
+One disclosure before the numbers: **most real traffic is hot.** A live model transcodes once
+per reframe or memory eviction and serves from RAM after; this benchmark deploys a fresh model
+every run, so cold is fully represented. Read the cold numbers as the price of first touch, the
+hot numbers as what users feel all day, and weight the rules by which one your capacity actually
+pays for.
 
 ## How the scan pays for your layout
 
@@ -47,7 +95,8 @@ almost every number below:
    default of 122,880 rows per row group reached OneLake: 1,172 tiny segments instead of ~25.
    ⚠️ Read that with the encoding result below it, though — when the same leg's row groups were
    later fixed at the source (3 files / 53 groups at 2.7M rows), its CU moved only ~15%. Segment
-   count was the loud problem; the dictionary was the expensive one.
+   count was the loud problem; the dictionary — and its footer declaration — was the expensive
+   one.
 3. **Within a segment the scan is run-length driven.** VertiPaq inherits the parquet row order
    during transcoding, and [VertiScan computes directly on the compressed data][dl-perf], so
    sorted data gives long RLE runs in the resident columns — which is why sorting speeds up
@@ -92,6 +141,16 @@ ceiling — was the *worst* sorted geometry measured, because 9 segments starve 
 (mechanic 1). The full sweep log lives in the
 [`fct_summary` model header](models/aemo/duckdb/marts/fct_summary.sql).
 
+The band has two ends because the tiers pull opposite ways, and each end's failure is measured.
+Cold pays per row group twice (mechanic 2), so the transcode wants few big groups: directlake CU
+over 60 runs of this table reads 1,561 at 8–10 row groups, 1,593 at 72–73, 1,765 at 19–27 —
+a tie inside the run-to-run spread — and **2,190 at 144**, the one band that separates (its p25
+clears every other band's p75). The warm scan wants segments ≥ threads (mechanic 1), which is
+what ruled out the 9-segment geometry. Between those ends, ~10 to ~73 groups is a plateau where
+neither tier can tell the difference — so if the model reframes rarely and serves hot traffic
+all day, sit at the small-group end of the band; if cold first-touch dominates (frequent
+reframes, many models per capacity), sit at the big end.
+
 ### 2. Sort the table globally, by what your queries filter
 
 A global `ORDER BY` is most of the V-Order you can have (mechanic 3). Pick the key from the
@@ -100,7 +159,7 @@ dimension, so the key leads with `date`. The counterexample is measured — one 
 cut file size a further 30% (543 MB vs 778, n=4 per arm) and bought **statistically zero**
 query time or CU. Sort for run lengths in the columns your queries touch; don't chase bytes.
 
-### 3. Keep dictionary encoding on every column
+### 3. Keep dictionary encoding on every column — and declared in the footer
 
 Direct Lake remaps a parquet dictionary straight into VertiPaq's own — [documented][dl-perf] as
 a direct remapping of parquet data IDs to VertiPaq IDs when both sides are dictionary-encoded;
@@ -112,6 +171,22 @@ exactly where it hurts — those are the two most expensive layouts here. Nothin
 the encodings back out of the footer. The knob is per writer and never called the same thing:
 `dictionary_page_size_limit` bytes on delta-rs, `DICTIONARY_SIZE_LIMIT` distinct values on
 DuckDB — both below.
+
+**The declaration is part of the encoding.** The footer's `encoding_stats`
+(`PageEncodingStats`) list is the only structure that lets a reader prove a chunk is entirely
+dictionary-encoded *without decoding its pages*, and the remap-vs-re-encode decision is made
+from it — a dictionary page the footer never declares still pays the re-encode. DuckDB's writer
+emitted no `encoding_stats` at all until [duckdb#24957][ddb-estats] (merged 2026-08-24, in
+`main` only), and that PR's own measurement is the sharpest number in this whole section: a
+142M-row dictionary string column's cold first-touch at **10,857.5 ms** before the footer change
+and **689.3 ms** after — same pages, one new footer list, ~15× on the transcode.
+
+**And it is a cold-only cost.** Once transcoded, segments are VertiPaq's own store and the
+parquet encoding is out of the picture; a `PLAIN` or undeclared column makes first touch
+expensive, not every query. What survives into warm and hot is the row order (rule #2), never
+the encoding.
+
+[ddb-estats]: https://github.com/duckdb/duckdb/pull/24957
 
 ### A practical example: configuring the delta-rs writer
 
@@ -197,6 +272,19 @@ Read that as the point of this whole section rather than a footnote about one ad
 dictionary is what the engine on the other side wants, and everything else is a rebuild at load.**
 Segment count was the loud problem and it was never the expensive one.
 
+**The encoding half is now fixed upstream too — and the fix is a footer list, not a new
+encoder.** [duckdb#24957][ddb-estats] (merged 2026-08-24) makes DuckDB's writer emit
+`encoding_stats`, the declaration rule #3 turns on. Until it, no DuckDB-written chunk — dictionary
+page or not — could be *proven* dictionary-encoded without decoding it, which is the likely
+reason fixing the geometry moved this leg's CU only ~15%: the 43 chunks that did carry a
+dictionary were still undeclared. The PR's measurement of what the one footer list is worth:
+cold first-touch of a 142M-row dictionary string column, **10,857.5 → 689.3 ms**. It is in no
+release — stable is 1.5.5, the fix lives in `main` (v2.0.0-alpha) — and the wheel this leg pins
+predates it, so no benchmark run here carries it yet. The dispatch-only `DuckDB main smoke`
+workflow watches for a build that does (it loads iceberg against OneLake and asserts the written
+parquet's `encoding_stats` declare a dictionary page); when a wheel ships it, the pin moves and
+the iceberg column should finally close on the others.
+
 ```sql
 COPY (SELECT * FROM fct_summary ORDER BY date, time, price)  -- #2: sort is yours to do
   TO 'fct_summary.parquet' (
@@ -270,7 +358,7 @@ open), and per its own author declaring one would not sort the data anyway.
 ### What doesn't matter: file count and file size
 
 File count never separated engines in the CU data — the Warehouse ships 78 files and sits
-mid-pack; the outlier ships ~357 and loses on its *segments*. A 30% smaller file bought no
+mid-pack; the pre-fix iceberg leg shipped ~357 and lost on its *segments*. A 30% smaller file bought no
 query time (four separate demonstrations in the log). Both agree with the documentation:
 [Direct Lake does no statistics-based file or row-group skipping at load][dl-perf], so a
 smaller or cleverly-partitioned file elides no reads — the sort pays through run lengths
@@ -282,15 +370,17 @@ group's bytes and control size with the row-group knob, not the file knob.
 
 ## The lab
 
-Two datasets, chosen as a pair — one with almost no surface for layout to act on, one with a
-lot — because the first alone produced a confidently wrong answer about V-Order:
+Five datasets, chosen to span the surface layout acts on — skew, competing skew, width,
+sparsity — plus one deliberate near-zero-surface control, because that control alone once
+produced a confidently wrong answer about V-Order:
 
-| | `aemo` | `nyc` |
-|---|---|---|
-| what | Australian electricity market | NYC TLC yellow-taxi trips |
-| in | ragged CSV from nemweb | monthly parquet from TLC's CDN |
-| out | `mart.fct_summary` — 143M rows, **5 narrow columns**, regular 5-min × DUID grid | `mart.fct_trips` — **17 columns**, ~600M rows built so far |
-| shape | near-uniform | four categoricals at 97–99% one value, two Zipfian zone ids |
+| dataset | source | mart | shape |
+|---|---|---|---|
+| `aemo` | Australian electricity market, ragged CSV from nemweb | `fct_summary` — 144M rows, **5 narrow columns** | regular 5-min × unit grid, near-uniform — the control |
+| `nyc` | NYC yellow-taxi trips, monthly parquet from TLC's CDN | `fct_trips` — 592M rows, **17 columns** | extreme skew: categoricals at 97–99% one value, two Zipfian zone ids |
+| `bts` | US on-time flights, monthly zipped CSV from TranStats | `fct_flights` — 180M rows, **22 columns** | independent *moderate* skew — many categoricals competing for one sort budget |
+| `green` | NYC green-taxi trips, monthly parquet from TLC's CDN | `fct_green_trips` — 84M rows, **20 columns** | nyc's skew regime at 1/7 the rows |
+| `cms` | CMS Open Payments, annual CSV | `fct_cms_payments` — 88M rows, **91 columns** | wide and sparse — **54 columns >50% NULL** — with both skew regimes in one table |
 
 Four writers produce the same rows from the same landed files, selected by dbt target — the
 parquet each writes is the only variable:
@@ -302,10 +392,10 @@ parquet each writes is the only variable:
 | `dwh` | Fabric Warehouse (T-SQL) | the warehouse's own (V-Order) |
 | `spark` | Fabric Spark (Livy) | parquet-mr (V-Order per resource profile) |
 
-**Measurement:** one `.bim` per engine, Direct Lake with fallback disabled (a query it can't
-serve fails, rather than quietly running on the SQL endpoint), deployed fresh so pass 1 is
-genuinely cold, pass 2 warm, the rest hot (median). CU is read per item GUID from Fabric's own
-Capacity Metrics model. Detail: [benchmark/README.md](benchmark/README.md) and
+**Measurement:** one `.bim` per engine per dataset and one ~25-query DAX suite per dataset,
+Direct Lake with fallback disabled (a query it can't serve fails, rather than quietly running on
+the SQL endpoint), deployed fresh so pass 1 is genuinely cold, pass 2 warm, the rest hot
+(median). CU is read per item GUID from Fabric's own Capacity Metrics model. Detail: [benchmark/README.md](benchmark/README.md) and
 [dashboard/README.md](dashboard/README.md).
 
 ## Method and limits
@@ -321,9 +411,14 @@ number is stated in place) or linked to public documentation — see
 
 Read the numbers as measurements, not laws:
 
-- **Two datasets** define the whole surface axis; your table sits somewhere else on it.
-- **One 25-query DAX suite** — a different workload weights the columns, and therefore the
-  sort key, differently.
+- **Five datasets** span the surface axis — skew, competing skew, width, sparsity; your table
+  still sits somewhere else on it.
+- **One ~25-query DAX suite per dataset** — a different workload weights the columns, and
+  therefore the sort key, differently.
+- **The design over-weights cold.** Every dispatch deploys a fresh model and measures each
+  query's first touch; a live model transcodes once per reframe or eviction and serves hot
+  after, so its traffic is overwhelmingly hot. The cold and CU numbers price first touch, not
+  steady state.
 - **Some cells are thin** — the Warehouse V-Order-off result is one run, and CU on a shared
   capacity is noisy: one dispatch read 2,629 directlake CU on parquet byte-identical to runs
   reading ~1,330–1,590.
@@ -442,4 +537,7 @@ this repo's own runs (`history/runs/`, the model-header sweep logs, the
 - [DuckDB `COPY` parquet options](https://duckdb.org/docs/current/sql/statements/copy.html)
   — every default quoted above: `ROW_GROUP_SIZE` 122,880, `DICTIONARY_SIZE_LIMIT`
   `ROW_GROUP_SIZE / 5` (`0` disables), `STRING_DICTIONARY_PAGE_SIZE_LIMIT` 1 MB.
-  [duckdb#24645](https://github.com/duckdb/duckdb/pull/24645) adds `DATA_PAGE_SIZE_LIMIT`.
+  [duckdb#24645](https://github.com/duckdb/duckdb/pull/24645) adds `DATA_PAGE_SIZE_LIMIT`;
+  [duckdb#24957](https://github.com/duckdb/duckdb/pull/24957) makes the writer emit
+  `encoding_stats` (`PageEncodingStats`) and carries the 10,857.5 → 689.3 ms cold first-touch
+  measurement quoted above.
