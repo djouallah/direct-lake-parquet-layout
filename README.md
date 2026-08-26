@@ -52,6 +52,16 @@ The rules, each measured in a section below:
   target: never cap a file below one row group's bytes, or the writer truncates the group.
   [Details](#what-doesnt-matter-file-count-and-file-size)
 
+Spark is the common writer, so its chart comes first — per dataset, `readHeavyForPBI`'s
+directlake-CU saving against its build-CU delta, relative to the default `writeHeavy`; exact
+figures in
+[the second learning](#the-second-learning-the-write-optimised-profile-doesnt-optimise-the-write):
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/spark-profiles-dark.svg">
+  <img src="docs/spark-profiles-light.svg" alt="Per dataset, readHeavyForPBI's query-CU saving against its build-CU delta, relative to the default writeHeavy profile — the query saving is a multiple where the build cost is small, absent, or negative. Regenerated with the profile table in the second-learning section, which carries the exact figures.">
+</picture>
+
 One disclosure before the numbers: **most real traffic is hot.** A live model transcodes once
 per reframe or memory eviction and serves from RAM after; this benchmark deploys a fresh model
 every run, so cold is fully represented. Read the cold numbers as the price of first touch, the
@@ -470,10 +480,8 @@ V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes,
 
 <!-- spark-profiles:end -->
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/spark-profiles-dark.svg">
-  <img src="docs/spark-profiles-light.svg" alt="Per dataset, readHeavyForPBI's query-CU saving against its build-CU delta, relative to the default writeHeavy profile — the query saving is a multiple where the build cost is small, absent, or negative. Regenerated with the table above; the table carries the exact figures.">
-</picture>
+The chart of these rows sits at the top of the page, under
+[The short version](#the-short-version).
 
 The storage column is almost entirely one operation, `OneLake Write via Redirect`, and its cause is
 published rather than inferred: Microsoft's [resource profile reference][ms-profiles] gives
