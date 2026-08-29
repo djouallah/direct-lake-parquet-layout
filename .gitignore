@@ -21,3 +21,6 @@ stderr
 # that building the page locally to look at it cannot end up in a commit.
 site/
 dashboard.html
+
+# Blog drafts — published on WordPress, never from this repo
+blog/
