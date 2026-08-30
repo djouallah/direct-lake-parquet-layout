@@ -474,7 +474,7 @@ it is never staler than the ledger under it:
 | green | `readHeavyForPBI` | **2,023** | 100% | **2,837** | 100% | 84.3M | 2.3M | 1,546 |
 | green | `writeHeavy` | **1,493** | 74% | **2,644** | 93% | 84.3M | 3.4M | 1,623 |
 | nyc | `readHeavyForPBI` | **12,068** | 100% | **6,351** | 100% | 591.7M | 5.7–10.4M | 5,850–5,867 |
-| nyc | `writeHeavy` | **11,756** | 97% | **8,616** | 136% | 591.7M | 5.8–10.4M | 9,200–9,291 |
+| nyc | `writeHeavy` | **11,758** | 97% | **8,616** | 136% | 591.7M | 5.8–10.4M | 9,200–9,291 |
 
 V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes, `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no), `writeHeavy` no (bts yes).
 
