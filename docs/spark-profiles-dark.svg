@@ -35,8 +35,8 @@
   <rect x="389.09" y="426" width="42.33" height="22" rx="3" fill="#e66767"/>
   <text x="380.09" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+7%</text>
   <text x="158" y="471.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="243.94" y="456" width="187.49" height="22" rx="3" fill="#e66767"/>
-  <text x="234.94" y="472" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+30%</text>
+  <rect x="251.16" y="456" width="180.26" height="22" rx="3" fill="#e66767"/>
+  <text x="242.16" y="472" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+29%</text>
   <text x="423.42" y="508" fill="#898781" font-size="12.5" text-anchor="end">← readHeavyForPBI costs more</text>
   <text x="439.42" y="508" fill="#898781" font-size="12.5" text-anchor="start">saves →</text>
 </svg>
