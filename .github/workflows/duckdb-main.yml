@@ -378,11 +378,19 @@ jobs:
           print("core:", c.sql("SELECT library_version || ' / ' || source_id FROM pragma_version()").fetchone()[0])
           c.sql("INSTALL iceberg; LOAD iceberg; INSTALL azure; LOAD azure")
           c.sql("SET azure_transport_option_type = 'curl'")
-          c.sql("CREATE SECRET onelake_storage (TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'))")
-          c.sql("""ATTACH getenv('WAREHOUSE_PATH') AS onelake (
-                     TYPE iceberg, endpoint getenv('ONELAKE_ENDPOINT'), token getenv('ONELAKE_TOKEN'),
-                     access_delegation_mode 'none', stage_create_tables 0,
-                     skip_create_table_metadata_updates 1, default_schema 'dbo')""")
+          # ⚠️ NO `getenv()` HERE. It is a CLI-only scalar function — absent from the Python API
+          # ("Catalog Error: Scalar Function with name getenv does not exist", run 33730952764) —
+          # so the values are interpolated from os.environ instead. Neither the token nor these
+          # statements is ever printed; the runner masks the token anyway, and it still reaches no
+          # file on disk, which is what the CLI steps above use `getenv()` to achieve.
+          tok, ws, ep = (os.environ["ONELAKE_TOKEN"], os.environ["WAREHOUSE_PATH"],
+                         os.environ["ONELAKE_ENDPOINT"])
+          c.execute("CREATE SECRET onelake_storage "
+                    "(TYPE azure, PROVIDER access_token, ACCESS_TOKEN ?)", [tok])
+          c.execute(f"""ATTACH '{ws}' AS onelake (
+                          TYPE iceberg, endpoint '{ep}', token '{tok}',
+                          access_delegation_mode 'none', stage_create_tables 0,
+                          skip_create_table_metadata_updates 1, default_schema 'dbo')""")
           c.sql(f"DROP TABLE IF EXISTS onelake.dbo.{tbl}")
           # The clause the macro emits, in the position the macro emits it.
           c.sql(f"""CREATE TABLE onelake.dbo.{tbl}
