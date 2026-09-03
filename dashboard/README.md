@@ -269,17 +269,20 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   cheapest duckrun layout is the slowest of its nine. A reader who meets the ranked table first has
   been told cheapest-is-best before the chart gets to disagree.
   The table follows immediately, unchanged and complete — one row per
-  layout, cheapest first: `cores`, `etl CU`, `directlake CU`, `directquery CU`, `cold ms`,
-  `warm ms`, `hot ms`, then the `dq *` tiers — build
-  before query, the order the work happens in, with the tiers continuing left-to-right in their own
-  order.
+  layout, cheapest first: `cores`, `etl CUs`, then ONE BLOCK PER QUERY PHASE — its CUs, then its
+  three tiers: `directlake CUs`, `cold ms`, `warm ms`, `hot ms`, then `directquery CUs` and the
+  `dq *` tiers. Build before query, the order the work happens in; then Direct Lake COMPLETE
+  before DirectQuery starts, because Direct Lake is what the table ranks by and what the page
+  leads with, and a reader crossing from `directlake CUs` to `cold ms` should not have to step
+  over a DirectQuery number to do it. The two phases were interleaved — all three CUs columns,
+  then all six tiers — which put `directquery CUs` three columns from the tiers it belongs to.
   **`cores` reports duckrun's vCores and dashes everyone else.** It is the only engine whose compute
   this repo both SIZES and varies — `FABRIC_CORES` sets its notebook and the build cost moves 2.3x
   across core counts, which is the entire reason `ETL_VCORES` pins the column to one size. spark's
   compute is the workspace Livy pool and dwh's is the warehouse, neither dispatched from here, and
   iceberg records a count but is not what the pinning exists for. The column also lets the header
   drop its `(8 vCores)` parenthetical, which could only ever have been right for some rows.
-  **Column order is not sort order**: the table is still RANKED by `directlake CU`, which no longer
+  **Column order is not sort order**: the table is still RANKED by `directlake CUs`, which no longer
   leads the group. Most of these
   were columns of the mart's layout block, which made one table answer two questions — what the
   parquet looks like, and what querying it cost. *Table layout* is now physical layout alone and this
@@ -299,14 +302,14 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   `martPoints`, and a section whose two halves disagreed about which layouts exist would be worse
   than either.
   **THE THREE CU COLUMNS ARE NOT THE SAME KIND OF NUMBER, and only one of them ranks the
-  row.** `directlake CU` is what QUERYING the layout through Direct Lake cost and is what the table
+  row.** `directlake CUs` is what QUERYING the layout through Direct Lake cost and is what the table
   is ranked by — it
-  belongs to the parquet, which is why every run in the group can be summarised into it. `etl CU` is
+  belongs to the parquet, which is why every run in the group can be summarised into it. `etl CUs` is
   what BUILDING it cost, and that belongs to the engine and the machine it was given.
-  `directquery CU` is the same suite as SQL-endpoint pushdown over the same tables — a property of
-  the endpoint far more than of the parquet, printed beside the others so that difference is
-  readable, never the ranking column, and its `dq *` tiers rank only against each other.
-  **So `etl CU` is filtered to ONE core count and the header prints which** — `etl CU (8 vCores)`.
+  `directquery CUs` is the same suite as SQL-endpoint pushdown over the same tables — a property of
+  the endpoint far more than of the parquet, printed at the head of its own `dq *` tiers so that
+  difference is readable, never the ranking column, and those tiers rank only against each other.
+  **So `etl CUs` is filtered to ONE core count and the header prints which** — `etl CUs (8 vCores)`.
   `layoutKey` does not carry `vcores` (it is about the parquet, and duckrun writes the same files at
   every core count), so a layout group genuinely holds runs from several machines: measured on the
   real records one duckrun layout reads **9,986 CU at 8 vCores against 22,547 blended** across
@@ -690,7 +693,7 @@ explain it — a confident wrong answer about Fabric column mapping. It takes th
   actually waited. A second, differently-defined duration next to them would invite a comparison.
   **COMPUTE seconds, never total**, which also makes the column reconcile against itself: `compute`
   CU ÷ `compute seconds` is exactly the rate underneath (duckrun·64c: 20,665.6 ÷ 646 = 32.0).
-- **`compute CU per second` is a ROW OF THE ENGINE TABLE, not a section.** It comes off the SAME
+- **`compute CUs per second` is a ROW OF THE ENGINE TABLE, not a section.** It comes off the SAME
   Capacity Metrics row as the CU above it — same GUIDs, same roles, same compute/storage split — so a
   table of its own restated the whole join to add two numbers per class. It is the sturdiest number
   here: the concurrency that makes the seconds awkward is in the numerator and the denominator alike,

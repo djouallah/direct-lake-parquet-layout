@@ -639,7 +639,7 @@ export function incomplete(rec) {
   // a full set, the DQ model deployed in 36.2s, and it then never became queryable — 16 warm-up
   // attempts, each `Mashup 10061: The key didn't match any rows in the table` — so `timings` holds
   // the DL side alone while 537 CU was billed against the DQ items. On the page that is three dashes
-  // in `dq cold/warm/hot` beside a populated `directquery CU`, the "querying this was free" shape
+  // in `dq cold/warm/hot` beside a populated `directquery CUs`, the "querying this was free" shape
   // that put run 30743411308 in legacy/, on the axis the check above does not watch.
   //
   // It matters past one ugly row because `variant()` reads only `layout.config`, which such a run
@@ -1075,7 +1075,7 @@ function coresCell(members) {
 }
 
 /**
- * The core count the `etl CU` column is reported AT, and it is a filter rather than a summary.
+ * The core count the `etl CUs` column is reported AT, and it is a filter rather than a summary.
  *
  * Build cost tracks the machine: measured over `history/`, one duckrun layout reads 9,986 CU at 8
  * vCores and 22,547 blended across 8/16/32/64 — 2.3x. `layoutKey` does not carry `vcores` (it is
@@ -1094,7 +1094,7 @@ function coresCell(members) {
 const ETL_VCORES = "8";
 
 /**
- * The layout table's fixed leading columns. `etl CU` is spliced in after `runs` by `renderFit`,
+ * The layout table's fixed leading columns. `etl CUs` is spliced in after `runs` by `renderFit`,
  * which is why it stops there: BUILD BEFORE QUERY, the order the work actually happens in.
  */
 const FIT_HEAD = ["parquet writer", "ordering", "dictionary", "row group size", "MB", "runs"];
@@ -1739,7 +1739,7 @@ function legendOf(rows) {
 }
 
 export function scatterSvg(title, subtitle, pts, xLabel = "cold ms", legend = "",
-  fmtC = (v) => fmt(v, 1), yLabel = "CU", note = "") {
+  fmtC = (v) => fmt(v, 1), yLabel = "CUs", note = "") {
   const rows = (pts || []).filter((p) => Number.isFinite(Number(p.x)) && Number(p.x) > 0
     && Number.isFinite(Number(p.y)) && Number(p.y) > 0);
   if (rows.length < 2) return "";
@@ -2080,7 +2080,7 @@ const groupMid = (vals) => {
 export function martPoints(groups, times) {
   return (groups || []).map(([, ms]) => {
     const rec = ms[ms.length - 1].rec;
-    // The members the `etl CU` column is allowed to speak for: built at `ETL_VCORES`, or by an
+    // The members the `etl CUs` column is allowed to speak for: built at `ETL_VCORES`, or by an
     // engine that has no such input at all.
     const etlMs = ms.filter((m) => {
       const v = vcoresOf(m.rec);
@@ -2275,7 +2275,7 @@ function tipLines(p, martTable = DEFAULTS.table) {
   say("row groups", k.rg);
   say("dictionary", k.dict);
   say("size", k.mb && k.mb !== DASH ? `${k.mb} MB` : "");
-  if (p.cu) out.push(`CU: ${fmt(p.cu, 0)}`);
+  if (p.cu) out.push(`CUs: ${fmt(p.cu, 0)}`);
   for (const tier of ["cold", "warm", "hot"]) {
     if (p.ms && p.ms[tier]) out.push(`${tier}: ${fmt(p.ms[tier], 0)} ms`);
   }
@@ -2471,7 +2471,7 @@ export function scatterFit(pts, martTable = DEFAULTS.table) {
   // `scatterSvg` skips the title span when it is empty, so the caption is one flex row and the
   // export's own header collapses with it — `wrapSvg` already branches on an absent title.
   return scatterSvg("",
-    "one dot per layout · cold ms across, warm ms up, log · area = directlake CU · colour = writer"
+    "one dot per layout · cold ms across, warm ms up, log · area = directlake CUs · colour = writer"
     + cutNote(cut),
     rows.map((p) => ({
       x: p.ms.cold, y: p.ms.warm, label: p.name, n: p.n,
@@ -2498,7 +2498,7 @@ export function scatterFit(pts, martTable = DEFAULTS.table) {
       // iceberg are `rg` only, and that absence is itself the comparison against duckrun's sorts.
       id2: bestOnly(p) ? bestLabel(p, best, martTable) : layoutOf(p.members, martTable),
       tip: tipLines(p, martTable), hue: WRITER_HUE[p.name] || 1, c: p.cu,
-    })), "cold ms", "CU", (v) => fmt(v, 0), "warm ms", modelNote(rows));
+    })), "cold ms", "CUs", (v) => fmt(v, 0), "warm ms", modelNote(rows));
 }
 
 /** A group's rows-per-row-group as a NUMBER — the median across its members, for the colour ramp. */
@@ -2553,7 +2553,7 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
   held = []) {
   const measured = martPoints(groups, times).filter((p) => p.cu > 0);
   // A LAYOUT NOBODY BUILT AT `ETL_VCORES` LEAVES THE SECTION, rather than sitting in it with a dash.
-  // The alternative was hiding the `etl CU` column while 7 of 17 rows could not fill it, and a cost
+  // The alternative was hiding the `etl CUs` column while 7 of 17 rows could not fill it, and a cost
   // column that is mostly dashes reads as "the build was free" rather than "nobody measured it at
   // that size". Dropping the row instead means every row that IS here is complete.
   //
@@ -2564,6 +2564,17 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
   const cut = measured.length - pts.length;
   if (!pts.length) return "";
   const cols = (tiers || []).filter((l) => pts.some((p) => p.ms[l]));
+  // THE TIERS SPLIT BY PHASE, so each phase's CU can lead its own three. The partition is the `dq `
+  // prefix `TIERS_DQ` puts there — the label-side twin of the `_dq` model-name suffix `splitTimings`
+  // partitions the timings on, and the same rule stated in the same place both times.
+  // A dataset with no DirectQuery tiers measured leaves `dqCols` empty and `directquery CUs` at the
+  // end of the row, which is that phase being one column wide rather than a special case: run
+  // 32142825399 recorded DQ CU and no DQ timings at all.
+  const dqAt = cols.findIndex((l) => l.startsWith("dq "));
+  const dlCols = dqAt < 0 ? cols : cols.slice(0, dqAt);
+  const dqCols = dqAt < 0 ? [] : cols.slice(dqAt);
+  const tierHead = (l) => (counts[l] ? `${l} ms (${counts[l]} q)` : `${l} ms`);
+  const tierCell = (p) => (l) => (p.ms[l] ? fmt(p.ms[l], 0) : DASH);
   pts.sort((a, b) => a.cu - b.cu);
   const chart = scatterFit(pts, martTable);
   return [
@@ -2611,28 +2622,33 @@ export function renderFit(groups, times, tiers, counts = {}, martTable = DEFAULT
     // like one query's time to anyone who has not reached the note. On one real run the sum is
     // 29,906 while the median query is 736, so the misreading is off by 40x. The header is where a
     // reader is when they form the wrong idea.
-    // THREE CU COLUMNS, AND THEY ARE NOT THE SAME KIND OF NUMBER. `directlake CU` is what querying
+    // THREE CU COLUMNS, AND THEY ARE NOT THE SAME KIND OF NUMBER. `directlake CUs` is what querying
     // this layout through Direct Lake cost and is the column the table is ranked by — it belongs to
-    // the PARQUET, which is why a group's runs can be summarised at all. `etl CU` is what BUILDING
+    // the PARQUET, which is why a group's runs can be summarised at all. `etl CUs` is what BUILDING
     // it cost, which belongs to the engine and the machine it was given, so it is reported at one
-    // core count and the header says which (`ETL_VCORES`). `directquery CU` is what the same suite
+    // core count and the header says which (`ETL_VCORES`). `directquery CUs` is what the same suite
     // cost as SQL-endpoint pushdown over the same tables — a property of the engine's endpoint far
-    // more than of the parquet, printed beside the others precisely so that difference is readable,
-    // and never the ranking column. All three are named for the ledger's own buckets, the same
-    // words `Cost by engine` labels its rows with, so nothing has to be translated between tables.
-    // ETL BEFORE THE QUERY MODES: building the parquet happens before querying it, and the tiers to
-    // the right read left-to-right in the same order (cold, warm, hot, then the dq trio). The table
-    // is still RANKED by `directlake CU`, which no longer leads the group — sort order and column
-    // order are separate things, and the cheapest-first note above says which one ranks.
-    table([...FIT_HEAD, "cores", "etl CU", "directlake CU", "directquery CU",
-      ...cols.map((l) => (counts[l] ? `${l} ms (${counts[l]} q)` : `${l} ms`))],
+    // more than of the parquet, printed at the head of its own tiers precisely so that difference is
+    // readable, and never the ranking column. All three are named for the ledger's own buckets, the
+    // same words `Cost by engine` labels its rows with, so nothing has to be translated between
+    // tables.
+    // ETL FIRST, THEN ONE BLOCK PER QUERY PHASE — its CU, then its three tiers. Building the parquet
+    // happens before querying it, so `etl CUs` leads; then Direct Lake COMPLETE before DirectQuery
+    // starts, because Direct Lake is what the table ranks by and the answer this page leads with, and
+    // a reader crossing from `directlake CUs` to `cold ms` should not have to step over a DirectQuery
+    // number to do it. The two phases were interleaved — all three CU columns, then all six tiers —
+    // which put `directquery CUs` three columns from the `dq *` tiers it belongs to.
+    // The table is still RANKED by `directlake CUs`, which does not lead the group — sort order and
+    // column order are separate things, and the cheapest-first note above says which one ranks.
+    table([...FIT_HEAD, "cores", "etl CUs", "directlake CUs", ...dlCols.map(tierHead),
+      "directquery CUs", ...dqCols.map(tierHead)],
       ["left", "left", "left", "right", "right", "right", "right", "right", "right", "right",
         ...cols.map(() => "right")],
       pts.map((p) => {
         const k = keyCells(p.members, martTable);
         return [p.name, k.ordering, k.dict, k.rgSize, k.mb, String(p.n), p.cores,
-          p.etl ? fmt(p.etl, 0) : DASH, fmt(p.cu, 0), p.dq ? fmt(p.dq, 0) : DASH,
-          ...cols.map((l) => (p.ms[l] ? fmt(p.ms[l], 0) : DASH))];
+          p.etl ? fmt(p.etl, 0) : DASH, fmt(p.cu, 0), ...dlCols.map(tierCell(p)),
+          p.dq ? fmt(p.dq, 0) : DASH, ...dqCols.map(tierCell(p))];
       }),
       { sort: true }),
     // WHAT A ROW IS, said on the page and not only in `layoutKey`. A reader meeting a `runs` of 6
@@ -2705,7 +2721,7 @@ function heldNote(held, table = DEFAULTS.table) {
       + `comparison this table makes. Its cost and its runs are in **Cost by engine** and `
       + `**Every run** meanwhile.`);
   }
-  return note(`${out.join(" ")} Every held run keeps its own row in **Every run**, with its own CU `
+  return note(`${out.join(" ")} Every held run keeps its own row in **Every run**, with its own CUs `
     + `and tiers.`);
 }
 
@@ -2794,13 +2810,13 @@ export function engineTable(perCol, cols, secsCol) {
     // nothing — 383.25 CU in 0.049 s, measured — so including it does not dilute the rate, it detonates
     // it, by an amount that tracks how much OneLake traffic the engine made rather than anything about
     // the engine. That is what made two runs of the same DuckDB on the same notebook read 31.2 and 36.1.
-    rows.push(["`compute CU per second`", ...names.map((c) => {
+    rows.push(["`compute CUs per second`", ...names.map((c) => {
       const secs = ((secsCol[c] || {})[cls] || {}).compute;
       const cu = ((perCol[c] || {})[cls] || {}).compute;
       return !secs || !cu ? DASH : fmt(cu / secs, 1);
     })]);
   }
-  return table(["CU (s)", ...names], ["left", ...names.map(() => "right")], rows) + "\n" + fold(
+  return table(["CUs (s)", ...names], ["left", ...names.map(() => "right")], rows) + "\n" + fold(
     "how to read this table",
     "`etl` against `directlake` and `directquery` comes from each item's recorded ROLE — each " +
     "query phase owns its semantic model plus the shortcut lakehouse it reads through (and that " +
@@ -2813,18 +2829,18 @@ export function engineTable(perCol, cols, secsCol) {
     "SQL-endpoint queries — is compute. A dash means no operation of that kind was billed there " +
     "at all — or, on a class subtotal, that the ledger has not read that column yet; never that " +
     "the work was free.<br>**`compute seconds`** is how long the build BILLED for, on the `etl` half " +
-    "only, read from `Duration (s)` in the same Capacity Metrics row as the CU above it — so it " +
+    "only, read from `Duration (s)` in the same Capacity Metrics row as the CUs above it — so it " +
     "costs no extra query. **Read it as billed time, not as a stopwatch.** It is the sum of every " +
     "compute operation's duration, and those run CONCURRENTLY: a duckrun leg is one long notebook " +
     "run so its seconds land close to the clock, while spark opens five Livy REPLs under one session " +
     "whose durations sum to more than the wall time anyone waited. Compare it freely between two runs " +
     "of the SAME engine; compare it across engines only knowing that. Storage is left out because a " +
-    "storage operation bills real CU over a duration of essentially nothing (383.25 CU in 0.049 s), " +
+    "storage operation bills real CUs over a duration of essentially nothing (383.25 CUs in 0.049 s), " +
     "so its seconds are noise that tracks OneLake traffic rather than how long anything ran. " +
     "`directlake` and `directquery` get no such row on purpose: the query half reports latency " +
     "properly, as the " +
     "`cold`/`warm`/`hot` milliseconds beside the layout that produced them, and those are time a user " +
-    "actually waited.<br>**`compute CU per second`** divides the two rows above it, so the column " +
+    "actually waited.<br>**`compute CUs per second`** divides the two rows above it, so the column " +
     "reconciles against itself. It is the average capacity the node drew while it ran, and it is the " +
     "sturdiest number here — the concurrency that makes the seconds awkward is in the numerator and " +
     "the denominator alike, so it cancels. A high rate is a WIDE engine, not a slow one. It is " +
@@ -2866,6 +2882,12 @@ export function renderSources(cols, entries, ledger, repo, now = null, gen = {})
   // had to be a group's MEDIAN, which is a number no single run recorded.
   const times = (gen.times || {});
   const tiers = [...TIERS, ...TIERS_DQ].map(([l]) => l).filter((l) => l in (gen.counts || {}));
+  // SPLIT BY PHASE, so each phase's CU leads its own three — the same column order as
+  // *Cost and speed by parquet layout*, and for the same reason. Two tables one section apart
+  // printing the same set of columns in two orders is worse than either order on its own.
+  const dqAt = tiers.findIndex((l) => l.startsWith("dq "));
+  const dlTiers = dqAt < 0 ? tiers : tiers.slice(0, dqAt);
+  const dqTiers = dqAt < 0 ? [] : tiers.slice(dqAt);
   // NEWEST DISPATCH FIRST. Everywhere else on the page the order is the engine order, which is what
   // makes columns comparable across two renders; here the point of the table is precisely that the
   // rows are NOT contemporaneous, so it sorts on the thing it is reporting.
@@ -2922,8 +2944,9 @@ export function renderSources(cols, entries, ledger, repo, now = null, gen = {})
       mb === undefined || mb === null ? DASH : fmt(Number(mb), 0),
       cu.etl ? fmt(classTotal(cu, "etl"), 1) : DASH,
       cu.directlake ? fmt(classTotal(cu, "directlake"), 1) : DASH,
+      ...dlTiers.map((l) => (ms[l] ? fmt(ms[l], 0) : DASH)),
       cu.directquery ? fmt(classTotal(cu, "directquery"), 1) : DASH,
-      ...tiers.map((l) => (ms[l] ? fmt(ms[l], 0) : DASH)),
+      ...dqTiers.map((l) => (ms[l] ? fmt(ms[l], 0) : DASH)),
       String(items.length), state]);
   }
   // `state` was headed `CU` until this table grew CU numbers of its own — one column headed `CU`
@@ -2936,13 +2959,14 @@ export function renderSources(cols, entries, ledger, repo, now = null, gen = {})
   // `row groups`, not `RG` — the same quantity is headed `row groups` in `Table layout` and in
   // `Cost and speed by parquet layout`, and one page calling it two things is a puzzle for the
   // reader to solve. The abbreviation only ever reads as obvious to whoever wrote it.
-  out.push(table(["column", "run", "built", "row groups", "MB", "etl CU", "directlake CU",
-    "directquery CU", ...tiers.map((l) => `${l} ms`), "items", "state"],
+  out.push(table(["column", "run", "built", "row groups", "MB", "etl CUs", "directlake CUs",
+    ...dlTiers.map((l) => `${l} ms`), "directquery CUs", ...dqTiers.map((l) => `${l} ms`),
+    "items", "state"],
   ["left", "left", "left", "right", "right", "right", "right", "right",
     ...tiers.map(() => "right"), "right", "left"],
   rows,
   { find: "filter runs — engine, run id, date…", menus: [0, 9 + tiers.length] }));
-  out.push(note("**`etl CU`, `directlake CU` and `directquery CU` are that RUN's own totals** — " +
+  out.push(note("**`etl CUs`, `directlake CUs` and `directquery CUs` are that RUN's own totals** — " +
     "the same GUID join as " +
     "*Cost by engine*, which quotes each column's newest run. The CHARTS quote neither: each bar is " +
     "the MEDIAN over the runs listed here that fed it — a bad sample on a shared capacity is not a "
@@ -2975,7 +2999,7 @@ export function renderSources(cols, entries, ledger, repo, now = null, gen = {})
       "run rather than a measurement of it. Delete them and it settles.").join(" ")));
   }
   out.push(fold("how a number settles",
-    "An hour's CU keeps growing for up to ~70 minutes after the work happened, so a run " +
+    "An hour's CUs keep growing for up to ~70 minutes after the work happened, so a run " +
     "measured just now is a lower bound. It settles itself: the **Capacity units** workflow re-reads " +
     "the whole window daily and keeps the larger of the two figures, so reloading this page tomorrow " +
     "shows the final number and nothing has to be reconciled. Every item a run creates is deleted " +
@@ -3121,7 +3145,7 @@ export function renderInput(cols, dataset = DEFAULTS.dataset) {
     fold("what this table is",
       `The landed ${info.label} archive \`stats.py\` listed in \`${info.landing}/Files\` — ` +
       "**one copy, read by every engine**, so this is not per column. Every other number on this " +
-      "page is about what came OUT; this is what went in, and it is what makes a duration or a CU " +
+      "page is about what came OUT; this is what went in, and it is what makes a duration or a CUs " +
       "total mean anything. It moves only when a dispatch runs with `skip_download` off."),
   ].filter(Boolean).join("\n");
 }
@@ -3385,7 +3409,7 @@ export function renderLayouts(cols, groups, times, counts, martTable = DEFAULTS.
   out.push(fold("how these layouts were read",
     "Every shared table the project writes, in pipeline order, as `stats.py` read the " +
     "Delta log in that run's **layout** job. Sizes are what the tables held at that moment, and " +
-    "nothing here re-read a Delta log. **This block is PHYSICAL LAYOUT ONLY** — the directlake CU and " +
+    "nothing here re-read a Delta log. **This block is PHYSICAL LAYOUT ONLY** — the directlake CUs and " +
     "the `cold`/`warm`/`hot` milliseconds used to sit beside the mart, which made one table answer " +
     "both what the parquet looks like and what querying it cost. The cost is in the charts and in " +
     "*Cost by engine*; the times are in the per-run table below, where a row is one dispatch rather " +
@@ -3635,12 +3659,12 @@ export function findings(groups, times, floors) {
   // is a safe join and the printed mean stays the one the bar drew.
   const pts = martPoints(groups || [], times);
   const members = (groups || []).map(([, ms]) => ms);
-  rank("cheapest to query", "CU", pts.map((p, i) => ({
+  rank("cheapest to query", "CUs", pts.map((p, i) => ({
     name: p.name, s: spread(members[i].map((m) => m.cu)), value: p.cu,
   })), (floors || {}).directlake);
   // The DirectQuery row is its own ranking over its own class — pushdown against pushdown, never
   // against a Direct Lake number.
-  rank("cheapest to query (DirectQuery)", "CU", pts.map((p, i) => ({
+  rank("cheapest to query (DirectQuery)", "CUs", pts.map((p, i) => ({
     name: p.name, s: spread(members[i].map((m) => m.dq)), value: p.dq,
   })), (floors || {}).directquery);
   for (const [label] of [...TIERS, ...TIERS_DQ]) {
@@ -4086,9 +4110,9 @@ export function renderPage(cols, runs, ledger, opts = {}) {
     anaEntries.push({ col, rec, qid: String(anaEntries.length),
       cu: classTotal(cells, "directlake"),
       // The DirectQuery phase's own items — its semantic model, its shortcut lakehouse and that
-      // lakehouse's SQL endpoint — for the layout table's `directquery CU` column.
+      // lakehouse's SQL endpoint — for the layout table's `directquery CUs` column.
       dq: classTotal(cells, "directquery"),
-      // The BUILD half of the same read, for the layout table's `etl CU` column. Taken here because
+      // The BUILD half of the same read, for the layout table's `etl CUs` column. Taken here because
       // this is where the ledger is in scope; `martPoints` filters it to one core count.
       etl: classTotal(cells, "etl") });
   }
@@ -4196,20 +4220,20 @@ export function renderPage(cols, runs, ledger, opts = {}) {
     "is what each engine charged to build the same tables and to answer the same queries. Attribution " +
     "is by Fabric ITEM GUID — each run records what it created and then deletes it — so no " +
     "number here is a guess about which engine an item belonged to."));
-  out.push(fold("what's comparable, and why the query CU leads",
-    "**The CU columns are directly comparable, and the two time measures need reading " +
+  out.push(fold("what's comparable, and why the query CUs lead",
+    "**The CUs columns are directly comparable, and the two time measures need reading " +
     "with more care.** The engines were handed different compute — a 64-vCore notebook, a Livy " +
     "pool, a warehouse — and a capacity unit already prices that in, which is the whole reason " +
     "to lead with cost. Duration does not: billed operation seconds SUM across concurrent operations, " +
     "so spark's five Livy REPLs total more than the clock they ran on, and query milliseconds are one " +
     "sample of a shared capacity rather than a bill. They are on the page because they answer a " +
-    "question CU cannot — how long a person waits, and how hard the engine drew while they did " +
+    "question CUs cannot — how long a person waits, and how hard the engine drew while they did " +
     "— and each says where its own number bends.",
     "**The query half is the half that matters**, and it leads for that reason. Fabric smooths " +
     "BACKGROUND operations — everything the build does — over 24 hours, so a heavy ETL leg " +
-    "is absorbed and nobody waits for it. Query CU — `directlake` and `directquery` alike — is " +
+    "is absorbed and nobody waits for it. Query CUs — `directlake` and `directquery` alike — are " +
     "INTERACTIVE, smoothed over minutes, and it is " +
-    "what THROTTLES: the CU a user sits behind and a capacity admin asks about. An engine that builds " +
+    "what THROTTLES: the CUs a user sits behind and a capacity admin asks about. An engine that builds " +
     "cheaply and queries expensively has optimised the half that does not hurt."));
 
   const reads = (ledger.reads || []).length;

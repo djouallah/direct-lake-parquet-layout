@@ -2417,7 +2417,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   reader can check it against itself (duckrun·64c: 20,665.6 ÷ 646 = 32.0). Absent when the ledger has
   no `seconds`, and a DASH per column the ledger has not read; never `0`, which would say the build
   was instant.
-- *`compute CU per second`* is a **ROW OF THE ENGINE TABLE, not a section** — it comes off the SAME
+- *`compute CUs per second`* is a **ROW OF THE ENGINE TABLE, not a section** — it comes off the SAME
   Capacity Metrics row as the CU above it, so a table of its own restated the whole GUID→role→bucket
   join. A class the ledger has not read yet is a
   DASH, never `0.0`: a zero there says the engine did that work for free. **The RATE

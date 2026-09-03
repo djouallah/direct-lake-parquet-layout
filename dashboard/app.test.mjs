@@ -109,7 +109,8 @@ function layoutTable(html) {
     .map((r) => r.split("|").map((c) => c.trim()))
     .filter((c) => c.length > 7 && c[1] && c[1] !== "parquet writer")
     // Column order is: writer, ordering, dictionary, rg size, MB, runs, cores, etl CU, directlake CU,
-  // directquery CU.
+  // then the Direct Lake tiers, then directquery CU and the `dq *` tiers. Everything this reads is
+  // at or left of `directlake CU`, so the phase blocks to its right cannot move these indices.
     .map((c) => ({ writer: c[1], ordering: c[2], rgSize: c[4], runs: c[6],
       cores: c[7], etl: c[8], cu: c[9] }));
 }
@@ -1233,7 +1234,7 @@ test("the page says which of its measures is the comparable one", () => {
   // A capacity unit already prices in how much compute an engine was given — that is the whole reason
   // CU leads. The two time measures do NOT have that property.
   const out = plain(render([full("a-1.json", "spark")], ledger({ OUT: 1.0, SEM: 2.0 })));
-  assert.ok(out.includes("The CU columns are directly comparable"));
+  assert.ok(out.includes("The CUs columns are directly comparable"));
   assert.ok(out.includes("reason to lead with cost"));
   assert.ok(out.includes("sample of a shared capacity"), "the ms caveat has to be stated");
 });
@@ -1662,7 +1663,7 @@ test("the same parquet is one row however many engines wrote it", () => {
   // given are the entire subject. ONE layout row, TWO engine columns, from the same two runs — that
   // asymmetry is why the two are keyed differently.
   assert.deepEqual(rows(block(out, "Cost by engine"))[0],
-    "| CU (s) | duckrun·64c | duckrun·8c |",
+    "| CUs (s) | duckrun·64c | duckrun·8c |",
     "both configs keep a column — string sort, so 64c precedes 8c");
 });
 
@@ -1858,10 +1859,10 @@ test("the three tiers are columns of the PER-RUN table, not of the layout block"
   const heads = rows(out).filter((r) => r.includes("cold ms"));
   assert.equal(heads.length, 2, `two headers carry the tiers: ${heads}`);
   assert.ok(heads.some((h) =>
-    /^\| parquet writer \| ordering \| dictionary \| row group size \| MB \| runs \| cores \| etl CU \| directlake CU \| directquery CU \| cold ms \(\d+ q\)/
+    /^\| parquet writer \| ordering \| dictionary \| row group size \| MB \| runs \| cores \| etl CUs \| directlake CUs \| cold ms \(\d+ q\)/
       .test(h)), heads[0]);
   assert.ok(heads.some((h) =>
-    h.includes("| etl CU | directlake CU | directquery CU | cold ms | warm ms | hot ms | items |")), heads[1]);
+    h.includes("| etl CUs | directlake CUs | cold ms | warm ms | hot ms | directquery CUs | items |")), heads[1]);
   assert.ok(rows(out).some((r) => r.includes("| 30 | 11 | 9 |")), "the run's own tiers");
 });
 
@@ -1910,7 +1911,7 @@ test("the rate is a row of the engine table, not a section", () => {
   assert.ok(!plain(out).includes("### Time"), "no section of its own");
   const rr = rows(out);
   assert.ok(rr.some((r) => r === "| **etl** | **900.0** |"));
-  assert.ok(rr.some((r) => r === "| `compute CU per second` | 30.0 |"), "under its class");
+  assert.ok(rr.some((r) => r === "| `compute CUs per second` | 30.0 |"), "under its class");
   assert.ok(!charts(out).some((c) => /per second/.test(c.title)),
     "the rate row adds no chart of its own");
 });
@@ -1934,7 +1935,7 @@ test("etl carries a duration row and the query classes deliberately do not", () 
   // The caveat rides ON the label. A note four rows below is not attached to anything.
   assert.ok(secondsRows[0].includes("billed, not wall clock"), secondsRows[0]);
   // ...and it reconciles: compute CU / compute seconds is the rate printed underneath.
-  const rate = rr.filter((r) => r.startsWith("| `compute CU per second`"));
+  const rate = rr.filter((r) => r.startsWith("| `compute CUs per second`"));
   assert.equal(rate.length, 2, "one per class — the rate is not etl-only");
   assert.ok(rate[0].includes(`| ${(900.0 / 645.79).toFixed(1)} |`), rate[0]);
 });
@@ -1993,13 +1994,13 @@ test("a class the ledger has not read yet is a dash, not a zero", () => {
   });
   const rr = rows(render(runs, led));
   assert.ok(rr.some((r) => r === "| **etl** | **900.0** | — |"), "measured, then not-yet-measured");
-  assert.ok(rr.some((r) => r === "| `compute CU per second` | 30.0 | — |"));
+  assert.ok(rr.some((r) => r === "| `compute CUs per second` | 30.0 | — |"));
   assert.ok(!rr.some((r) => r.includes("| 0.0 |") || r.includes("**0.0**")), "no cell reads as free");
 });
 
 test("a ledger with no seconds renders no rate row", () => {
   const out = render([full("a-1.json", "spark")], ledger({ OUT: 1.0, SEM: 2.0 }));
-  assert.ok(!rows(out).some((r) => r.startsWith("| `compute CU per second` |")), "no ROW");
+  assert.ok(!rows(out).some((r) => r.startsWith("| `compute CUs per second` |")), "no ROW");
   assert.ok(!charts(out).some((c) => /per second/.test(c.title)),
     "seconds drive the rate ROW, not a chart");
 });
@@ -2024,7 +2025,7 @@ test("the rate is compute over compute, never total over total", () => {
     SEM: { "XMLA Read Operation": 25.93 },
   });
   const rr = rows(render(runs, led));
-  assert.ok(rr.some((r) => r === "| `compute CU per second` | 32.0 |"), "the node's own draw");
+  assert.ok(rr.some((r) => r === "| `compute CUs per second` | 32.0 |"), "the node's own draw");
   // And the compute CU row still stands beside it — it is the rate alone that must exclude storage.
   assert.ok(rr.some((r) => r === "| `compute` | 20,665.6 |"));
 });
@@ -2047,8 +2048,8 @@ test("the rate scales with the cores the column was given", () => {
   assert.deepEqual(d.columnsFor([big, small]).map((c) => c.col), ["duckrun·32c", "duckrun·64c"],
     "never one blended column");
   const out = render([big, small], led);
-  const rate = rows(out).find((r) => r.startsWith("| `compute CU per second`"));
-  assert.equal(rate, "| `compute CU per second` | 16.0 | 32.0 |", "cores ÷ 2, per column");
+  const rate = rows(out).find((r) => r.startsWith("| `compute CUs per second`"));
+  assert.equal(rate, "| `compute CUs per second` | 16.0 | 32.0 |", "cores ÷ 2, per column");
   // The size reaches the reader through the column TAG, which is what keeps two core counts from
   // blending into one column. With the ETL chart gone the tables are where it shows.
   assert.ok(rate.includes("16.0") && rate.includes("32.0"), rate);
@@ -2066,9 +2067,9 @@ test("the rate is computed per class", () => {
   const out = render(runs, led);
   const rr = rows(out);
   assert.ok(rr.some((r) => r === "| **etl** | **900.0** |"));
-  assert.ok(rr.some((r) => r === "| `compute CU per second` | 30.0 |"), "900 CU over 30 s");
+  assert.ok(rr.some((r) => r === "| `compute CUs per second` | 30.0 |"), "900 CU over 30 s");
   assert.ok(rr.some((r) => r === "| **directlake** | **40.0** |"));
-  assert.ok(rr.some((r) => r === "| `compute CU per second` | 10.0 |"), "40 CU over 4 s");
+  assert.ok(rr.some((r) => r === "| `compute CUs per second` | 10.0 |"), "40 CU over 4 s");
   assert.ok(!charts(out).some((c) => /per second/.test(c.title)),
     "the rate adds no chart of its own");
 });
@@ -2671,7 +2672,7 @@ test("the cores column reports duckrun's vCores and dashes everyone else", () =>
   // And the header carries no core count, because it could only ever be right for some rows.
   const out = render(fitRuns([["duckrun", 20000, 4000, 3000]]), ledger({ OUT: 1.0, SEM: 2.0 }));
   const head = rows(fitBlock(out))[0];
-  assert.ok(/\| etl CU \|/.test(head), `no parenthetical on the header: ${head}`);
+  assert.ok(/\| etl CUs \|/.test(head), `no parenthetical on the header: ${head}`);
   assert.ok(!/vCores/.test(head), head);
 });
 
@@ -2699,7 +2700,7 @@ test("a layout never built at ETL_VCORES leaves the section, and is NAMED as exc
   assert.equal(t.length, 1, "the 64-core-only layout is not a row");
   assert.equal(t[0].cu, "1,500", "the surviving row is the one built at 8");
   const head = rows(fitBlock(out))[0];
-  assert.ok(/\| cores \| etl CU \| directlake CU \|/.test(head), `the column is SHOWN now: ${head}`);
+  assert.ok(/\| cores \| etl CUs \| directlake CUs \|/.test(head), `the column is SHOWN now: ${head}`);
   assert.equal(t[0].cores, "8", "and the row states the compute it was measured on");
   // NAMED, never silent — the same discipline the generation filter follows. A page quietly showing
   // a subset would read as "these are the layouts", which is the one thing it must not say.
@@ -2750,7 +2751,7 @@ test("cost and speed is one table, cheapest first, with a title and nothing else
   // is coarser than the parquet, since a group merged on RG band can still hold two file sizes.
   const head = rows(out).find((r) =>
     r.startsWith("| parquet writer | ordering | dictionary | row group size | MB | runs "
-    + "| cores | etl CU | directlake CU |"));
+    + "| cores | etl CUs | directlake CUs |"));
   assert.ok(head, "layout, the key, the size, the sample size, CU, then the tiers");
   // The count rides in the HEADER: each tier cell is a SUM over the suite, and the bare `cold ms`
   // read exactly like one query's time.
@@ -3473,7 +3474,7 @@ test("a dot is labelled iff the caller gave it an id", () => {
   "cold ms", "row group size");
   assert.equal([...svg.matchAll(/<title>/g)].length, 3, "one title per dot, always");
   const named = [...svg.matchAll(/<text class="bar-caption" [^>]*>([^<]+)</g)].map((m2) => m2[1])
-    .filter((t) => !["cold ms", "CU"].includes(t));
+    .filter((t) => !["cold ms", "CUs"].includes(t));
   assert.deepEqual(named, ["dwh"], "only the point with an id, and never twice");
   // The legend is what names the rest, so identity never rests on colour alone.
   const key = [...svg.matchAll(/<text class="bar-caption key"[^>]*>([^<]+)</g)].map((m2) => m2[1]);
@@ -3639,7 +3640,7 @@ test("every point is named and no two names collide", () => {
   const CH = 5.15, LH = 13;
   const labs = [...svg.matchAll(/<text class="bar-caption" x="([\d.]+)" y="([\d.]+)"([^>]*)>([^<]+)</g)]
     .map((m) => ({ x: +m[1], y: +m[2], a: /end/.test(m[3]) ? "end" : /middle/.test(m[3]) ? "mid" : "s", t: m[4] }))
-    .filter((l) => !["cold ms", "CU", "row group size"].includes(l.t) && !/^[\d,.]+M?$/.test(l.t));
+    .filter((l) => !["cold ms", "CUs", "row group size"].includes(l.t) && !/^[\d,.]+M?$/.test(l.t));
   assert.equal(labs.length, 11, "one label per dot, none dropped");
   const box = (l) => {
     const w = l.t.length * CH;
@@ -3688,7 +3689,7 @@ test("a layout is one DOT: cold across, warm up, and its AREA is the CU", () => 
   const duck = dots.find((q) => q !== dwh);
   assert.ok(dwh.r > duck.r, `3,000 CU draws bigger than 1,500: ${dwh.r} vs ${duck.r}`);
   const key = [...svg.matchAll(/<text class="bar-caption key"[^>]*>([^<]*)</g)].map((m) => m[1]);
-  assert.ok(key.includes("CU"), `the size key names the channel: ${key}`);
+  assert.ok(key.includes("CUs"), `the size key names the channel: ${key}`);
   assert.ok(!key.some((t) => /row group size/.test(t)),
     `and no key for a channel nothing encodes any more: ${key}`);
   // COLOUR STAYS THE WRITER — the legend, the layout rows and the table all name writers, and
@@ -4046,7 +4047,7 @@ test("a dot's hover is its whole table row, sort key included", () => {
   assert.ok(tip.includes("ordering: date, time, price"), tip.join(" | "));
   assert.ok(tip.includes("row groups: 9") && tip.includes("row group size: 16.0M"),
     tip.join(" | "));
-  assert.ok(tip.includes("size: 575 MB") && tip.includes("CU: 1,462"), tip.join(" | "));
+  assert.ok(tip.includes("size: 575 MB") && tip.includes("CUs: 1,462"), tip.join(" | "));
   // EVERY TIER, including `hot`, which is on neither end of the line and so appears nowhere else on
   // the chart — as does the row group size, now that nothing is sized by it.
   assert.ok(tip.includes("cold: 20,845 ms") && tip.includes("warm: 4,016 ms")
