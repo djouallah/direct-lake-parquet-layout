@@ -277,6 +277,22 @@ def customise_sql(table, src=None):
 
 # --------------------------------------------------------------------------- the notebook half
 
+def _cgroup_limit():
+    """The container's own memory ceiling, which is what actually kills us.
+
+    /proc/meminfo reports the HOST's RAM inside a container and can be far larger, so DuckDB's
+    default limit (a share of what it detects) can sit above the ceiling that will kill the process.
+    Same two paths `fabric_build.py` reads, for the same reason."""
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            with open(path) as fh:
+                raw = fh.read().strip()
+            return None if raw == "max" else int(raw)
+        except Exception:                                          # noqa: BLE001
+            continue
+    return None
+
+
 def _log(msg):
     print("[tpcds] " + msg, flush=True)
 
@@ -449,11 +465,23 @@ def run_in_notebook():
                          + "; found " + format(free / 1024 ** 3, ",.0f")
                          + " GiB. Dispatch with more cores, which is what sizes the node.")
 
+    # ON-DISK, not in-memory: dsdgen has no chunking, so the whole scale factor is materialised
+    # before anything can be written, and an in-memory database would have to hold it all.
     con = duckdb.connect(os.path.join(work, "gen.duckdb"))
     con.sql("SET threads TO " + str(os.cpu_count()))
     con.sql("SET temp_directory = '" + os.path.join(work, "spill").replace("\\", "/") + "'")
     con.sql("SET preserve_insertion_order = false")
-    _log("duckdb " + duckdb.__version__)
+    # THE MEMORY LIMIT IS PINNED FROM THE CGROUP, NOT LEFT TO DuckDB. Its default is ~80% of the
+    # RAM it DETECTS, and inside a container /proc/meminfo reports the HOST's -- which is how a
+    # process gets OOM-killed while its own settings look generous. `fabric_build.py` reads the same
+    # two cgroup files for the same reason; this cannot import it (it runs in a different process on
+    # the notebook), so the six lines are repeated rather than shared.
+    limit = _cgroup_limit()
+    if limit:
+        con.sql("SET memory_limit = '" + str(int(limit * 0.8 / 1024 ** 2)) + "MB'")
+    _log("duckdb " + duckdb.__version__ + "  threads=" + str(os.cpu_count())
+         + "  cgroup=" + (format(limit / 1024 ** 3, ",.0f") + " GiB" if limit else "unset")
+         + "  memory_limit=" + str(con.sql("SELECT current_setting('memory_limit')").fetchone()[0]))
 
     verdict = generate(con, sf, work)
     dr = duckrun.connect(FILES_PATH, read_only=False)
