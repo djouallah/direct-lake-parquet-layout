@@ -27,23 +27,10 @@ Each needs its adapter and env vars, then `dbt build --target <name>`:
 
 ## Datasets and gating
 
-The dataset is the `DATASET` env var (`aemo` | `nyc` | `bts` | `green` | `cms` | `tpcds`, default
+The dataset is the `DATASET` env var (`aemo` | `nyc` | `bts` | `green` | `cms`, default
 `aemo`).
 
-`tpcds` is the one dataset whose input is **generated rather than downloaded**, and generating it is
-a **one-off** — done once per scale factor, then read by every engine and every dispatch afterwards.
-`download_limit` is the dsdgen **scale factor** there (1, 10 or 100; `plan` refuses anything else),
-and the work runs in a throwaway Fabric notebook because dsdgen materialises a whole scale factor at
-once. From a laptop:
-
-```bash
-python download_tpcds.py --status          # what is landed; creates nothing
-
-WS_ID=<workspace guid> FILES_PATH=<abfss .../dbt_tpcds_landing/Files>   download_limit=10 DATASET=tpcds FABRIC_CORES=8 python download_tpcds.py
-```
-
-A re-run is a no-op once the scale factor is logged (`TPCDS_FORCE=1` overrides), and the notebook is
-deleted and the deletion confirmed before the script exits. Models live per
+Models live per
 dialect under `models/<dataset>/{duckdb,dwh,spark}`, gated in `dbt_project.yml` so exactly one
 folder is enabled per (dataset, target). `dbt parse --target <name>` verifies the gating offline —
 no credentials needed, and worth doing before spending any capacity, because a gate that disables

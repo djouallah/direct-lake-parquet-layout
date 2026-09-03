@@ -9,9 +9,9 @@ side by side — it is the only cross-engine check there is, and it is **no long
 it is the dispatch-only `layout` job, because it costs ~10 minutes to report something that
 only changes when the tables are rewritten.
 
-## SIX DATASETS. FIVE ARE POINTS ON ONE SURFACE; THE SIXTH IS A REPRODUCTION
+## FIVE DATASETS, AND THEY ARE POINTS ON ONE SURFACE
 
-`DATASET` is a dispatch input (`aemo` | `nyc` | `bts` | `green` | `cms` | `tpcds`, default `aemo`) and reaches everything from
+`DATASET` is a dispatch input (`aemo` | `nyc` | `bts` | `green` | `cms`, default `aemo`) and reaches everything from
 one workflow-level env var. `.github/scripts/datasets.py` is the registry: item names, table list,
 mart, mart columns, downloader. **It is the single source for names that
 provision.py CREATES and stats.py READS BACK** — with one dataset a divergence was a typo you would
@@ -19,13 +19,13 @@ notice, with several it silently records another dataset's layout under this run
 `benchmark/engines.py` carries a deliberate copy (that directory must stay deletable) and
 `test_datasets.py` pins the copies together.
 
-| | `aemo` | `nyc` | `bts` | `green` | `cms` | `tpcds` |
-|---|---|---|---|---|---|---|
-| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN | annual CSV from download.cms.gov | **generated**: DuckDB `dsdgen` in a Fabric notebook |
-| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` | 4, `mart.fct_green_trips` | 4, `mart.fct_cms_payments` | 11, `mart.store_sales` — **two facts, eight dimensions** |
-| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** | ~88M rows full-drain (PY2019-2025), **91 columns**, of which **54 are >50% NULL** | 26M rows at SF10, 262M at SF100, **24 columns** |
-| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens | BOTH regimes at once: `Nature_of_Payment` 92% one value / `Form_of_Payment` 86% / `Dispute_Status` 100% beside `Covered_Recipient_Specialty_1` ~302 values and the payer id ~1,000 — plus SPARSITY nothing else has | synthetic: parameterised per column, INDEPENDENT across columns — the regime that never exercises the trade-off. **Not a point on this surface** |
-| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … | `dbt_green_landing`, `dbt_green_delta`, … | `dbt_cms_landing`, `dbt_cms_delta`, … | `dbt_tpcds_landing`, `dbt_tpcds_delta`, … |
+| | `aemo` | `nyc` | `bts` | `green` | `cms` |
+|---|---|---|---|---|---|
+| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN | annual CSV from download.cms.gov |
+| models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` | 4, `mart.fct_green_trips` | 4, `mart.fct_cms_payments` |
+| mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** | ~88M rows full-drain (PY2019-2025), **91 columns**, of which **54 are >50% NULL** |
+| skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens | BOTH regimes at once: `Nature_of_Payment` 92% one value / `Form_of_Payment` 86% / `Dispute_Status` 100% beside `Covered_Recipient_Specialty_1` ~302 values and the payer id ~1,000 — plus SPARSITY nothing else has |
+| items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … | `dbt_green_landing`, `dbt_green_delta`, … | `dbt_cms_landing`, `dbt_cms_delta`, … |
 
 **Why the fifth one exists.** The first four vary SKEW at a roughly constant width — 5, 17, 20, 22
 columns. None of them varies WIDTH, and none of them is SPARSE. CMS Open Payments (Sunshine Act
@@ -99,88 +99,6 @@ only dataset where those two differ. Because the downloader writes both sides of
 assertion that the months sum to the year would compare it against itself, so `land_year()` counts
 the source CSV and **refuses to log anything for a year that does not reconcile**. The dbt test keeps
 what it can actually check: that what was landed is what was written.
-
-**WHY THE SIXTH ONE EXISTS, AND IT IS NOT ANOTHER POINT ON THE SURFACE.** `tpcds` is SYNTHETIC,
-which is the exact ground Contoso was rejected on — and that rejection stands. This one is admitted
-for a different purpose, and reading it as a sixth surface point is the misuse to guard against.
-
-**IT IS A DATASET HERE, NOT A REPRODUCTION OF SOMEONE ELSE'S RESULT.** What is borrowed from the
-Data Leaps / Microsoft white paper *Modern Power BI Architecture Choices for Reporting on Azure
-Databricks* (June–July 2026) is the SHAPE and the QUERIES: 2 fact tables, 8 dimensions, that paper's
-section 4.5 customisation, and its five composite DAX queries. Nothing here depends on the paper's
-own numbers, and this dataset is not one half of a comparison with anything outside this repo — it
-is measured by the same four engines, the same layout knobs and the same DAX suite as the other
-five, and its rows read against each other and nothing else.
-⚠️ **THIS REVERSES WHAT THIS FILE USED TO SAY.** It described the dataset as the Fabric half of a
-paired experiment with a Databricks build, ending "neither half means much without the other". That
-pairing is not the purpose and was never run; do not reintroduce it, and do not make a scale factor
-or a layout choice here to match anything external. SF10 is a scale factor because it is enough to
-measure, not because another system is sitting at it.
-
-Six things about it differ from every other dataset here, and each is the dataset's nature rather
-than a shortcut:
-
-- **`download_limit` IS THE SCALE FACTOR** (1, 10 or 100), not a file count. `plan` refuses anything
-  else *before* a leg starts, because the form's default is 200 and the generator is not free.
-- **GENERATING IS A ONE-OFF, AND IT SPENDS FABRIC COMPUTE — the only landing here that does.**
-  dsdgen materialises a whole scale factor at once, so `download_tpcds.py` validates on the runner
-  and relays itself into a throwaway Fabric notebook (duckrun's `run_python`). Run it once per scale
-  factor and never again: `land` only calls it when `skip_download=false`, which is off by default
-  and forced off on every scheduled run, and the script skips itself when the archive log already
-  carries `etag = sf<N>` for all ten tables (`TPCDS_FORCE=1` overrides). `--status` answers "has it
-  already happened" without creating anything.
-  Its item GUID is recorded under role `compute` with `engine: landing`, so the generator's CU does
-  not fold into whichever engine the dispatch happened to build.
-  **THE NOTEBOOK'S DELETION IS CONFIRMED, NOT ASSUMED.** duckrun deletes it in a `finally`, so the
-  attempt happens on the success and failure paths alike — but `_delete_item` is best-effort and a
-  non-2xx only logs `warning: could not delete temp notebook`, which is a line nobody reads in a
-  green log, on an item that is still billing. So the script polls for the 404 itself and exits
-  non-zero if the notebook survives. It deliberately does NOT reuse `provision.drop_guid`, which is
-  exactly this poll: `provision.py` reads `sys.argv[1]` at module level and runs its whole mode
-  dispatch on import, so importing it would provision something.
-- **THE CUSTOMISATION IS AT LAND TIME AND THE MODELS ARE PASS-THROUGHS.** The landed parquet already
-  is the paper's table: null fact rows dropped, `cache_buster` added, `d_date_sk_1` = `d_date_sk` −
-  8,401 days replacing the date key, date_dim trimmed to 2021–2026 (2,191 rows). All 30 model files
-  select columns and nothing else.
-- **THE FACTS ARE FULL REBUILDS AND CARRY NO `file` COLUMN.** dsdgen emits everything at once, so
-  there is no arrival order to increment along. The duckdb tree still *spells* it `incremental`,
-  because the Iceberg REST catalog runs neither `CREATE VIEW` nor the table materialization's temp
-  RENAME — under the per-run teardown every CI run takes the overwrite branch, which is the CTAS the
-  paper describes, and the dispatched sort and geometry still apply to it.
-- **TWO FACT TABLES, ONE `mart`.** `store_sales` is the registry's mart and the only table `stats.py`
-  profiles deeply; `catalog_sales` is a full member of everything else. Both set
-  `relyOnReferentialIntegrity`, which is a widening of the "only the mart's relationships" rule and
-  not a relaxation: RI holds by construction here (the paper drops null fact rows precisely so it
-  does) and the generator probes all thirteen relationships and reports the orphan count, which is
-  zero.
-- **THE DAX SUITE IS SOMEONE ELSE'S, VERBATIM.** Its composite tier is the paper's own Performance
-  Analyzer capture — five visuals (distinct count, percentage share, rank, year-over-year on the
-  smaller fact, year-over-year plus year-to-date on the larger) across three slicer rounds, fifteen
-  queries. `benchmark/paper_queries.json` holds them with the upstream repo, commit and path;
-  `xmla_compare._paper_queries()` turns them into the tier.
-  ⚠️ **RETRACTED: "THE PAPER'S LITERAL DAX IS UNAVAILABLE AND THESE ARE A RECONSTRUCTION."** It is
-  published — github.com/lipinght/DB-DQ-Whitepaper, `load_test_json/PowerBIPerformanceData.json`.
-  The repo was RENAMED from `Fab-DL-DB-DQ-Whitepaper`, which is the name the PDF's appendix cites
-  and which 404s; that 404 is what the old claim was built on. Ten hand-written EVALUATEs stood in
-  for it and are gone.
-  **THE RECONSTRUCTION ALSO HAD THE SCENARIOS WRONG, which is the reason to prefer the capture
-  beyond provenance.** It modelled them as "unfiltered" and "all six slicers". *There is no
-  unfiltered round* — the capture is one session of three rounds adding slicers progressively (AR;
-  then `s_manager`; then `cp_type` and `sm_carrier`), so every query carries at least two and the
-  axis is HOW MANY, not whether. The old cheap tier was measuring something the paper never ran.
-  Nine slicer queries are not replayed: the paper's reported results exclude slicer interactions,
-  and the three needing a `Time Unit` field-parameter table are all slicer queries, so dropping them
-  costs nothing measured and keeps that table out of the model.
-  One edit, textual: the capture qualifies measures as `'Measures 1'[X]` against the report's
-  measure-holder table, and our model carries the identical measures on their own facts, so the
-  qualifier is stripped — an unqualified measure reference resolves regardless of home table.
-  `cache_buster < 2` is left exactly as captured: the paper's load tester randomises that bound to
-  defeat the query cache, and this harness measures cold/warm/hot on purpose.
-
-**NEVER CITE A tpcds NUMBER AS EVIDENCE ABOUT SKEW.** TPC-DS synthesises skew per column from
-parameterised distributions, independent across columns and across joins — which is precisely the
-regime where the multi-column trade-off is never exercised, and therefore the regime `bts` exists to
-escape. Read tpcds as a reproduction of the paper, and read the other five for what layout is worth.
 
 **Why the fourth one exists.** A reviewer of the nyc result claimed V-Order on GREEN taxi produces
 BIGGER data. Green is the same extreme-skew surface as yellow on a table an order of magnitude
@@ -683,8 +601,7 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   would still say `readHeavyForPBI` or `writeHeavy`; the parquet would be the compactor's.
   **It is off now** — `DBT_FABRICSPARK_SKIP_OPTIMIZE: "true"` on the `server` job, the adapter's own
   kill switch, which outranks every project-level setting and restores what every spark run in
-  `history/` was measured under. The tpcds models additionally carry `auto_optimize=false` in their
-  own config, which is belt and braces and also documentation at the point of use.
+  `history/` was measured under.
   ⚠️ **THE EXPOSURE IS BACKWARDS, NOT FORWARDS, AND IT IS OPEN.** Any spark run dispatched after
   1.13.0 reached PyPI and before this line may already describe a compacted layout, and nothing in
   those records says which — the adapter is unpinned, so its version is not even recorded the way

@@ -77,10 +77,10 @@ on:
   # by hand — which read on the page as engine columns weeks apart in age, compared as though they
   # were the same generation. The grid is:
   #
-  #     dataset   aemo · nyc · bts · green · cms · tpcds
+  #     dataset   aemo · nyc · bts · green · cms
   #     config    duckrun (auto) · dwh (V-Order) · spark readHeavyForPBI · spark writeHeavy
   #
-  # = 24 slots a week, 3-4 a day, no day idle. `iceberg` is deliberately NOT in it: its layout is
+  # = 20 slots a week, 2-3 a day, no day idle. `iceberg` is deliberately NOT in it: its layout is
   # whatever the Iceberg REST catalog path defaults to rather than anything anyone dispatched, which
   # is why the dashboard's `ENGINES_HIDDEN` already keeps it out of the layout tables. Both spark
   # profiles ARE in it, so the V-Order pair — the sharpest experiment on the page — stays
@@ -89,14 +89,14 @@ on:
   # **THE HOUR SELECTS THE CONFIG. THE DATASET IS NOT A FUNCTION OF THE WEEKDAY** — it cannot be,
   # once 20 combos spread over 7 days; that only divides while a dataset's whole row fires on its own
   # day, which is the arrangement that leaves the weekend empty. Cell (dataset i, hour j) fires on
-  # weekday (i + 2j) mod 7, which puts six DISTINCT weekdays in every hour column:
+  # weekday (i + 2j) mod 7, which puts five DISTINCT weekdays in every hour column:
   #
-  #     Sun   03:17 aemo  duckrun    04:57 tpcds dwh             06:37 green spark V-Order   08:17 nyc   spark default
+  #     Sun   03:17 aemo  duckrun    06:37 green spark V-Order   08:17 nyc   spark default
   #     Mon   03:17 nyc   duckrun    06:37 cms   spark V-Order   08:17 bts   spark default
-  #     Tue   03:17 bts   duckrun    04:57 aemo  dwh             06:37 tpcds spark V-Order   08:17 green spark default
+  #     Tue   03:17 bts   duckrun    04:57 aemo  dwh             08:17 green spark default
   #     Wed   03:17 green duckrun    04:57 nyc   dwh             08:17 cms   spark default
-  #     Thu   03:17 cms   duckrun    04:57 bts   dwh             06:37 aemo  spark V-Order   08:17 tpcds spark default
-  #     Fri   03:17 tpcds duckrun    04:57 green dwh             06:37 nyc   spark V-Order
+  #     Thu   03:17 cms   duckrun    04:57 bts   dwh             06:37 aemo  spark V-Order
+  #     Fri   04:57 green dwh        06:37 nyc   spark V-Order
   #     Sat   04:57 cms   dwh        06:37 bts   spark V-Order   08:17 aemo  spark default
   #
   # **THE TIMES ARE NOT ROUND AND THE MINUTES ARE NOT DECORATIVE.** The query passes draw interactive
@@ -178,10 +178,6 @@ on:
     - cron: "57 4 * * 6"     # cms   dwh
     - cron: "37 6 * * 1"     # cms   spark_vorder
     - cron: "17 8 * * 3"    # cms   spark_default
-    - cron: "17 3 * * 5"     # tpcds duckrun
-    - cron: "57 4 * * 0"     # tpcds dwh
-    - cron: "37 6 * * 2"     # tpcds spark_vorder
-    - cron: "17 8 * * 4"    # tpcds spark_default
   workflow_dispatch:
     inputs:
       # THE TWO THAT GET CHANGED: which engine, and how big a machine.
@@ -216,26 +212,11 @@ on:
       # 92% single-value beside specialty at 302 competing values), so it is the first dataset that
       # can say what the multi-column trade-off costs when the columns genuinely disagree.
       #
-      # tpcds is the sixth and it is NOT a sixth point on that surface -- it is the one SYNTHETIC
-      # dataset here, admitted knowingly. It rebuilds the Data Leaps / Microsoft white paper's TPC-DS
-      # subset (2 facts, 8 dimensions, its section 4.5 customisation applied at land time) so the
-      # Databricks arm in c:/dbx_vertipaq -- the same rows written with the duckrun parquet-layout
-      # profile and mirrored into Fabric -- has a V-Order reference and a duckrun-layout twin built
-      # from identical rows and measured by the same DAX in the same capacity. Its composite tier is
-      # the paper's own five queries. Its skew is parameterised per column and independent across
-      # columns, which is the regime that never exercises the multi-column trade-off, so do not read
-      # a tpcds number as evidence about skew.
-      #
-      # ⚠️ ON tpcds, `download_limit` IS THE SCALE FACTOR (1, 10 or 100) rather than a file count,
-      # and the `land` job GENERATES its input in a Fabric notebook instead of downloading one --
-      # the only dataset here whose landing spends compute. `plan` refuses a scale factor outside
-      # that set for free, before any leg starts, because the form's default of 200 would otherwise
-      # ask dsdgen for a volume nobody chose.
       dataset:
-        description: "dataset — aemo (uniform), nyc (extreme skew), bts (competing skew), green (extreme skew, small), cms (wide + sparse) or tpcds (the white paper's TPC-DS subset)"
+        description: "dataset — aemo (uniform), nyc (extreme skew), bts (competing skew), green (extreme skew, small) or cms (wide + sparse)"
         type: choice
         default: "aemo"
-        options: ["aemo", "nyc", "bts", "green", "cms", "tpcds"]
+        options: ["aemo", "nyc", "bts", "green", "cms"]
       cores:
         description: "vCores (duckrun / iceberg only)"
         type: choice
@@ -461,10 +442,6 @@ env:
     || github.event.schedule == '57 4 * * 6' && 'cms'
     || github.event.schedule == '37 6 * * 1' && 'cms'
     || github.event.schedule == '17 8 * * 3' && 'cms'
-    || github.event.schedule == '17 3 * * 5' && 'tpcds'
-    || github.event.schedule == '57 4 * * 0' && 'tpcds'
-    || github.event.schedule == '37 6 * * 2' && 'tpcds'
-    || github.event.schedule == '17 8 * * 4' && 'tpcds'
     || 'aemo' }}
   AZURE_TRANSPORT_OPTION_TYPE: curl
   CURL_CA_INFO: /etc/ssl/certs/ca-certificates.crt
@@ -756,13 +733,14 @@ jobs:
           rg_says = "auto (duckrun sizes it)" if rg.lower() == "auto" else f"{int(rg):,} rows"
           sys.stderr.write(f"dataset={ds} mart={spec['mart']} row_group_size={rg_says}, "
                            f"sort={'auto (duckrun picks)' if os.environ.get('SORTED') == 'true' else 'none (unsorted)'}\n")
-          # `download_limit` MEANS DIFFERENT THINGS PER DATASET, and on tpcds a wrong value is
-          # expensive rather than merely wrong: it is the dsdgen SCALE FACTOR, the form's default is
-          # 200, and the generator runs on a Fabric notebook -- so an unchecked value would ask for a
-          # volume nobody chose with capacity already committed. A dataset declaring
-          # `download_limits` gets refused here, for free, before `land` starts. Only when the
-          # download is actually going to run: `skip_download` is on by default and then the value is
-          # inert.
+          # `download_limit` MEANS DIFFERENT THINGS PER DATASET -- a file count on most, program
+          # YEARS on cms -- and a dataset whose reading makes a wrong value EXPENSIVE rather than
+          # merely wrong declares `download_limits` in the registry, a closed tuple this refuses
+          # outside of. Free, and before `land` starts, which is the whole point: the form's default
+          # is 200 and a landing step can commit capacity before anyone reads the value. Checked only
+          # when the download is actually going to run -- `skip_download` is on by default and then
+          # the value is inert. No dataset declares one today; the guard is the registry's, not any
+          # one dataset's.
           allowed = spec.get("download_limits")
           if allowed and os.environ.get("SKIP_DOWNLOAD", "true") != "true":
               dl = (os.environ.get("DOWNLOAD_LIMIT") or "").strip()
@@ -859,13 +837,6 @@ jobs:
       # nothing else. AEMO unzips ragged CSV from nemweb; NYC fetches monthly parquet from a CDN;
       # BTS unzips TranStats' monthly CSV — the latter two read each file's schema, refuse a month
       # that drifted and rewrite the rest to one canonical parquet schema before uploading.
-      # ⚠️ ON tpcds THIS STEP GENERATES RATHER THAN DOWNLOADS, and it is the only dataset where this
-      # job spends Fabric compute: download_tpcds.py validates the scale factor on the runner and
-      # relays itself into a throwaway Fabric notebook (duckrun's run_python, the same mechanism the
-      # DuckDB legs use), because dsdgen materialises a whole scale factor at once and no free runner
-      # can hold SF10. The notebook's item GUID is recorded under role `compute` with
-      # `engine: landing`, so its CU is attributed to the generator rather than folded into whichever
-      # engine this dispatch happened to build.
       - name: Download the dataset (obstore -> OneLake)
         if: ${{ github.event_name != 'schedule' && !inputs.skip_download }}
         run: python "$(python .github/scripts/datasets.py --download)"
@@ -873,10 +844,11 @@ jobs:
         if: ${{ github.event_name == 'schedule' || inputs.skip_download }}
         run: echo "skip_download is on — building on the landed archive as-is" >&2
       # AN EMPTY ARCHIVE IS REFUSED HERE, ON THE FREE RUNNER, rather than 29 models into a paid leg.
-      # Run 33734219062 is why: a scheduled `tpcds` cell whose landing had never been generated, so
-      # `land` and `plan` both went green and the spark leg died on `[PATH_NOT_FOUND] …
-      # Files/landing/parquet_raw/customer_address` with a Livy session already acquired. Four tpcds
-      # slots a week were doing that. It refuses ONLY a completely empty archive — a half-drained one
+      # Run 33734219062 is why: a scheduled cell whose landing had never been populated, so `land`
+      # and `plan` both went green and the spark leg died on `[PATH_NOT_FOUND] …
+      # Files/landing/parquet_raw/…` with a Livy session already acquired — and it was a whole grid
+      # ROW doing that weekly, not one bad dispatch. It refuses ONLY a completely empty archive — a
+      # half-drained one
       # is a normal state that `download_limit` exists to produce — and a listing that throws is
       # non-fatal, because a transient OneLake error must not fail a dispatch on a question it could
       # not ask.

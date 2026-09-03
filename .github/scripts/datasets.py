@@ -1,6 +1,6 @@
 """The dataset registry — one place that knows what a dataset IS.
 
-Six datasets run through this project, selected by the DATASET env var (a dispatch input):
+Five datasets run through this project, selected by the DATASET env var (a dispatch input):
 
   aemo   the AEMO NEM electricity pipeline. CSV in, 8 models, mart.fct_summary under layout test —
          143M rows of FIVE narrow columns on a regular 5-minute x DUID grid, i.e. near-uniform.
@@ -20,22 +20,6 @@ Six datasets run through this project, selected by the DATASET env var (a dispat
          five repeated six-column groups whose tail members run 83-99% NULL. It is also the only
          table carrying BOTH skew regimes at once — Nature_of_Payment at 92% single-value (nyc's)
          beside specialty at 302 competing values and the payer id at ~1,000 (bts's).
-  tpcds  The TPC-DS subset from the Data Leaps / Microsoft white paper *Modern Power BI
-         Architecture Choices for Reporting on Azure Databricks*. DuckDB `dsdgen` in a Fabric
-         notebook, 11 models, TWO fact tables, mart.store_sales under layout test — 26M rows at
-         SF10 and 262M at SF100.
-
-         THE ONE SYNTHETIC DATASET, AND IT IS A KNOWING EXCEPTION RATHER THAN A DRIFT. Contoso was
-         rejected here on exactly this ground and that rejection stands; this one is admitted for a
-         different reason, which is not "another point on the surface". It exists to rebuild the
-         PAPER'S OWN ROWS inside Fabric, so the Databricks arm in c:/dbx_vertipaq — the same rows
-         written with the duckrun parquet-layout profile and mirrored into Fabric — has a V-Order
-         reference (spark readHeavyForPBI, and dwh) and a duckrun-layout twin measured by the same
-         DAX in the same capacity. Its skew is parameterised per column and independent across
-         columns, which is the regime that never exercises the multi-column trade-off, so NEVER
-         cite a tpcds number as evidence about skew. Read it as a reproduction, not a measurement
-         of what layout is worth on real data.
-
 They exist as POINTS ON ONE SURFACE, and the spread is the experiment — it is what turned a wrong
 conclusion into a right one. V-Order reorders rows AND re-encodes them, so what it is worth depends
 on the SURFACE: column count x categorical skew. aemo has neither and nyc has both, and measuring
@@ -256,45 +240,6 @@ DATASETS = {
         "landing_tables": ["stg_flights_archive_log"],
         "download": "download_bts_flights.py",
         "model_prefix": "bts_",
-    },
-    "tpcds": {
-        "landing": "dbt_tpcds_landing",
-        "dwh_src": "dbt_tpcds_dwh_src",
-        "folder": "benchmark",
-        "items": {"duckrun": "dbt_tpcds_delta", "iceberg": "dbt_tpcds_iceberg",
-                  "spark": "dbt_tpcds_spark", "dwh": "dbt_tpcds_dwh"},
-        # Pipeline order: the log, then the eight dimensions, then the two facts. Both facts are
-        # here and only ONE of them is the `mart` -- see below.
-        "tables": ["stg_tpcds_archive_log", "date_dim", "item", "store", "promotion", "ship_mode",
-                   "catalog_page", "customer_address", "customer_demographics",
-                   "store_sales", "catalog_sales"],
-        # THE ONLY DATASET WITH TWO FACT TABLES, and `mart` names the one under layout test:
-        # store_sales, the paper's largest (262M rows at SF100, the volume its Direct Lake findings
-        # turn on). catalog_sales is a full member of `tables` -- parity, shortcuts, the semantic
-        # model and the DAX suite all carry it -- it simply is not the table stats.py profiles
-        # deeply, because `mart` is singular by design and a second deep profile would double a
-        # 10-minute OneLake read for a question the first one answers.
-        "mart": "store_sales",
-        # store_sales as LANDED: dsdgen's 23 columns plus the paper's `cache_buster`. No `file`
-        # column -- this is the one dataset whose facts are full rebuilds rather than file-driven
-        # incrementals, because dsdgen emits a whole scale factor at once and there is no arrival
-        # order to increment along. Mirrors macros/tpcds_columns.sql, and
-        # `.github/scripts/test_tpcds_columns.py` asserts it does.
-        "mart_columns": [
-            "ss_sold_date_sk", "ss_sold_time_sk", "ss_item_sk", "ss_customer_sk", "ss_cdemo_sk",
-            "ss_hdemo_sk", "ss_addr_sk", "ss_store_sk", "ss_promo_sk", "ss_ticket_number",
-            "ss_quantity", "ss_wholesale_cost", "ss_list_price", "ss_sales_price",
-            "ss_ext_discount_amt", "ss_ext_sales_price", "ss_ext_wholesale_cost",
-            "ss_ext_list_price", "ss_ext_tax", "ss_coupon_amt", "ss_net_paid",
-            "ss_net_paid_inc_tax", "ss_net_profit", "cache_buster"],
-        "landing_tables": ["stg_tpcds_archive_log"],
-        "download": "download_tpcds.py",
-        "model_prefix": "tpcds_",
-        # `download_limit` IS THE SCALE FACTOR HERE, not a file count -- the same reinterpretation
-        # cms makes for program years. The `plan` job refuses anything outside this tuple before a
-        # leg spends capacity: the form's default of 200 would ask dsdgen for SF200, and SF1000
-        # needs a node this workspace does not have.
-        "download_limits": ("1", "10", "100"),
     },
 }
 

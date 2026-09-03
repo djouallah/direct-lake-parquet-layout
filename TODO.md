@@ -64,45 +64,6 @@ geometry one and should not be bundled with it.
 
 ---
 
-## tpcds has never been generated, and four grid slots a week die on it
-
-`download_tpcds.py` is complete and works. Nobody has ever run it, so `dbt_tpcds_landing/Files` is
-empty and every scheduled tpcds cell fails — run 33734219062 got 29 models into the spark leg, with
-a Livy session already acquired, before hitting
-
-```
-[PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/customer_address
-```
-
-**A scheduled run cannot fix this by itself** and that is by design, not a bug: `land` only runs a
-downloader when `skip_download` is off, and a scheduled run forces it ON so that every scheduled
-build measures the same archive. The generation has to be a hand dispatch.
-
-`land` now refuses an empty archive on the free runner (`check_landing.py`), so the weekly cost is a
-runner minute rather than Fabric compute, and the message names the dataset and the dispatch. That
-guard does not land the data — this does, and it is still outstanding:
-
-```bash
-gh workflow run Benchmark -f dataset=tpcds -f skip_download=false    -f download_limit=10 -f build=false -f benchmark=false
-```
-
-**SF10.** `download_limit` IS the scale factor here — 26,206,837 `store_sales` rows against SF100's
-262,082,396 — and it is enough to exercise the generator, the 30 models, all four engines and the
-DAX suite. **There is no external result to match**, so nothing forces a larger one: this dataset is
-measured against the other five in this repo and nothing outside it. Go bigger only if a number here
-turns out to need it.
-
-⚠️ **SF100 WOULD NOT BE "THE SAME BUT BIGGER".** dsdgen materialises a whole scale factor in memory,
-so a Fabric notebook at `cores=8` may not hold it, and a failed generation still spends the compute.
-Raise `cores` for such a dispatch, and read `--status` first (`python download_tpcds.py --status`) —
-it answers "has this already happened" without creating anything.
-
-`build=false -f benchmark=false` because generating is the whole job: there is nothing to measure
-until it has happened, and the same dispatch doing both would put a first-ever build behind a
-first-ever generation.
-
----
-
 ## DuckDB `main` cannot commit an Iceberg CTAS — do not move the pin
 
 `v2.1.0-alpha40144` (source `780c7c743f`) dies on the smoke workflow's plain round-trip:

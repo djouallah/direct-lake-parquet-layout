@@ -19,7 +19,7 @@ def guard(monkeypatch):
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     monkeypatch.setenv("FILES_PATH", "abfss://ws@onelake.dfs.fabric.microsoft.com/g/Files")
-    monkeypatch.setenv("DATASET", "tpcds")
+    monkeypatch.setenv("DATASET", "cms")
     return mod
 
 
@@ -37,8 +37,8 @@ def test_an_empty_archive_is_refused(guard, monkeypatch, capsys):
     # The remedy has to be IN the message: whoever reads this is looking at a red scheduled run on a
     # dataset they did not dispatch, and the fix is a hand dispatch they have no reason to know about.
     assert "gh workflow run Benchmark" in said and "skip_download=false" in said
-    assert "tpcds" in said, "names the dataset, so a grid failure says which cell"
-    assert "SCALE FACTOR" in said, "tpcds reinterprets download_limit and a wrong value is expensive"
+    assert "cms" in said, "names the dataset, so a grid failure says which cell"
+    assert "PROGRAM YEARS" in said, "download_limit is reinterpreted per dataset"
 
 
 def test_a_populated_archive_passes(guard, monkeypatch, capsys):
@@ -51,7 +51,7 @@ def test_a_half_drained_archive_passes(guard, monkeypatch):
     """`download_limit` EXISTS to produce one, so a partial archive is a normal state and refusing it
     would block the ordinary way of extending a dataset. The guard checks for NOTHING AT ALL, never
     for completeness — it does not read the archive log or the table set."""
-    _listing(guard, monkeypatch, [("parquet_raw/store_sales/a.parquet", 512)])
+    _listing(guard, monkeypatch, [("csv_raw/2019/a.csv", 512)])
     assert guard.main() == 0
 
 

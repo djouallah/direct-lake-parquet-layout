@@ -1,19 +1,19 @@
 """Refuse a build whose landing archive is EMPTY, in the free job, before any compute is spent.
 
-WHAT THIS COSTS TO NOT HAVE, measured: run 33734219062 was a scheduled `tpcds` cell. `land`
-provisioned the lakehouse and reported success, `plan` was green, and the spark leg then acquired a
-Livy session and failed 29 models deep on
+WHAT THIS COSTS TO NOT HAVE, measured: run 33734219062 was a scheduled cell for a dataset nobody
+had landed yet. `land` provisioned the lakehouse and reported success, `plan` was green, and the
+spark leg then acquired a Livy session and failed 29 models deep on
 
-    [PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/customer_address
+    [PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/…
 
-because nothing had ever been generated into that archive. Every tpcds slot of the weekly grid does
-this — four a week, each spending Fabric compute to discover that its input is not there.
+because nothing had ever been written into that archive. It was not one bad dispatch: a whole ROW
+of the weekly grid did this, each cell spending Fabric compute to discover its input is not there.
 
-**IT IS THE SCHEDULE THAT MAKES THIS UNREACHABLE, NOT A BUG IN THE GENERATOR.** `download_tpcds.py`
-is complete and works; but `land` only runs a downloader when `skip_download` is off, and a
-scheduled run FORCES it on (benchmark.yml: `github.event_name == 'schedule' || inputs.skip_download`)
-so that every scheduled build measures the same archive. So a dataset whose landing has never been
-populated by hand can never populate itself, and the grid rediscovers that weekly.
+**IT IS THE SCHEDULE THAT MAKES THIS UNREACHABLE, NOT A BUG IN THE DOWNLOADER.** `land` only runs a
+downloader when `skip_download` is off, and a scheduled run FORCES it on (benchmark.yml:
+`github.event_name == 'schedule' || inputs.skip_download`) so that every scheduled build measures
+the same archive. So a dataset whose landing has never been populated by hand can never populate
+itself, and the grid rediscovers that weekly.
 
 THE CHECK IS A LISTING, NOT A QUERY, and it is deliberately the dumbest possible one: are there any
 bytes under `Files` that are not duckrun's own round-trip directory? It does NOT check the archive
@@ -91,9 +91,8 @@ def main():
         "Land it once, by hand:\n\n"
         f"  gh workflow run Benchmark -f dataset={dataset} -f skip_download=false \\\n"
         "     -f build=false -f benchmark=false -f download_limit=<N>\n\n"
-        "`download_limit` is a file count on most datasets, PROGRAM YEARS on cms, and the dsdgen\n"
-        "SCALE FACTOR (1, 10 or 100) on tpcds — where landing generates rather than downloads and\n"
-        "is a one-off that spends Fabric compute. See TODO.md before picking a value.\n")
+        "`download_limit` is a file count on most datasets and PROGRAM YEARS on cms. See\n"
+        "TODO.md before picking a value.\n")
     return 1
 
 

@@ -598,126 +598,6 @@ CMS_QUERIES = [
      'fct_cms_payments[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID] = {key}, '
      'dim_cms_date[year] = 2019, dim_cms_date[month] = 6))'),
 ]
-def _paper_queries():
-    """The paper's fifteen visual queries, from the vendored capture, as `(tier, name, dax)`.
-
-    A FUNCTION AND A DATA FILE RATHER THAN LITERALS, unlike every other suite here, because these
-    are ~1-3 KB each of Performance Analyzer boilerplate that nobody should read inline and nobody
-    may edit: the whole value is that they are the capture byte for byte. `paper_queries.json`
-    carries the upstream repo, commit and path beside them, so the vendoring can be re-fetched and
-    diffed. Reading it costs one file open at import, the same moment every other suite's literals
-    are built.
-
-    The one edit is `'Measures 1'[X]` -> `[X]` — see the block comment below.
-    """
-    import json
-    import pathlib
-    doc = json.loads((pathlib.Path(__file__).with_name("paper_queries.json"))
-                     .read_text(encoding="utf-8"))
-    out = []
-    for q in doc["queries"]:
-        dax = q["dax"].replace("'Measures 1'[", "[")
-        # Loud rather than silently mis-measuring: a qualifier left behind would send the query at a
-        # table our model does not have, and the leg would fail on a name nobody recognises.
-        assert "'Measures 1'" not in dax, q["name"]
-        out.append(("composite", q["name"], dax))
-    return out
-
-
-# ---------------------------------------------------------------------------- the TPC-DS suite
-#
-# THE ONLY SUITE HERE THAT RUNS SOMEONE ELSE'S QUERIES RATHER THAN ASKING ITS OWN. The other five
-# exist to measure a surface; this dataset borrows the star schema and the DAX of the Data Leaps /
-# Microsoft white paper *Modern Power BI Architecture Choices for Reporting on Azure Databricks*,
-# so its composite tier IS that paper's queries and the probes and ladder around them are the
-# harness's own instrument, in the shape every other suite uses.
-#
-# THE QUERIES ARE THE PUBLISHED CAPTURE, VERBATIM, and this REVERSES what this file used to say.
-# It read "THE PAPER'S LITERAL DAX IS NOT AVAILABLE, AND THESE ARE A RECONSTRUCTION ... the
-# companion repository is gone", and carried ten EVALUATEs written from the paper's figures. The
-# companion repo is live at github.com/lipinght/DB-DQ-Whitepaper (renamed from
-# `Fab-DL-DB-DQ-Whitepaper`, which is the name the PDF cites and which 404'd for a while) and ships
-# the Performance Analyzer capture itself. `benchmark/paper_queries.json` is that file's
-# `Execute DAX Query` events, vendored with their commit, and `_paper_queries()` below turns them
-# into this tier. Nothing is paraphrased any more.
-#
-# WHAT THE RECONSTRUCTION GOT WRONG, which is the reason to prefer the capture beyond provenance:
-# it modelled the paper's scenarios as "unfiltered" and "all six slicers". **There is no unfiltered
-# round.** The capture is one session of THREE rounds that add slicers progressively — round 1
-# filters `ca_state = "AR"` and an education status, round 2 adds `s_manager`, round 3 adds
-# `cp_type` and `sm_carrier` — so every query carries at least two slicers and the axis is how many,
-# not whether. Five visuals x three rounds is the fifteen queries here.
-#
-# THE NINE SLICER QUERIES ARE NOT REPLAYED. The paper's reported results exclude slicer
-# interactions, and the three that need a `Time Unit` field-parameter table are all slicer queries —
-# so dropping them costs nothing and keeps the semantic model free of a table that exists only to
-# serve a query we do not report.
-#
-# ONE NORMALISATION, AND IT IS TEXTUAL RATHER THAN SEMANTIC. The capture writes measures fully
-# qualified against the report's measure-holder table, `'Measures 1'[Store Revenue]`. Our model
-# carries the identical measures on their own fact tables, so `_paper_queries()` strips the
-# qualifier and leaves `[Store Revenue]` — an unqualified measure reference, which DAX resolves
-# regardless of home table. Every other byte is the capture's.
-#
-# THE `cache_buster < 2` PREDICATE IS LEFT AS CAPTURED. The paper's load tester rewrites the literal
-# to a random bound per virtual user to defeat the query cache. This harness measures cold, warm and
-# hot deliberately — defeating the cache would destroy the warm and hot tiers, which are the point.
-TPCDS_QUERIES = [
-    # --- Tier 1: per-column probes over the mart (rowcount LAST -- see the note at the top) ---
-    ("probe", "probe_ext_sales_price",
-     'EVALUATE ROW("x", SUM(store_sales[ss_ext_sales_price]))'),
-    ("probe", "probe_quantity", 'EVALUATE ROW("x", SUM(store_sales[ss_quantity]))'),
-    ("probe", "probe_item", 'EVALUATE ROW("x", DISTINCTCOUNT(store_sales[ss_item_sk]))'),
-    ("probe", "probe_customer", 'EVALUATE ROW("x", DISTINCTCOUNT(store_sales[ss_customer_sk]))'),
-    ("probe", "probe_store", 'EVALUATE ROW("x", DISTINCTCOUNT(store_sales[ss_store_sk]))'),
-    ("probe", "probe_sold_date",
-     'EVALUATE ROW("x", COUNTROWS(VALUES(store_sales[ss_sold_date_sk])))'),
-    ("probe", "probe_rowcount", 'EVALUATE ROW("x", COUNTROWS(store_sales))'),
-
-    # --- Tier 2: THE PAPER'S FIFTEEN VISUAL QUERIES, verbatim from the published capture ---
-    *_paper_queries(),
-
-    # --- Tier 2 (cont.): the harness's own two, so column-width scaling is comparable across
-    #     datasets. Not the paper's; kept because every other suite carries them.
-    ("composite", "wide_all_measures",
-     'EVALUATE SUMMARIZECOLUMNS(date_dim[d_year], "a", [Store Revenue], "b", [Store Net Profit], '
-     '"c", [Store Distinct Customers], "d", [Catalog Revenue], "e", [Catalog Sales Quantity])'),
-    ("composite", "narrow_one_measure",
-     'EVALUATE SUMMARIZECOLUMNS(date_dim[d_year], "a", [Store Revenue])'),
-    # The catalog side of the star, which the paper's five queries reach only through promotion and
-    # the date. Without these, ship_mode and catalog_page would be tables the suite never touches.
-    ("composite", "catalog_by_ship_mode_x_year",
-     'EVALUATE SUMMARIZECOLUMNS(ship_mode[sm_type], date_dim[d_year], '
-     '"Revenue", [Catalog Revenue], "Qty", [Catalog Sales Quantity])'),
-    ("composite", "catalog_by_page_type",
-     'EVALUATE SUMMARIZECOLUMNS(catalog_page[cp_type], '
-     '"Revenue", [Catalog Revenue], "Profit", [Catalog Net Profit])'),
-
-    # --- Tier 3: the RAW table. One, because the star is eleven tables of which only the log is
-    #     landing-tier -- the same rule as nyc, not aemo's six.
-    ("raw", "raw_archive_log",
-     'EVALUATE SUMMARIZECOLUMNS(stg_tpcds_archive_log[source_type], '
-     '"Files", [Archive Files], "Rows", [Archive Source Rows])'),
-
-    # --- Tier 4: selectivity ladder on the store key (SUMX lifts the work above the XMLA floor) ---
-    ("hot_only", "sel_1yr",
-     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
-     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), date_dim[d_year] = 2022))'),
-    ("hot_only", "sel_1mo",
-     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
-     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), '
-     'date_dim[d_year] = 2022, date_dim[d_moy] = 6))'),
-    ("hot_only", "sel_1store",
-     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
-     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), '
-     'store_sales[ss_store_sk] = {key}))'),
-    ("hot_only", "sel_1store_1mo",
-     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
-     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), '
-     'store_sales[ss_store_sk] = {key}, date_dim[d_year] = 2022, date_dim[d_moy] = 6))'),
-]
-
-
 # The ladder's filter value is resolved from the data AFTER pass 1, per dataset. Three things per
 # suite: the queries, the DAX that finds the busiest key, and what to CALL it in the log and the
 # report — because "top DUID: 132" on a taxi run is exactly the quiet mislabel this repo is against.
@@ -775,19 +655,6 @@ SUITES = {
         "quote": True,
         "ready": 'EVALUATE ROW("n", COUNTROWS(dim_cms_date))',
     },
-    # tpcds's ss_store_sk is a BIGINT surrogate key, so it is NOT quoted -- see the note on `quote`
-    # above; an unquoted string would match nothing silently, and a quoted integer is the same trap
-    # from the other side. It resolves on [Store Revenue] rather than a row count because that is
-    # the measure the paper's own report ranks by, and the readiness probe reads THIS dataset's date
-    # dimension, which is `date_dim` and not any of the five `dim_*` spellings above.
-    "tpcds": {
-        "queries": TPCDS_QUERIES,
-        "label": "busiest store",
-        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(store_sales[ss_store_sk], '
-                   '"m", [Store Revenue]), [m], DESC)',
-        "quote": False,
-        "ready": 'EVALUATE ROW("n", COUNTROWS(date_dim))',
-    },
 }
 
 # EVERY DAX STRING IN THIS FILE IS REACHABLE FROM `SUITES`, and that is the invariant, not a
@@ -795,7 +662,7 @@ SUITES = {
 # `queries`, so a test checking only the query list checks two thirds of the file — which is exactly
 # how a hardcoded `dim_calendar` reached an NYC model that has `dim_date`, and cost the whole
 # benchmark job to sixteen readiness retries. benchmark/test_templates.py now walks
-# queries + resolve + ready for BOTH datasets against their own templates. Any new DAX belongs in
+# queries + resolve + ready for EVERY dataset against their own templates. Any new DAX belongs in
 # this dict, not in a function body.
 DAX_KEYS = ("resolve", "ready")
 

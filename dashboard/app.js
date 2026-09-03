@@ -82,11 +82,7 @@ export const SERVER = "https://github.com";
 // about. `?dataset=` picks the mart with it; `?table=` still overrides, for asking an odd question
 // of one of the other shared tables.
 export const DATASET_TABLE = { aemo: "fct_summary", nyc: "fct_trips", bts: "fct_flights",
-                               green: "fct_green_trips", cms: "fct_cms_payments",
-                               // tpcds is the one dataset with TWO fact tables. This names the one
-                               // under layout test -- the registry's `mart` -- and `?table=` reaches
-                               // catalog_sales for anyone who wants to look at it.
-                               tpcds: "store_sales" };
+                               green: "fct_green_trips", cms: "fct_cms_payments" };
 
 /**
  * The per-dataset facts the PROSE needs, kept beside `DATASET_TABLE` rather than in a registry of
@@ -106,9 +102,6 @@ export const DATASET_INFO = {
   bts: { label: "BTS flights", archive: "BTS on-time parquet", landing: "dbt_bts_landing" },
   green: { label: "Green taxi", archive: "raw TLC parquet", landing: "dbt_green_landing" },
   cms: { label: "CMS Open Payments", archive: "annual CMS CSV", landing: "dbt_cms_landing" },
-  // The one dataset whose archive is GENERATED rather than downloaded, which is what the `archive`
-  // sentence has to say -- "raw TPC-DS parquet" would read as though someone published it.
-  tpcds: { label: "TPC-DS", archive: "DuckDB dsdgen parquet", landing: "dbt_tpcds_landing" },
 };
 
 export function datasetInfo(dataset) {
@@ -119,15 +112,6 @@ export function datasetInfo(dataset) {
 // mart's column list per dataset. `cutoff` is aemo-only and derived; `file` is on both marts but is
 // the incremental key rather than data, so neither is worth a column on a page about encodings.
 export const DATASET_MART_COLUMNS = {
-  // store_sales' own select list, in its own order: dsdgen's 23 columns plus `cache_buster`,
-  // which the white paper adds and nothing here reads. No `file` column -- this is the only fact in
-  // the project that is rebuilt whole rather than incremented a file at a time.
-  tpcds: [
-    "ss_sold_date_sk", "ss_sold_time_sk", "ss_item_sk", "ss_customer_sk", "ss_cdemo_sk",
-    "ss_hdemo_sk", "ss_addr_sk", "ss_store_sk", "ss_promo_sk", "ss_ticket_number", "ss_quantity",
-    "ss_wholesale_cost", "ss_list_price", "ss_sales_price", "ss_ext_discount_amt",
-    "ss_ext_sales_price", "ss_ext_wholesale_cost", "ss_ext_list_price", "ss_ext_tax",
-    "ss_coupon_amt", "ss_net_paid", "ss_net_paid_inc_tax", "ss_net_profit", "cache_buster"],
   aemo: ["date", "time", "DUID", "mw", "price", "cutoff"],
   // fct_trips' own select list, in its own order — the 17 source columns plus the two derived
   // ones. `file` IS listed, unlike aemo where the mart has no such column: it is a real stored

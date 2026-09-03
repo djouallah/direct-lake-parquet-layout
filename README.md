@@ -456,7 +456,6 @@ that surface, and is marked as such:
 | `bts` | US on-time flights, monthly zipped CSV from TranStats | `fct_flights` — 180M rows, **22 columns** | independent *moderate* skew — many categoricals competing for one sort budget |
 | `green` | NYC green-taxi trips, monthly parquet from TLC's CDN | `fct_green_trips` — 84M rows, **20 columns** | nyc's skew regime at 1/7 the rows |
 | `cms` | CMS Open Payments, annual CSV | `fct_cms_payments` — 88M rows, **91 columns** | wide and sparse — **54 columns >50% NULL** — with both skew regimes in one table |
-| `tpcds` | TPC-DS, generated with DuckDB `dsdgen` | `store_sales` — 26M rows at SF10, **24 columns** | *synthetic, and not a surface point.* the star schema and the five composite DAX queries from *Modern Power BI Architecture Choices for Reporting on Azure Databricks*, borrowed as a test dataset — the shape and the queries, not the paper's numbers |
 
 Four writers produce the same rows from the same landed files, selected by dbt target — the
 parquet each writes is the only variable:
@@ -541,9 +540,8 @@ it is never staler than the ledger under it:
 | green | `writeHeavy` | **1,568** | 78% | **2,656** | 94% | 84.3M | 3.4M | 1,623 |
 | nyc | `readHeavyForPBI` | **12,068** | 100% | **6,351** | 100% | 591.7M | 5.7–10.4M | 5,850–5,867 |
 | nyc | `writeHeavy` | **11,758** | 97% | **8,616** | 136% | 591.7M | 5.8–10.4M | 9,200–9,291 |
-| tpcds | `writeHeavy` | **1,393** | — | **—** | — | — | — | — |
 
-V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes, `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no), `writeHeavy` no (bts yes, tpcds —).
+V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes, `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no), `writeHeavy` no (bts yes).
 
 <!-- spark-profiles:end -->
 

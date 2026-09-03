@@ -71,27 +71,8 @@ CASES = [
     ("zero geometry", {"row_group_size": "0"}, False),
     ("unknown engine", {"engines": "nope"}, False),
     ("unknown dataset", {"dataset": "taxi"}, False),
-    # --- tpcds: `download_limit` is the dsdgen SCALE FACTOR there, and `plan` is the only thing
-    # standing between a wrong one and a Fabric notebook generating a volume nobody chose. The
-    # refusal only fires when the download is actually going to run.
-    ("auto on tpcds", {"dataset": "tpcds", "engines": "spark"}, True),
-    ("tpcds landing at sf10", {"dataset": "tpcds", "skip_download": "false",
-                               "download_limit": "10"}, True),
-    ("tpcds landing at sf1", {"dataset": "tpcds", "skip_download": "false",
-                              "download_limit": "1"}, True),
-    ("tpcds landing at sf100", {"dataset": "tpcds", "skip_download": "false",
-                                "download_limit": "100"}, True),
-    # The form's own default reaches this check unchanged, and it is not a scale factor.
-    ("tpcds refuses the form default", {"dataset": "tpcds", "skip_download": "false",
-                                        "download_limit": "200"}, False),
-    ("tpcds refuses sf1000", {"dataset": "tpcds", "skip_download": "false",
-                              "download_limit": "1000"}, False),
-    ("tpcds refuses a non-numeric scale factor", {"dataset": "tpcds", "skip_download": "false",
-                                                  "download_limit": "ten"}, False),
-    # Skipping the download makes the value inert, so a stale 200 must NOT fail a build-only run.
-    ("tpcds ignores the limit when skipping", {"dataset": "tpcds", "skip_download": "true",
-                                               "download_limit": "200"}, True),
-    # ...and no other dataset gains a refusal from this: they declare no `download_limits`.
+    # No dataset declares `download_limits` today (it is a registry capability, not any one
+    # dataset's), so nothing here is refused on the limit and a stale 200 is inert.
     ("cms keeps taking a file count", {"dataset": "cms", "skip_download": "false",
                                        "download_limit": "200"}, True),
 ]
