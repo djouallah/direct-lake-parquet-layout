@@ -104,17 +104,18 @@ what it can actually check: that what was landed is what was written.
 which is the exact ground Contoso was rejected on — and that rejection stands. This one is admitted
 for a different purpose, and reading it as a sixth surface point is the misuse to guard against.
 
-It rebuilds the Data Leaps / Microsoft white paper *Modern Power BI Architecture Choices for
-Reporting on Azure Databricks* (June–July 2026): 2 fact tables, 8 dimensions, and that paper's
-section 4.5 customisation. The paper finds Direct Lake over **mirrored Unity Catalog tables** the
-slowest pattern at SF100 and SF1000 — and its mirrored arm was also the worst-laid-out of its four,
-with no V-Order, no liquid clustering (V2 checkpoints blocked mirroring at the time) and only
-`OPTIMIZE ZORDER BY`, landing as 110 files / 12 GB at SF100 while the Fabric arm got V-Order, ZSTD,
-optimize write and partitioning. `c:/dbx_vertipaq` builds the same rows inside Databricks with the
-duckrun parquet-layout profile and mirrors them; this dataset is the other half of that comparison —
-the **same rows** written by this project's four engines, so the V-Order reference (spark
-`readHeavyForPBI`, and dwh's own V-Order) and a duckrun-layout twin are measured by the same DAX in
-the same capacity. Neither half means much without the other.
+**IT IS A DATASET HERE, NOT A REPRODUCTION OF SOMEONE ELSE'S RESULT.** What is borrowed from the
+Data Leaps / Microsoft white paper *Modern Power BI Architecture Choices for Reporting on Azure
+Databricks* (June–July 2026) is the SHAPE and the QUERIES: 2 fact tables, 8 dimensions, that paper's
+section 4.5 customisation, and its five composite DAX queries. Nothing here depends on the paper's
+own numbers, and this dataset is not one half of a comparison with anything outside this repo — it
+is measured by the same four engines, the same layout knobs and the same DAX suite as the other
+five, and its rows read against each other and nothing else.
+⚠️ **THIS REVERSES WHAT THIS FILE USED TO SAY.** It described the dataset as the Fabric half of a
+paired experiment with a Databricks build, ending "neither half means much without the other". That
+pairing is not the purpose and was never run; do not reintroduce it, and do not make a scale factor
+or a layout choice here to match anything external. SF10 is a scale factor because it is enough to
+measure, not because another system is sitting at it.
 
 Six things about it differ from every other dataset here, and each is the dataset's nature rather
 than a shortcut:

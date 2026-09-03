@@ -86,19 +86,16 @@ guard does not land the data — this does, and it is still outstanding:
 gh workflow run Benchmark -f dataset=tpcds -f skip_download=false    -f download_limit=10 -f build=false -f benchmark=false
 ```
 
-**SF10, not SF100, and not because SF100 is wrong.** `download_limit` IS the scale factor here, and
-the Databricks twin's own README prescribes the order — *"smoke test at SF10 (minutes end to end),
-then the paper's tipping point"*. SF10 is 26,206,837 `store_sales` rows against SF100's 262,082,396,
-and it proves the generator, the 30 models and all four legs for a fraction of the compute. The
-paper's mirrored-vs-Fabric result is stated at SF100, so **the twin comparison needs a second
-one-off at SF100 before it means anything** — `c:/dbx_vertipaq` builds the same rows on the
-Databricks side and both halves must sit at the same scale factor.
+**SF10.** `download_limit` IS the scale factor here — 26,206,837 `store_sales` rows against SF100's
+262,082,396 — and it is enough to exercise the generator, the 30 models, all four engines and the
+DAX suite. **There is no external result to match**, so nothing forces a larger one: this dataset is
+measured against the other five in this repo and nothing outside it. Go bigger only if a number here
+turns out to need it.
 
-⚠️ **SF100 IS NOT JUST "THE SAME BUT BIGGER".** dsdgen materialises a whole scale factor in memory;
-the Databricks side used a 256 GB node for SF100 and a Fabric notebook at `cores=8` may not hold it.
-A failed generation still spends the compute. Raise `cores` for that dispatch, and read the
-`--status` mode first (`python download_tpcds.py --status`) — it answers "has this already happened"
-without creating anything.
+⚠️ **SF100 WOULD NOT BE "THE SAME BUT BIGGER".** dsdgen materialises a whole scale factor in memory,
+so a Fabric notebook at `cores=8` may not hold it, and a failed generation still spends the compute.
+Raise `cores` for such a dispatch, and read `--status` first (`python download_tpcds.py --status`) —
+it answers "has this already happened" without creating anything.
 
 `build=false -f benchmark=false` because generating is the whole job: there is nothing to measure
 until it has happened, and the same dispatch doing both would put a first-ever build behind a

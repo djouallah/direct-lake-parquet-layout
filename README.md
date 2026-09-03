@@ -456,7 +456,7 @@ that surface, and is marked as such:
 | `bts` | US on-time flights, monthly zipped CSV from TranStats | `fct_flights` — 180M rows, **22 columns** | independent *moderate* skew — many categoricals competing for one sort budget |
 | `green` | NYC green-taxi trips, monthly parquet from TLC's CDN | `fct_green_trips` — 84M rows, **20 columns** | nyc's skew regime at 1/7 the rows |
 | `cms` | CMS Open Payments, annual CSV | `fct_cms_payments` — 88M rows, **91 columns** | wide and sparse — **54 columns >50% NULL** — with both skew regimes in one table |
-| `tpcds` | TPC-DS, generated with DuckDB `dsdgen` | `store_sales` — 262M rows at SF100, **24 columns** | *synthetic, and not a surface point.* the *Modern Power BI Architecture Choices for Reporting on Azure Databricks* subset, rebuilt so the paper's own five DAX queries can be re-run against a different Delta layout |
+| `tpcds` | TPC-DS, generated with DuckDB `dsdgen` | `store_sales` — 26M rows at SF10, **24 columns** | *synthetic, and not a surface point.* the star schema and the five composite DAX queries from *Modern Power BI Architecture Choices for Reporting on Azure Databricks*, borrowed as a test dataset — the shape and the queries, not the paper's numbers |
 
 Four writers produce the same rows from the same landed files, selected by dbt target — the
 parquet each writes is the only variable:
