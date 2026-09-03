@@ -598,49 +598,70 @@ CMS_QUERIES = [
      'fct_cms_payments[Applicable_Manufacturer_or_Applicable_GPO_Making_Payment_ID] = {key}, '
      'dim_cms_date[year] = 2019, dim_cms_date[month] = 6))'),
 ]
+def _paper_queries():
+    """The paper's fifteen visual queries, from the vendored capture, as `(tier, name, dax)`.
+
+    A FUNCTION AND A DATA FILE RATHER THAN LITERALS, unlike every other suite here, because these
+    are ~1-3 KB each of Performance Analyzer boilerplate that nobody should read inline and nobody
+    may edit: the whole value is that they are the capture byte for byte. `paper_queries.json`
+    carries the upstream repo, commit and path beside them, so the vendoring can be re-fetched and
+    diffed. Reading it costs one file open at import, the same moment every other suite's literals
+    are built.
+
+    The one edit is `'Measures 1'[X]` -> `[X]` — see the block comment below.
+    """
+    import json
+    import pathlib
+    doc = json.loads((pathlib.Path(__file__).with_name("paper_queries.json"))
+                     .read_text(encoding="utf-8"))
+    out = []
+    for q in doc["queries"]:
+        dax = q["dax"].replace("'Measures 1'[", "[")
+        # Loud rather than silently mis-measuring: a qualifier left behind would send the query at a
+        # table our model does not have, and the leg would fail on a name nobody recognises.
+        assert "'Measures 1'" not in dax, q["name"]
+        out.append(("composite", q["name"], dax))
+    return out
+
 
 # ---------------------------------------------------------------------------- the TPC-DS suite
 #
-# THE ONLY SUITE HERE THAT REPRODUCES SOMEONE ELSE'S QUERIES RATHER THAN ASKING ITS OWN. The other
-# five exist to measure a surface; this one exists so the Data Leaps / Microsoft white paper *Modern
-# Power BI Architecture Choices for Reporting on Azure Databricks* can be re-run against a different
-# Delta layout, alongside the Databricks arm in c:/dbx_vertipaq. So the composite tier IS the
-# paper's five test queries and nothing else, and the probes and the ladder around them are the
-# harness's own instrument, kept in the shape every other suite uses.
+# THE ONLY SUITE HERE THAT RUNS SOMEONE ELSE'S QUERIES RATHER THAN ASKING ITS OWN. The other five
+# exist to measure a surface; this dataset borrows the star schema and the DAX of the Data Leaps /
+# Microsoft white paper *Modern Power BI Architecture Choices for Reporting on Azure Databricks*,
+# so its composite tier IS that paper's queries and the probes and ladder around them are the
+# harness's own instrument, in the shape every other suite uses.
 #
-# ⚠️ THE PAPER'S LITERAL DAX IS NOT AVAILABLE, AND THESE ARE A RECONSTRUCTION. Section 6.3 names the
-# five queries and says their full text is in Appendix 4; section 11 shows Appendix 4 is an external
-# attachment, and it is not published -- the companion repository is gone. What the paper DOES carry
-# is enough to fix every degree of freedom that changes what the engine does:
+# THE QUERIES ARE THE PUBLISHED CAPTURE, VERBATIM, and this REVERSES what this file used to say.
+# It read "THE PAPER'S LITERAL DAX IS NOT AVAILABLE, AND THESE ARE A RECONSTRUCTION ... the
+# companion repository is gone", and carried ten EVALUATEs written from the paper's figures. The
+# companion repo is live at github.com/lipinght/DB-DQ-Whitepaper (renamed from
+# `Fab-DL-DB-DQ-Whitepaper`, which is the name the PDF cites and which 404'd for a while) and ships
+# the Performance Analyzer capture itself. `benchmark/paper_queries.json` is that file's
+# `Execute DAX Query` events, vendored with their commit, and `_paper_queries()` below turns them
+# into this tier. Nothing is paraphrased any more.
 #
-#   * Figure 4.4.1, the model diagram, names the measures verbatim -- Catalog Revenue, Catalog Sales
-#     Quantity, Catalog Sales Same Period LY, Catalog Sales YoY, Store Distinct Customers, Store Net
-#     Profit, Store Profit % by Item Category, Store Revenue -- and shows the relationships and each
-#     table's column subset.
-#   * Figure 6.1.1, the test report page, shows the five visuals and what each groups by: a Customer
-#     Count card; a "Store Profit % Split by Category" donut over i_category; a "Catalog Revenue
-#     Ranked by Promotion" bar over p_promo_name; a "Catalog Sales Quantity YoY" combo over quarters
-#     with three named series; and a "Store Revenue Time Analysis" matrix of category by quarter
-#     carrying revenue, YoY and YTD.
+# WHAT THE RECONSTRUCTION GOT WRONG, which is the reason to prefer the capture beyond provenance:
+# it modelled the paper's scenarios as "unfiltered" and "all six slicers". **There is no unfiltered
+# round.** The capture is one session of THREE rounds that add slicers progressively — round 1
+# filters `ca_state = "AR"` and an education status, round 2 adds `s_manager`, round 3 adds
+# `cp_type` and `sm_carrier` — so every query carries at least two slicers and the axis is how many,
+# not whether. Five visuals x three rounds is the fifteen queries here.
 #
-# What is NOT recoverable is the Performance Analyzer boilerplate. That is why these are written as
-# plain EVALUATEs: pretending to a capture we do not have would be worse than saying so here.
+# THE NINE SLICER QUERIES ARE NOT REPLAYED. The paper's reported results exclude slicer
+# interactions, and the three that need a `Time Unit` field-parameter table are all slicer queries —
+# so dropping them costs nothing and keeps the semantic model free of a table that exists only to
+# serve a query we do not report.
 #
-# ONE THING THE MISSING TEXT COSTS NOTHING. Query 3 is described as "rank based on sum, implemented
-# as a visual calculation". A visual calculation is evaluated on the visual's RESULT SET, not by the
-# storage engine, so the captured query underneath it is the plain sorted aggregation written below
-# -- the rank adds no engine work in either version.
+# ONE NORMALISATION, AND IT IS TEXTUAL RATHER THAN SEMANTIC. The capture writes measures fully
+# qualified against the report's measure-holder table, `'Measures 1'[Store Revenue]`. Our model
+# carries the identical measures on their own fact tables, so `_paper_queries()` strips the
+# qualifier and leaves `[Store Revenue]` — an unqualified measure reference, which DAX resolves
+# regardless of home table. Every other byte is the capture's.
 #
-# THE PAPER'S FILTER SCENARIOS ARE 1 AND 3 HERE. Its scenario 1 is the unfiltered page and its
-# scenario 3 applies all six slicers; both are below, as `q<N>_...` and `q<N>_filtered_...`. Its
-# scenario 2 filters only the columns its Composite Model's aggregation tables cover, and there is
-# no Composite Model in this project, so that scenario has no counterpart and is deliberately absent.
-#
-# THE YEAR PIN IS 2022, and it is pinned for the opposite reason to bts's 1988 and green's 2014.
-# Those pin the OLDEST year because their archives drain oldest-first and a recent year would filter
-# to nothing. dsdgen emits 2021-2026 whole, so nothing is missing -- but Q5's year-over-year term
-# needs a FULL PRIOR YEAR inside the window, and 2021 has none. 2022 is the first year where the
-# comparison is real rather than a divide by blank.
+# THE `cache_buster < 2` PREDICATE IS LEFT AS CAPTURED. The paper's load tester rewrites the literal
+# to a random bound per virtual user to defeat the query cache. This harness measures cold, warm and
+# hot deliberately — defeating the cache would destroy the warm and hot tiers, which are the point.
 TPCDS_QUERIES = [
     # --- Tier 1: per-column probes over the mart (rowcount LAST -- see the note at the top) ---
     ("probe", "probe_ext_sales_price",
@@ -653,63 +674,8 @@ TPCDS_QUERIES = [
      'EVALUATE ROW("x", COUNTROWS(VALUES(store_sales[ss_sold_date_sk])))'),
     ("probe", "probe_rowcount", 'EVALUATE ROW("x", COUNTROWS(store_sales))'),
 
-    # --- Tier 2: THE PAPER'S FIVE QUERIES, scenario 1 (no slicer selected) ---
-    # Q1 Distinct Count -- the "Customer Count" card. The paper names this its hardest query for
-    # Direct Lake and Direct Lake over Mirrored, so it is the one to read first on any comparison.
-    ("composite", "q1_distinct_count",
-     'EVALUATE ROW("Customer Count", [Store Distinct Customers])'),
-    # Q2 Percentage Share -- the "Store Profit % Split by Category" donut.
-    ("composite", "q2_pct_share",
-     'EVALUATE SUMMARIZECOLUMNS(item[i_category], '
-     '"Share", [Store Profit % by Item Category], "Profit", [Store Net Profit])'),
-    # Q3 Rank based on sum -- the "Catalog Revenue Ranked by Promotion" bar, sorted descending.
-    # TOPN(1001) is the window a bar chart of this size requests; the rank itself is a visual
-    # calculation and never reaches the engine.
-    ("composite", "q3_rank_by_sum",
-     'EVALUATE TOPN(1001, SUMMARIZECOLUMNS(promotion[p_promo_name], '
-     '"Catalog Revenue", [Catalog Revenue]), [Catalog Revenue], DESC)'),
-    # Q4 YoY on the SECOND fact -- the "Catalog Sales Quantity YoY" combo chart, by quarter, with
-    # exactly the three series the paper's legend names.
-    ("composite", "q4_yoy_second_fact",
-     'EVALUATE SUMMARIZECOLUMNS(date_dim[d_quarter_name], '
-     '"Catalog Sales Quantity", [Catalog Sales Quantity], '
-     '"Catalog Sales Same Period LY", [Catalog Sales Same Period LY], '
-     '"Catalog Sales YoY", [Catalog Sales YoY])'),
-    # Q5 YoY and YTD on the LARGEST fact -- the "Store Revenue Time Analysis" matrix, category by
-    # quarter. The heaviest query in the suite and the one the paper's SF100/SF1000 findings lean on.
-    ("composite", "q5_yoy_ytd_large_fact",
-     'EVALUATE SUMMARIZECOLUMNS(item[i_category], date_dim[d_quarter_name], '
-     '"Store Revenue", [Store Revenue], "Store Revenue YoY", [Store Revenue YoY], '
-     '"Store Revenue YTD", [Store Revenue YTD])'),
-
-    # --- Tier 2 (cont.): the same five under the paper's SCENARIO 3, all six slicers applied ---
-    # The slicers are the ones on its report page: Year, Customer State, Customer Education, Store
-    # Manager, Carrier and Catalog Type. Filtering through six dimensions at once is what makes the
-    # cold transcode pay for the dimension key columns as well as the fact's, which is the whole
-    # reason the paper measures a filtered scenario separately.
-    ("composite", "q1_filtered_distinct_count",
-     'EVALUATE CALCULATETABLE(ROW("Customer Count", [Store Distinct Customers]), '
-     'date_dim[d_year] = 2022, customer_address[ca_state] = "CA", '
-     'customer_demographics[cd_education_status] = "College")'),
-    ("composite", "q2_filtered_pct_share",
-     'EVALUATE CALCULATETABLE(SUMMARIZECOLUMNS(item[i_category], '
-     '"Share", [Store Profit % by Item Category]), '
-     'date_dim[d_year] = 2022, customer_address[ca_state] = "CA", '
-     'customer_demographics[cd_education_status] = "College")'),
-    ("composite", "q3_filtered_rank_by_sum",
-     'EVALUATE CALCULATETABLE(TOPN(1001, SUMMARIZECOLUMNS(promotion[p_promo_name], '
-     '"Catalog Revenue", [Catalog Revenue]), [Catalog Revenue], DESC), '
-     'date_dim[d_year] = 2022, ship_mode[sm_carrier] = "UPS", catalog_page[cp_type] = "bi-annual")'),
-    ("composite", "q4_filtered_yoy_second_fact",
-     'EVALUATE CALCULATETABLE(SUMMARIZECOLUMNS(date_dim[d_quarter_name], '
-     '"Catalog Sales Quantity", [Catalog Sales Quantity], '
-     '"Catalog Sales YoY", [Catalog Sales YoY]), '
-     'ship_mode[sm_carrier] = "UPS", catalog_page[cp_type] = "bi-annual")'),
-    ("composite", "q5_filtered_yoy_ytd_large_fact",
-     'EVALUATE CALCULATETABLE(SUMMARIZECOLUMNS(item[i_category], date_dim[d_quarter_name], '
-     '"Store Revenue", [Store Revenue], "Store Revenue YTD", [Store Revenue YTD]), '
-     'customer_address[ca_state] = "CA", '
-     'customer_demographics[cd_education_status] = "College")'),
+    # --- Tier 2: THE PAPER'S FIFTEEN VISUAL QUERIES, verbatim from the published capture ---
+    *_paper_queries(),
 
     # --- Tier 2 (cont.): the harness's own two, so column-width scaling is comparable across
     #     datasets. Not the paper's; kept because every other suite carries them.

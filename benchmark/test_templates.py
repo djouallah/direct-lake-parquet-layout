@@ -151,7 +151,11 @@ def test_every_dax_reference_exists_in_the_model():
         # SUMMARIZECOLUMNS(..., "MWh", [Total MWh]) introduces `[MWh]`, which TOPN then orders by.
         # Every such name arrives as a double-quoted literal in the same query, so collect those.
         local = set(re.findall(r'"([^"]+)"', dax))
-        for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
+        # ...and a QUOTED table is not a bare measure, hence the `'` added to the lookbehind.
+        # A query-local DEFINE COLUMN/MEASURE introduces its own name, so that counts as local too —
+        # the capture's rank visual defines `'__SQDS0VisualCalcs'[Rank]` and then reads `[Rank]`.
+        local |= set(re.findall(r"DEFINE\s+(?:COLUMN|MEASURE)\s+'?\w+'?\[([^\]]+)\]", dax))
+        for meas in re.findall(r"(?<![\w\]'])\[([^\]]+)\]", dax):
             assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
 
 
@@ -322,7 +326,11 @@ def test_the_nyc_dax_suite_only_names_things_the_template_has():
         # A bare [Name] is either a model measure or an EXTENSION COLUMN the query defined itself —
         # SUMMARIZECOLUMNS(..., "Fare", [Total Fare]) introduces `[Fare]`, which TOPN then orders by.
         local = set(re.findall(r'"([^"]+)"', dax))
-        for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
+        # ...and a QUOTED table is not a bare measure, hence the `'` added to the lookbehind.
+        # A query-local DEFINE COLUMN/MEASURE introduces its own name, so that counts as local too —
+        # the capture's rank visual defines `'__SQDS0VisualCalcs'[Rank]` and then reads `[Rank]`.
+        local |= set(re.findall(r"DEFINE\s+(?:COLUMN|MEASURE)\s+'?\w+'?\[([^\]]+)\]", dax))
+        for meas in re.findall(r"(?<![\w\]'])\[([^\]]+)\]", dax):
             assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
 
 
@@ -418,8 +426,21 @@ def _assert_dax_resolves(bim_path, suite):
     m = json.loads(_raw(bim_path))
     cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
     measures = {x["name"] for t in m["model"]["tables"] for x in t.get("measures", [])}
+    # A COLUMN REFERENCE COMES IN TWO SPELLINGS AND BOTH ARE CHECKED. The hand-written suites use
+    # the bare `store_sales[ss_quantity]`; the tpcds tier is a verbatim Performance Analyzer
+    # capture, which always QUOTES the table -- `'customer_address'[ca_state]`. The bare pattern
+    # alone did not merely miss those, it MISFILED them: the measure check below reads any
+    # `[Name]` not preceded by a word character, and a quote is not one, so every quoted column
+    # arrived there and was asserted to be a measure.
+    # `__SQDS0VisualCalcs` is skipped: a visual calculation's table is DEFINEd by the query
+    # itself, so it is correct for the model not to carry it.
+    LOCAL_TABLES = {"__SQDS0VisualCalcs"}
     for name, dax in _dax_strings(suite):
-        for tbl, col in re.findall(r"\b(\w+)\[([^\]]+)\]", dax):
+        refs = (re.findall(r"'([^']+)'\[([^\]]+)\]", dax)          # 'Quoted Table'[col]
+                + re.findall(r"(?<!')\b(\w+)\[([^\]]+)\]", dax))   # bare_table[col]
+        for tbl, col in refs:
+            if tbl in LOCAL_TABLES:
+                continue
             assert tbl in cols, f"{name}: unknown table {tbl!r}"
             assert col in cols[tbl], f"{name}: {tbl} has no column {col!r}"
         # A BARE table argument — `COUNTROWS(dim_calendar)`, `SUMX(fct_trips, ...)` — carries no
@@ -434,7 +455,11 @@ def _assert_dax_resolves(bim_path, suite):
         # A bare [Name] is either a model measure or an EXTENSION COLUMN the query defined itself:
         # SUMMARIZECOLUMNS(..., "MWh", [Total MWh]) introduces `[MWh]`, which TOPN then orders by.
         local = set(re.findall(r'"([^"]+)"', dax))
-        for meas in re.findall(r"(?<![\w\]])\[([^\]]+)\]", dax):
+        # ...and a QUOTED table is not a bare measure, hence the `'` added to the lookbehind.
+        # A query-local DEFINE COLUMN/MEASURE introduces its own name, so that counts as local too —
+        # the capture's rank visual defines `'__SQDS0VisualCalcs'[Rank]` and then reads `[Rank]`.
+        local |= set(re.findall(r"DEFINE\s+(?:COLUMN|MEASURE)\s+'?\w+'?\[([^\]]+)\]", dax))
+        for meas in re.findall(r"(?<![\w\]'])\[([^\]]+)\]", dax):
             assert meas in measures or meas in local, f"{name}: unknown measure [{meas}]"
 
 

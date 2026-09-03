@@ -153,16 +153,29 @@ than a shortcut:
   not a relaxation: RI holds by construction here (the paper drops null fact rows precisely so it
   does) and the generator probes all thirteen relationships and reports the orphan count, which is
   zero.
-- **THE DAX SUITE IS SOMEONE ELSE'S.** Its composite tier is the paper's five queries — distinct
-  count, percentage share, rank, year-over-year on the smaller fact, year-over-year plus year-to-date
-  on the larger — in both the unfiltered and all-slicers scenarios.
-  ⚠️ **THE PAPER'S LITERAL DAX IS UNAVAILABLE AND THESE ARE A RECONSTRUCTION.** Section 6.3 puts the
-  full text in Appendix 4; section 11 shows Appendix 4 is an external attachment and it is not
-  published. What the paper does carry pins every degree of freedom that changes engine work: Figure
-  4.4.1 names the measures verbatim, Figure 6.1.1 gives each visual's grouping and the six slicers.
-  The boilerplate of a Performance Analyzer capture is what is missing. Note Query 3 loses nothing:
-  a visual calculation is evaluated on the visual's result set, so the engine sees the plain sorted
-  aggregation either way.
+- **THE DAX SUITE IS SOMEONE ELSE'S, VERBATIM.** Its composite tier is the paper's own Performance
+  Analyzer capture — five visuals (distinct count, percentage share, rank, year-over-year on the
+  smaller fact, year-over-year plus year-to-date on the larger) across three slicer rounds, fifteen
+  queries. `benchmark/paper_queries.json` holds them with the upstream repo, commit and path;
+  `xmla_compare._paper_queries()` turns them into the tier.
+  ⚠️ **RETRACTED: "THE PAPER'S LITERAL DAX IS UNAVAILABLE AND THESE ARE A RECONSTRUCTION."** It is
+  published — github.com/lipinght/DB-DQ-Whitepaper, `load_test_json/PowerBIPerformanceData.json`.
+  The repo was RENAMED from `Fab-DL-DB-DQ-Whitepaper`, which is the name the PDF's appendix cites
+  and which 404s; that 404 is what the old claim was built on. Ten hand-written EVALUATEs stood in
+  for it and are gone.
+  **THE RECONSTRUCTION ALSO HAD THE SCENARIOS WRONG, which is the reason to prefer the capture
+  beyond provenance.** It modelled them as "unfiltered" and "all six slicers". *There is no
+  unfiltered round* — the capture is one session of three rounds adding slicers progressively (AR;
+  then `s_manager`; then `cp_type` and `sm_carrier`), so every query carries at least two and the
+  axis is HOW MANY, not whether. The old cheap tier was measuring something the paper never ran.
+  Nine slicer queries are not replayed: the paper's reported results exclude slicer interactions,
+  and the three needing a `Time Unit` field-parameter table are all slicer queries, so dropping them
+  costs nothing measured and keeps that table out of the model.
+  One edit, textual: the capture qualifies measures as `'Measures 1'[X]` against the report's
+  measure-holder table, and our model carries the identical measures on their own facts, so the
+  qualifier is stripped — an unqualified measure reference resolves regardless of home table.
+  `cache_buster < 2` is left exactly as captured: the paper's load tester randomises that bound to
+  defeat the query cache, and this harness measures cold/warm/hot on purpose.
 
 **NEVER CITE A tpcds NUMBER AS EVIDENCE ABOUT SKEW.** TPC-DS synthesises skew per column from
 parameterised distributions, independent across columns and across joins — which is precisely the
