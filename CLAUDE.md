@@ -2134,9 +2134,10 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   occur ZERO times in that adapter and its macro package), so what it wrote was whatever the Iceberg
   REST catalog path defaulted to — **1,172 row groups at 0.1M rows**, an order of magnitude off every
   other writer.
-  **That reason is void.** `fabric_run.py` pins `duckdb==1.6.0.dev365` on the iceberg leg (and only
-  that leg — duckrun writes Delta through delta-rs and is untouched), which reworked the iceberg
-  writer: run 32444969823 wrote the same 143,980,961 rows as **3 files / 53 row groups at 2.7M rows**,
+  **That reason is void.** `fabric_run.py` pins `duckdb==1.6.0.dev379` on the iceberg leg (and only
+  that leg — duckrun writes Delta through delta-rs and is untouched); dev365 reworked the iceberg
+  writer, dev379 adds duckdb#24957's footer `encoding_stats`. Run 32444969823, on dev365, wrote the
+  same 143,980,961 rows as **3 files / 53 row groups at 2.7M rows**,
   in family with duckrun's 9-73 and spark's 10-11, at 1,129 MB against the old 1,119.
   ⚠️ **AND THE COST BARELY MOVED, WHICH IS THE FINDING.** directlake CU went **9,288 → 7,923**, about
   −15%, against duckrun's 1,618-3,903. **Geometry was never what made iceberg expensive; the ENCODING
