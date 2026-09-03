@@ -167,11 +167,18 @@ def test_a_temporary_relation_never_carries_the_clause():
 
 
 # The lines the override copies verbatim. Each is a branch the adapter's own macro has and this one
-# must keep: the contract check, the sql_header, the constraints path, the python path.
-COPIED = ("{% set contract_config = config.get('contract') %}",
+# must keep: the SIGNATURE (1.11.0 added `partitioned_by`/`sorted_by` and `incremental.sql` passes
+# them BY KEYWORD, so an older signature fails the leg outright), the contract check, the sql_header,
+# the constraints path, both DuckLake alter calls, and the python path with its new arguments.
+COPIED = ("{% macro duckdb__create_table_as(temporary, relation, compiled_code, language='sql', "
+          "partitioned_by=none, sorted_by=none) -%}",
+          "{% set contract_config = config.get('contract') %}",
           "{%- set sql_header = config.get('sql_header', none) -%}",
           "{{ get_table_columns_and_constraints() }} ;",
-          "{{ py_write_table(temporary=temporary, relation=relation, compiled_code=compiled_code) }}")
+          "{{ duckdb__alter_table_set_partitioned_by(relation, partitioned_by) }}",
+          "{{ duckdb__alter_table_set_sorted_by(relation, sorted_by) }}",
+          "{{ py_write_table(temporary=temporary, relation=relation, compiled_code=compiled_code, "
+          "partitioned_by=partitioned_by, sorted_by=sorted_by) }}")
 
 
 def _upstream_macro_body():
@@ -198,9 +205,21 @@ def test_the_override_still_matches_the_adapter_it_was_copied_from():
     adapter is not installed, so the suite still runs offline."""
     # Whitespace-collapsed on both sides, so a REFLOW upstream — the same call wrapped across two
     # lines — does not read as a semantic change and block every build over a line break.
+    import importlib.metadata as md
+    try:
+        installed = md.version("dbt-duckdb")
+    except md.PackageNotFoundError:                        # pragma: no cover
+        installed = "?"
     flat = lambda t: " ".join(t.split())
     body, ours = flat(_upstream_macro_body()), flat(
         (MACROS / "iceberg_adapter_overrides.sql").read_text(encoding="utf-8"))
     for marker in COPIED:
-        assert flat(marker) in body, f"upstream changed shape; re-copy the macro: {marker!r}"
-        assert flat(marker) in ours, f"the override drifted from upstream: {marker!r}"
+        # NAMING THE INSTALLED VERSION IS THE WHOLE VALUE OF THIS MESSAGE. The first time this fired
+        # it said "upstream changed shape" while the truth was the opposite — the LAPTOP had 1.10.1
+        # and CI had 1.11.0 — and the direction is not guessable from a missing substring.
+        assert flat(marker) in body, (
+            f"dbt-duckdb {installed} does not carry this line, so the override was copied from a "
+            f"different version. Re-copy `duckdb__create_table_as` from the INSTALLED adapter and "
+            f"update COPIED: {marker!r}")
+        assert flat(marker) in ours, (
+            f"the override drifted from dbt-duckdb {installed}: {marker!r}")

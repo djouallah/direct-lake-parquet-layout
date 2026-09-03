@@ -64,11 +64,15 @@
    keys already sit there inert on this side. See the header of
    models/aemo/duckdb/marts/fct_summary.sql for that argument in the other direction.
 
-   Body copied from dbt-duckdb's `duckdb__create_table_as`
-   (dbt/include/duckdb/macros/adapters.sql). The ONLY change is the `{{ iceberg_with_clause() }}`
-   between the relation and `as (`; keep the rest in step when bumping the adapter. With no
-   `iceberg_properties` config the clause is empty and the emitted SQL is byte-identical to the
-   adapter's own — a default run is unchanged. #}
+   Body copied from **dbt-duckdb 1.11.0**'s `duckdb__create_table_as`. The ONLY change is the
+   `{{ iceberg_with_clause() }}` between the relation and each `as (`; with no
+   `iceberg_properties` config that renders empty and the SQL is byte-identical to the adapter's
+   own, so a default run is unchanged.
+   ⚠️ **KEEP IT ON THE VERSION CI RESOLVES, NOT THE ONE ON YOUR LAPTOP.** This was first copied
+   from 1.10.1 and CI resolves 1.11.0, which added `partitioned_by=` / `sorted_by=` parameters
+   AND PASSES THEM BY KEYWORD from `incremental.sql` — so the 1.10.1 signature would have failed
+   the leg outright on its first build. `test_iceberg_geometry.py` pins the shared lines against
+   whatever adapter is installed; that is what caught it, before any capacity was spent. #}
 {% macro iceberg_with_clause() -%}
   {%- set props = config.get('iceberg_properties', {}) or {} -%}
   {%- if props -%}
@@ -77,7 +81,7 @@
   {%- endif -%}
 {%- endmacro %}
 
-{% macro duckdb__create_table_as(temporary, relation, compiled_code, language='sql') -%}
+{% macro duckdb__create_table_as(temporary, relation, compiled_code, language='sql', partitioned_by=none, sorted_by=none) -%}
   {%- if language == 'sql' -%}
     {% set contract_config = config.get('contract') %}
     {% if contract_config.enforced %}
@@ -91,31 +95,47 @@
       {{ relation.include(database=(not temporary), schema=(not temporary)) }}
   {% if contract_config.enforced and not temporary %}
     {#-- DuckDB doesnt support constraints on temp tables --#}
+    {#-- NO PROPERTIES ON THIS BRANCH, and it is unreachable here anyway: no model in this repo
+         declares a contract. The column-list form puts WITH *after* the columns rather than after
+         the relation, so the one insertion below would be in the wrong place — adding it here
+         means testing it, and there is nothing to test it against. --#}
     {{ get_table_columns_and_constraints() }} ;
+    {% if partitioned_by %}
+      {{ duckdb__alter_table_set_partitioned_by(relation, partitioned_by) }}
+    {% endif %}
+    {% if sorted_by %}
+      {{ duckdb__alter_table_set_sorted_by(relation, sorted_by) }}
+    {% endif %}
     insert into {{ relation }} {{ get_column_names() }} (
       {{ get_select_subquery(compiled_code) }}
     );
   {% else %}
-    {#-- The properties ride here and NOWHERE ELSE: a temp relation is a plain duckdb table, and
-         the duckdb catalog refuses a WITH clause outright ("WITH clause is not supported for
-         tables in a duckdb catalog"), so emitting one there would fail every temp write.
-
-         WHICH BRANCH OF THE INCREMENTAL MATERIALIZATION LANDS HERE, since that is what decides
-         whether the property reaches the table anyone queries (dbt-duckdb's incremental.sql):
-           - existing_relation is none -> create_table_as(False, TARGET) : the clause lands on the
-             real table. THE TEARDOWN MAKES THIS EVERY RUN, which is why a macro is enough.
-           - the per-run temp source  -> create_table_as(temporary=True, temp) : suppressed here,
-             and must be — `temporary` is `not is_motherduck()`, i.e. always true for this target.
-           - full_refresh_mode       -> create_table_as(False, INTERMEDIATE) then a RENAME : the
-             clause would land on `__dbt_tmp`. Untested, and it does not matter — `--full-refresh`
-             already fails on this leg every time ("Table fct_summary__dbt_tmp does not exist"),
-             which CLAUDE.md records. Do not read this branch as supported. --#}
+    {% if partitioned_by or sorted_by %}
+    {% if not temporary %}{{ iceberg_with_clause() }}{% endif %} as (
+      select * from (
+        {{ compiled_code }}
+      ) as model_subq
+      limit 0
+    );
+    {% if partitioned_by %}
+    {{ duckdb__alter_table_set_partitioned_by(relation, partitioned_by) }}
+    {% endif %}
+    {% if sorted_by %}
+    {{ duckdb__alter_table_set_sorted_by(relation, sorted_by) }}
+    {% endif %}
+    insert into {{ relation }}
+      select * from (
+        {{ compiled_code }}
+      ) as model_subq;
+    {% else %}
+    {#-- THE ONE INSERTION, and this is the branch every model here takes. --#}
     {% if not temporary %}{{ iceberg_with_clause() }}{% endif %} as (
       {{ compiled_code }}
     );
+    {% endif %}
   {% endif %}
   {%- elif language == 'python' -%}
-    {{ py_write_table(temporary=temporary, relation=relation, compiled_code=compiled_code) }}
+    {{ py_write_table(temporary=temporary, relation=relation, compiled_code=compiled_code, partitioned_by=partitioned_by, sorted_by=sorted_by) }}
   {%- else -%}
       {% do exceptions.raise_compiler_error("duckdb__create_table_as macro didn't get supported language, it got %s" % language) %}
   {%- endif -%}
