@@ -114,4 +114,4 @@ SELECT
     COALESCE((SELECT MAX(CAST(SETTLEMENTDATE AS TIMESTAMP)) FROM {{ ref('fct_scada_today') }}), CAST('1900-01-01' AS TIMESTAMP))
   ) AS cutoff
 FROM daily_summary
-ORDER BY date
+ORDER BY date, time

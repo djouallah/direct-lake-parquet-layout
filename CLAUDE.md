@@ -500,7 +500,7 @@ test and a row-count difference between engines in the `summary` parity table.
 
 Rules that keep it honest:
 
-- **All three trees end with `ORDER BY date`, and that is a FAIRNESS invariant, not a layout
+- **All three trees end with `ORDER BY date, time`, and that is a FAIRNESS invariant, not a layout
   claim.** The sort reaches no stored table — this SQL is a merge *source* on every engine — so
   its only real effect is cost. It was on duckdb and spark and missing from dwh, i.e. two legs
   paying for something the third did not, in a benchmark that compares their cost. Parity could

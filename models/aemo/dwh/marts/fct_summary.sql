@@ -149,4 +149,4 @@ FROM daily_summary
 -- CTAS (dbt-fabric builds `CREATE TABLE <temp> AS <model sql>` and merges from that relation, it
 -- does NOT wrap this in `MERGE ... USING (<sql>)`), so the derived-table ORDER BY restriction
 -- does not apply here.
-ORDER BY [date]
+ORDER BY [date], [time]
