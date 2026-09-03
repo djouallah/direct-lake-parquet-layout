@@ -1,0 +1,125 @@
+{
+ "engine": "iceberg",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "nyc",
+  "download_limit": "200",
+  "duckrun_auto": "false",
+  "dwh_vorder": "true",
+  "file_size_mb": "512",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "5000000",
+  "runs": "6",
+  "skip_download": "true",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": "512",
+    "row_group_size": "5000000",
+    "sorted": null,
+    "vcores": "8"
+   },
+   "dwh": {
+    "vorder": "true"
+   },
+   "iceberg": {
+    "file_size_mb": "512",
+    "row_group_size": "5000000",
+    "vcores": "8"
+   },
+   "spark": {
+    "native_execution_engine": "true",
+    "resource_profile": "writeHeavy"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "engines": {
+   "duckrun": {
+    "guid": null,
+    "item": "dbt_nyc_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   },
+   "dwh": {
+    "guid": null,
+    "item": "dbt_nyc_dwh",
+    "kind": "warehouses",
+    "writer": "warehouse"
+   },
+   "iceberg": {
+    "guid": null,
+    "item": "dbt_nyc_iceberg",
+    "kind": "lakehouses",
+    "writer": "duckdb (iceberg)"
+   },
+   "spark": {
+    "guid": null,
+    "item": "dbt_nyc_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "landing": {
+   "files": 43,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/yellow": {
+     "files": 41,
+     "size_mb": 6783.08
+    },
+    "parquet_raw/zone": {
+     "files": 1,
+     "size_mb": 0.01
+    }
+   },
+   "guid": "f7f0ab6f-2c5f-4d48-bdad-7517f2545e54",
+   "item": "dbt_nyc_landing",
+   "size_mb": 6783.09
+  },
+  "run": {
+   "dataset": "nyc",
+   "id": "33731625417",
+   "sha": "b9151409655ba3ba337c1e26982d486321c5fa4d",
+   "written": "2026-09-03T08:08:18.943019+00:00"
+  },
+  "stats": {
+   "duckrun": {},
+   "dwh": {},
+   "iceberg": {},
+   "spark": {}
+  },
+  "tables": [
+   "stg_parquet_archive_log",
+   "dim_date",
+   "dim_zone",
+   "fct_trips"
+  ]
+ },
+ "run": {
+  "finished": "2026-09-03T08:09:09+00:00",
+  "id": "33731625417",
+  "sha": "b9151409655ba3ba337c1e26982d486321c5fa4d",
+  "started": "2026-09-03T08:07:09+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/33731625417"
+ },
+ "schema": 1
+}
