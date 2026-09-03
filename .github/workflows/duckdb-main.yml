@@ -385,8 +385,11 @@ jobs:
           # file on disk, which is what the CLI steps above use `getenv()` to achieve.
           tok, ws, ep = (os.environ["ONELAKE_TOKEN"], os.environ["WAREHOUSE_PATH"],
                          os.environ["ONELAKE_ENDPOINT"])
-          c.execute("CREATE SECRET onelake_storage "
-                    "(TYPE azure, PROVIDER access_token, ACCESS_TOKEN ?)", [tok])
+          # Interpolated, NOT a bound parameter: `ACCESS_TOKEN ?` raises `Not implemented Error:
+          # Unrecognized expression type PARAMETER` (run 33731225546). CREATE SECRET's option list
+          # is not an expression context.
+          c.execute(f"CREATE SECRET onelake_storage "
+                    f"(TYPE azure, PROVIDER access_token, ACCESS_TOKEN '{tok}')")
           c.execute(f"""ATTACH '{ws}' AS onelake (
                           TYPE iceberg, endpoint '{ep}', token '{tok}',
                           access_delegation_mode 'none', stage_create_tables 0,
