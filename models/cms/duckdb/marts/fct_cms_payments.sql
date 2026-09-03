@@ -84,6 +84,7 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'
                          else env_var('DUCKDB_FILE_SIZE_MB', 'auto') | int),
+    iceberg_properties=iceberg_geometry(),
     pre_hook="SET VARIABLE cms_paths = (SELECT COALESCE(NULLIF(list('{{ get_parquet_archive_path() }}' || archive_path), []), ['']) FROM (SELECT archive_path FROM {{ ref('stg_cms_archive_log') }} WHERE source_type = 'cms'{% if is_incremental() %} AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }}){% endif %} ORDER BY archive_path))"
 ) }}
 

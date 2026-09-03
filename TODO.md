@@ -9,6 +9,53 @@ exercise cost. This file is what has not been done.
 
 ---
 
+## iceberg has a geometry knob now — spend the dispatch on nyc, not aemo
+
+`iceberg_geometry()` turns `row_group_size` / `file_size_mb` into Iceberg table properties that
+`duckdb__create_table_as` puts in the CTAS, so the iceberg leg can be dispatched at a chosen
+geometry for the first time. **Nothing has been measured through it yet.**
+
+Do nyc. aemo iceberg already writes 53 row groups at 2.7M rows, and CLAUDE.md's own CU-by-row-group
+band over 60 duckrun runs is flat from 8 to 73 (1,561-1,765), separating only at 144 (2,190) — so
+there is no headroom there. nyc iceberg writes **728 row groups at 0.81M rows** (run 33705511481)
+against duckrun's 117 at 5.06M, which is outside every band this repo has measured:
+
+```bash
+gh workflow run Benchmark -f dataset=nyc -f engines=iceberg -f cores=8    -f duckrun_auto=false -f row_group_size=5000000 -f file_size_mb=1024
+```
+
+⚠️ `duckrun_auto=false` is what hands the geometry over — ON forces `auto`, which emits no property.
+It is also the UNSORTED lever, but that costs nothing here: iceberg has no sort to give up.
+
+Read `layout.stats.iceberg.fct_trips` (`num_row_groups` should land near 118) and the `directlake`
+CU against 33705511481's 7,955. **Prove the mechanism first with the free
+`gh workflow run "DuckDB main smoke" -f onelake=true`** — it asserts the property is honoured on a
+throwaway table for one runner minute and no capacity.
+
+**Expect the geometry alone not to close the gap**, and say so when reporting: iceberg is also
+8,961 MB against duckrun's 5,866 and carries `PLAIN_DICTIONARY` with **no RLE**, and neither the
+sort nor the encoding is reachable from this leg (README.md has why). A run that moves the row
+groups and not the CU is the informative outcome, not a failure.
+
+---
+
+## The non-aemo marts have no trailing ORDER BY, and on iceberg that means unsorted
+
+Separate from the item above and probably the larger lever. `models/aemo/duckdb/marts/fct_summary.sql`
+is the ONLY mart with a trailing `ORDER BY`; iceberg's CTAS carries it into stored parquet, and the
+commit that widened it to `date, time` took the `time` column from 155.0 MB to 3.4 MB and the table
+from 1,129 to 856 MB. Every other dataset gets nothing, which is most of why nyc iceberg is 53%
+bigger than duckrun on the same rows — `payment_type` 131.8 MB against 0.1, `store_and_fwd_flag`
+89.6 against 0.0, `VendorID` 75.0 against 0.0.
+
+What it costs, and why it is not free: the fairness invariant is **all three trees or none**, so the
+sort is paid by duckrun, spark and dwh as well, on 591M rows. duckrun already sorts (its picker
+chose `pickup_date, VendorID, store_and_fwd_flag, payment_type` on this mart) so it gains nothing
+and pays twice. Decide that trade before dispatching; it is a different experiment from the
+geometry one and should not be bundled with it.
+
+---
+
 ## Does dwh's V-Order move its parquet? Genuinely open, and one dispatch away
 
 `layout.ordering.dwh` reads 100% row-group overlap on every column but `cutoff`, and CLAUDE.md read

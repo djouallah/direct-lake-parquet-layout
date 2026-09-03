@@ -266,12 +266,22 @@ on:
       # segments cost more. Build CU is flat across all four bands at `cores=8` (9,700-10,300), so
       # the write side does not pay for it. 9-73 is a tie within noise; the ceiling is the end of the
       # only measured direction.
+      # BOTH DuckDB WRITERS, not just duckrun, and that is a change. duckrun takes these as
+      # `max_row_group_size` / `target_file_size_mb`; iceberg takes them as the Iceberg table
+      # properties `write.parquet.row-group-size` / `write.target-file-size-bytes`, emitted by
+      # `iceberg_geometry()` into the CTAS. The row count needs no conversion — DuckDB's
+      # `write.parquet.row-group-size` counts ROWS, unlike the spec's `-bytes` sibling — so one
+      # dispatched number describes both, which is what makes the duckrun/iceberg pair a comparison
+      # of WRITERS at a fixed geometry rather than of two geometries nobody chose.
+      # `auto` differs per writer and both readings are deliberate: duckrun's estimator sizes the
+      # write (a layout of its own, recorded), iceberg emits no property at all (the writer's own
+      # 128 MB / 512 MB defaults, recorded as absence so it keys to the historical column).
       row_group_size:
-        description: "duckrun: rows per row group"
+        description: "duckrun + iceberg: rows per row group"
         type: string
         default: "16000000"
       file_size_mb:
-        description: "duckrun: parquet file size MB"
+        description: "duckrun + iceberg: parquet file size MB"
         type: choice
         options: ["1024", "512", "128", "64", "32"]
         default: "64"
@@ -328,8 +338,13 @@ on:
       # used to be how an unsorted run was dispatched; that field is gone (see the note above it),
       # so this is the only remaining way to ask for one — and the unsorted arm is half of the
       # comparison the layout tables make.
+      # AND IT NOW GATES ICEBERG'S GEOMETRY TOO, which the name says even less. `iceberg_geometry()`
+      # emits a table property only when the input above is not `auto`, and `auto` is exactly what
+      # this flag being ON forces — so ON leaves iceberg at the writer's own defaults and OFF is
+      # what hands it the dispatched row-group and file sizes. The name is kept because renaming it
+      # would break the schedule's env chain, which spells it in three places.
       duckrun_auto:
-        description: "duckrun auto — off means UNSORTED at the row group / file size below"
+        description: "duckrun auto — off means UNSORTED at the row group / file size below (also sets iceberg's)"
         type: boolean
         default: true
 

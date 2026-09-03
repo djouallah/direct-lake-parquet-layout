@@ -747,6 +747,24 @@ def _nonbaseline(var, baseline):
     return v if v and v != baseline else None
 
 
+def _iceberg_geometry(var, baseline):
+    """`_nonbaseline`, except `auto` folds into the baseline instead of opening its own column.
+
+    THE DIVERGENCE IS THE POINT, and it is not a softening of the rule — the word `auto` means two
+    different things to the two writers. On duckrun it names a real writer behaviour: the estimator
+    sizes the write, which is a layout no pinned integer produces, so it earns a column. On iceberg
+    it means `iceberg_geometry()` emits NO table property, so `duckdb__create_table_as` falls back
+    to the adapter's own SQL and the parquet is byte-identical to every iceberg run recorded before
+    the property existed at all. Recording `"auto"` there would split those runs off a column for a
+    difference that is not in the files.
+
+    Same baselines as duckrun otherwise, so a pinned geometry keys both writers the same way and the
+    pair stays comparable.
+    """
+    v = _nonbaseline(var, baseline)
+    return None if (v or "").lower() == "auto" else v
+
+
 # THERE IS NO `declared_sort_key()` ANY MORE, AND NOTHING SHOULD WRITE `dbt.duckrun.sort_by` AGAIN.
 # It read a dispatched column list out of `DUCKDB_SORT_BY` and recorded it as the run's declared key.
 # That input is gone — one form field naming one key could not serve five marts — so the model
@@ -898,7 +916,24 @@ def build_doc(per_engine, engines, guids=None, landing=None, encodings=None, ord
                          # into the wrong column, silently.
                          "row_group_size": _nonbaseline("DUCKDB_ROW_GROUP_SIZE", "16000000"),
                          "file_size_mb": _nonbaseline("DUCKDB_FILE_SIZE_MB", "1024")}),
-            ("iceberg", {"vcores": os.environ.get("FABRIC_CORES") or None}),
+            # ICEBERG CARRIES THE GEOMETRY NOW, AND THE COMMENT ABOVE NO LONGER APPLIES TO IT.
+            # It said iceberg "has no `sort_by` config at all, so recording the flag there would
+            # split iceberg's dashboard column between two runs whose parquet is byte-identical".
+            # That was true of the SORT and is still true of it — dbt-duckdb can express no sort,
+            # and duckdb-iceberg's `ALTER TABLE … SET SORTED BY` is not reachable from a model
+            # config — so `sorted` stays off this entry. It is NOT true of the geometry any more:
+            # `iceberg_geometry()` turns the same two dispatch inputs into Iceberg table
+            # properties that `duckdb__create_table_as` puts in the CTAS, so two iceberg runs at
+            # different row-group sizes write genuinely different parquet. Leaving them out
+            # would key both to one dashboard row and `groupMid` would print a median across
+            # two layouts — the exact failure the `sorted` rule exists to prevent, arriving from
+            # the other direction.
+            # SAME BASELINES AS duckrun, deliberately: one dispatch now describes both writers,
+            # so a geometry that keys duckrun to the history column must key iceberg to its own
+            # history column too, or the pair stops being comparable on the page.
+            ("iceberg", {"vcores": os.environ.get("FABRIC_CORES") or None,
+                         "row_group_size": _iceberg_geometry("DUCKDB_ROW_GROUP_SIZE", "16000000"),
+                         "file_size_mb": _iceberg_geometry("DUCKDB_FILE_SIZE_MB", "1024")}),
             ("spark", {"resource_profile": os.environ.get("SPARK_RESOURCE_PROFILE") or None,
                        "native_execution_engine": os.environ.get("SPARK_NATIVE_ENABLED") or None}),
             # dwh USED TO BE ABSENT HERE, on the grounds that Fabric Warehouse exposes no per-run

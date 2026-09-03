@@ -290,6 +290,55 @@ def test_the_dwh_vorder_input_is_recorded_on_BOTH_values(stats, monkeypatch, env
     assert doc["config"]["dwh"] == {"vorder": want}
 
 
+def test_iceberg_records_the_geometry_now_that_the_geometry_reaches_its_writer(stats, monkeypatch):
+    """THIS IS A REVERSAL, and the comment it reverses is still in `stats.py` guarding the SORT.
+
+    iceberg used to record `vcores` and nothing else, because the mart's `sort_by` /
+    `max_row_group_size` / `target_file_size_mb` were duckrun keys that dbt-duckdb reads nowhere —
+    so two iceberg runs at different dispatched geometries wrote byte-identical parquet, and a key
+    would have split one dashboard column into two for no difference.
+
+    `iceberg_geometry()` ends that for the GEOMETRY: it turns the same two dispatch inputs into
+    Iceberg table properties (`write.parquet.row-group-size`, `write.target-file-size-bytes`) and
+    `duckdb__create_table_as` puts them in the CTAS, so the parquet genuinely differs. Unrecorded,
+    `layoutKey` would key both runs to one row and `groupMid` would print a median across two
+    layouts.
+
+    THE SORT IS NOT REVERSED and must stay off this entry: dbt-duckdb can express no sort, and
+    duckdb-iceberg's `ALTER TABLE … SET SORTED BY` is not reachable from a model config.
+    """
+    monkeypatch.setenv("FABRIC_CORES", "8")
+    monkeypatch.setenv("DUCKDB_SORTED", "true")
+    monkeypatch.setenv("DUCKDB_ROW_GROUP_SIZE", "5000000")
+    monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "128")
+    cfg = stats.build_doc({}, ["iceberg"], {}, None, {})["config"]["iceberg"]
+    assert cfg["row_group_size"] == "5000000"
+    assert cfg["file_size_mb"] == "128"
+    assert "sorted" not in cfg, "no sort reaches this writer — see the module comment"
+
+
+def test_a_default_iceberg_dispatch_keys_to_the_history_column(stats, monkeypatch):
+    """SAME BASELINES AS duckrun, and that is what keeps the pair comparable. A bare dispatch sends
+    `auto`, which `iceberg_geometry()` turns into an empty property dict, so the CTAS is the
+    adapter's own SQL and the parquet is what every earlier iceberg run wrote. Recording a value
+    there would split every historical iceberg run off its own column."""
+    monkeypatch.setenv("FABRIC_CORES", "8")
+    for v in ("auto", "16000000"):
+        monkeypatch.setenv("DUCKDB_ROW_GROUP_SIZE", v)
+        monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "1024" if v != "auto" else "auto")
+        cfg = stats.build_doc({}, ["iceberg"], {}, None, {})["config"]["iceberg"]
+        assert cfg["row_group_size"] is None, v
+        assert cfg["file_size_mb"] is None, v
+
+    # AND THE CALL SITE, because the behaviour above is one word away from wrong: iceberg must
+    # use `_iceberg_geometry` (auto folds into the baseline — no property is emitted, so the
+    # parquet is the historical default) while duckrun keeps `_nonbaseline` (auto is the
+    # estimator, a layout of its own). Swapping either way passes every other test here.
+    src = pathlib.Path(stats.__file__).read_text(encoding="utf-8")
+    assert '_iceberg_geometry("DUCKDB_ROW_GROUP_SIZE", "16000000")' in src
+    assert '_iceberg_geometry("DUCKDB_FILE_SIZE_MB", "1024")' in src
+
+
 def test_the_declared_vorder_and_the_measured_one_are_separate_keys(stats, monkeypatch):
     """`layout.config` is DECLARED and splits the COLUMN; `layout.ordering.dwh.vorder_enabled` is
     MEASURED (`dwh_vorder.py` reads `sys.databases`) and splits the BAR. Two witnesses for one fact,

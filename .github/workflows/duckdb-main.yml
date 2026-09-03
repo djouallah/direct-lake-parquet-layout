@@ -82,6 +82,15 @@ jobs:
       # as every job in benchmark.yml — no bespoke deletion code anywhere in this file.
       RUN_RECORD: ${{ github.workspace }}/record/record-00-smoke.json
       SMOKE_TABLE: duckdb_main_smoke
+      # A SECOND table, written with an Iceberg table property, so the row-group probe below
+      # cannot take the encoding_stats proof down with it if the property is refused. Same
+      # lakehouse, so the teardown removes both with the one item.
+      SMOKE_TABLE_RG: duckdb_main_smoke_rg
+      # 1,000,000 rows at 250,000 per row group is FOUR. Chosen so the assertion cannot pass by
+      # accident: the writer's own default lands the whole million in one or two groups, so a
+      # property that is silently ignored reads 1-2 and fails, and one that is honoured reads 4.
+      SMOKE_RG_ROWS: "250000"
+      SMOKE_RG_EXPECTED: "4"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -322,6 +331,74 @@ jobs:
             WHERE path_in_schema = 'duid'
               AND len(list_filter(encoding_stats, lambda x: x.page_type = 'DICTIONARY_PAGE')) > 0;"
           echo "| iceberg parquet encoding_stats | present |" >> "$GITHUB_STEP_SUMMARY"
+
+      # THE STEP THAT ANSWERS "CAN THE LEG PASS A ROW GROUP SIZE". dbt-duckdb exposes no writer
+      # config, so `COPY`'s ROW_GROUP_SIZE is unreachable from the iceberg leg — but duckdb-iceberg
+      # reads the geometry off ICEBERG TABLE PROPERTIES instead, and `CREATE TABLE … WITH (…)` is
+      # where they are set. That syntax parses in DuckDB and is refused only by the DUCKDB catalog
+      # (`Catalog Error: WITH clause is not supported for tables in a duckdb catalog`), so whether
+      # it survives the OneLake REST catalog is an empirical question and this is the cheap place
+      # to ask it — one free runner, one throwaway lakehouse, no Fabric capacity.
+      #
+      # `write.parquet.row-group-size` is ROWS. Its sibling `write.parquet.row-group-size-bytes` is
+      # a byte budget and `write.parquet.dict-size-bytes` is the DICTIONARY_SIZE_LIMIT knob; the
+      # rows one is probed because it is the unit duckrun's `row_group_size` dispatch input already
+      # carries, so a green here means one number can drive both DuckDB writers.
+      #
+      # A SECOND TABLE, not the one above: a refused property must fail THIS assertion and leave the
+      # encoding_stats proof standing, or one result would mask the other.
+      #
+      # ⚠️ The ATTACH options are `stage_create_tables 0` / `skip_create_table_metadata_updates 1`,
+      # copied from the leg. If the property is dropped rather than refused, suspect those first —
+      # they are what make this catalog's CREATE path unlike a stock one.
+      - name: An Iceberg table property sets the row group size
+        if: inputs.onelake
+        run: |
+          set -euo pipefail
+          duckdb -noheader -list -c "
+            LOAD iceberg; LOAD azure;
+            SET azure_transport_option_type = 'curl';
+            CREATE SECRET onelake_storage (
+              TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
+            ATTACH getenv('WAREHOUSE_PATH') AS onelake (
+              TYPE iceberg,
+              endpoint getenv('ONELAKE_ENDPOINT'),
+              token getenv('ONELAKE_TOKEN'),
+              access_delegation_mode 'none',
+              stage_create_tables 0,
+              skip_create_table_metadata_updates 1,
+              default_schema 'dbo');
+            DROP TABLE IF EXISTS onelake.dbo.$SMOKE_TABLE_RG;
+            CREATE TABLE onelake.dbo.$SMOKE_TABLE_RG
+              WITH ('write.parquet.row-group-size' = '$SMOKE_RG_ROWS') AS
+              SELECT ['AAA','BBB','CCC','DDD'][(i % 4) + 1] AS duid, i AS mw
+              FROM range(1000000) t(i);
+            SELECT 'created ' || count(*) || ' rows' FROM onelake.dbo.$SMOKE_TABLE_RG;"
+          # Best-effort diagnostics, and it has to be a separate invocation:
+          # `iceberg_table_properties` is a TABLE function, so a signature change upstream must
+          # not take the assertion below down with it.
+          duckdb -noheader -list -c "
+            LOAD iceberg; LOAD azure;
+            SET azure_transport_option_type = 'curl';
+            CREATE SECRET onelake_storage (
+              TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
+            ATTACH getenv('WAREHOUSE_PATH') AS onelake (
+              TYPE iceberg, endpoint getenv('ONELAKE_ENDPOINT'), token getenv('ONELAKE_TOKEN'),
+              access_delegation_mode 'none', stage_create_tables 0,
+              skip_create_table_metadata_updates 1, default_schema 'dbo');
+            SELECT * FROM iceberg_table_properties('onelake.dbo.$SMOKE_TABLE_RG');" || true
+          GLOB="$SMOKE_TABLE_PATH/dbo/$SMOKE_TABLE_RG/data/*.parquet"
+          duckdb -noheader -list -c "
+            LOAD azure;
+            SET azure_transport_option_type = 'curl';
+            CREATE SECRET onelake_storage (
+              TYPE azure, PROVIDER access_token, ACCESS_TOKEN getenv('ONELAKE_TOKEN'));
+            SELECT CASE WHEN n = $SMOKE_RG_EXPECTED
+                        THEN 'row group property honoured: ' || n || ' row groups'
+                        ELSE error('asked for $SMOKE_RG_ROWS rows per row group over 1,000,000 rows, '
+                                   || 'expected $SMOKE_RG_EXPECTED row groups, got ' || n) END
+            FROM (SELECT count(DISTINCT row_group_id) AS n FROM parquet_metadata('$GLOB'));"
+          echo "| iceberg \`write.parquet.row-group-size\` | honoured |" >> "$GITHUB_STEP_SUMMARY"
 
       # ---------------------------------------------------------------- always
       # `always()`, and it deletes BY GUID from the record `ensure()` wrote — so a failure anywhere

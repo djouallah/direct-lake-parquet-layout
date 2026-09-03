@@ -346,21 +346,64 @@ has to be passed, and it is not in a release yet — DuckDB 1.5.5 answers
 why it needs no row-count backstop alongside it — unlike delta-rs, whose cap is checked on
 *encoded* bytes and therefore ships `data_page_row_count_limit` too.
 
-**None of these knobs is reachable from dbt-duckdb** — they are `COPY` options and that adapter
-exposes no writer config at all — so the iceberg leg gets whatever the DuckDB build does by default.
-That used to mean 122,880 and the outlier row-group count; `1.6.0.dev365` moved the default and the
-leg pins it, which is why the geometry is now in family and the *encoding* is what is left. The
-knobs are still worth knowing for a DuckDB you drive yourself; the leg here cannot pass them.
+**None of these `COPY` knobs is reachable from dbt-duckdb** — that adapter emits
+`create table <rel> as ( … )` and nothing else — and this section used to end there, saying the leg
+could not pass them. **It can, and the route is not `COPY`.** duckdb-iceberg reads the write
+geometry off ICEBERG TABLE PROPERTIES, which reach an INSERT or a CTAS through
+`CREATE TABLE <rel> WITH ('k' = 'v') AS SELECT …`. So the leg carries a `duckdb__create_table_as`
+override in [`macros/iceberg_adapter_overrides.sql`](macros/iceberg_adapter_overrides.sql) that
+emits that clause from an `iceberg_properties` model config, and
+[`macros/iceberg_geometry.sql`](macros/iceberg_geometry.sql) fills it from the SAME
+`row_group_size` / `file_size_mb` dispatch inputs duckrun uses — the units line up, because
+`write.parquet.row-group-size` counts ROWS. One number, two DuckDB writers.
 
-Two routes exist if it ever needs to. DuckDB's iceberg extension honours the Iceberg **table
-properties** `write.target-file-size-bytes` and `write.parquet.row-group-size-bytes` (settable at
-`CREATE TABLE … WITH (…)`, or afterwards via `set_iceberg_table_properties()`, which a dbt
-`post_hook` can call) on unpartitioned tables — they raise on partitioned ones, suppressible with
-`ignore_row_group_size_for_partitioned_tables`. There is **no** equivalent for the sort: Iceberg's
-own `sort-orders` metadata is not exposed by the extension ([duckdb-iceberg#1292][ddb-ice-sort] is
-open), and per its own author declaring one would not sort the data anyway.
+The mapping is one static table, `ICEBERG_TABLE_PROPERTY_MAPPING` in duckdb-iceberg's
+`src/execution/operator/iceberg_insert.cpp`; read it before adding a key, because a property that
+is not in it is written to the table metadata and changes no parquet:
+
+| Iceberg table property | DuckDB parquet option |
+|---|---|
+| `write.parquet.row-group-size` | `row_group_size` — **rows**, DuckDB's own, not in the spec |
+| `write.parquet.row-group-size-bytes` | `row_group_size_bytes` |
+| `write.parquet.row-groups-per-file` | `row_groups_per_file` |
+| `write.parquet.dict-size-bytes` | `string_dictionary_page_size_limit` |
+| `write.parquet.compression-codec` / `-level` | `codec` / `compression_level` |
+| `write.target-file-size-bytes` | the writer's file rotation |
+
+⚠️ **`write.parquet.dict-size-bytes` IS NOT THE DICTIONARY KNOB THIS PAGE WANTS.** It maps to
+`string_dictionary_page_size_limit`, which DuckDB already defaults to 1 GiB while Iceberg's spec
+default for it is 2 MB — so setting it to anything sane keeps LESS dictionary-encoded, not more.
+The knob behind `mw` falling to `PLAIN` is `dictionary_size_limit` (default `row_group_size / 5`
+distinct values) and the one that would buy `RLE_DICTIONARY` + `DELTA_BINARY_PACKED` instead of
+`PLAIN_DICTIONARY` + `PLAIN` is `parquet_version` (V1 is the default, and V1 has no fallback but
+bare `PLAIN`). **Neither is mapped, on any version.** So the geometry is now dispatchable and the
+ENCODING is not reachable from the Iceberg path at all — an upstream gap, not something to
+configure around.
+
+Two mechanics worth knowing before touching this. `set_iceberg_table_properties()` also exists and
+would be one line in a `post_hook` — but a post_hook runs after the model has written its files and
+this repo's teardown deletes the table at the end of every run, so the property would govern a
+write that never happens; it has to be at CREATE time, which is why the override is a macro.
+And the values are written into the table metadata that other engines read, so they are spelled as
+plain integers: `ParseByteSizeOptionallyFormatted` accepts `'128MB'` and then stores that string
+([duckdb-iceberg#1150][ddb-ice-1150]).
+
+The 122,880 default itself was fixed by [duckdb-iceberg#1202][ddb-ice-1202] (merged 2026-07-23),
+which set `write.target-file-size-bytes` to 512 MB and `write.parquet.row-group-size-bytes` to
+128 MB — landing one day after v1.5.5 was cut, which is why it took a `main` pin to get. Its own
+comment names the bug: *"otherwise DuckDB's 122880 row default would always win"*.
+
+**There is still no sort a model can declare.** duckdb-iceberg honours a table's Iceberg sort order
+on every INSERT (`ALTER TABLE … SET SORTED BY (…)`), but nothing in dbt-duckdb emits it —
+`sorted_by`/`sort_by` warn and return `none` off a DuckLake relation — so on this leg the only sort
+is the model's own trailing `ORDER BY`, which the CTAS does carry into the stored parquet.
+([duckdb-iceberg#1292][ddb-ice-sort] tracks exposing `sort-orders`.) Note the
+`ignore_row_group_size_for_partitioned_tables` escape hatch this section used to cite is **gone on
+`main`** — the docs page describing it is 1.5.x.
 
 [ddb-ice-sort]: https://github.com/duckdb/duckdb-iceberg/pull/1292
+[ddb-ice-1150]: https://github.com/duckdb/duckdb-iceberg/pull/1150
+[ddb-ice-1202]: https://github.com/duckdb/duckdb-iceberg/pull/1202
 
 [ddb-copy]: https://duckdb.org/docs/current/sql/statements/copy.html
 [ddb-pr]: https://github.com/duckdb/duckdb/pull/24645

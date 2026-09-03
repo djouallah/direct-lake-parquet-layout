@@ -569,8 +569,16 @@ test and a row-count difference between engines in the `summary` parity table.
 Rules that keep it honest:
 
 - **All three trees end with `ORDER BY date, time`, and that is a FAIRNESS invariant, not a layout
-  claim.** The sort reaches no stored table — this SQL is a merge *source* on every engine — so
-  its only real effect is cost. It was on duckdb and spark and missing from dwh, i.e. two legs
+  claim.** It is a merge *source* on THREE engines, where its only real effect is cost.
+  ⚠️ **NOT ON ICEBERG, AND THIS FILE SAID OTHERWISE FOR A RELEASE.** The teardown means the table
+  never exists at the start of a run, so every iceberg run takes the CTAS branch and the model's own
+  `ORDER BY` lands in the STORED parquet. Measured on `fct_summary` across the commit that widened
+  this clause from `date` to `date, time`: the `time` column went 155.0 MB to **3.4 MB**, its
+  adjacent-equal runs 3,174,788 to 34,402, and the table 1,129 MB to 856 MB. So on that one leg this
+  is a layout claim, and it is the only sort that leg has — dbt-duckdb emits no
+  `ALTER TABLE … SET SORTED BY`. Every other dataset's mart still has NO trailing `ORDER BY`, which
+  is why iceberg writes them unsorted (nyc: 8,961 MB against duckrun's auto-sorted 5,866).
+  The clause was on duckdb and spark and missing from dwh, i.e. two legs
   paying for something the third did not, in a benchmark that compares their cost. Parity could
   have been reached by deleting two lines instead of adding one; adding it was the call. Either
   way the rule is **all three or none** — dropping it from one tree is a fairness regression
@@ -2222,6 +2230,16 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   occur ZERO times in that adapter and its macro package), so what it wrote was whatever the Iceberg
   REST catalog path defaulted to — **1,172 row groups at 0.1M rows**, an order of magnitude off every
   other writer.
+  ⚠️ **THE ROW-GROUP HALF OF THAT SENTENCE IS NOW FALSE — SEE `iceberg_geometry()`.** dbt-duckdb
+  still emits no writer config, but the geometry does not go through `COPY`: duckdb-iceberg reads it
+  off ICEBERG TABLE PROPERTIES, and `macros/iceberg_adapter_overrides.sql` overrides
+  `duckdb__create_table_as` to emit `CREATE TABLE <rel> WITH ('k' = 'v') AS …` from an
+  `iceberg_properties` config. `row_group_size` / `file_size_mb` now drive BOTH DuckDB writers from
+  one dispatch, because `write.parquet.row-group-size` counts ROWS like duckrun's does. **The SORT
+  half is still true** — nothing in dbt-duckdb emits `ALTER TABLE … SET SORTED BY`, so the only sort
+  this leg gets is the model's own trailing `ORDER BY`. README.md has the property table, the two
+  knobs that are NOT mapped (`dictionary_size_limit`, `parquet_version` — the encoding half, an
+  upstream gap), and why a `post_hook` cannot carry this.
   **That reason is void.** `fabric_run.py` pins `duckdb==1.6.0.dev379` on the iceberg leg (and only
   that leg — duckrun writes Delta through delta-rs and is untouched); dev365 reworked the iceberg
   writer, dev379 adds duckdb#24957's footer `encoding_stats`. Run 32444969823, on dev365, wrote the
