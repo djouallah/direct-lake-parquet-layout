@@ -64,6 +64,48 @@ geometry one and should not be bundled with it.
 
 ---
 
+## tpcds has never been generated, and four grid slots a week die on it
+
+`download_tpcds.py` is complete and works. Nobody has ever run it, so `dbt_tpcds_landing/Files` is
+empty and every scheduled tpcds cell fails — run 33734219062 got 29 models into the spark leg, with
+a Livy session already acquired, before hitting
+
+```
+[PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/customer_address
+```
+
+**A scheduled run cannot fix this by itself** and that is by design, not a bug: `land` only runs a
+downloader when `skip_download` is off, and a scheduled run forces it ON so that every scheduled
+build measures the same archive. The generation has to be a hand dispatch.
+
+`land` now refuses an empty archive on the free runner (`check_landing.py`), so the weekly cost is a
+runner minute rather than Fabric compute, and the message names the dataset and the dispatch. That
+guard does not land the data — this does, and it is still outstanding:
+
+```bash
+gh workflow run Benchmark -f dataset=tpcds -f skip_download=false    -f download_limit=10 -f build=false -f benchmark=false
+```
+
+**SF10, not SF100, and not because SF100 is wrong.** `download_limit` IS the scale factor here, and
+the Databricks twin's own README prescribes the order — *"smoke test at SF10 (minutes end to end),
+then the paper's tipping point"*. SF10 is 26,206,837 `store_sales` rows against SF100's 262,082,396,
+and it proves the generator, the 30 models and all four legs for a fraction of the compute. The
+paper's mirrored-vs-Fabric result is stated at SF100, so **the twin comparison needs a second
+one-off at SF100 before it means anything** — `c:/dbx_vertipaq` builds the same rows on the
+Databricks side and both halves must sit at the same scale factor.
+
+⚠️ **SF100 IS NOT JUST "THE SAME BUT BIGGER".** dsdgen materialises a whole scale factor in memory;
+the Databricks side used a 256 GB node for SF100 and a Fabric notebook at `cores=8` may not hold it.
+A failed generation still spends the compute. Raise `cores` for that dispatch, and read the
+`--status` mode first (`python download_tpcds.py --status`) — it answers "has this already happened"
+without creating anything.
+
+`build=false -f benchmark=false` because generating is the whole job: there is nothing to measure
+until it has happened, and the same dispatch doing both would put a first-ever build behind a
+first-ever generation.
+
+---
+
 ## DuckDB `main` cannot commit an Iceberg CTAS — do not move the pin
 
 `v2.1.0-alpha40144` (source `780c7c743f`) dies on the smoke workflow's plain round-trip:

@@ -872,6 +872,16 @@ jobs:
       - name: Say the archive was reused
         if: ${{ github.event_name == 'schedule' || inputs.skip_download }}
         run: echo "skip_download is on — building on the landed archive as-is" >&2
+      # AN EMPTY ARCHIVE IS REFUSED HERE, ON THE FREE RUNNER, rather than 29 models into a paid leg.
+      # Run 33734219062 is why: a scheduled `tpcds` cell whose landing had never been generated, so
+      # `land` and `plan` both went green and the spark leg died on `[PATH_NOT_FOUND] …
+      # Files/landing/parquet_raw/customer_address` with a Livy session already acquired. Four tpcds
+      # slots a week were doing that. It refuses ONLY a completely empty archive — a half-drained one
+      # is a normal state that `download_limit` exists to produce — and a listing that throws is
+      # non-fatal, because a transient OneLake error must not fail a dispatch on a question it could
+      # not ask.
+      - name: The landing archive is not empty
+        run: python .github/scripts/check_landing.py
       - name: Upload the run-record fragment
         if: always()
         continue-on-error: true
