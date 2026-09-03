@@ -28,16 +28,35 @@ gh workflow run Benchmark -f dataset=nyc -f engines=iceberg -f cores=8    -f duc
 It is also the UNSORTED lever, but that costs nothing here: iceberg has no sort to give up.
 
 Read `layout.stats.iceberg.fct_trips` (`num_row_groups` should land near 118) and the `directlake`
-CU against 33705511481's 7,955. ⚠️ **THE FIRST DISPATCH (33733500776) MOVED NOTHING, AND THE REASON IS NOW FIXED.** nyc at
-`row_group_size=5000000` wrote 729 row groups at 811,700 rows against the baseline's 728 at 812,815.
-DuckDB flushes on whichever threshold hits first and duckdb-iceberg defaults the byte one to 128 MB,
-which is ~812K of nyc's rows — so a rows-only property was inert. `iceberg_geometry()` now raises
-`write.parquet.row-group-size-bytes` alongside it. **Re-dispatch and expect ~118 row groups**; if it
-lands near 729 again the property is not reaching the writer at all, which is a different bug.
+CU against 33705511481's 7,955. **Also read the leg's DURATION** — see the timeout note below.
+
+⚠️ **THE FIRST DISPATCH (33733500776) MOVED NOTHING, AND THE CAUSE IS NOW READ OUT OF THE
+WRITER'S SOURCE.** nyc at `row_group_size=5000000` wrote 729 row groups at 811,700 rows against the
+baseline's 728 at 812,815. `iceberg_insert.hpp:69` hardcodes `batch_size_bytes` to 128 MB, both
+thresholds are live, and the first to hit wins — so a rows-only property was inert. Confirmed
+independently: 20 BIGINT columns through plain `COPY` at the 128 MB default give **827,392 rows per
+row group** against nyc's real 812,815. `iceberg_geometry()` now emits
+`write.parquet.row-group-size-bytes` at a fixed 1 GiB alongside the row count, which is measured free
+(the 128 MB / 1 GiB duration ratio is 0.75× at 20M rows and 1.14× at 60M).
+
+⚠️ **AND RUN 33739194650 — THE FIRST DISPATCH OF THE FIX — TIMED OUT AND MEASURED NOTHING.**
+It hit the 90-minute job cap with `fct_trips` still writing after 86 minutes, against SIX minutes for
+the same 591M rows on the two dispatches either side of it; its record carries
+`{"num_row_groups": 0, "total_rows": 0, "compression": "EMPTY"}` and the cap truncated the notebook
+output, so there is no OOM line and no way to tell a slow write from a hung one. **The geometry is
+NOT the suspect** — that was suspected and is retracted on the local scaling measurement above, and
+`preserve_insertion_order: false` is set on this leg too, so there is no order-preserving
+materialization either. The cap is now 150 minutes so the leg can report; the duration is the
+diagnostic. If the re-dispatch lands near 6 minutes it was weather.
 
 **The mechanism is PROVEN** — run 33731443153, on the leg's own `duckdb==1.6.0.dev379`
 (core `v2.0.0-alpha39998`), against the real OneLake REST catalog with the leg's own ATTACH
-options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4)`. Re-run it with
+options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4)`.
+⚠️ **BUT THAT PROBE COULD NOT HAVE CAUGHT 33733500776, AND HAS BEEN REBUILT.** Its table was
+2 narrow columns × 1M rows — roughly 10 MB — so the 128 MB budget never bound and a rows-only
+property genuinely worked there. It now writes a 50-column table twice: the shipping PAIR (rows +
+1 GiB, must give exactly 4 row groups) beside a rows-only CONTROL (must give MORE, i.e. the byte
+default binds). Locally those read 4 and 13. Re-run with
 `gh workflow run "DuckDB main smoke" -f onelake=true` after any pin move.
 
 **Expect the geometry alone not to close the gap**, and say so when reporting: iceberg is also

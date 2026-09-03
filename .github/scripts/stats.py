@@ -747,22 +747,29 @@ def _nonbaseline(var, baseline):
     return v if v and v != baseline else None
 
 
-def _iceberg_geometry(var, baseline):
-    """`_nonbaseline`, except `auto` folds into the baseline instead of opening its own column.
+def _iceberg_geometry(var):
+    """The iceberg leg's geometry, recorded whenever it is PINNED. `auto` is the only absence.
 
-    THE DIVERGENCE IS THE POINT, and it is not a softening of the rule — the word `auto` means two
-    different things to the two writers. On duckrun it names a real writer behaviour: the estimator
-    sizes the write, which is a layout no pinned integer produces, so it earns a column. On iceberg
-    it means `iceberg_geometry()` emits NO table property, so `duckdb__create_table_as` falls back
-    to the adapter's own SQL and the parquet is byte-identical to every iceberg run recorded before
-    the property existed at all. Recording `"auto"` there would split those runs off a column for a
-    difference that is not in the files.
+    NO BASELINE, and that divergence from `_nonbaseline` is the point — it is not a softening of the
+    rule, it is the rule applied to a different writer. duckrun's baselines exist because
+    `history/` was written at 16M / 1024 MB, so a dispatch at those values really does produce the
+    parquet the old column already holds. **The iceberg leg has no such history**: every run before
+    the property existed emitted no table property at all, and `duckrun_auto` (on by default and on
+    every scheduled run) sets both env vars to `auto`, so all thirteen recorded iceberg runs read
+    `auto` and key to absence either way.
 
-    Same baselines as duckrun otherwise, so a pinned geometry keys both writers the same way and the
-    pair stays comparable.
+    So on this leg any pinned integer changes the emitted SQL, including 16000000 and 1024, and
+    folding one into a duckrun baseline records a layout the run did not write. That is not
+    hypothetical: run 33739194650 dispatched `file_size_mb=1024`, recorded `None`, and became
+    indistinguishable from an `auto` run — while emitting `write.target-file-size-bytes` = 1024 MB
+    where `auto` emits nothing and the writer defaults to 512 MB. Two geometries, one dashboard row.
+
+    `auto` still folds to None rather than opening its own column, and for the reason it always did:
+    it means `iceberg_geometry()` emits NO property, `duckdb__create_table_as` falls back to the
+    adapter's own SQL, and the parquet is byte-identical to every pre-property iceberg run.
     """
-    v = _nonbaseline(var, baseline)
-    return None if (v or "").lower() == "auto" else v
+    v = (os.environ.get(var) or "").strip()
+    return None if (not v or v.lower() == "auto") else v
 
 
 # THERE IS NO `declared_sort_key()` ANY MORE, AND NOTHING SHOULD WRITE `dbt.duckrun.sort_by` AGAIN.
@@ -928,12 +935,14 @@ def build_doc(per_engine, engines, guids=None, landing=None, encodings=None, ord
             # would key both to one dashboard row and `groupMid` would print a median across
             # two layouts — the exact failure the `sorted` rule exists to prevent, arriving from
             # the other direction.
-            # SAME BASELINES AS duckrun, deliberately: one dispatch now describes both writers,
-            # so a geometry that keys duckrun to the history column must key iceberg to its own
-            # history column too, or the pair stops being comparable on the page.
+            # NO BASELINES HERE, unlike duckrun, and `_iceberg_geometry` carries the whole reason:
+            # this leg has no pinned-geometry history to join, so any integer is a real layout and
+            # only `auto` is absence. Passing duckrun's baselines through recorded a dispatched
+            # `file_size_mb=1024` as `None` on run 33739194650 — the same cell as `auto`, for a
+            # different file target.
             ("iceberg", {"vcores": os.environ.get("FABRIC_CORES") or None,
-                         "row_group_size": _iceberg_geometry("DUCKDB_ROW_GROUP_SIZE", "16000000"),
-                         "file_size_mb": _iceberg_geometry("DUCKDB_FILE_SIZE_MB", "1024")}),
+                         "row_group_size": _iceberg_geometry("DUCKDB_ROW_GROUP_SIZE"),
+                         "file_size_mb": _iceberg_geometry("DUCKDB_FILE_SIZE_MB")}),
             ("spark", {"resource_profile": os.environ.get("SPARK_RESOURCE_PROFILE") or None,
                        "native_execution_engine": os.environ.get("SPARK_NATIVE_ENABLED") or None}),
             # dwh USED TO BE ABSENT HERE, on the grounds that Fabric Warehouse exposes no per-run

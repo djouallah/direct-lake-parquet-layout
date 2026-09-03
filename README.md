@@ -370,26 +370,54 @@ is not in it is written to the table metadata and changes no parquet:
 | `write.parquet.compression-codec` / `-level` | `codec` / `compression_level` |
 | `write.target-file-size-bytes` | the writer's file rotation |
 
-⚠️ **THE ROW COUNT IS A CEILING AND ON ITS OWN IT DOES NOTHING — MEASURED, AT THE COST OF ONE
-DISPATCH.** DuckDB flushes a row group when EITHER threshold is reached, and duckdb-iceberg defaults
-the byte one to 128 MB. Locally, on 3M rows of four columns with `preserve_insertion_order` off and
-the same data both times:
+⚠️ **THE ROW COUNT IS A CEILING AND ON ITS OWN IT DOES NOTHING — AND THE REASON IS ONE
+HARDCODED CONSTANT, NOT ANYTHING ABOUT THE DATA.** `write.parquet.row-group-size` really is the same
+knob as plain DuckDB's `COPY … (ROW_GROUP_SIZE x)` — `IcebergInsert::GetCopyOptions` resolves it onto
+the identical `batch_size` field: *"the COPY binder resolves them into batch_size(_bytes) on the copy
+operator instead. Do the same here, since we bypass that binder."* What differs is that plain `COPY`
+carries **no** byte threshold, so the row count binds, while duckdb-iceberg carries one **always**
+(`src/include/execution/operator/iceberg_insert.hpp:62-69`):
 
-```
-ROW_GROUP_SIZE 5000000                             -> 1 row group,  3,000,000 rows
-ROW_GROUP_SIZE 5000000, ROW_GROUP_SIZE_BYTES 128MB -> 2 row groups, max 2,004,992 rows
+```cpp
+//! default target file size: 512MB, per the Iceberg spec default for write.target-file-size-bytes
+idx_t file_size_bytes = 512ULL * 1024 * 1024;
+//! Row groups are flushed when either threshold is hit. Iceberg only defines a byte default
+//! (write.parquet.row-group-size-bytes = 128MB), so we leave batch_size unset unless the table
+//! sets write.parquet.row-group-size - otherwise DuckDB's 122880 row default would always win.
+optional_idx batch_size;
+optional_idx batch_size_bytes = 128ULL * 1024 * 1024;
 ```
 
-So run 33733500776 — nyc at `row_group_size=5000000` — wrote **729 row groups at 811,700 rows**
-against the baseline's 728 at 812,815, i.e. nothing moved. 128 MB is ~812K rows over nyc's 20
-columns and ~2.7M over aemo's 5 narrow ones, which is precisely what both datasets had always
-written: **this leg has been byte-bound at the default since the writer was fixed**, and the
-row-group counts in every iceberg record are that default rather than anything about the data.
-`iceberg_geometry()` therefore raises `write.parquet.row-group-size-bytes` to the file target
-whenever a row count is pinned — the largest value with any meaning, since duckdb-iceberg caps a
-row group's bytes at the file size regardless. The file size still binds when the rows will not fit
-in one, so read `num_row_groups` back out of the record rather than assuming the dispatch got what
-it asked for.
+Both are live and the first to hit wins, so on any table reaching 128 MB before x rows the row count
+is advisory. **The 128 MB is UNCOMPRESSED, which is what makes this easy to misdiagnose**: nyc's
+iceberg mart is 8,961 MB over 728 row groups, i.e. **12.3 MB per row group on disk** — read that as
+"nothing near 128 MB" and the conclusion inverts.
+
+Measured locally through plain `COPY` (the same `batch_size` fields the properties reach), 20 BIGINT
+columns, `preserve_insertion_order` off, asking 5,000,000 rows per group:
+
+| budget | row groups | max rows/group | duration |
+|---|---:|---:|---:|
+| 128 MB (the writer's default) | 25 | **827,392** | 23.9s |
+| 512 MB | 7 | 3,305,472 | 22.7s |
+| 1 GiB | 4 | 5,001,216 | 23.9s |
+
+That first row is the diagnosis confirmed on an independent table: **827,392 rows against nyc's real
+812,815**. So run 33733500776 — nyc at `row_group_size=5000000` — wrote **729 row groups at 811,700
+rows** against the baseline's 728 at 812,815 because it was byte-bound the whole time, and **the
+row-group counts in every iceberg record are that default rather than anything about the data**.
+
+`iceberg_geometry()` therefore emits `write.parquet.row-group-size-bytes` at a fixed **1 GiB**
+whenever a row count is pinned. 1 GiB rather than something cautious because it is the value at which
+a dispatched 5M rows actually binds on a 20-column table, and because **the budget is measured free**:
+the 128 MB / 1 GiB duration ratio is 0.75× at 20M rows and 1.14× at 60M, both inside run-to-run
+variance with one run coming out faster. It is a correction, not a trade.
+
+⚠️ **The writer clamps the budget DOWN to the file target** (`GetCopyOptions`:
+`batch_size_bytes > file_size_bytes -> file_size_bytes`), so a pinned row count with
+`file_size_mb=auto` effectively gets **512 MB, not 1 GiB** — the writer's own default file size.
+`file_size_mb=1024` is part of asking for a 5M-row group on a wide table, not incidental to it. Read
+`num_row_groups` back out of the record rather than assuming the dispatch got what it asked for.
 
 ⚠️ **`write.parquet.dict-size-bytes` IS NOT THE DICTIONARY KNOB THIS PAGE WANTS.** It maps to
 `string_dictionary_page_size_limit`, which DuckDB already defaults to 1 GiB while Iceberg's spec

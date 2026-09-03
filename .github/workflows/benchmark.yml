@@ -886,7 +886,18 @@ jobs:
     # falsy and the nightly would build nothing while reporting success.
     if: (github.event_name == 'schedule' || inputs.build) && needs.plan.outputs.fabric != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 150, RAISED FROM 90, and the reason is a measurement rather than headroom-for-its-own-sake.
+    # Run 33739194650 was cancelled here at the 90-minute mark with nyc's `fct_trips` still writing
+    # after 86 — against SIX minutes for the same 591M rows on the two dispatches either side of it.
+    # The cap turned an unexplained 14x into no evidence at all: the notebook's own output was
+    # truncated, so the record carries `num_row_groups: 0` and there is no OOM line, no spill line
+    # and no way to tell a slow write from a hung one. A write geometry under test needs a cap that
+    # lets the leg REPORT, because the duration is the diagnostic.
+    # This is not a permanent budget. The longest run ever recorded here is 84 minutes and the
+    # median 32, so 150 only ever binds on something already anomalous — and the grid's slots are
+    # 100 minutes apart, so an overrun past that queues the next cell rather than killing it
+    # (`cancel-in-progress: false`); a second consecutive overrun costs one cell that week.
+    timeout-minutes: 150
     strategy:
       # One engine failing says nothing about the other — they share only the landed data.
       fail-fast: false

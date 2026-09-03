@@ -82,15 +82,33 @@ jobs:
       # as every job in benchmark.yml — no bespoke deletion code anywhere in this file.
       RUN_RECORD: ${{ github.workspace }}/record/record-00-smoke.json
       SMOKE_TABLE: duckdb_main_smoke
-      # A SECOND table, written with an Iceberg table property, so the row-group probe below
-      # cannot take the encoding_stats proof down with it if the property is refused. Same
-      # lakehouse, so the teardown removes both with the one item.
-      SMOKE_TABLE_RG: duckdb_main_smoke_rg
-      # 1,000,000 rows at 250,000 per row group is FOUR. Chosen so the assertion cannot pass by
-      # accident: the writer's own default lands the whole million in one or two groups, so a
-      # property that is silently ignored reads 1-2 and fails, and one that is honoured reads 4.
-      SMOKE_RG_ROWS: "250000"
+      # TWO MORE tables, written with Iceberg table properties, so the row-group probe below cannot
+      # take the encoding_stats proof down with it if a property is refused. Same lakehouse, so the
+      # teardown removes all three with the one item.
+      SMOKE_TABLE_RG: duckdb_main_smoke_rg          # the shipping pair: rows + byte budget
+      SMOKE_TABLE_RG_CTL: duckdb_main_smoke_rg_ctl  # the control: rows ALONE
+      # ⚠️ THESE NUMBERS ARE SIZED SO THE PROBE CAN FAIL, AND THE OLD ONES WERE NOT.
+      # It used to write 2 narrow columns x 1M rows -- about 10 MB -- and set the rows property
+      # alone. On a table that small duckdb-iceberg's hardcoded 128 MB byte budget
+      # (iceberg_insert.hpp:69) never binds, so a rows-only property DOES work, the probe read
+      # "4 row groups, honoured", and the nyc leg then moved nothing (run 33733500776: 729 row
+      # groups at 811,700 rows against a baseline 728 at 812,815). The probe was structurally
+      # unable to see the one failure it existed to catch.
+      #
+      # So the table is now WIDE ENOUGH for the byte budget to bind, and the probe writes it twice:
+      #   control  (rows only)      -> 128 MB binds -> MANY row groups, the row count ignored
+      #   shipping (rows + 1 GiB)   -> the ROW COUNT binds -> exactly TOTAL/ROWS row groups
+      # Measured locally through plain COPY (same batch_size fields the properties reach), 20 BIGINT
+      # columns x 20M rows asking 5M rows/group: 128 MB gave 25 groups at 827,392 rows, 1 GiB gave
+      # 4 at 5,001,216. At the 4M rows below the two read 13 and 4. The control asserts only
+      # "more groups than the shipping case", so it stays true if the row width drifts.
+      SMOKE_RG_COLS: "50"
+      SMOKE_RG_TOTAL: "4000000"
+      SMOKE_RG_ROWS: "1000000"
       SMOKE_RG_EXPECTED: "4"
+      # MUST EQUAL `row_group_budget_mb` in macros/iceberg_geometry.sql -- test_iceberg_geometry.py
+      # asserts they agree, because a probe testing a budget the macro does not emit proves nothing.
+      SMOKE_RG_BUDGET_MB: "1024"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -349,15 +367,24 @@ jobs:
       # leg does not run would answer a question nobody asked, and a main regression would block
       # the answer entirely — which is exactly what happened on run 33730547105.
       #
-      # `write.parquet.row-group-size` is ROWS. Its siblings `write.parquet.row-group-size-bytes`
-      # and `write.parquet.dict-size-bytes` are byte budgets; the rows one is probed because it is
-      # the unit duckrun's `row_group_size` dispatch input already carries, so a green here means
-      # one number can drive both DuckDB writers.
+      # `write.parquet.row-group-size` is ROWS — duckdb-iceberg's own extension, the unit duckrun's
+      # `row_group_size` dispatch input already carries, which is what lets one number drive both
+      # DuckDB writers. ⚠️ IT IS NOT ENOUGH ON ITS OWN, and that is the whole shape of this step:
+      # `iceberg_insert.hpp:69` hardcodes `batch_size_bytes` to 128 MB, both thresholds are live,
+      # and the first to hit wins — so on any table wide enough to reach 128 MB (UNCOMPRESSED)
+      # before it reaches x rows, the row count is advisory. `iceberg_geometry()` therefore emits
+      # the PAIR, and this probes the pair plus a control.
       #
-      # A SECOND TABLE, not the round-trip one above: a refused property must fail THIS assertion
-      # and leave the encoding_stats proof standing, or one result would mask the other. And
-      # `if: always()` for the same reason in the other direction — a main regression above must
-      # not silently skip the leg's own answer.
+      # TWO WRITES OF ONE WIDE TABLE, and the control is the half that would have caught run
+      # 33733500776 before it cost a dispatch:
+      #   control  — rows ALONE     — must produce MORE row groups than the shipping case, i.e. the
+      #                               byte default binds and the row count is ignored. A green here
+      #                               with the OLD narrow table is exactly what happened.
+      #   shipping — rows + 1 GiB   — must produce exactly TOTAL/ROWS, i.e. the row count binds.
+      # Neither is the round-trip table above: a refused property must fail THIS step and leave the
+      # encoding_stats proof standing, or one result masks the other. And `if: always()` for the
+      # same reason in the other direction — a main regression above must not silently skip the
+      # leg's own answer.
       #
       # ⚠️ The ATTACH options are `stage_create_tables 0` / `skip_create_table_metadata_updates 1`,
       # copied from the leg. If the property is dropped rather than refused, suspect those first —
@@ -372,8 +399,11 @@ jobs:
           pip install -q --pre "$PIN"
           python - <<'EOF'
           import os, sys, duckdb
+          import math
           rows, want = int(os.environ["SMOKE_RG_ROWS"]), int(os.environ["SMOKE_RG_EXPECTED"])
-          tbl = os.environ["SMOKE_TABLE_RG"]
+          cols, total = int(os.environ["SMOKE_RG_COLS"]), int(os.environ["SMOKE_RG_TOTAL"])
+          budget = int(os.environ["SMOKE_RG_BUDGET_MB"])
+          assert want == math.ceil(total / rows), "SMOKE_RG_EXPECTED disagrees with TOTAL/ROWS"
           c = duckdb.connect()
           print("core:", c.sql("SELECT library_version || ' / ' || source_id FROM pragma_version()").fetchone()[0])
           c.sql("INSTALL iceberg; LOAD iceberg; INSTALL azure; LOAD azure")
@@ -394,23 +424,54 @@ jobs:
                           TYPE iceberg, endpoint '{ep}', token '{tok}',
                           access_delegation_mode 'none', stage_create_tables 0,
                           skip_create_table_metadata_updates 1, default_schema 'dbo')""")
-          c.sql(f"DROP TABLE IF EXISTS onelake.dbo.{tbl}")
-          # The clause the macro emits, in the position the macro emits it.
-          c.sql(f"""CREATE TABLE onelake.dbo.{tbl}
-                      WITH ('write.parquet.row-group-size' = '{rows}') AS
-                      SELECT ['AAA','BBB','CCC','DDD'][(i % 4) + 1] AS duid, i AS mw
-                      FROM range(1000000) t(i)""")
-          try:
-              print("properties:", c.sql(f"SELECT * FROM iceberg_table_properties('onelake.dbo.{tbl}')").fetchall())
-          except Exception as exc:                       # a table function's signature may move
-              print("properties: unreadable —", exc)
-          glob = f"{os.environ['SMOKE_TABLE_PATH']}/dbo/{tbl}/data/*.parquet"
-          got = c.sql(f"SELECT count(DISTINCT row_group_id) FROM parquet_metadata('{glob}')").fetchone()[0]
-          print(f"row groups: {got} (asked {rows} rows/group over 1,000,000 rows, expected {want})")
-          verdict = "honoured" if got == want else "**IGNORED**"
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
-              print(f"| iceberg `write.parquet.row-group-size` | {got} row groups, {verdict} |", file=fh)
-          sys.exit(0 if got == want else 1)
+          # 50 BIGINT columns, so a row group of `rows` rows cannot fit in the writer's 128 MB.
+          sel = ", ".join(f"i + {n} AS c{n}" for n in range(cols))
+          body = f"SELECT {sel} FROM range({total}) t(i)"
+
+          def written(tbl, props):
+              """CREATE the table with `props`, return its total row-group count."""
+              c.sql(f"DROP TABLE IF EXISTS onelake.dbo.{tbl}")
+              # The clause the macro emits, in the position and the sorted order it emits it.
+              clause = ", ".join(f"'{k}' = '{v}'" for k, v in sorted(props.items()))
+              c.sql(f"CREATE TABLE onelake.dbo.{tbl} WITH ({clause}) AS {body}")
+              try:
+                  print(f"  {tbl} properties:",
+                        c.sql(f"SELECT * FROM iceberg_table_properties('onelake.dbo.{tbl}')").fetchall())
+              except Exception as exc:                 # a table function's signature may move
+                  print(f"  {tbl} properties: unreadable —", exc)
+              # sum(num_row_groups) over the FILES, not count(DISTINCT row_group_id): the id
+              # restarts per file, so the distinct count undercounts the moment there are two.
+              g = f"{os.environ['SMOKE_TABLE_PATH']}/dbo/{tbl}/data/*.parquet"
+              n = c.sql(f"SELECT sum(num_row_groups) FROM parquet_file_metadata('{g}')").fetchone()[0]
+              mx = c.sql(f"SELECT max(row_group_num_rows) FROM parquet_metadata('{g}')").fetchone()[0]
+              print(f"  {tbl}: {n} row groups, max {mx:,} rows/group")
+              return int(n)
+
+          print(f"{cols} cols x {total:,} rows, asking {rows:,} rows/row-group")
+          ship = written(os.environ["SMOKE_TABLE_RG"],
+                         {"write.parquet.row-group-size": rows,
+                          "write.parquet.row-group-size-bytes": budget * 1048576})
+          ctl = written(os.environ["SMOKE_TABLE_RG_CTL"],
+                        {"write.parquet.row-group-size": rows})
+
+          # The pair binds on ROWS: exactly total/rows groups.
+          ok_ship = ship == want
+          # The control binds on BYTES: strictly more groups, the row count ignored. This is the
+          # assertion the old narrow-table probe could not make, and the reason it read green
+          # while the nyc leg moved nothing.
+          ok_ctl = ctl > want
+          for label, got, expect, ok in (
+                  (f"`row-group-size` + `-bytes` = {budget} MB", ship, f"exactly {want}", ok_ship),
+                  ("`row-group-size` alone (control)", ctl, f"more than {want}", ok_ctl)):
+              verdict = "honoured" if ok else "**UNEXPECTED**"
+              print(f"{label}: {got} row groups, expected {expect} — {verdict}")
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+                  print(f"| iceberg {label} | {got} row groups, expected {expect}, {verdict} |", file=fh)
+          if not ok_ctl:
+              print("the control did not go byte-bound — the table is too NARROW for a 128 MB "
+                    "budget to bind, so this probe cannot see an inert row-count property. "
+                    "Raise SMOKE_RG_COLS or SMOKE_RG_ROWS.", file=sys.stderr)
+          sys.exit(0 if (ok_ship and ok_ctl) else 1)
           EOF
 
       # ---------------------------------------------------------------- always

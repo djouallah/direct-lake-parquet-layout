@@ -2171,6 +2171,27 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   this leg gets is the model's own trailing `ORDER BY`. README.md has the property table, the two
   knobs that are NOT mapped (`dictionary_size_limit`, `parquet_version` — the encoding half, an
   upstream gap), and why a `post_hook` cannot carry this.
+  ⚠️ **THE ROW COUNT ALONE IS INERT, AND EVERY ICEBERG ROW-GROUP COUNT ON RECORD IS A HARDCODED
+  DEFAULT RATHER THAN A FACT ABOUT THE DATA.** `write.parquet.row-group-size` IS the same knob as
+  plain DuckDB's `COPY … (ROW_GROUP_SIZE x)` — `GetCopyOptions` resolves it onto the identical
+  `batch_size` field — but `iceberg_insert.hpp:69` also hardcodes `batch_size_bytes` to **128 MB**,
+  both thresholds are live, and the first to hit wins. **The 128 MB is UNCOMPRESSED**, which is what
+  makes it easy to misdiagnose: nyc's mart is 8,961 MB over 728 row groups, i.e. 12.3 MB per row
+  group ON DISK. Measured on an independent 20-BIGINT-column table through plain `COPY`, the 128 MB
+  default gives **827,392 rows per group** against nyc's real **812,815** — so that leg was
+  byte-bound the whole time, at ~6x duckrun's 117 row groups, and a large part of the CU gap README
+  attributes to encoding is this. `iceberg_geometry()` emits the byte budget at a fixed **1 GiB**
+  alongside any pinned row count; it is **measured free** (the 128 MB / 1 GiB duration ratio is
+  0.75x at 20M rows and 1.14x at 60M, inside run-to-run variance), so it is a correction rather than
+  a trade. The writer clamps the budget DOWN to the file target, so a pinned row count with
+  `file_size_mb=auto` gets 512 MB and not 1 GiB — read `num_row_groups` back.
+  **A PROBE THAT RETURNS A PLAUSIBLE GREEN ON A TABLE TOO SMALL TO EXERCISE THE CONSTRAINT IS THE
+  SAME TRAP AS `vorder_files` ON dwh.** `duckdb-main.yml`'s row-group probe wrote the rows property
+  alone on 2 narrow columns × 1M rows — roughly 10 MB, far under any byte threshold — so a rows-only
+  property genuinely worked there, it read `4 row groups, honoured`, and the nyc leg then moved
+  nothing. It now writes a 50-column table twice: the shipping PAIR beside a rows-only CONTROL that
+  must produce MORE groups. When a probe's positive control is written by a different shape from the
+  thing under test, it is not a control.
   **That reason is void.** `fabric_run.py` pins `duckdb==1.6.0.dev379` on the iceberg leg (and only
   that leg — duckrun writes Delta through delta-rs and is untouched); dev365 reworked the iceberg
   writer, dev379 adds duckdb#24957's footer `encoding_stats`. Run 32444969823, on dev365, wrote the
