@@ -28,9 +28,10 @@ gh workflow run Benchmark -f dataset=nyc -f engines=iceberg -f cores=8    -f duc
 It is also the UNSORTED lever, but that costs nothing here: iceberg has no sort to give up.
 
 Read `layout.stats.iceberg.fct_trips` (`num_row_groups` should land near 118) and the `directlake`
-CU against 33705511481's 7,955. **Prove the mechanism first with the free
-`gh workflow run "DuckDB main smoke" -f onelake=true`** — it asserts the property is honoured on a
-throwaway table for one runner minute and no capacity.
+CU against 33705511481's 7,955. **The mechanism is PROVEN** — run 33731443153, on the leg's own `duckdb==1.6.0.dev379`
+(core `v2.0.0-alpha39998`), against the real OneLake REST catalog with the leg's own ATTACH
+options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4)`. Re-run it with
+`gh workflow run "DuckDB main smoke" -f onelake=true` after any pin move.
 
 **Expect the geometry alone not to close the gap**, and say so when reporting: iceberg is also
 8,961 MB against duckrun's 5,866 and carries `PLAIN_DICTIONARY` with **no RLE**, and neither the
@@ -53,6 +54,30 @@ sort is paid by duckrun, spark and dwh as well, on 591M rows. duckrun already so
 chose `pickup_date, VendorID, store_and_fwd_flag, payment_type` on this mart) so it gains nothing
 and pays twice. Decide that trade before dispatching; it is a different experiment from the
 geometry one and should not be bundled with it.
+
+---
+
+## DuckDB `main` cannot commit an Iceberg CTAS — do not move the pin
+
+`v2.1.0-alpha40144` (source `780c7c743f`) dies on the smoke workflow's plain round-trip:
+
+```
+INTERNAL Error: Transformer for rule 'Statement' returned an unexpected type.
+  ... IcebergTransaction::Commit ...
+```
+
+An assertion failure inside the extension, on `CREATE TABLE onelake.dbo.<t> AS SELECT … FROM
+range(1000000)` — no properties, no partitioning, nothing exotic. The last green smoke was
+`v2.0.0-alpha38837` (2026-08-24), so it regressed somewhere in between.
+
+**The leg is unaffected**: `fabric_run.py` pins `duckdb==1.6.0.dev379`, whose core is
+`v2.0.0-alpha39998`, and that wheel round-trips fine — the property probe in the same workflow runs
+on it and passes. So this blocks a PIN MOVE, not today's builds.
+
+The smoke workflow will stay red at the round-trip step until upstream fixes it, and that is the
+workflow working. **Check WHICH step failed before reading a red smoke as a problem here** — the
+probe step is `if: always()` precisely so a main regression cannot hide the leg's own answer.
+Worth an upstream issue with the backtrace, which is in run 33730547105's log.
 
 ---
 

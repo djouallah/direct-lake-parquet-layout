@@ -166,19 +166,41 @@ def test_a_temporary_relation_never_carries_the_clause():
     assert sql.startswith("create temporary table")
 
 
+# The lines the override copies verbatim. Each is a branch the adapter's own macro has and this one
+# must keep: the contract check, the sql_header, the constraints path, the python path.
+COPIED = ("{% set contract_config = config.get('contract') %}",
+          "{%- set sql_header = config.get('sql_header', none) -%}",
+          "{{ get_table_columns_and_constraints() }} ;",
+          "{{ py_write_table(temporary=temporary, relation=relation, compiled_code=compiled_code) }}")
+
+
+def _upstream_macro_body():
+    """dbt-duckdb's own `duckdb__create_table_as`, found by SEARCHING its macro tree.
+
+    ⚠️ NOT BY FILENAME. It lives in `macros/adapters.sql` on the version installed here, and the
+    first draft of this test hardcoded that path — which passed locally and failed in CI on a
+    different resolved version, where that file holds only the schema macros. The macro's home is
+    not part of the contract; its body is.
+    """
+    pkg = pytest.importorskip("dbt.include.duckdb")
+    root = pathlib.Path(pkg.__file__).parent
+    for path in sorted(root.rglob("*.sql")):
+        text = path.read_text(encoding="utf-8")
+        if "macro duckdb__create_table_as(" in text:
+            return text
+    pytest.skip("dbt-duckdb installed but duckdb__create_table_as not found in its macros")
+
+
 def test_the_override_still_matches_the_adapter_it_was_copied_from():
-    """A BUMP OF dbt-duckdb CAN SILENTLY DIVERGE THIS. The override is a copy of
-    `dbt/include/duckdb/macros/adapters.sql`'s `duckdb__create_table_as` plus one line, so a change
-    upstream — a new config key, a different contract branch — is inherited by every other model and
-    NOT by this one. Skipped when the adapter is not installed, so the suite still runs offline."""
-    adapters = pytest.importorskip("dbt.include.duckdb")
-    upstream = (pathlib.Path(adapters.__file__).parent / "macros" / "adapters.sql")
-    body = upstream.read_text(encoding="utf-8")
-    ours = (MACROS / "iceberg_adapter_overrides.sql").read_text(encoding="utf-8")
-    for marker in ("{% set contract_config = config.get('contract') %}",
-                   "{%- set sql_header = config.get('sql_header', none) -%}",
-                   "{{ get_table_columns_and_constraints() }} ;",
-                   "{{ py_write_table(temporary=temporary, relation=relation, "
-                   "compiled_code=compiled_code) }}"):
-        assert marker in body, f"upstream changed shape; re-copy the macro: {marker!r}"
-        assert marker in ours, f"the override drifted from upstream: {marker!r}"
+    """A BUMP OF dbt-duckdb CAN SILENTLY DIVERGE THIS. The override is a copy of the adapter's
+    `duckdb__create_table_as` plus one line, so a change upstream — a new config key, a different
+    contract branch — is inherited by every other model and NOT by this one. Skipped when the
+    adapter is not installed, so the suite still runs offline."""
+    # Whitespace-collapsed on both sides, so a REFLOW upstream — the same call wrapped across two
+    # lines — does not read as a semantic change and block every build over a line break.
+    flat = lambda t: " ".join(t.split())
+    body, ours = flat(_upstream_macro_body()), flat(
+        (MACROS / "iceberg_adapter_overrides.sql").read_text(encoding="utf-8"))
+    for marker in COPIED:
+        assert flat(marker) in body, f"upstream changed shape; re-copy the macro: {marker!r}"
+        assert flat(marker) in ours, f"the override drifted from upstream: {marker!r}"
