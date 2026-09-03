@@ -28,7 +28,14 @@ gh workflow run Benchmark -f dataset=nyc -f engines=iceberg -f cores=8    -f duc
 It is also the UNSORTED lever, but that costs nothing here: iceberg has no sort to give up.
 
 Read `layout.stats.iceberg.fct_trips` (`num_row_groups` should land near 118) and the `directlake`
-CU against 33705511481's 7,955. **The mechanism is PROVEN** — run 33731443153, on the leg's own `duckdb==1.6.0.dev379`
+CU against 33705511481's 7,955. ⚠️ **THE FIRST DISPATCH (33733500776) MOVED NOTHING, AND THE REASON IS NOW FIXED.** nyc at
+`row_group_size=5000000` wrote 729 row groups at 811,700 rows against the baseline's 728 at 812,815.
+DuckDB flushes on whichever threshold hits first and duckdb-iceberg defaults the byte one to 128 MB,
+which is ~812K of nyc's rows — so a rows-only property was inert. `iceberg_geometry()` now raises
+`write.parquet.row-group-size-bytes` alongside it. **Re-dispatch and expect ~118 row groups**; if it
+lands near 729 again the property is not reaching the writer at all, which is a different bug.
+
+**The mechanism is PROVEN** — run 33731443153, on the leg's own `duckdb==1.6.0.dev379`
 (core `v2.0.0-alpha39998`), against the real OneLake REST catalog with the leg's own ATTACH
 options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4)`. Re-run it with
 `gh workflow run "DuckDB main smoke" -f onelake=true` after any pin move.

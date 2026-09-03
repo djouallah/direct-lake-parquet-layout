@@ -99,7 +99,40 @@ def test_the_row_group_size_is_passed_as_rows_with_no_conversion():
     own extension, NOT the Iceberg spec's `write.parquet.row-group-size-bytes`, which is a byte
     budget. Multiplying or renaming this to the `-bytes` spelling would hand the writer a 5-million
     BYTE row group and quietly produce ~1,000x too many of them."""
-    assert geometry("5000000", "auto") == {"write.parquet.row-group-size": 5000000}
+    assert geometry("5000000", "auto")["write.parquet.row-group-size"] == 5000000
+
+
+def test_a_pinned_row_count_also_raises_the_byte_budget():
+    """WITHOUT THIS THE ROW COUNT IS INERT, and run 33733500776 is the proof: nyc dispatched at
+    `row_group_size=5000000` wrote 729 row groups at 811,700 rows, against the baseline's 728 at
+    812,815 — no change whatever. DuckDB flushes on WHICHEVER threshold is reached first and
+    duckdb-iceberg defaults the byte one to 128 MB, which over nyc's 20 columns is ~812K rows and
+    over aemo's 5 narrow ones ~2.7M. Both datasets had always been byte-bound at the default.
+
+    Measured locally on 3M rows of four columns, same data both times:
+        ROW_GROUP_SIZE 5000000                             -> 1 row group,  3,000,000 rows
+        ROW_GROUP_SIZE 5000000, ROW_GROUP_SIZE_BYTES 128MB -> 2 row groups, max 2,004,992 rows
+    """
+    assert geometry("5000000", "auto") == {"write.parquet.row-group-size": 5000000,
+                                           "write.parquet.row-group-size-bytes": 512 * 1048576}
+
+
+def test_the_byte_budget_follows_the_dispatched_file_size():
+    """The budget is the FILE target, because duckdb-iceberg caps a row group's bytes at the file
+    size anyway — a file cannot hold less than one row group — so that is the largest value with
+    any meaning, and it leaves the ROW COUNT as the binding threshold, which is what the dispatch
+    input promises. 512 MiB when the file size is `auto`, that being the writer's own default."""
+    pinned = geometry("5000000", "128")
+    assert pinned["write.parquet.row-group-size-bytes"] == 128 * 1048576
+    assert pinned["write.target-file-size-bytes"] == 128 * 1048576
+    assert geometry("5000000", "auto")["write.parquet.row-group-size-bytes"] == 512 * 1048576
+
+
+def test_a_file_size_alone_does_not_touch_the_row_group_budget():
+    """`file_size_mb` on its own is a file-rotation setting and nothing else. Raising the row-group
+    byte budget there would silently change row-group sizing on a dispatch that only asked about
+    files — and it is the ROW COUNT this budget exists to make binding."""
+    assert geometry("auto", "1024") == {"write.target-file-size-bytes": 1024 * 1048576}
 
 
 def test_the_file_size_is_converted_from_MiB_to_bytes():
@@ -111,10 +144,13 @@ def test_the_file_size_is_converted_from_MiB_to_bytes():
 
 def test_the_two_knobs_are_independent():
     """`auto` on one and a value on the other is a legal dispatch — `row_group_size` is free text
-    while `file_size_mb` is a choice — so neither may gate the other."""
-    assert set(geometry("2000000", "auto")) == {"write.parquet.row-group-size"}
+    while `file_size_mb` is a choice — so neither may gate the other. Note the row count brings its
+    own byte budget along (see above); the file size does not."""
+    assert set(geometry("2000000", "auto")) == {"write.parquet.row-group-size",
+                                               "write.parquet.row-group-size-bytes"}
     assert set(geometry("auto", "64")) == {"write.target-file-size-bytes"}
     assert set(geometry("2000000", "64")) == {"write.parquet.row-group-size",
+                                              "write.parquet.row-group-size-bytes",
                                               "write.target-file-size-bytes"}
 
 

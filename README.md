@@ -370,6 +370,27 @@ is not in it is written to the table metadata and changes no parquet:
 | `write.parquet.compression-codec` / `-level` | `codec` / `compression_level` |
 | `write.target-file-size-bytes` | the writer's file rotation |
 
+⚠️ **THE ROW COUNT IS A CEILING AND ON ITS OWN IT DOES NOTHING — MEASURED, AT THE COST OF ONE
+DISPATCH.** DuckDB flushes a row group when EITHER threshold is reached, and duckdb-iceberg defaults
+the byte one to 128 MB. Locally, on 3M rows of four columns with `preserve_insertion_order` off and
+the same data both times:
+
+```
+ROW_GROUP_SIZE 5000000                             -> 1 row group,  3,000,000 rows
+ROW_GROUP_SIZE 5000000, ROW_GROUP_SIZE_BYTES 128MB -> 2 row groups, max 2,004,992 rows
+```
+
+So run 33733500776 — nyc at `row_group_size=5000000` — wrote **729 row groups at 811,700 rows**
+against the baseline's 728 at 812,815, i.e. nothing moved. 128 MB is ~812K rows over nyc's 20
+columns and ~2.7M over aemo's 5 narrow ones, which is precisely what both datasets had always
+written: **this leg has been byte-bound at the default since the writer was fixed**, and the
+row-group counts in every iceberg record are that default rather than anything about the data.
+`iceberg_geometry()` therefore raises `write.parquet.row-group-size-bytes` to the file target
+whenever a row count is pinned — the largest value with any meaning, since duckdb-iceberg caps a
+row group's bytes at the file size regardless. The file size still binds when the rows will not fit
+in one, so read `num_row_groups` back out of the record rather than assuming the dispatch got what
+it asked for.
+
 ⚠️ **`write.parquet.dict-size-bytes` IS NOT THE DICTIONARY KNOB THIS PAGE WANTS.** It maps to
 `string_dictionary_page_size_limit`, which DuckDB already defaults to 1 GiB while Iceberg's spec
 default for it is 2 MB — so setting it to anything sane keeps LESS dictionary-encoded, not more.
