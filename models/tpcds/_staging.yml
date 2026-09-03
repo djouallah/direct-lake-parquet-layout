@@ -1,0 +1,20 @@
+version: 2
+
+# See _dimensions.yml for why this file lives at models/tpcds/.
+
+models:
+  - name: stg_tpcds_archive_log
+    description: >
+      The manifest of what download_tpcds.py landed: one row per parquet file, written at land time
+      and immutable afterwards. Every engine reads the same log with its own SQL.
+
+      TWO COLUMNS ARE USED DIFFERENTLY HERE THAN ANYWHERE ELSE, and both differences are what make
+      this dataset legible. `source_type` is the TABLE name, so it takes ten distinct values where
+      every other dataset has one or two. `etag` is `sf<N>`: it is how the generator decides a scale
+      factor is already landed and skips, and how a reader of a run record tells which scale factor
+      the numbers describe.
+
+      No generic tests. The two singular tests under tests/tpcds/ are what read this table, and they
+      read it against a fact -- a knowing exception to the one-table rule, taken for the same reason
+      the other datasets take it: the log is not a source that can change shape, it is this
+      pipeline's own record of what it wrote.

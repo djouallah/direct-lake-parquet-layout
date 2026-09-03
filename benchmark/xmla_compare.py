@@ -599,6 +599,159 @@ CMS_QUERIES = [
      'dim_cms_date[year] = 2019, dim_cms_date[month] = 6))'),
 ]
 
+# ---------------------------------------------------------------------------- the TPC-DS suite
+#
+# THE ONLY SUITE HERE THAT REPRODUCES SOMEONE ELSE'S QUERIES RATHER THAN ASKING ITS OWN. The other
+# five exist to measure a surface; this one exists so the Data Leaps / Microsoft white paper *Modern
+# Power BI Architecture Choices for Reporting on Azure Databricks* can be re-run against a different
+# Delta layout, alongside the Databricks arm in c:/dbx_vertipaq. So the composite tier IS the
+# paper's five test queries and nothing else, and the probes and the ladder around them are the
+# harness's own instrument, kept in the shape every other suite uses.
+#
+# ⚠️ THE PAPER'S LITERAL DAX IS NOT AVAILABLE, AND THESE ARE A RECONSTRUCTION. Section 6.3 names the
+# five queries and says their full text is in Appendix 4; section 11 shows Appendix 4 is an external
+# attachment, and it is not published -- the companion repository is gone. What the paper DOES carry
+# is enough to fix every degree of freedom that changes what the engine does:
+#
+#   * Figure 4.4.1, the model diagram, names the measures verbatim -- Catalog Revenue, Catalog Sales
+#     Quantity, Catalog Sales Same Period LY, Catalog Sales YoY, Store Distinct Customers, Store Net
+#     Profit, Store Profit % by Item Category, Store Revenue -- and shows the relationships and each
+#     table's column subset.
+#   * Figure 6.1.1, the test report page, shows the five visuals and what each groups by: a Customer
+#     Count card; a "Store Profit % Split by Category" donut over i_category; a "Catalog Revenue
+#     Ranked by Promotion" bar over p_promo_name; a "Catalog Sales Quantity YoY" combo over quarters
+#     with three named series; and a "Store Revenue Time Analysis" matrix of category by quarter
+#     carrying revenue, YoY and YTD.
+#
+# What is NOT recoverable is the Performance Analyzer boilerplate. That is why these are written as
+# plain EVALUATEs: pretending to a capture we do not have would be worse than saying so here.
+#
+# ONE THING THE MISSING TEXT COSTS NOTHING. Query 3 is described as "rank based on sum, implemented
+# as a visual calculation". A visual calculation is evaluated on the visual's RESULT SET, not by the
+# storage engine, so the captured query underneath it is the plain sorted aggregation written below
+# -- the rank adds no engine work in either version.
+#
+# THE PAPER'S FILTER SCENARIOS ARE 1 AND 3 HERE. Its scenario 1 is the unfiltered page and its
+# scenario 3 applies all six slicers; both are below, as `q<N>_...` and `q<N>_filtered_...`. Its
+# scenario 2 filters only the columns its Composite Model's aggregation tables cover, and there is
+# no Composite Model in this project, so that scenario has no counterpart and is deliberately absent.
+#
+# THE YEAR PIN IS 2022, and it is pinned for the opposite reason to bts's 1988 and green's 2014.
+# Those pin the OLDEST year because their archives drain oldest-first and a recent year would filter
+# to nothing. dsdgen emits 2021-2026 whole, so nothing is missing -- but Q5's year-over-year term
+# needs a FULL PRIOR YEAR inside the window, and 2021 has none. 2022 is the first year where the
+# comparison is real rather than a divide by blank.
+TPCDS_QUERIES = [
+    # --- Tier 1: per-column probes over the mart (rowcount LAST -- see the note at the top) ---
+    ("probe", "probe_ext_sales_price",
+     'EVALUATE ROW("x", SUM(store_sales[ss_ext_sales_price]))'),
+    ("probe", "probe_quantity", 'EVALUATE ROW("x", SUM(store_sales[ss_quantity]))'),
+    ("probe", "probe_item", 'EVALUATE ROW("x", DISTINCTCOUNT(store_sales[ss_item_sk]))'),
+    ("probe", "probe_customer", 'EVALUATE ROW("x", DISTINCTCOUNT(store_sales[ss_customer_sk]))'),
+    ("probe", "probe_store", 'EVALUATE ROW("x", DISTINCTCOUNT(store_sales[ss_store_sk]))'),
+    ("probe", "probe_sold_date",
+     'EVALUATE ROW("x", COUNTROWS(VALUES(store_sales[ss_sold_date_sk])))'),
+    ("probe", "probe_rowcount", 'EVALUATE ROW("x", COUNTROWS(store_sales))'),
+
+    # --- Tier 2: THE PAPER'S FIVE QUERIES, scenario 1 (no slicer selected) ---
+    # Q1 Distinct Count -- the "Customer Count" card. The paper names this its hardest query for
+    # Direct Lake and Direct Lake over Mirrored, so it is the one to read first on any comparison.
+    ("composite", "q1_distinct_count",
+     'EVALUATE ROW("Customer Count", [Store Distinct Customers])'),
+    # Q2 Percentage Share -- the "Store Profit % Split by Category" donut.
+    ("composite", "q2_pct_share",
+     'EVALUATE SUMMARIZECOLUMNS(item[i_category], '
+     '"Share", [Store Profit % by Item Category], "Profit", [Store Net Profit])'),
+    # Q3 Rank based on sum -- the "Catalog Revenue Ranked by Promotion" bar, sorted descending.
+    # TOPN(1001) is the window a bar chart of this size requests; the rank itself is a visual
+    # calculation and never reaches the engine.
+    ("composite", "q3_rank_by_sum",
+     'EVALUATE TOPN(1001, SUMMARIZECOLUMNS(promotion[p_promo_name], '
+     '"Catalog Revenue", [Catalog Revenue]), [Catalog Revenue], DESC)'),
+    # Q4 YoY on the SECOND fact -- the "Catalog Sales Quantity YoY" combo chart, by quarter, with
+    # exactly the three series the paper's legend names.
+    ("composite", "q4_yoy_second_fact",
+     'EVALUATE SUMMARIZECOLUMNS(date_dim[d_quarter_name], '
+     '"Catalog Sales Quantity", [Catalog Sales Quantity], '
+     '"Catalog Sales Same Period LY", [Catalog Sales Same Period LY], '
+     '"Catalog Sales YoY", [Catalog Sales YoY])'),
+    # Q5 YoY and YTD on the LARGEST fact -- the "Store Revenue Time Analysis" matrix, category by
+    # quarter. The heaviest query in the suite and the one the paper's SF100/SF1000 findings lean on.
+    ("composite", "q5_yoy_ytd_large_fact",
+     'EVALUATE SUMMARIZECOLUMNS(item[i_category], date_dim[d_quarter_name], '
+     '"Store Revenue", [Store Revenue], "Store Revenue YoY", [Store Revenue YoY], '
+     '"Store Revenue YTD", [Store Revenue YTD])'),
+
+    # --- Tier 2 (cont.): the same five under the paper's SCENARIO 3, all six slicers applied ---
+    # The slicers are the ones on its report page: Year, Customer State, Customer Education, Store
+    # Manager, Carrier and Catalog Type. Filtering through six dimensions at once is what makes the
+    # cold transcode pay for the dimension key columns as well as the fact's, which is the whole
+    # reason the paper measures a filtered scenario separately.
+    ("composite", "q1_filtered_distinct_count",
+     'EVALUATE CALCULATETABLE(ROW("Customer Count", [Store Distinct Customers]), '
+     'date_dim[d_year] = 2022, customer_address[ca_state] = "CA", '
+     'customer_demographics[cd_education_status] = "College")'),
+    ("composite", "q2_filtered_pct_share",
+     'EVALUATE CALCULATETABLE(SUMMARIZECOLUMNS(item[i_category], '
+     '"Share", [Store Profit % by Item Category]), '
+     'date_dim[d_year] = 2022, customer_address[ca_state] = "CA", '
+     'customer_demographics[cd_education_status] = "College")'),
+    ("composite", "q3_filtered_rank_by_sum",
+     'EVALUATE CALCULATETABLE(TOPN(1001, SUMMARIZECOLUMNS(promotion[p_promo_name], '
+     '"Catalog Revenue", [Catalog Revenue]), [Catalog Revenue], DESC), '
+     'date_dim[d_year] = 2022, ship_mode[sm_carrier] = "UPS", catalog_page[cp_type] = "bi-annual")'),
+    ("composite", "q4_filtered_yoy_second_fact",
+     'EVALUATE CALCULATETABLE(SUMMARIZECOLUMNS(date_dim[d_quarter_name], '
+     '"Catalog Sales Quantity", [Catalog Sales Quantity], '
+     '"Catalog Sales YoY", [Catalog Sales YoY]), '
+     'ship_mode[sm_carrier] = "UPS", catalog_page[cp_type] = "bi-annual")'),
+    ("composite", "q5_filtered_yoy_ytd_large_fact",
+     'EVALUATE CALCULATETABLE(SUMMARIZECOLUMNS(item[i_category], date_dim[d_quarter_name], '
+     '"Store Revenue", [Store Revenue], "Store Revenue YTD", [Store Revenue YTD]), '
+     'customer_address[ca_state] = "CA", '
+     'customer_demographics[cd_education_status] = "College")'),
+
+    # --- Tier 2 (cont.): the harness's own two, so column-width scaling is comparable across
+    #     datasets. Not the paper's; kept because every other suite carries them.
+    ("composite", "wide_all_measures",
+     'EVALUATE SUMMARIZECOLUMNS(date_dim[d_year], "a", [Store Revenue], "b", [Store Net Profit], '
+     '"c", [Store Distinct Customers], "d", [Catalog Revenue], "e", [Catalog Sales Quantity])'),
+    ("composite", "narrow_one_measure",
+     'EVALUATE SUMMARIZECOLUMNS(date_dim[d_year], "a", [Store Revenue])'),
+    # The catalog side of the star, which the paper's five queries reach only through promotion and
+    # the date. Without these, ship_mode and catalog_page would be tables the suite never touches.
+    ("composite", "catalog_by_ship_mode_x_year",
+     'EVALUATE SUMMARIZECOLUMNS(ship_mode[sm_type], date_dim[d_year], '
+     '"Revenue", [Catalog Revenue], "Qty", [Catalog Sales Quantity])'),
+    ("composite", "catalog_by_page_type",
+     'EVALUATE SUMMARIZECOLUMNS(catalog_page[cp_type], '
+     '"Revenue", [Catalog Revenue], "Profit", [Catalog Net Profit])'),
+
+    # --- Tier 3: the RAW table. One, because the star is eleven tables of which only the log is
+    #     landing-tier -- the same rule as nyc, not aemo's six.
+    ("raw", "raw_archive_log",
+     'EVALUATE SUMMARIZECOLUMNS(stg_tpcds_archive_log[source_type], '
+     '"Files", [Archive Files], "Rows", [Archive Source Rows])'),
+
+    # --- Tier 4: selectivity ladder on the store key (SUMX lifts the work above the XMLA floor) ---
+    ("hot_only", "sel_1yr",
+     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
+     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), date_dim[d_year] = 2022))'),
+    ("hot_only", "sel_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
+     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), '
+     'date_dim[d_year] = 2022, date_dim[d_moy] = 6))'),
+    ("hot_only", "sel_1store",
+     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
+     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), '
+     'store_sales[ss_store_sk] = {key}))'),
+    ("hot_only", "sel_1store_1mo",
+     'EVALUATE ROW("r", CALCULATE(SUMX(store_sales, '
+     'store_sales[ss_quantity] * store_sales[ss_ext_sales_price]), '
+     'store_sales[ss_store_sk] = {key}, date_dim[d_year] = 2022, date_dim[d_moy] = 6))'),
+]
+
+
 # The ladder's filter value is resolved from the data AFTER pass 1, per dataset. Three things per
 # suite: the queries, the DAX that finds the busiest key, and what to CALL it in the log and the
 # report — because "top DUID: 132" on a taxi run is exactly the quiet mislabel this repo is against.
@@ -655,6 +808,19 @@ SUITES = {
                    '"m", [Total Amount]), [m], DESC)',
         "quote": True,
         "ready": 'EVALUATE ROW("n", COUNTROWS(dim_cms_date))',
+    },
+    # tpcds's ss_store_sk is a BIGINT surrogate key, so it is NOT quoted -- see the note on `quote`
+    # above; an unquoted string would match nothing silently, and a quoted integer is the same trap
+    # from the other side. It resolves on [Store Revenue] rather than a row count because that is
+    # the measure the paper's own report ranks by, and the readiness probe reads THIS dataset's date
+    # dimension, which is `date_dim` and not any of the five `dim_*` spellings above.
+    "tpcds": {
+        "queries": TPCDS_QUERIES,
+        "label": "busiest store",
+        "resolve": 'EVALUATE TOPN(1, SUMMARIZECOLUMNS(store_sales[ss_store_sk], '
+                   '"m", [Store Revenue]), [m], DESC)',
+        "quote": False,
+        "ready": 'EVALUATE ROW("n", COUNTROWS(date_dim))',
     },
 }
 

@@ -2383,6 +2383,11 @@ test("?dataset= carries its mart with it, and an unknown one falls back", () => 
   assert.equal(d.optsFromSearch("?dataset=green").dataset, "green");
   assert.equal(d.optsFromSearch("?dataset=cms").table, "fct_cms_payments");
   assert.equal(d.optsFromSearch("?dataset=cms").dataset, "cms");
+  // tpcds carries its mart with it like every other dataset -- and it is the one whose mart is not
+  // the only fact table, so the switch landing on store_sales rather than catalog_sales is the
+  // behaviour, not an accident of ordering.
+  assert.equal(d.optsFromSearch("?dataset=tpcds").table, "store_sales");
+  assert.equal(d.optsFromSearch("?dataset=tpcds").dataset, "tpcds");
   // ...but an explicit ?table= still wins, for asking an odd question of another shared table.
   assert.equal(d.optsFromSearch("?dataset=nyc&table=dim_zone").table, "dim_zone");
   // A reader-supplied URL falls back rather than rendering nothing: an empty page is a worse

@@ -382,7 +382,8 @@ group's bytes and control size with the row-group knob, not the file knob.
 
 Five datasets, chosen to span the surface layout acts on — skew, competing skew, width,
 sparsity — plus one deliberate near-zero-surface control, because that control alone once
-produced a confidently wrong answer about V-Order:
+produced a confidently wrong answer about V-Order. A sixth is a reproduction rather than a point on
+that surface, and is marked as such:
 
 | dataset | source | mart | shape |
 |---|---|---|---|
@@ -391,6 +392,7 @@ produced a confidently wrong answer about V-Order:
 | `bts` | US on-time flights, monthly zipped CSV from TranStats | `fct_flights` — 180M rows, **22 columns** | independent *moderate* skew — many categoricals competing for one sort budget |
 | `green` | NYC green-taxi trips, monthly parquet from TLC's CDN | `fct_green_trips` — 84M rows, **20 columns** | nyc's skew regime at 1/7 the rows |
 | `cms` | CMS Open Payments, annual CSV | `fct_cms_payments` — 88M rows, **91 columns** | wide and sparse — **54 columns >50% NULL** — with both skew regimes in one table |
+| `tpcds` | TPC-DS, generated with DuckDB `dsdgen` | `store_sales` — 262M rows at SF100, **24 columns** | *synthetic, and not a surface point.* the *Modern Power BI Architecture Choices for Reporting on Azure Databricks* subset, rebuilt so the paper's own five DAX queries can be re-run against a different Delta layout |
 
 Four writers produce the same rows from the same landed files, selected by dbt target — the
 parquet each writes is the only variable:

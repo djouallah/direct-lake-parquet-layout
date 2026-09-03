@@ -1,0 +1,132 @@
+version: 2
+
+# Every model in this tree carries its TPC-DS name -- `date_dim`, `item`, `store` and so on -- and
+# those names must stay unique across the whole project, because dbt resolves a patch by model NAME
+# regardless of which dataset is gated on and raises DuplicatePatchPathError on a collision. nyc
+# already owns `dim_date` and `dim_zone`, which is why nothing here is renamed to a `dim_` spelling:
+# the TPC-DS names collide with nothing, and keeping them is what makes this dataset legible against
+# the paper and against the Databricks arm in c:/dbx_vertipaq.
+#
+# THIS FILE MUST LIVE AT models/tpcds/. A generic test declared in a patch file gets the fqn of the
+# YML FILE, not of the model it patches, so only a file under models/<dataset>/ carries the `tpcds`
+# segment that the `data_tests` gate in dbt_project.yml keys on. Moving it up to models/ would
+# silently disable every test below.
+
+models:
+  - name: date_dim
+    description: >
+      The date dimension, trimmed to 2021-01-01..2026-12-31 (2,191 rows) and keyed on the SHIFTED
+      surrogate key. TPC-DS sales span 1998-2003; the paper adds d_date_sk_1 = d_date_sk minus
+      8,401 days so those keys land on 2021-2026, which is what gives the year-over-year and
+      year-to-date measures a recent year to work in.
+
+      THE KEY IS d_date_sk_1, NOT d_date_sk, and that is the paper's substitution rather than a
+      choice made here. d_date_sk is still carried and is deliberately NOT tested: after the
+      2021-2026 trim it is still unique, but nothing joins it and asserting it would imply
+      otherwise.
+    columns:
+      - name: d_date_sk_1
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: item
+    description: >
+      The item dimension. i_category is what the paper's percentage-share query splits profit by,
+      and it is the ten TPC-DS categories plus a blank.
+    columns:
+      - name: i_item_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: store
+    description: >
+      The store dimension. s_manager is one of the report page's six slicers, and s_store_sk is the
+      selectivity ladder's key.
+    columns:
+      - name: s_store_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: promotion
+    description: >
+      The promotion dimension. p_promo_name is the axis of the paper's rank query.
+    columns:
+      - name: p_promo_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: ship_mode
+    description: >
+      The ship-mode dimension, reached only from catalog_sales. sm_carrier is a report slicer.
+    columns:
+      - name: sm_ship_mode_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: catalog_page
+    description: >
+      The catalog-page dimension, reached only from catalog_sales. cp_type is a report slicer.
+    columns:
+      - name: cp_catalog_page_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: customer_address
+    description: >
+      The customer-address dimension. ca_state is a report slicer. Both facts reach it: store_sales
+      through ss_addr_sk and catalog_sales through cs_bill_addr_sk. cs_ship_addr_sk reaches it
+      too and the paper DEACTIVATES that relationship to keep the path unambiguous.
+    columns:
+      - name: ca_address_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null
+  - name: customer_demographics
+    description: >
+      The customer-demographics dimension. cd_education_status is a report slicer. Same two active
+      paths as customer_address, and the same deactivated third (cs_ship_cdemo_sk).
+    columns:
+      - name: cd_demo_sk
+        description: >
+          Surrogate key. Both `unique` and `not_null` are asserted on every dimension key here,
+          which is 16 of this dataset's 18 tests: the semantic model sets
+          relyOnReferentialIntegrity on every fact relationship, so a duplicate or null key would
+          silently change what an inner join returns rather than failing anywhere visible.
+        tests:
+          - unique
+          - not_null

@@ -42,6 +42,9 @@ MODELS = {
     "bts": {"stg_flights_archive_log", "dim_flight_date", "dim_carrier", "fct_flights"},
     "green": {"stg_green_archive_log", "dim_green_date", "dim_green_zone", "fct_green_trips"},
     "cms": {"stg_cms_archive_log", "dim_cms_date", "dim_cms_payer", "fct_cms_payments"},
+    "tpcds": {"stg_tpcds_archive_log", "date_dim", "item", "store", "promotion", "ship_mode",
+              "catalog_page", "customer_address", "customer_demographics",
+              "store_sales", "catalog_sales"},
 }
 
 # dataset -> how many data tests must be ENABLED. Generic tests come from models/<dataset>/_*.yml
@@ -55,7 +58,11 @@ MODELS = {
 # dim_cms_date.date) plus the reconciliation and the whitespace guard. nyc and green sit at 5
 # because their dimension key is an INTEGER LocationID, and the T-SQL-pads-on-comparison pathology
 # can only bite a STRING key — cms joins on a string payer id, so it needs the guard.
-TESTS = {"aemo": 6, "nyc": 5, "bts": 6, "green": 5, "cms": 6}
+# tpcds is 18, and it is the outlier because it has EIGHT dimensions where every other dataset has
+# one or two: 16 generic (unique + not_null on each dimension key) plus 2 singular (one archive-log
+# reconciliation per fact table). No whitespace guard -- every join key here is a BIGINT surrogate
+# key, and the T-SQL-pads-on-comparison pathology can only bite a STRING key.
+TESTS = {"aemo": 6, "nyc": 5, "bts": 6, "green": 5, "cms": 6, "tpcds": 18}
 
 DATASETS = tuple(MODELS)
 TARGETS = tuple(DIALECT)

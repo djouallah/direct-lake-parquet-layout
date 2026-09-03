@@ -637,3 +637,134 @@ def test_the_cms_sparse_pair_is_both_declared_and_both_probed():
     import xmla_compare as xc
     named = {name for _tier, name, _dax in xc.SUITES["cms"]["queries"]}
     assert {"probe_product_head", "probe_product_tail"} <= named
+
+
+# ------------------------------------------------------------------------- the TPC-DS template
+#
+# The same guards, against the sixth dataset's `.bim`, spelled out rather than parameterised for the
+# same reason the other blocks are. Two of them differ, and both differences are the dataset's:
+# ELEVEN tables where the others have four, and TWO fact tables, which is what makes the referential
+# integrity rule below read differently from every other copy.
+
+TPCDS = os.path.join(HERE, "store_sales.SemanticModel", "model.bim")
+
+TPCDS_EXPECTED = {"stg_tpcds_archive_log": "landing",
+                  "date_dim": "mart",
+                  "item": "mart",
+                  "store": "mart",
+                  "promotion": "mart",
+                  "ship_mode": "mart",
+                  "catalog_page": "mart",
+                  "customer_address": "mart",
+                  "customer_demographics": "mart",
+                  "store_sales": "mart",
+                  "catalog_sales": "mart"}
+
+
+def test_tpcds_template_carries_every_shared_table():
+    assert set(_parts(TPCDS)) == set(TPCDS_EXPECTED)
+
+
+def test_tpcds_template_table_set_matches_the_dataset_registry():
+    """Same guard as the other five: a model added or renamed in the registry and not here means the
+    benchmark quietly stops covering it."""
+    reg = pathlib.Path(".github/scripts/datasets.py")
+    if not reg.exists():
+        pytest.skip("datasets.py not reachable from cwd")
+    src = reg.read_text(encoding="utf-8")
+    block = re.search(r'"tpcds":\s*\{.*?"tables":\s*\[(.*?)\]', src, re.S)
+    assert block, "could not find the tpcds dataset's tables in datasets.py"
+    assert set(re.findall(r'"([^"]+)"', block.group(1))) == set(_parts(TPCDS))
+
+
+def test_tpcds_template_is_direct_lake_and_repointable():
+    assert _is_directlake_bim(_raw(TPCDS))
+    assert _ONELAKE_REF.search(_raw(TPCDS).decode("utf-8"))
+
+
+def test_tpcds_template_reads_the_real_tables_in_the_real_schemas():
+    assert _parts(TPCDS) == {t: ("direct" + "Lake", schema, t)
+                             for t, schema in TPCDS_EXPECTED.items()}
+
+
+def test_tpcds_relationships_point_at_columns_that_exist():
+    m = json.loads(_raw(TPCDS))
+    cols = {t["name"]: {c["name"] for c in t["columns"]} for t in m["model"]["tables"]}
+    for r in m["model"]["relationships"]:
+        assert r["fromColumn"] in cols[r["fromTable"]], f"{r['name']}: bad fromColumn"
+        assert r["toColumn"] in cols[r["toTable"]], f"{r['name']}: bad toColumn"
+
+
+def test_only_the_tpcds_facts_rely_on_referential_integrity():
+    """BOTH facts set RI here, and that is not this dataset relaxing the other five's rule.
+
+    Elsewhere the rule reads "only the MART's relationships", because elsewhere the mart is the only
+    fact and the other tables are raw landing tables carrying keys their dimensions genuinely do not
+    have -- aemo's fct_scada holds retired DUIDs, which is what duid_probe exists to measure, so
+    asserting RI there would make the benchmark silently measure fewer rows.
+
+    This dataset has TWO fact tables and no raw ones, and referential integrity holds on both BY
+    CONSTRUCTION: the white paper drops every any-null fact row precisely so "Assume Referential
+    Integrity" can be set, and download_tpcds.py probes all thirteen relationships after the
+    customisation and reports the orphan count -- zero at SF1. So the rule is unchanged in substance:
+    only a FACT may set RI, and only where the data supports it.
+    """
+    m = json.loads(_raw(TPCDS))
+    for r in m["model"]["relationships"]:
+        if r.get("relyOnReferentialIntegrity"):
+            assert r["fromTable"] in ("store_sales", "catalog_sales"), \
+                f"{r['name']} is not a fact's"
+
+
+def test_the_tpcds_date_table_is_marked_and_keyed_on_the_shifted_key():
+    """Q4 and Q5 are time intelligence, which needs a marked date table -- and the key is the
+    paper's substitution, not d_date_sk.
+
+    Without dataCategory Time on date_dim, SAMEPERIODLASTYEAR and TOTALYTD do not evaluate and the
+    two heaviest queries in the suite return blanks instead of failing, which reads as a very fast
+    result. And every fact relationship must land on d_date_sk_1: d_date_sk is deliberately absent
+    from the model so the substitution cannot be undone by accident.
+    """
+    m = json.loads(_raw(TPCDS))
+    dd = next(t for t in m["model"]["tables"] if t["name"] == "date_dim")
+    assert dd.get("dataCategory") == "Time"
+    assert any(c["name"] == "d_date" and c.get("isKey") for c in dd["columns"])
+    assert "d_date_sk" not in {c["name"] for c in dd["columns"]}
+    for r in m["model"]["relationships"]:
+        if r["toTable"] == "date_dim":
+            assert r["toColumn"] == "d_date_sk_1", f"{r['name']} joins the unshifted key"
+
+
+def test_the_tpcds_shipping_relationships_are_inactive():
+    """The paper's section 4.4 deactivates exactly three relationships to keep the paths
+    unambiguous. Active, catalog_sales would reach customer_address and customer_demographics two
+    ways each and Power BI would refuse the model."""
+    m = json.loads(_raw(TPCDS))
+    inactive = {r["name"] for r in m["model"]["relationships"] if r.get("isActive") is False}
+    assert inactive == {"catalog_sales_ship_addr_to_customer_address",
+                        "catalog_sales_ship_cdemo_to_customer_demographics",
+                        "promotion_to_item"}
+
+
+def test_every_tpcds_dax_string_resolves_against_the_tpcds_template():
+    """Queries, readiness probe and ladder resolver.
+
+    This is the guard that matters most for this dataset: the suite reproduces the paper's five
+    queries, whose literal text is unavailable, so every measure and column named in them is a
+    reconstruction that has to land on something the model actually exposes.
+    """
+    import xmla_compare as xc
+    _assert_dax_resolves(TPCDS, xc.SUITES["tpcds"])
+
+
+def test_the_tpcds_facts_carry_the_paper_measures():
+    """The measure NAMES come verbatim from the paper's own model diagram (Figure 4.4.1).
+
+    They are the one part of the reconstruction that is not inferred, so a rename here would quietly
+    cost the only direct correspondence with the paper that this project has.
+    """
+    m = json.loads(_raw(TPCDS))
+    got = {ms["name"] for t in m["model"]["tables"] for ms in t.get("measures", [])}
+    assert {"Store Revenue", "Store Net Profit", "Store Distinct Customers",
+            "Store Profit % by Item Category", "Catalog Revenue", "Catalog Sales Quantity",
+            "Catalog Sales Same Period LY", "Catalog Sales YoY"} <= got

@@ -1,4 +1,4 @@
-"""The nightly schedule is a 5x4 GRID — assert the cron lines and the env chains agree about it.
+"""The nightly schedule is a 6x4 GRID — assert the cron lines and the env chains agree about it.
 
 `benchmark.yml` carries 20 cron lines under `schedule:`, each commented with the cell it means
 (`# <dataset> <config>`), and three workflow-level env chains that turn `github.event.schedule`
