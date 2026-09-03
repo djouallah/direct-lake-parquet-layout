@@ -3255,10 +3255,10 @@
    "XMLA Read Operation": 7340.784
   },
   "77F93E95-0961-4912-8E23-1892971E02BA": {
-   "OneLake Iterative Read via Proxy": 18563.554,
-   "OneLake Other Operations": 1355.869,
-   "OneLake Other Operations Via Redirect": 109.065,
-   "OneLake Read via Proxy": 5184.13,
+   "OneLake Iterative Read via Proxy": 18580.79,
+   "OneLake Other Operations": 1356.878,
+   "OneLake Other Operations Via Redirect": 109.283,
+   "OneLake Read via Proxy": 5185.076,
    "OneLake Read via Redirect": 1.342,
    "OneLake Write via Proxy": 7356.512,
    "OneLake Write via Redirect": 259.997
@@ -4344,6 +4344,11 @@
   },
   "A80E7C55-1376-4908-A341-C23A1FBF4FCC": {
    "Jupyter Notebook Scheduled Run": 3031.204
+  },
+  "A852BBB0-625F-4489-BDF4-0BEA6078E3EE": {
+   "OneLake Iterative Read via Proxy": 1.463,
+   "OneLake Other Operations": 0.333,
+   "OneLake Write via Proxy": 5.203
   },
   "A8BC5C33-5875-455D-8A73-EB3B15A20471": {
    "Jupyter Notebook Scheduled Run": 25795.94
@@ -9041,6 +9046,14 @@
    "since": "2026-08-20T18:00:00",
    "timed": 317,
    "unfound": 852
+  },
+  {
+   "at": "2026-09-03T08:13:45+00:00",
+   "changed": 7,
+   "items": 318,
+   "since": "2026-08-20T18:00:00",
+   "timed": 318,
+   "unfound": 852
   }
  ],
  "schema": 2,
@@ -12271,10 +12284,10 @@
    "XMLA Read Operation": 102.288
   },
   "77F93E95-0961-4912-8E23-1892971E02BA": {
-   "OneLake Iterative Read via Proxy": 61.597,
-   "OneLake Other Operations": 51.829,
-   "OneLake Other Operations Via Redirect": 2.937,
-   "OneLake Read via Proxy": 57.585,
+   "OneLake Iterative Read via Proxy": 61.66,
+   "OneLake Other Operations": 51.894,
+   "OneLake Other Operations Via Redirect": 2.944,
+   "OneLake Read via Proxy": 57.641,
    "OneLake Read via Redirect": 0.007,
    "OneLake Write via Proxy": 3.735,
    "OneLake Write via Redirect": 0.143
@@ -13354,6 +13367,11 @@
   },
   "A80E7C55-1376-4908-A341-C23A1FBF4FCC": {
    "Jupyter Notebook Scheduled Run": 757.797
+  },
+  "A852BBB0-625F-4489-BDF4-0BEA6078E3EE": {
+   "OneLake Iterative Read via Proxy": 0.004,
+   "OneLake Other Operations": 0.007,
+   "OneLake Write via Proxy": 0.003
   },
   "A8BC5C33-5875-455D-8A73-EB3B15A20471": {
    "Jupyter Notebook Scheduled Run": 806.116
@@ -15693,5 +15711,5 @@
    "XMLA Read Operation": 29.974
   }
  },
- "updated": "2026-09-03T08:09:49+00:00"
+ "updated": "2026-09-03T08:13:45+00:00"
 }
