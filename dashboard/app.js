@@ -601,6 +601,29 @@ export function incomplete(rec) {
   if (!stats || !Object.keys(stats).length) {
     return "no layout recorded — the build half did not report";
   }
+  // ...and the MART specifically must hold rows. A leg can be killed partway and still leave a full
+  // `layout.stats` block: the `layout` job runs on its own and profiles whatever exists, so the
+  // dimensions come back populated while the fact is empty. Run 33739194650 is that shape — nyc
+  // iceberg cancelled at the 90-minute cap with `fct_trips` still writing, `dim_date` at 5,844 rows
+  // and the mart at `{total_rows: 0, num_files: 0, compression: "EMPTY"}`. Its build and benchmark
+  // halves had both "run", so every check above passed and it reached the page.
+  //
+  // WHY THAT IS WORSE THAN AN UGLY ROW: `sizeCounts` keys a source GENERATION on the mart's row
+  // count, so nyc grew a second generation and `sizeLinks` offered a `?rows=0` switch reading
+  // `0 · 1` beside `592M · 29` — inviting a reader to view one empty run as though it were a
+  // smaller archive. A zero is not a smaller generation, it is an absent measurement.
+  // `sameGeneration` deliberately KEEPS a run that recorded no count at all, because unmeasured is
+  // a different claim from different; that rule must not extend to one that recorded zero, which is
+  // a positive claim that the table is empty.
+  //
+  // Read the dataset's own mart, not `DEFAULTS.table` — a record is keyed to whichever dataset it
+  // built. Structural, never a plausibility test: it fires only on exactly zero, so a genuinely
+  // small archive is untouched, and a record whose mart is absent from `stats` is left to the
+  // checks above rather than being called empty here.
+  const mart = DATASET_TABLE[datasetOf(rec)];
+  if (mart && stats[mart] && martRows(rec, mart) === 0) {
+    return "the mart is empty — the build half wrote no rows";
+  }
   const timings = ((rec.benchmark || {}).timings) || {};
   if (!Object.keys(timings).length) {
     return "no benchmark timings — the query half did not run";

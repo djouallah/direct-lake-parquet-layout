@@ -1321,6 +1321,39 @@ test("a run with no layout is rejected", () => {
   assert.match(d.incomplete(r), /build half did not report/);
 });
 
+test("a run whose mart is empty is rejected, and does not open a source generation", () => {
+  // Run 33739194650: nyc iceberg killed at the 90-minute cap with `fct_trips` still writing. The
+  // `layout` job runs separately and profiled what existed, so `dim_date` came back at 5,844 rows
+  // while the mart read `{total_rows: 0, num_files: 0, compression: "EMPTY"}` -- and both the build
+  // and benchmark halves had "run", so every other check passed and it reached the page.
+  //
+  // The damage was not one ugly row. `sizeCounts` keys a source GENERATION on the mart's row count,
+  // so nyc grew a second one and `sizeLinks` offered `?rows=0` reading `0 · 1` beside `592M · 29`,
+  // presenting one empty run as a smaller archive. A zero is a positive claim that the table is
+  // empty, which is why it must not travel the same path as an ABSENT count -- `sameGeneration`
+  // deliberately keeps a run that recorded none, and that leniency stops here.
+  const r = full("a-1.json", "iceberg");
+  r.inputs = { ...(r.inputs || {}), dataset: "nyc" };
+  r.layout.stats = {
+    iceberg: {
+      dim_date: { total_rows: 5844, num_files: 1, num_row_groups: 1 },
+      fct_trips: { total_rows: 0, num_files: 0, num_row_groups: 0, compression: "EMPTY" },
+    },
+  };
+  assert.match(d.incomplete(r), /mart is empty/);
+  assert.deepEqual(d.sizeCounts([r], "fct_trips"), [[0, 1]],
+    "sizeCounts itself is unchanged -- the gate is incomplete(), so the run never reaches it");
+
+  // ...and exactly zero, never a plausibility test: a genuinely small archive still renders.
+  r.layout.stats.iceberg.fct_trips.total_rows = 1;
+  r.layout.stats.iceberg.fct_trips.num_files = 1;
+  assert.equal(d.incomplete(r), null, "one row is a real, if tiny, generation");
+
+  // A mart ABSENT from the stats block is left to the checks above, not called empty here.
+  delete r.layout.stats.iceberg.fct_trips;
+  assert.equal(d.incomplete(r), null, "no mart entry is not the same claim as an empty mart");
+});
+
 test("incomplete records are skipped by the loader and named", () => {
   // Skipped, never silently dropped: a page that quietly ignores a record is indistinguishable from
   // one that never had it.
