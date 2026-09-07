@@ -25,11 +25,11 @@
   <text x="365.24" y="300" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+7%</text>
   <text x="76" y="371.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">bts</text>
   <text x="158" y="355.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="420.03" y="340" width="84.09" height="22" rx="3" fill="#3987e5"/>
-  <text x="513.12" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.2× cheaper</text>
+  <rect x="420.03" y="340" width="78.45" height="22" rx="3" fill="#3987e5"/>
+  <text x="507.48" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.1× cheaper</text>
   <text x="158" y="385.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="420.03" y="370" width="95.86" height="22" rx="3" fill="#3987e5"/>
-  <text x="524.89" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−15%</text>
+  <rect x="420.03" y="370" width="103.41" height="22" rx="3" fill="#3987e5"/>
+  <text x="532.44" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−16%</text>
   <text x="76" y="457.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">green</text>
   <text x="158" y="441.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
   <rect x="398.18" y="426" width="21.85" height="22" rx="3" fill="#e66767"/>
