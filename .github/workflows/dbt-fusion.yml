@@ -152,6 +152,18 @@ jobs:
           SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
         run: |
           set -euo pipefail
+
+          # BELT, NOT THE FIX. `Problem with the SSL CA cert (path? access rights?)` is curl
+          # error 77 -- a CA bundle at a path that is not there. The curl inside
+          # `_core.abi3.so` is statically linked and may be built for a CA path Ubuntu does
+          # not have, which is why CURL_CA_BUNDLE alone changed nothing on runs 34472868381
+          # and 34474543493. Point every well-known path at Ubuntu's bundle; it is free and
+          # rules the whole class out.
+          for t in /etc/pki/tls/certs/ca-bundle.crt /etc/pki/tls/cert.pem /etc/ssl/cert.pem \n                   /usr/local/share/certs/ca-root-nss.crt; do
+            [ -e "$t" ] || { sudo mkdir -p "$(dirname "$t")" && sudo ln -sf /etc/ssl/certs/ca-certificates.crt "$t"; }
+          done
+          ls -l /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem || true
+
           export FUSION_DIR="$RUNNER_TEMP/fusion"
           mkdir -p "$FUSION_DIR/models"
           trap 'rm -f "$FUSION_DIR/profiles.yml"' EXIT
@@ -179,12 +191,24 @@ jobs:
               print("--- " + name + " ---")
               print(text.replace(TOKEN, "***"))
 
+          # THE `pre_hook` IS THE ONLY ROUTE LEFT TO A DuckDB SETTING FROM FUSION. A `settings:`
+          # block runs on a THROWAWAY connection (dbt-auth's own doc comment says so) and a
+          # `GLOBAL ` prefix is normalised into the key name -- measured, runs 34472396259 and
+          # 34472711289. A pre_hook runs on the MODEL's own connection, so a plain session-scoped
+          # SET is enough and no GLOBAL is needed. Without it the write dies on
+          # `Problem with the SSL CA cert` against onelake.blob.fabric.microsoft.com (runs
+          # 34472868381, 34474543493) -- the same reason every OneLake-touching duckdb session in
+          # `duckdb-main.yml` sets it. It lives in dbt_project.yml rather than the model header
+          # purely so no nested quoting has to survive two layers of heredoc.
           write("dbt_project.yml", """
               name: fusion_demo
               profile: fusion_demo
               version: "1.0"
               flags:
                 use_catalogs_v2: true
+              models:
+                fusion_demo:
+                  +pre_hook: "SET azure_transport_option_type = 'curl'"
           """)
 
           # The four write-compat options are the ones the iceberg leg already passes to ATTACH.
