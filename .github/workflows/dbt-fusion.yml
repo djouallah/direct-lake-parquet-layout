@@ -183,12 +183,28 @@ jobs:
                 # `unrecognized configuration parameter "GLOBALazure_transport_option_type"`.
                 # So the CA bundle is supplied to libcurl by ENV VAR on the step instead.
                 secrets:
+                  # ⚠️ **`persistent: true` IS WHAT MAKES THE STORAGE CREDENTIAL REACH THE MODEL.**
+                  # `dbt-auth`'s `generate_secret_sql` defaults `persistent` to false and emits
+                  # `CREATE OR REPLACE SECRET` — session-scoped — and `apply_duckdb_init_sql` runs
+                  # it on a TEMPORARY connection. The catalog ATTACH survives that connection
+                  # because attachments are database-scoped; the SECRET does not. So the model's
+                  # own connection reached OneLake with no credential and died
+                  # `could not open file '…/data' … this could mean the credentials used were
+                  # wrong` (runs 34472151740, 34472396259, 34472868381). PERSISTENT writes it to
+                  # `~/.duckdb`, i.e. the token lands on disk — acceptable only because this runner
+                  # is ephemeral and profiles.yml already holds it. Do not lift into anything that
+                  # persists.
+                  #
+                  # It never bit the by-hand run on Windows: `az login` leaves a credential chain
+                  # the azure extension picks up without any secret, so the missing one was free.
                   - type: azure
                     name: onelake_storage
                     provider: access_token
+                    persistent: true
                     access_token: "$ONELAKE_TOKEN"
                   - type: iceberg
                     name: onelake_cat
+                    persistent: true
                     token: "$ONELAKE_TOKEN"
           YML
 
