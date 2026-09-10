@@ -1,20 +1,20 @@
-# dbt Fusion writing to the OneLake Iceberg catalog — a DEMO, not a measurement.
+# dbt Core 2.0 writing to the OneLake Iceberg catalog — a DEMO, not a measurement.
 #
-# WHAT IT SHOWS: dbt-core 2.0 (Fusion) can create and commit an Iceberg table in OneLake with no
+# WHAT IT SHOWS: dbt-core 2.0 can create and commit an Iceberg table in OneLake with no
 # `dbt-duckdb`, no `duckdb` pip package and no adapter install of any kind. It provisions its own
 # lakehouse, writes a table through a `catalogs.yml` REST catalog, reads the parquet footer back,
 # and deletes the lakehouse.
 #
-# ⚠️ **NOTHING HERE MEASURES ANYTHING, AND THE GEOMETRY IS THE REASON.** Fusion's compiled
+# ⚠️ **NOTHING HERE MEASURES ANYTHING, AND THE GEOMETRY IS THE REASON.** Its compiled
 # `duckdb__create_table_as` emits a bare `create table` with no `WITH (…)` clause, and the strings
 # `write.parquet`, `row-group-size` and `target-file-size` appear ZERO times in its 285 MB binary —
-# so Iceberg write geometry cannot be dispatched from it at all, and unlike stock `dbt-duckdb` the
-# macro is compiled into Rust and cannot be overridden the way
-# `macros/iceberg_adapter_overrides.sql` overrides it today. Measured 2026-09-10 by hand: 4M rows of
+# so Iceberg write geometry cannot be dispatched from it at all, and unlike dbt-core 1.x's
+# `dbt-duckdb` the macro is compiled into Rust and cannot be overridden the way
+# `macros/iceberg_adapter_overrides.sql` overrides it today. Measured 2026-09-10: 4M rows of
 # 20 BIGINT columns came out at **122,880 rows per row group** — DuckDB's raw default, i.e. the
 # bundled `duckdb_extended 0.21.0.dev+dbt0.0.29` driver does NOT carry duckdb-iceberg#1202, whose
 # 128 MB byte budget would have given ~827K. That is the pre-pin writer this repo already parked six
-# iceberg runs in `history/runs/legacy/` over. So a Fusion number must never enter `history/`.
+# iceberg runs in `history/runs/legacy/` over. So a number from here must never enter `history/`.
 #
 # THE ARCHITECTURE, because it is nothing like the leg's. `pip install dbt-core==2.x` lays down a
 # 108 KB `dbt.exe` launcher and a ~285 MB `dbt/_core.pyd` — the whole engine, Rust, compiled as one
@@ -24,7 +24,7 @@
 # prints no Plugins section because there are no plugins.
 #
 # IT IS ITS OWN EVERYTHING, deliberately, in the shape `DuckDB main smoke` already established:
-# its own lakehouse name (`provision.py fusion` → `dbt_fusion_demo`), because `ensure()` reuses an
+# its own lakehouse name (`provision.py core2` → `dbt_core2_demo`), because `ensure()` reuses an
 # item by DISPLAY NAME and `teardown` deletes by GUID — so borrowing `dbt_iceberg` would let this
 # demo share a real build's lakehouse and then delete it mid-run; and its own concurrency group,
 # because `onelake-<ref>` holds at most one pending run and a free demo must never evict a queued
@@ -32,7 +32,7 @@
 #
 # It writes no run record to `history/`, reads no ledger and publishes nothing.
 
-name: dbt Fusion demo
+name: dbt Core 2 demo
 
 on:
   workflow_dispatch:
@@ -52,7 +52,7 @@ permissions:
 
 concurrency:
   # Its OWN group — see the header. Never `onelake-<ref>`.
-  group: dbt-fusion-demo-${{ github.ref_name }}
+  group: dbt-core2-demo-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -62,12 +62,12 @@ jobs:
     env:
       # `provision.py` writes the item GUIDs here and `teardown` deletes what it names. Same
       # mechanism as every other job — no bespoke deletion code.
-      RUN_RECORD: ${{ github.workspace }}/record/record-00-fusion.json
+      RUN_RECORD: ${{ github.workspace }}/record/record-00-core2.json
       WS_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
       # `provision.py` imports `datasets.selected()` at module scope and refuses an unknown name.
       # Nothing here reads a dataset; this just satisfies the import.
       DATASET: aemo
-      FUSION_ROWS: ${{ inputs.rows }}
+      CORE2_ROWS: ${{ inputs.rows }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -82,19 +82,17 @@ jobs:
           pip list 2>/dev/null | grep -iE "dbt|duckdb" || true
           dbt --version
 
-      - name: Show that DuckDB is inside the binary, not beside it
+      # The step summary is the VERSION and the WRITTEN LAYOUT, and nothing else. The rest of what
+      # this run establishes is in the header above, where it belongs.
+      - name: Open the step summary
         run: |
           set -euo pipefail
-          CORE=$(python -c "import dbt, os; print(os.path.join(os.path.dirname(dbt.__file__), '_core.pyd' if os.name=='nt' else '_core.abi3.so'))")
-          ls -la "$CORE" || python -c "import dbt,os,glob; print(glob.glob(os.path.join(os.path.dirname(dbt.__file__),'_core*')))"
           {
-            echo "### dbt Fusion demo"
+            echo "### dbt Core demo"
             echo
             echo "| fact | value |"
             echo "|---|---|"
             echo "| dbt | \`$(dbt --version | head -1)\` |"
-            echo "| adapter packages installed | $(pip list 2>/dev/null | grep -ciE '^dbt-(duckdb|fabric|spark)' || echo 0) |"
-            echo "| duckdb pip package | $(pip list 2>/dev/null | grep -ci '^duckdb ' || echo 0) |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: azure/login@v2
@@ -109,7 +107,7 @@ jobs:
           # `record.item()` writes the fragment to this path and will not create its directory.
           mkdir -p "$(dirname "$RUN_RECORD")"
           pip install -q requests
-          python .github/scripts/provision.py fusion >> "$GITHUB_ENV"
+          python .github/scripts/provision.py core2 >> "$GITHUB_ENV"
 
       # The OIDC session `azure/login` just established is the whole credential — no interactive
       # login is ever legitimate on a runner, so stdin is closed: a prompt must DIE, not wait.
@@ -119,7 +117,7 @@ jobs:
                  --query accessToken -o tsv < /dev/null)
           echo "::add-mask::$ST"; echo "ONELAKE_TOKEN=$ST" >> "$GITHUB_ENV"
 
-      # THE DEMO. Everything Fusion needs is three files and no adapter.
+      # THE DEMO. Everything dbt Core 2 needs is three files and no adapter.
       #
       # ⚠️ **EVERY CONFIG FILE IS WRITTEN BY PYTHON, NEVER BY A `cat <<YML` HEREDOC, AND THAT IS A
       # SAFETY RULE RATHER THAN A STYLE ONE.** An UNQUOTED heredoc delimiter makes the shell perform
@@ -141,7 +139,7 @@ jobs:
       # TWO SECRETS, NOT ONE: `type: azure` for OneLake storage and `type: iceberg` for the REST
       # catalog bearer token. Both take the same `storage.azure.com` token the leg already mints.
       # They are written into profiles.yml, so the token DOES land in a file here — unavoidable,
-      # since Fusion has no `getenv()` equivalent the way the DuckDB CLI does. The file is deleted
+      # since dbt Core 2 has no `getenv()` equivalent the way the DuckDB CLI does. The file is deleted
       # in the same step and the runner is ephemeral; do not lift this pattern into a job that
       # persists anything.
       - name: Write a table through the OneLake Iceberg catalog
@@ -164,16 +162,16 @@ jobs:
           done
           ls -l /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem || true
 
-          export FUSION_DIR="$RUNNER_TEMP/fusion"
-          mkdir -p "$FUSION_DIR/models"
-          trap 'rm -f "$FUSION_DIR/profiles.yml"' EXIT
+          export CORE2_DIR="$RUNNER_TEMP/core2"
+          mkdir -p "$CORE2_DIR/models"
+          trap 'rm -f "$CORE2_DIR/profiles.yml"' EXIT
 
           # `<<'PY'` — QUOTED. The shell does not parse a line of this, which is the whole point;
           # see the warning above the step. Every value arrives through `os.environ`.
           python - <<'PY'
           import os, pathlib, textwrap
 
-          D = pathlib.Path(os.environ["FUSION_DIR"])
+          D = pathlib.Path(os.environ["CORE2_DIR"])
           TOKEN = os.environ["ONELAKE_TOKEN"]
           assert TOKEN, "ONELAKE_TOKEN is empty — the OIDC login/mint step did not run"
           SUBS = {
@@ -191,7 +189,7 @@ jobs:
               print("--- " + name + " ---")
               print(text.replace(TOKEN, "***"))
 
-          # THE `pre_hook` IS THE ONLY ROUTE LEFT TO A DuckDB SETTING FROM FUSION. A `settings:`
+          # THE `pre_hook` IS THE ONLY ROUTE LEFT TO A DuckDB SETTING FROM dbt CORE 2. A `settings:`
           # block runs on a THROWAWAY connection (dbt-auth's own doc comment says so) and a
           # `GLOBAL ` prefix is normalised into the key name -- measured, runs 34472396259 and
           # 34472711289. A pre_hook runs on the MODEL's own connection, so a plain session-scoped
@@ -201,13 +199,13 @@ jobs:
           # `duckdb-main.yml` sets it. It lives in dbt_project.yml rather than the model header
           # purely so no nested quoting has to survive two layers of heredoc.
           write("dbt_project.yml", """
-              name: fusion_demo
-              profile: fusion_demo
+              name: core2_demo
+              profile: core2_demo
               version: "1.0"
               flags:
                 use_catalogs_v2: true
               models:
-                fusion_demo:
+                core2_demo:
                   +pre_hook: "SET azure_transport_option_type = 'curl'"
           """)
 
@@ -229,7 +227,7 @@ jobs:
           """)
 
           write("profiles.yml", """
-              fusion_demo:
+              core2_demo:
                 target: dev
                 outputs:
                   dev:
@@ -275,7 +273,7 @@ jobs:
           """)
 
           cols = ", ".join("i + {0} AS c{0}".format(n) for n in range(20))
-          rows = str(int(os.environ["FUSION_ROWS"]))
+          rows = str(int(os.environ["CORE2_ROWS"]))
           (D / "models" / "demo.sql").write_text(
               '{{ config(materialized="table", catalog_name="onelake") }}\n'
               "select " + cols + " from range(" + rows + ") t(i)\n",
@@ -286,7 +284,7 @@ jobs:
 
           # `< /dev/null` — an interactive prompt must DIE, not wait. Run 34473092126 sat on a
           # device-code prompt for 4m38s with a perfectly good OIDC token already in hand.
-          cd "$FUSION_DIR" && DBT_PROFILES_DIR="$FUSION_DIR" dbt run --select demo < /dev/null
+          cd "$CORE2_DIR" && DBT_PROFILES_DIR="$CORE2_DIR" dbt run --select demo < /dev/null
 
       # WHAT IT ACTUALLY WROTE. The REST catalog returns no file list, so this globs the direct
       # abfss path `provision.py` handed back. `azure_transport_option_type = 'curl'` is REQUIRED on
@@ -303,7 +301,7 @@ jobs:
           c.sql("SET azure_transport_option_type = 'curl'")
           c.execute("CREATE SECRET s (TYPE azure, PROVIDER access_token, ACCESS_TOKEN ?)",
                     [os.environ["ONELAKE_TOKEN"]])
-          # ⚠️ ASK THE CATALOG WHERE THE TABLE IS. Fusion does not put it at a path this
+          # ⚠️ ASK THE CATALOG WHERE THE TABLE IS. dbt Core 2 does not put it at a path this
           # workflow can derive -- run 34472151740 wrote `Tables/dbo/demo` while a by-hand run of
           # the same shape landed at `Tables/<name>` -- so guessing produces a 404 that reads like
           # "the write failed" when the write succeeded.
@@ -330,15 +328,6 @@ jobs:
               print(f"| row groups | {rgs} |", file=fh)
               print(f"| rows per row group | max **{mx:,}**, avg {avg:,.0f} |", file=fh)
               print(f"| total rows | {rows // cols:,} |", file=fh)
-              print("", file=fh)
-              verdict = ("**122,880 is DuckDB's raw default** — the bundled driver does not carry "
-                         "duckdb-iceberg#1202, whose 128 MB byte budget would give ~827K on 20 "
-                         "BIGINT columns. Fusion cannot be told otherwise: its "
-                         "`duckdb__create_table_as` emits no `WITH (…)` clause."
-                         if mx <= 122880 else
-                         f"Row groups came out at {mx:,} rows — NOT the 122,880 default measured on "
-                         "2026-09-10. Something in the bundled driver moved; re-read the header.")
-              print(verdict, file=fh)
           PY
 
       # ---------------------------------------------------------------- always
