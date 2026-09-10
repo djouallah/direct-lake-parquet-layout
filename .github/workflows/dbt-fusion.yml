@@ -1,0 +1,242 @@
+# dbt Fusion writing to the OneLake Iceberg catalog — a DEMO, not a measurement.
+#
+# WHAT IT SHOWS: dbt-core 2.0 (Fusion) can create and commit an Iceberg table in OneLake with no
+# `dbt-duckdb`, no `duckdb` pip package and no adapter install of any kind. It provisions its own
+# lakehouse, writes a table through a `catalogs.yml` REST catalog, reads the parquet footer back,
+# and deletes the lakehouse.
+#
+# ⚠️ **NOTHING HERE MEASURES ANYTHING, AND THE GEOMETRY IS THE REASON.** Fusion's compiled
+# `duckdb__create_table_as` emits a bare `create table` with no `WITH (…)` clause, and the strings
+# `write.parquet`, `row-group-size` and `target-file-size` appear ZERO times in its 285 MB binary —
+# so Iceberg write geometry cannot be dispatched from it at all, and unlike stock `dbt-duckdb` the
+# macro is compiled into Rust and cannot be overridden the way
+# `macros/iceberg_adapter_overrides.sql` overrides it today. Measured 2026-09-10 by hand: 4M rows of
+# 20 BIGINT columns came out at **122,880 rows per row group** — DuckDB's raw default, i.e. the
+# bundled `duckdb_extended 0.21.0.dev+dbt0.0.29` driver does NOT carry duckdb-iceberg#1202, whose
+# 128 MB byte budget would have given ~827K. That is the pre-pin writer this repo already parked six
+# iceberg runs in `history/runs/legacy/` over. So a Fusion number must never enter `history/`.
+#
+# THE ARCHITECTURE, because it is nothing like the leg's. `pip install dbt-core==2.x` lays down a
+# 108 KB `dbt.exe` launcher and a ~285 MB `dbt/_core.pyd` — the whole engine, Rust, compiled as one
+# Python extension module. Connections go through ADBC (a vendored `arrow-adbc` plus dbt's own
+# `dbt-adbc` crate); DuckDB is reached through the DuckDB ADBC driver (`duckdb_adbc_init`), which
+# for DuckDB alone is statically linked rather than fetched from their driver CDN. `dbt --version`
+# prints no Plugins section because there are no plugins.
+#
+# IT IS ITS OWN EVERYTHING, deliberately, in the shape `DuckDB main smoke` already established:
+# its own lakehouse name (`provision.py fusion` → `dbt_fusion_demo`), because `ensure()` reuses an
+# item by DISPLAY NAME and `teardown` deletes by GUID — so borrowing `dbt_iceberg` would let this
+# demo share a real build's lakehouse and then delete it mid-run; and its own concurrency group,
+# because `onelake-<ref>` holds at most one pending run and a free demo must never evict a queued
+# `Benchmark`. Dispatch-only, like every workflow here that creates a Fabric item.
+#
+# It writes no run record to `history/`, reads no ledger and publishes nothing.
+
+name: dbt Fusion demo
+
+on:
+  workflow_dispatch:
+    inputs:
+      dbt_version:
+        description: "dbt-core version (2.x pre-release; 2.0.0 is not out)"
+        type: string
+        default: "2.0.0rc2"
+      rows:
+        description: "rows to write"
+        type: string
+        default: "4000000"
+
+permissions:
+  id-token: write        # OIDC for azure/login
+  contents: read
+
+concurrency:
+  # Its OWN group — see the header. Never `onelake-<ref>`.
+  group: dbt-fusion-demo-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  demo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # `provision.py` writes the item GUIDs here and `teardown` deletes what it names. Same
+      # mechanism as every other job — no bespoke deletion code.
+      RUN_RECORD: ${{ github.workspace }}/record/record-00-fusion.json
+      WS_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
+      # `provision.py` imports `datasets.selected()` at module scope and refuses an unknown name.
+      # Nothing here reads a dataset; this just satisfies the import.
+      DATASET: aemo
+      FUSION_ROWS: ${{ inputs.rows }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"      # dbt-core 2 requires >= 3.11
+
+      - name: Install dbt-core (no adapter, no duckdb package)
+        run: |
+          set -euo pipefail
+          pip install -q --pre "dbt-core==${{ inputs.dbt_version }}"
+          echo "--- what actually got installed ---"
+          pip list 2>/dev/null | grep -iE "dbt|duckdb" || true
+          dbt --version
+
+      - name: Show that DuckDB is inside the binary, not beside it
+        run: |
+          set -euo pipefail
+          CORE=$(python -c "import dbt, os; print(os.path.join(os.path.dirname(dbt.__file__), '_core.pyd' if os.name=='nt' else '_core.abi3.so'))")
+          ls -la "$CORE" || python -c "import dbt,os,glob; print(glob.glob(os.path.join(os.path.dirname(dbt.__file__),'_core*')))"
+          {
+            echo "### dbt Fusion demo"
+            echo
+            echo "| fact | value |"
+            echo "|---|---|"
+            echo "| dbt | \`$(dbt --version | head -1)\` |"
+            echo "| adapter packages installed | $(pip list 2>/dev/null | grep -ciE '^dbt-(duckdb|fabric|spark)' || echo 0) |"
+            echo "| duckdb pip package | $(pip list 2>/dev/null | grep -ci '^duckdb ' || echo 0) |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Provision the demo lakehouse
+        run: |
+          set -euo pipefail
+          # `record.item()` writes the fragment to this path and will not create its directory.
+          mkdir -p "$(dirname "$RUN_RECORD")"
+          pip install -q requests
+          python .github/scripts/provision.py fusion >> "$GITHUB_ENV"
+
+      - name: Mint a OneLake token
+        run: |
+          ST=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
+          echo "::add-mask::$ST"; echo "ONELAKE_TOKEN=$ST" >> "$GITHUB_ENV"
+
+      # THE DEMO. Everything Fusion needs is three files and no adapter.
+      #
+      # ⚠️ THE SCHEMA MUST ALREADY EXIST. OneLake refuses namespace creation — a first attempt at
+      # duckdb's default `main` died `UnprocessableContent_422` on POST …/namespaces — so the
+      # profile pins `schema: dbo`, which a Fabric lakehouse always has.
+      #
+      # TWO SECRETS, NOT ONE: `type: azure` for OneLake storage and `type: iceberg` for the REST
+      # catalog bearer token. Both take the same `storage.azure.com` token the leg already mints.
+      # They are written into profiles.yml, so the token DOES land in a file here — unavoidable,
+      # since Fusion has no `getenv()` equivalent the way the DuckDB CLI does. The file is deleted
+      # in the same step and the runner is ephemeral; do not lift this pattern into a job that
+      # persists anything.
+      - name: Write a table through the OneLake Iceberg catalog
+        run: |
+          set -euo pipefail
+          D="$RUNNER_TEMP/fusion"; mkdir -p "$D/models"
+          trap 'rm -f "$D/profiles.yml"' EXIT
+
+          cat > "$D/dbt_project.yml" <<'YML'
+          name: fusion_demo
+          profile: fusion_demo
+          version: "1.0"
+          flags:
+            use_catalogs_v2: true
+          YML
+
+          # The four write-compat options are the ones the iceberg leg already passes to ATTACH.
+          cat > "$D/catalogs.yml" <<YML
+          catalogs:
+            - name: onelake
+              type: iceberg_rest
+              table_format: iceberg
+              config:
+                duckdb:
+                  endpoint: "$ONELAKE_ENDPOINT"
+                  warehouse: "$WAREHOUSE_PATH"
+                  secret: onelake_cat
+                  default_schema: dbo
+                  access_delegation_mode: NONE
+                  stage_create_tables: false
+                  skip_create_table_metadata_updates: true
+          YML
+
+          cat > "$D/profiles.yml" <<YML
+          fusion_demo:
+            target: dev
+            outputs:
+              dev:
+                type: duckdb
+                path: ':memory:'
+                schema: dbo
+                secrets:
+                  - type: azure
+                    name: onelake_storage
+                    provider: access_token
+                    access_token: "$ONELAKE_TOKEN"
+                  - type: iceberg
+                    name: onelake_cat
+                    token: "$ONELAKE_TOKEN"
+          YML
+
+          python - "$D/models/demo.sql" "$FUSION_ROWS" <<'PY'
+          import sys
+          path, rows = sys.argv[1], int(sys.argv[2])
+          cols = ", ".join(f"i + {n} AS c{n}" for n in range(20))
+          open(path, "w", encoding="utf-8", newline="\n").write(
+              '{{ config(materialized="table", catalog_name="onelake") }}\n'
+              f"select {cols} from range({rows}) t(i)\n")
+          PY
+
+          cd "$D" && DBT_PROFILES_DIR="$D" dbt run --select demo
+
+      # WHAT IT ACTUALLY WROTE. The REST catalog returns no file list, so this globs the direct
+      # abfss path `provision.py` handed back. `azure_transport_option_type = 'curl'` is REQUIRED on
+      # a bare runner — without it the read dies on "Problem with the SSL CA cert", which is why
+      # every OneLake-touching duckdb session in `duckdb-main.yml` sets it too.
+      - name: Read the parquet footer back
+        run: |
+          set -euo pipefail
+          pip install -q duckdb
+          python - <<'PY'
+          import os, duckdb
+          c = duckdb.connect()
+          c.sql("INSTALL azure; LOAD azure")
+          c.sql("SET azure_transport_option_type = 'curl'")
+          c.execute("CREATE SECRET s (TYPE azure, PROVIDER access_token, ACCESS_TOKEN ?)",
+                    [os.environ["ONELAKE_TOKEN"]])
+          g = f"{os.environ['FUSION_TABLE_PATH']}/demo/data/*.parquet"
+          files, rgs = c.sql(f"SELECT count(*), sum(num_row_groups) "
+                             f"FROM parquet_file_metadata('{g}')").fetchone()
+          mx, avg, rows = c.sql(f"SELECT max(row_group_num_rows), avg(row_group_num_rows), "
+                                f"sum(row_group_num_rows) FROM parquet_metadata('{g}')").fetchone()
+          # parquet_metadata returns one row per COLUMN CHUNK, so the row sum is rows x columns.
+          cols = c.sql(f"SELECT count(*) FROM parquet_metadata('{g}') "
+                       f"WHERE file_name = (SELECT min(file_name) FROM parquet_metadata('{g}')) "
+                       f"AND row_group_id = 0").fetchone()[0]
+          print(f"files={files} row_groups={rgs} max_rows_per_rg={mx:,} avg={avg:,.0f}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              print(f"| files | {files} |", file=fh)
+              print(f"| row groups | {rgs} |", file=fh)
+              print(f"| rows per row group | max **{mx:,}**, avg {avg:,.0f} |", file=fh)
+              print(f"| total rows | {rows // cols:,} |", file=fh)
+              print("", file=fh)
+              verdict = ("**122,880 is DuckDB's raw default** — the bundled driver does not carry "
+                         "duckdb-iceberg#1202, whose 128 MB byte budget would give ~827K on 20 "
+                         "BIGINT columns. Fusion cannot be told otherwise: its "
+                         "`duckdb__create_table_as` emits no `WITH (…)` clause."
+                         if mx <= 122880 else
+                         f"Row groups came out at {mx:,} rows — NOT the 122,880 default measured on "
+                         "2026-09-10. Something in the bundled driver moved; re-read the header.")
+              print(verdict, file=fh)
+          PY
+
+      # ---------------------------------------------------------------- always
+      # `always()`, and it deletes BY GUID from the record `ensure()` wrote — so a failure anywhere
+      # above still removes the lakehouse rather than leaving it drawing background CU.
+      - name: Teardown
+        if: always()
+        run: |
+          if [ -f "$RUN_RECORD" ]; then
+            python .github/scripts/provision.py teardown "$RUN_RECORD"
+          else
+            echo "no run record — nothing was provisioned"
+          fi

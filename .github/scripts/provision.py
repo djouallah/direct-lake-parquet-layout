@@ -125,6 +125,12 @@ DWH_SRC = SPEC["dwh_src"]
 # registry: the smoke test writes its own handful of rows and reads nothing that was ever landed,
 # so there is no dataset for it to belong to.
 SMOKE = "dbt_duckdb_main_smoke"
+
+# `dbt Fusion demo`'s own lakehouse, for the same reason SMOKE is its own: `ensure()` reuses by
+# display name and `teardown` deletes by GUID, so two workflows sharing a name means one deletes the
+# other's lakehouse mid-run. Fusion writes at DuckDB's raw 122,880-row default and cannot be told
+# otherwise, so this must never point at an item any measured run reads.
+FUSION = "dbt_fusion_demo"
 LANDING_SHORTCUT = "landing"
 ws = os.environ["WS_ID"]
 FAB = "https://api.fabric.microsoft.com/v1"
@@ -619,6 +625,15 @@ elif mode == "smoke":
     out += [f"WAREHOUSE_PATH={ws}/{lh}",
             "ONELAKE_ENDPOINT=https://onelake.table.fabric.microsoft.com/iceberg",
             f"SMOKE_TABLE_PATH={base}/{lh}/Tables"]
+
+elif mode == "fusion":
+    # `dbt Fusion demo`'s lakehouse. Same shape as `smoke` above: no landing shortcut (the demo
+    # generates its own rows) and a direct abfss path, because the REST catalog returns no file list
+    # and the demo has to read the parquet footer it just wrote.
+    lh = ensure("lakehouses", FUSION, lh_payload)
+    out += [f"WAREHOUSE_PATH={ws}/{lh}",
+            "ONELAKE_ENDPOINT=https://onelake.table.fabric.microsoft.com/iceberg",
+            f"FUSION_TABLE_PATH={base}/{lh}/Tables"]
 
 elif mode == "spark":
     lh = ensure("lakehouses", datasets.item("spark", DATASET), lh_payload)
