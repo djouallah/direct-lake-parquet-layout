@@ -111,12 +111,28 @@ jobs:
           pip install -q requests
           python .github/scripts/provision.py fusion >> "$GITHUB_ENV"
 
+      # The OIDC session `azure/login` just established is the whole credential — no interactive
+      # login is ever legitimate on a runner, so stdin is closed: a prompt must DIE, not wait.
       - name: Mint a OneLake token
         run: |
-          ST=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
+          ST=$(az account get-access-token --resource https://storage.azure.com/ \
+                 --query accessToken -o tsv < /dev/null)
           echo "::add-mask::$ST"; echo "ONELAKE_TOKEN=$ST" >> "$GITHUB_ENV"
 
       # THE DEMO. Everything Fusion needs is three files and no adapter.
+      #
+      # ⚠️ **EVERY CONFIG FILE IS WRITTEN BY PYTHON, NEVER BY A `cat <<YML` HEREDOC, AND THAT IS A
+      # SAFETY RULE RATHER THAN A STYLE ONE.** An UNQUOTED heredoc delimiter makes the shell perform
+      # command substitution on the body, so the backticks in these comments are executed. Run
+      # 34473092126 ran this file's own prose: `settings:: command not found`,
+      # `generate_secret_sql: command not found`, `/home/runner/.duckdb: No such file or directory`
+      # — and then the backticked `az login` in the note below, which with no browser falls back to
+      # DEVICE CODE and blocks forever. It printed
+      # `To sign in, use a web browser to open the page https://login.microsoft.com/device` and sat
+      # there until it was cancelled by hand 4m38s later. `set -euo pipefail` does not catch it: the
+      # substitution did not fail, it WAITED. OIDC had already succeeded two steps earlier.
+      # A quoted `<<'YML'` plus `sed` is NOT the fix either — the token is base64url and can carry
+      # `/` and `&`, which `sed` would eat. The token goes in by `str.replace` on a placeholder.
       #
       # ⚠️ THE SCHEMA MUST ALREADY EXIST. OneLake refuses namespace creation — a first attempt at
       # duckdb's default `main` died `UnprocessableContent_422` on POST …/namespaces — so the
@@ -136,88 +152,117 @@ jobs:
           SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
         run: |
           set -euo pipefail
-          D="$RUNNER_TEMP/fusion"; mkdir -p "$D/models"
-          trap 'rm -f "$D/profiles.yml"' EXIT
+          export FUSION_DIR="$RUNNER_TEMP/fusion"
+          mkdir -p "$FUSION_DIR/models"
+          trap 'rm -f "$FUSION_DIR/profiles.yml"' EXIT
 
-          cat > "$D/dbt_project.yml" <<'YML'
-          name: fusion_demo
-          profile: fusion_demo
-          version: "1.0"
-          flags:
-            use_catalogs_v2: true
-          YML
+          # `<<'PY'` — QUOTED. The shell does not parse a line of this, which is the whole point;
+          # see the warning above the step. Every value arrives through `os.environ`.
+          python - <<'PY'
+          import os, pathlib, textwrap
+
+          D = pathlib.Path(os.environ["FUSION_DIR"])
+          TOKEN = os.environ["ONELAKE_TOKEN"]
+          assert TOKEN, "ONELAKE_TOKEN is empty — the OIDC login/mint step did not run"
+          SUBS = {
+              "__ONELAKE_TOKEN__": TOKEN,
+              "__ONELAKE_ENDPOINT__": os.environ["ONELAKE_ENDPOINT"],
+              "__WAREHOUSE_PATH__": os.environ["WAREHOUSE_PATH"],
+          }
+
+          def write(name, body):
+              text = textwrap.dedent(body).lstrip("\n")
+              for k, v in SUBS.items():
+                  text = text.replace(k, v)
+              assert "__" not in text, name + ": a placeholder went unsubstituted"
+              (D / name).write_text(text, encoding="utf-8", newline="\n")
+              print("--- " + name + " ---")
+              print(text.replace(TOKEN, "***"))
+
+          write("dbt_project.yml", """
+              name: fusion_demo
+              profile: fusion_demo
+              version: "1.0"
+              flags:
+                use_catalogs_v2: true
+          """)
 
           # The four write-compat options are the ones the iceberg leg already passes to ATTACH.
-          cat > "$D/catalogs.yml" <<YML
-          catalogs:
-            - name: onelake
-              type: iceberg_rest
-              table_format: iceberg
-              config:
-                duckdb:
-                  endpoint: "$ONELAKE_ENDPOINT"
-                  warehouse: "$WAREHOUSE_PATH"
-                  secret: onelake_cat
-                  default_schema: dbo
-                  access_delegation_mode: NONE
-                  stage_create_tables: false
-                  skip_create_table_metadata_updates: true
-          YML
+          write("catalogs.yml", """
+              catalogs:
+                - name: onelake
+                  type: iceberg_rest
+                  table_format: iceberg
+                  config:
+                    duckdb:
+                      endpoint: "__ONELAKE_ENDPOINT__"
+                      warehouse: "__WAREHOUSE_PATH__"
+                      secret: onelake_cat
+                      default_schema: dbo
+                      access_delegation_mode: NONE
+                      stage_create_tables: false
+                      skip_create_table_metadata_updates: true
+          """)
 
-          cat > "$D/profiles.yml" <<YML
-          fusion_demo:
-            target: dev
-            outputs:
-              dev:
-                type: duckdb
-                path: ':memory:'
-                schema: dbo
-                # ⚠️ **NO `settings:` BLOCK — IT CANNOT REACH THIS SETTING, MEASURED TWICE.**
-                # `dbt-auth`'s `generate_duckdb_init_sql` emits `SET {key} = {value}` and
-                # `apply_duckdb_init_sql` runs it on a TEMPORARY connection (its own doc comment
-                # says so), so a bare `SET` is session-scoped and dies before the model runs —
-                # run 34472396259 failed identically WITH the setting in place. Attachments
-                # survive that connection because they are database-scoped; settings do not.
-                # Spelling the key `GLOBAL azure_transport_option_type` to smuggle in `SET GLOBAL`
-                # does not work either: the key is normalised and run 34472711289 died on
-                # `unrecognized configuration parameter "GLOBALazure_transport_option_type"`.
-                # So the CA bundle is supplied to libcurl by ENV VAR on the step instead.
-                secrets:
-                  # ⚠️ **`persistent: true` IS WHAT MAKES THE STORAGE CREDENTIAL REACH THE MODEL.**
-                  # `dbt-auth`'s `generate_secret_sql` defaults `persistent` to false and emits
-                  # `CREATE OR REPLACE SECRET` — session-scoped — and `apply_duckdb_init_sql` runs
-                  # it on a TEMPORARY connection. The catalog ATTACH survives that connection
-                  # because attachments are database-scoped; the SECRET does not. So the model's
-                  # own connection reached OneLake with no credential and died
-                  # `could not open file '…/data' … this could mean the credentials used were
-                  # wrong` (runs 34472151740, 34472396259, 34472868381). PERSISTENT writes it to
-                  # `~/.duckdb`, i.e. the token lands on disk — acceptable only because this runner
-                  # is ephemeral and profiles.yml already holds it. Do not lift into anything that
-                  # persists.
-                  #
-                  # It never bit the by-hand run on Windows: `az login` leaves a credential chain
-                  # the azure extension picks up without any secret, so the missing one was free.
-                  - type: azure
-                    name: onelake_storage
-                    provider: access_token
-                    persistent: true
-                    access_token: "$ONELAKE_TOKEN"
-                  - type: iceberg
-                    name: onelake_cat
-                    persistent: true
-                    token: "$ONELAKE_TOKEN"
-          YML
+          write("profiles.yml", """
+              fusion_demo:
+                target: dev
+                outputs:
+                  dev:
+                    type: duckdb
+                    path: ':memory:'
+                    schema: dbo
+                    # NO `settings:` BLOCK - IT CANNOT REACH THIS SETTING, MEASURED TWICE.
+                    # `dbt-auth`'s `generate_duckdb_init_sql` emits `SET {key} = {value}` and
+                    # `apply_duckdb_init_sql` runs it on a TEMPORARY connection (its own doc
+                    # comment says so), so a bare `SET` is session-scoped and dies before the model
+                    # runs - run 34472396259 failed identically WITH the setting in place.
+                    # Attachments survive that connection because they are database-scoped;
+                    # settings do not. Spelling the key `GLOBAL azure_transport_option_type` to
+                    # smuggle in `SET GLOBAL` does not work either: the key is normalised and run
+                    # 34472711289 died on `unrecognized configuration parameter
+                    # "GLOBALazure_transport_option_type"`. So the CA bundle is supplied to libcurl
+                    # by ENV VAR on the step instead.
+                    secrets:
+                      # `persistent: true` IS WHAT MAKES THE STORAGE CREDENTIAL REACH THE MODEL.
+                      # `dbt-auth`'s `generate_secret_sql` defaults `persistent` to false and emits
+                      # `CREATE OR REPLACE SECRET` - session-scoped - and `apply_duckdb_init_sql`
+                      # runs it on a TEMPORARY connection. The catalog ATTACH survives that
+                      # connection because attachments are database-scoped; the SECRET does not. So
+                      # the model's own connection reached OneLake with no credential and died
+                      # `could not open file '.../data' ... this could mean the credentials used
+                      # were wrong` (runs 34472151740, 34472396259, 34472868381). PERSISTENT writes
+                      # it to `~/.duckdb`, i.e. the token lands on disk - acceptable only because
+                      # this runner is ephemeral and profiles.yml already holds it. Do not lift
+                      # into anything that persists.
+                      #
+                      # It never bit the by-hand run on Windows: an `az login` credential chain is
+                      # picked up by the azure extension without any secret, so the missing one was
+                      # free there. UNTESTED as of run 34473092126, which never reached the model.
+                      - type: azure
+                        name: onelake_storage
+                        provider: access_token
+                        persistent: true
+                        access_token: "__ONELAKE_TOKEN__"
+                      - type: iceberg
+                        name: onelake_cat
+                        persistent: true
+                        token: "__ONELAKE_TOKEN__"
+          """)
 
-          python - "$D/models/demo.sql" "$FUSION_ROWS" <<'PY'
-          import sys
-          path, rows = sys.argv[1], int(sys.argv[2])
-          cols = ", ".join(f"i + {n} AS c{n}" for n in range(20))
-          open(path, "w", encoding="utf-8", newline="\n").write(
+          cols = ", ".join("i + {0} AS c{0}".format(n) for n in range(20))
+          rows = str(int(os.environ["FUSION_ROWS"]))
+          (D / "models" / "demo.sql").write_text(
               '{{ config(materialized="table", catalog_name="onelake") }}\n'
-              f"select {cols} from range({rows}) t(i)\n")
+              "select " + cols + " from range(" + rows + ") t(i)\n",
+              encoding="utf-8", newline="\n")
+          print("--- models/demo.sql ---")
+          print((D / "models" / "demo.sql").read_text(encoding="utf-8"))
           PY
 
-          cd "$D" && DBT_PROFILES_DIR="$D" dbt run --select demo
+          # `< /dev/null` — an interactive prompt must DIE, not wait. Run 34473092126 sat on a
+          # device-code prompt for 4m38s with a perfectly good OIDC token already in hand.
+          cd "$FUSION_DIR" && DBT_PROFILES_DIR="$FUSION_DIR" dbt run --select demo < /dev/null
 
       # WHAT IT ACTUALLY WROTE. The REST catalog returns no file list, so this globs the direct
       # abfss path `provision.py` handed back. `azure_transport_option_type = 'curl'` is REQUIRED on
