@@ -129,6 +129,11 @@ jobs:
       # in the same step and the runner is ephemeral; do not lift this pattern into a job that
       # persists anything.
       - name: Write a table through the OneLake Iceberg catalog
+        env:
+          # libcurl reads these itself, independent of anything dbt or DuckDB configures — a second
+          # route to the same CA bundle in case the `GLOBAL ` key ever stops reaching the setting.
+          CURL_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
+          SSL_CERT_FILE: /etc/ssl/certs/ca-certificates.crt
         run: |
           set -euo pipefail
           D="$RUNNER_TEMP/fusion"; mkdir -p "$D/models"
@@ -168,14 +173,22 @@ jobs:
                 path: ':memory:'
                 schema: dbo
                 settings:
-                  # REQUIRED ON A BARE RUNNER, and it bit the WRITE, not just the readback: run
-                  # 34472151740 died with "Problem with the SSL CA cert (path? access rights?)"
-                  # opening the table's data path. On Linux the azure extension's default transport
-                  # locates no CA bundle; asking for curl makes it search the standard paths. The
-                  # DuckDB CLI smoke test sets the same thing per session. It never bit the by-hand
-                  # run on Windows, which has a cert store, nor the iceberg LEG, which runs in a
-                  # Fabric notebook rather than on ubuntu-latest.
-                  azure_transport_option_type: curl
+                  # REQUIRED ON A BARE RUNNER, and it bit the WRITE, not just the readback: runs
+                  # 34472151740 and 34472396259 both died with "Problem with the SSL CA cert (path?
+                  # access rights?)" opening the table's data path. On Linux the azure extension
+                  # locates no CA bundle. It never bit the by-hand run on Windows, which has a cert
+                  # store, nor the iceberg LEG, which runs in a Fabric notebook.
+                  #
+                  # ⚠️ **`GLOBAL ` IN THE KEY IS LOAD-BEARING, AND THE PLAIN SPELLING SILENTLY DOES
+                  # NOTHING.** `dbt-auth`'s `generate_duckdb_init_sql` emits `SET {key} = {value}`
+                  # verbatim, and `apply_duckdb_init_sql` runs those statements on a TEMPORARY
+                  # connection (its own doc comment says so). A bare `SET` is session-scoped, so it
+                  # dies with that connection and the model's own connection never sees it —
+                  # attachments survive because they are database-scoped, settings do not. Putting
+                  # `GLOBAL` in the key is the only way to reach `SET GLOBAL` through that
+                  # formatter. This is the same reason `dbt_project.yml`'s on-run-start hooks spell
+                  # `SET GLOBAL temp_directory` / `SET GLOBAL preserve_insertion_order` on the leg.
+                  GLOBAL azure_transport_option_type: curl
                 secrets:
                   - type: azure
                     name: onelake_storage
