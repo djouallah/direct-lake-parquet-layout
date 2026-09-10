@@ -167,6 +167,15 @@ jobs:
                 type: duckdb
                 path: ':memory:'
                 schema: dbo
+                settings:
+                  # REQUIRED ON A BARE RUNNER, and it bit the WRITE, not just the readback: run
+                  # 34472151740 died with "Problem with the SSL CA cert (path? access rights?)"
+                  # opening the table's data path. On Linux the azure extension's default transport
+                  # locates no CA bundle; asking for curl makes it search the standard paths. The
+                  # DuckDB CLI smoke test sets the same thing per session. It never bit the by-hand
+                  # run on Windows, which has a cert store, nor the iceberg LEG, which runs in a
+                  # Fabric notebook rather than on ubuntu-latest.
+                  azure_transport_option_type: curl
                 secrets:
                   - type: azure
                     name: onelake_storage
@@ -195,7 +204,7 @@ jobs:
       - name: Read the parquet footer back
         run: |
           set -euo pipefail
-          pip install -q duckdb
+          pip install -q duckdb requests
           python - <<'PY'
           import os, duckdb
           c = duckdb.connect()
@@ -203,7 +212,19 @@ jobs:
           c.sql("SET azure_transport_option_type = 'curl'")
           c.execute("CREATE SECRET s (TYPE azure, PROVIDER access_token, ACCESS_TOKEN ?)",
                     [os.environ["ONELAKE_TOKEN"]])
-          g = f"{os.environ['FUSION_TABLE_PATH']}/demo/data/*.parquet"
+          # ⚠️ ASK THE CATALOG WHERE THE TABLE IS. Fusion does not put it at a path this
+          # workflow can derive -- run 34472151740 wrote `Tables/dbo/demo` while a by-hand run of
+          # the same shape landed at `Tables/<name>` -- so guessing produces a 404 that reads like
+          # "the write failed" when the write succeeded.
+          import requests
+          ws, item = os.environ["WAREHOUSE_PATH"].split("/", 1)
+          r = requests.get(
+              f"{os.environ['ONELAKE_ENDPOINT']}/v1/{ws}/{item}/namespaces/dbo/tables/demo",
+              headers={"Authorization": f"Bearer {os.environ['ONELAKE_TOKEN']}"}, timeout=120)
+          r.raise_for_status()
+          loc = r.json()["metadata"]["location"]
+          print("table location:", loc)
+          g = f"{loc}/data/*.parquet"
           files, rgs = c.sql(f"SELECT count(*), sum(num_row_groups) "
                              f"FROM parquet_file_metadata('{g}')").fetchone()
           mx, avg, rows = c.sql(f"SELECT max(row_group_num_rows), avg(row_group_num_rows), "
