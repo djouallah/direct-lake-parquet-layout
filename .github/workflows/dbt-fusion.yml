@@ -172,23 +172,16 @@ jobs:
                 type: duckdb
                 path: ':memory:'
                 schema: dbo
-                settings:
-                  # REQUIRED ON A BARE RUNNER, and it bit the WRITE, not just the readback: runs
-                  # 34472151740 and 34472396259 both died with "Problem with the SSL CA cert (path?
-                  # access rights?)" opening the table's data path. On Linux the azure extension
-                  # locates no CA bundle. It never bit the by-hand run on Windows, which has a cert
-                  # store, nor the iceberg LEG, which runs in a Fabric notebook.
-                  #
-                  # ⚠️ **`GLOBAL ` IN THE KEY IS LOAD-BEARING, AND THE PLAIN SPELLING SILENTLY DOES
-                  # NOTHING.** `dbt-auth`'s `generate_duckdb_init_sql` emits `SET {key} = {value}`
-                  # verbatim, and `apply_duckdb_init_sql` runs those statements on a TEMPORARY
-                  # connection (its own doc comment says so). A bare `SET` is session-scoped, so it
-                  # dies with that connection and the model's own connection never sees it —
-                  # attachments survive because they are database-scoped, settings do not. Putting
-                  # `GLOBAL` in the key is the only way to reach `SET GLOBAL` through that
-                  # formatter. This is the same reason `dbt_project.yml`'s on-run-start hooks spell
-                  # `SET GLOBAL temp_directory` / `SET GLOBAL preserve_insertion_order` on the leg.
-                  GLOBAL azure_transport_option_type: curl
+                # ⚠️ **NO `settings:` BLOCK — IT CANNOT REACH THIS SETTING, MEASURED TWICE.**
+                # `dbt-auth`'s `generate_duckdb_init_sql` emits `SET {key} = {value}` and
+                # `apply_duckdb_init_sql` runs it on a TEMPORARY connection (its own doc comment
+                # says so), so a bare `SET` is session-scoped and dies before the model runs —
+                # run 34472396259 failed identically WITH the setting in place. Attachments
+                # survive that connection because they are database-scoped; settings do not.
+                # Spelling the key `GLOBAL azure_transport_option_type` to smuggle in `SET GLOBAL`
+                # does not work either: the key is normalised and run 34472711289 died on
+                # `unrecognized configuration parameter "GLOBALazure_transport_option_type"`.
+                # So the CA bundle is supplied to libcurl by ENV VAR on the step instead.
                 secrets:
                   - type: azure
                     name: onelake_storage
