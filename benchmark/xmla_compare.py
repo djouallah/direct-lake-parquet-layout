@@ -1005,7 +1005,19 @@ def bench_model(workspace, model, token, runs, pinned_duid=None, think_seconds=0
                 if think_seconds and not first:
                     time.sleep(think_seconds)
                 first = False
-                t, rows = run_query(conn, dax)
+                # NAME THE QUERY ON THE WAY OUT. `run_query` is deliberately uncaught -- a query
+                # the endpoint cannot serve is a real result and must fail the leg rather than be
+                # silently skipped -- but the per-query print below only runs on SUCCESS, so a
+                # failure used to name nothing at all. Run 34569963139 died in pass 1 with
+                # `Failed to resolve name 'SYNTAXERROR'` and 29 candidate queries, and identifying
+                # it would have cost another full build. Re-raise with the name attached: same
+                # fail-fast behaviour, one line of context, no paid leg to find out which one.
+                try:
+                    t, rows = run_query(conn, dax)
+                except Exception as ex:
+                    raise RuntimeError(
+                        f"query {name!r} (tier {tier_name}, pass {p}) failed on {model}: "
+                        f"{type(ex).__name__}: {str(ex).splitlines()[0][:300]}") from ex
                 samples.setdefault(name, {})[p] = t
                 rows_of[name] = rows
                 tier_of[name] = tier_name
