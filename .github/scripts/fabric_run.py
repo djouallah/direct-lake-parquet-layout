@@ -168,7 +168,14 @@ def main() -> int:
             # this run's landing lakehouse is the one guaranteed to exist by the `land` job, and
             # writing the round-trip into the OTHER dataset's item would both fail on a fresh
             # workspace and bill the wrong item.
-            lakehouse=datasets.spec()["landing"],
+            #
+            # `REMOTE_LAKEHOUSE` overrides it, and is UNSET in CI — every workflow path keeps the
+            # dataset-resolved name. It exists because `run_python` resolves this name inside
+            # `WS_ID`, so the default is only correct while the build writes into the workspace the
+            # `land` job drained into. A build driven at another workspace (a one-off full deploy
+            # reading the archive through a cross-workspace shortcut) has no item by that name
+            # there and dies before the notebook is created.
+            lakehouse=os.environ.get("REMOTE_LAKEHOUSE") or datasets.spec()["landing"],
             env=env,
             cores=cores,
             # duckrun brings dbt-duckdb + duckdb + deltalake. The floor is load-bearing, not a
