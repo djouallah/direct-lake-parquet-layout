@@ -1,0 +1,61 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "false",
+  "build": "false",
+  "cores": "32",
+  "dataset": "tpcds",
+  "download_limit": "100",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "auto",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "auto",
+  "runs": "6",
+  "skip_download": "false",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "870835DE-2509-4B84-8FD9-43FA8633AB49": {
+   "at": "2026-09-11T01:29:03+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "landing"
+  },
+  "C3FC6DAB-9ED7-4859-B8E3-841F4BEDFDEF": {
+   "at": "2026-09-11T01:29:05+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "sql_endpoint"
+  },
+  "D3F6E1B7-BFED-4630-860D-A505E54FE81B": {
+   "at": "2026-09-11T02:00:22Z",
+   "created": true,
+   "deleted": "2026-09-11T02:00:23+00:00",
+   "engine": "landing",
+   "kind": "Notebook",
+   "name": "tpcds-gen-sf100-9754563c",
+   "role": "compute"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-09-11T01:29:02+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "run": {
+  "finished": "2026-09-11T02:01:02+00:00",
+  "id": "34550578120",
+  "sha": "6e563f13232d5366cfc89e040bcdbc2a9ded4911",
+  "started": "2026-09-11T01:25:16+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/34550578120"
+ },
+ "schema": 1
+}
