@@ -83,6 +83,53 @@ geometry one and should not be bundled with it.
 
 ---
 
+## tpcds has never been generated — land SF100, by hand, before anything else
+
+`download_tpcds.py` is complete and nobody has ever run it, so `dbt_tpcds_landing/Files` is empty
+and every tpcds leg fails on
+
+```
+[PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/customer_address
+```
+
+**A scheduled run cannot fix this by itself, and that is by design**: `land` only runs a downloader
+when `skip_download` is off, and a scheduled run forces it ON so every scheduled build measures the
+same archive. Which is why the dataset is DISPATCH-ONLY now — `"scheduled": False` in
+`datasets.py` — rather than losing four grid cells a week to rediscovering it. The generation is a
+hand dispatch, once per scale factor, and then the dataset behaves like any other.
+
+The two guards that closed the two ways this failed before, both already in: `check_landing.py`
+refuses an empty archive on the FREE runner and names the dataset and the dispatch, and
+`download_tpcds.py`'s `_retry_onelake()` wraps the OneLake calls — run 33742041035 lost a whole
+SF100 generation to ten 500s on the last step, after dsdgen, the customisation and the local parquet
+write had all succeeded.
+
+```bash
+gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=32   -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false
+```
+
+**SF100, and `cores=32` is not optional.** `download_limit` IS the scale factor here — 262,082,396
+`store_sales` rows against SF10's 26,206,837 — and it is the volume the white paper's Direct Lake
+findings turn on. dsdgen has no chunking, so the working set is the whole scale factor: the script
+refuses below ~260 GiB free under `TMPDIR` and `FABRIC_CORES` is what sizes the node. That refusal
+is early and cheap, but it is a refusal — the dispatch has to pass the number, and it is the one
+place this repo's standing `cores=8` does not apply. `land` gets 240 minutes on this dataset.
+
+Read `python download_tpcds.py --status` first: it answers "has this already happened" without
+creating anything, and a re-run is a no-op once the scale factor is logged (`TPCDS_FORCE=1`
+overrides).
+
+`build=false -f benchmark=false` because generating is the whole job: there is nothing to measure
+until it has happened, and one dispatch doing both puts a first-ever build behind a first-ever
+generation.
+
+**Then, and only then**, an ordinary dispatch —
+`gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=8` — and the four grid cells
+go back once that is green (flip `scheduled`, add four crons, add four `DATASET` branches; the grid
+goes 20 slots to 24 and cell (i,j) still fires on weekday (i+2j)%7, so no existing cell moves).
+
+---
+
 ## DuckDB `main` cannot commit an Iceberg CTAS — do not move the pin
 
 `v2.1.0-alpha40144` (source `780c7c743f`) dies on the smoke workflow's plain round-trip:

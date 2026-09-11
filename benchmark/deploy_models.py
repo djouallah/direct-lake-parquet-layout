@@ -65,7 +65,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # variable. The dataset is not a variable inside a run — it is which run this is.
 TEMPLATES = {"aemo": "fct_summary.SemanticModel", "nyc": "fct_trips.SemanticModel",
              "bts": "fct_flights.SemanticModel", "green": "fct_green_trips.SemanticModel",
-             "cms": "fct_cms_payments.SemanticModel"}
+             "cms": "fct_cms_payments.SemanticModel",
+             "tpcds": "store_sales.SemanticModel"}
 
 
 def template():

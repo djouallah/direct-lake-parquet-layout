@@ -124,7 +124,8 @@ def _bim_schemas(dataset):
     benchmark/ stays import-free from here, and a .bim is a JSON file like any other."""
     import json
     templates = {"aemo": "fct_summary", "nyc": "fct_trips", "bts": "fct_flights",
-                 "green": "fct_green_trips", "cms": "fct_cms_payments"}
+                 "green": "fct_green_trips", "cms": "fct_cms_payments",
+                 "tpcds": "store_sales"}
     path = os.path.join(ROOT, "benchmark", f"{templates[dataset]}.SemanticModel", "model.bim")
     with open(path, encoding="utf-8") as f:
         bim = json.load(f)

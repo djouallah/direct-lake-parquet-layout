@@ -1,4 +1,12 @@
-"""The nightly schedule is a 6x4 GRID — assert the cron lines and the env chains agree about it.
+"""The nightly schedule is a 5x4 GRID — assert the cron lines and the env chains agree about it.
+
+THE GRID COVERS `datasets.SCHEDULED`, NOT `datasets.DATASETS`, and the two differ: `tpcds` carries
+`scheduled: False` in the registry because its landing GENERATES its input in a Fabric notebook and
+a scheduled run forces `skip_download` on, so a scheduled cell can never populate its own archive.
+That is a property of the DATASET and belongs in the registry; a test about the SCHEDULE reading a
+set subtraction of its own would hide it. Everything below that names a dataset for validity —
+a cron comment, an env-chain branch, the fallback — still reads `DATASETS`, because an unscheduled
+dataset is a real dataset and naming a made-up one is still a bug.
 
 `benchmark.yml` carries 20 cron lines under `schedule:`, each commented with the cell it means
 (`# <dataset> <config>`), and three workflow-level env chains that turn `github.event.schedule`
@@ -147,11 +155,27 @@ def test_the_grid_is_complete_and_fires_each_cell_once():
     """Every dataset against every config, exactly once a week. A missing cell is an engine the page
     compares against others while nothing refreshes it; a duplicated one spends a run twice."""
     cells = [(ds, cfg) for _cron, ds, cfg in _crons()]
-    want = set(itertools.product(datasets.DATASETS, CONFIGS))
+    want = set(itertools.product(datasets.SCHEDULED, CONFIGS))
     assert set(cells) == want, (
         f"missing {sorted(want - set(cells))}, unexpected {sorted(set(cells) - want)}")
     dupes = {c for c in cells if cells.count(c) > 1}
     assert not dupes, f"cells scheduled more than once: {sorted(dupes)}"
+
+
+def test_an_unscheduled_dataset_has_no_cell_at_all():
+    """The other half of the flag, and the half that catches a HALF-restore.
+
+    `test_the_grid_is_complete_and_fires_each_cell_once` reads `SCHEDULED`, so it says nothing about
+    a dataset that opted out — which means adding four crons for one while leaving
+    `scheduled: False` in place would pass it as "unexpected cells", but only via that test's
+    unexpected-set message rather than as a statement about the flag. Say it directly: the flag and
+    the cron lines are two spellings of one decision and they must agree in both directions."""
+    unscheduled = [d for d in datasets.DATASETS if d not in datasets.SCHEDULED]
+    scheduled_datasets = {ds for _cron, ds, _cfg in _crons()}
+    for ds in unscheduled:
+        assert ds not in scheduled_datasets, (
+            f"{ds!r} has cron cells but is marked `scheduled: False` in datasets.py — "
+            "flip the flag or drop the crons; a dataset cannot be half on the grid")
 
 
 def test_no_branch_names_a_cron_that_does_not_exist():
