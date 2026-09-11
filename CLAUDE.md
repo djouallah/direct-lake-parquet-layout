@@ -118,7 +118,7 @@ pairing is not the purpose and was never run; do not reintroduce it, and do not 
 or a layout choice here to match anything external. SF10 is a scale factor because it is enough to
 measure, not because another system is sitting at it.
 
-Seven things about it differ from every other dataset here, and each is the dataset's nature rather
+Nine things about it differ from every other dataset here, and each is the dataset's nature rather
 than a shortcut:
 
 - **IT IS THE ONE DATASET OFF THE WEEKLY GRID, BY `"scheduled": False` IN THE REGISTRY.** Every
@@ -185,6 +185,37 @@ than a shortcut:
   non-zero if the notebook survives. It deliberately does NOT reuse `provision.drop_guid`, which is
   exactly this poll: `provision.py` reads `sys.argv[1]` at module level and runs its whole mode
   dispatch on import, so importing it would provision something.
+- **IT NEEDS `cores=32` TO BUILD, NOT JUST TO GENERATE — TWO LARGE FACTS SORT AT ONCE AND A 62.8 GiB
+  NODE CANNOT HOLD BOTH.** Measured on run 34559633288, `engines=duckrun cores=8`: node `MemTotal
+  62.8 GiB`, DuckDB `memory_limit 50.2 GiB`, and the leg OOM-KILLED three times (once per rung of
+  the retry ladder) with the signature this file already documents — **no dbt error at all, just
+  `resource_tracker: 2 leaked semaphore objects`**. The 15s sampler is what makes it legible: `rss`
+  climbs 34 → 49 → 53 → **60.2 GiB** at `mem_avail=3.5GiB`, then reads `?`, and `mem_avail` returns
+  to 60.6 GiB — the process was killed, not a query that failed. **Spill stalled at 17.3 GiB and
+  stopped growing while `rss` kept climbing**, so the resident part is the sort state, not DuckDB's
+  spillable buffers — the same shape as aemo's 143M-group hash table, for a different reason.
+  **The cause is CONCURRENCY, and it is structural to this dataset.** `threads: 4` builds both facts
+  together and both take a global `sort_by=auto`:
+  `catalog_sales` profiled 9 scans over 28,515,647 of 142,557,716 rows in 96.1s, `store_sales` 25
+  scans over 29,116,873 of 262,082,396 rows in 147.5s — overlapping windows, and that overlap is
+  where `rss` doubles. **tpcds is the only dataset here with TWO large facts**, so it is the only one
+  that can do this; every other mart sorts alone. Nothing else was wrong — all eight dimensions
+  built and all 29 tests passed before the facts ran.
+  Do not read this as a duckrun defect or hunt for a setting, exactly as with `cores: 4` on
+  `fct_summary`. The true peak is UNMEASURED — `rss` was still climbing when the kernel intervened —
+  so `cores=16` (~125 GiB) is untested and `cores=32` (201 GiB, measured on the landing run) is what
+  this dataset is dispatched at. The knock-on is honest and visible: `vcores` is part of `variant()`,
+  so tpcds opens its own `·32c` column and its CU rate reads 16.0 rather than the 4.0 of a `cores=8`
+  run — it is a more expensive dataset to build, and the page says so.
+- ⚠️ **THE `auto` PICKER DOES NOT CHOOSE THE DATE KEY HERE, AND 23 OF THE PAPER'S 24 QUERIES FILTER
+  ON DATE.** Run 34559633288 resolved `store_sales` to
+  `ss_quantity, ss_store_sk, ss_promo_sk, ss_ext_discount_amt, ss_net_profit` and `catalog_sales` to
+  `cs_warehouse_sk, cs_ship_mode_sk, cs_call_center_sk, cs_quantity, cs_coupon_amt`. duckrun's
+  picker optimises modelled in-memory BYTES rather than pruning, which is a legitimate objective and
+  not the one this dataset's queries reward — upstream's own RUN.md flags the identical thing for
+  its `duckdb` arm. So do not read a tpcds `auto` number as "what sorting on the filter column is
+  worth"; it is what duckrun's byte-minimising sort is worth. The scrape records the columns in
+  `dbt.<engine>.sort_by_auto` every run, so the answer is always checkable rather than assumed.
 - **THE CUSTOMISATION IS AT LAND TIME AND THE MODELS ARE PASS-THROUGHS.** The landed parquet already
   is the paper's table: null fact rows dropped, `cache_buster` added, `d_date_sk_1` = `d_date_sk` −
   8,401 days replacing the date key, date_dim trimmed to 2021–2026 (2,191 rows). All 30 model files

@@ -135,10 +135,27 @@ overrides).
 until it has happened, and one dispatch doing both puts a first-ever build behind a first-ever
 generation.
 
-**Then, and only then**, an ordinary dispatch —
-`gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=8` — and the four grid cells
-go back once that is green (flip `scheduled`, add four crons, add four `DATASET` branches; the grid
-goes 20 slots to 24 and cell (i,j) still fires on weekday (i+2j)%7, so no existing cell moves).
+**SF100 IS LANDED — run 34555739985, 2026-09-11.** 73 files, 21,403 MB, all ten tables, archive log
+written with 72 rows, zero upload retries. That step is done and does not need repeating.
+
+**AND THE BUILD NEEDS `cores=32`, NOT `cores=8`** — run 34559633288 OOM-killed a 62.8 GiB node three
+times sorting both facts at once. CLAUDE.md has the measurement; the short form is that tpcds is the
+only dataset with TWO large facts and `threads: 4` sorts them concurrently. So the ordinary dispatch
+for this dataset is:
+
+```bash
+gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=32
+```
+
+**The other three engines have never been run at all.** dwh and spark do their compute Fabric-side
+rather than in the duckrun notebook, so the 62.8 GiB ceiling does not apply to them and `cores` does
+not size them — but neither has ever seen this dataset, and `store_sales` at 262M rows is the largest
+table either has been asked to write here. Expect to find something.
+
+**The four grid cells go back once a build is green** (flip `scheduled`, add four crons, add four
+`DATASET` branches; the grid goes 20 slots to 24 and cell (i,j) still fires on weekday (i+2j)%7, so
+no existing cell moves). ⚠️ **Note the scheduled `cores` is 8 for every cell** — putting tpcds on the
+grid without resolving that schedules four OOM kills a week.
 
 ---
 
