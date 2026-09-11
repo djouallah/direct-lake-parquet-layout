@@ -996,6 +996,7 @@ def bench_model(workspace, model, token, runs, pinned_duid=None, think_seconds=0
     samples, rows_of, tier_of = {}, {}, {}
     first = True
     try:
+        broken = []
         for p in range(1, runs + 1):
             tier = _tier_of(p)
             print(f"\n  --- pass {p}/{runs} ({tier}) — {len(queries)} queries ---", flush=True)
@@ -1005,23 +1006,38 @@ def bench_model(workspace, model, token, runs, pinned_duid=None, think_seconds=0
                 if think_seconds and not first:
                     time.sleep(think_seconds)
                 first = False
-                # NAME THE QUERY ON THE WAY OUT. `run_query` is deliberately uncaught -- a query
-                # the endpoint cannot serve is a real result and must fail the leg rather than be
-                # silently skipped -- but the per-query print below only runs on SUCCESS, so a
-                # failure used to name nothing at all. Run 34569963139 died in pass 1 with
-                # `Failed to resolve name 'SYNTAXERROR'` and 29 candidate queries, and identifying
-                # it would have cost another full build. Re-raise with the name attached: same
-                # fail-fast behaviour, one line of context, no paid leg to find out which one.
+                # A FAILING QUERY STILL FAILS THE LEG — it just does not do so until the pass is
+                # over, so ONE run names EVERY broken query instead of the first one.
+                #
+                # `run_query` used to be uncaught, and the per-query print below only runs on
+                # SUCCESS, so a failure named nothing at all: run 34569963139 died with
+                # `Failed to resolve name 'SYNTAXERROR'` and 29 candidates. Naming it in the
+                # exception fixed that and cost a run to learn ONE name — and if the suite carries
+                # three broken queries that is three paid builds, each ~25 minutes, to learn three
+                # names. Collecting them is the same information for one.
+                #
+                # WHAT IS NOT RELAXED: the leg still fails. A query the endpoint cannot serve is a
+                # real result and must never be quietly dropped from a report — `directLakeOnly`
+                # exists so a fallback shows up as an error rather than a slow Direct Lake, and a
+                # swallowed exception would undo that from the other side. The raise moves to the
+                # end of the pass; it does not go away.
                 try:
                     t, rows = run_query(conn, dax)
                 except Exception as ex:
-                    raise RuntimeError(
-                        f"query {name!r} (tier {tier_name}, pass {p}) failed on {model}: "
-                        f"{type(ex).__name__}: {str(ex).splitlines()[0][:300]}") from ex
+                    broken.append(f"{name} (tier {tier_name}, pass {p}): "
+                                  f"{type(ex).__name__}: {str(ex).splitlines()[0][:300]}")
+                    print(f"    [{tier_name}] {name}: FAILED — "
+                          f"{str(ex).splitlines()[0][:160]}", flush=True)
+                    continue
                 samples.setdefault(name, {})[p] = t
                 rows_of[name] = rows
                 tier_of[name] = tier_name
                 print(f"    [{tier_name}] {name}: {t:,.1f}ms (rows={rows})", flush=True)
+            if broken:
+                sep = chr(10) + '  '
+                raise RuntimeError(
+                    f"{len(broken)} quer{'y' if len(broken) == 1 else 'ies'} "
+                    f"failed on {model}:" + sep + sep.join(broken))
             if p == 1 and not td:
                 # Only now — this transcodes DUID and mw, which probe_duid and probe_mw measure.
                 # Free at this point, because pass 1 has already touched both.

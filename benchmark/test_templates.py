@@ -833,3 +833,40 @@ def test_a_marked_date_table_keys_its_date_column():
             assert len(keys) == 1 and keys[0].get("dataType") in ("dateTime", "date"), (
                 f"{os.path.basename(os.path.dirname(path))}: {t['name']!r} is dataCategory Time "
                 f"but its key is {[(k['name'], k.get('dataType')) for k in keys]}")
+
+
+def test_no_measure_references_a_table_unquoted():
+    """A table argument inside a measure must be quoted — `REMOVEFILTERS('item')`, never
+    `REMOVEFILTERS(item)`.
+
+    Run 34579708145 is why. `Store Profit % by Item Category` carried `REMOVEFILTERS(item)`, and the
+    model DEPLOYED fine — TMSL create does not deep-parse DAX — then the first query to touch that
+    measure died with `MdxScript(Model) (1, 1) Failed to resolve name 'SYNTAXERROR'`, the engine's
+    own placeholder for a token it could not lex. Seven probes and another composite had already
+    run, so nothing about Direct Lake, the model or the join graph was wrong.
+
+    It was the ONLY bare table reference in any measure in any template, and the only table-valued
+    argument in the project — so it was the one construct that had never been validated against
+    Fabric. Quoting is what every query in every suite already does (`'item'[i_category]`), costs
+    nothing and is unambiguous.
+
+    The check is deliberately syntactic and model-wide: it cannot know whether a given bare name
+    resolves, only that quoting removes the question."""
+    import re
+    fns = ("REMOVEFILTERS", "ALL", "ALLSELECTED", "ALLEXCEPT", "ALLNOBLANKROW", "VALUES",
+           "DISTINCT", "FILTER", "SUMMARIZE", "CALCULATETABLE", "RELATEDTABLE")
+    pat = re.compile(r"\b(" + "|".join(fns) + r")\(\s*('?)([A-Za-z_][A-Za-z0-9_ ]*)\2\s*[),]")
+    for path in sorted(glob.glob(os.path.join(HERE, "*.SemanticModel", "model.bim"))):
+        model = json.loads(open(path, encoding="utf-8").read())["model"]
+        tables = {t["name"] for t in model["tables"]}
+        for t in model["tables"]:
+            for meas in t.get("measures", []):
+                expr = meas["expression"]
+                expr = " ".join(expr) if isinstance(expr, list) else expr
+                for fn, quote, ref in pat.findall(" ".join(expr.split())):
+                    if ref in tables and not quote:
+                        assert False, (
+                            f"{os.path.basename(os.path.dirname(path))}: measure "
+                            f"{meas['name']!r} calls {fn}({ref}) on the table {ref!r} unquoted — "
+                            f"write {fn}('{ref}'). A bare table name deploys and then fails at "
+                            "query time with a SYNTAXERROR name-resolution error.")

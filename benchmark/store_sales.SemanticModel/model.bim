@@ -633,7 +633,7 @@
           },
           {
             "name": "Store Profit % by Item Category",
-            "expression": "DIVIDE([Store Net Profit], CALCULATE([Store Net Profit], REMOVEFILTERS(item)))",
+            "expression": "DIVIDE([Store Net Profit], CALCULATE([Store Net Profit], REMOVEFILTERS('item')))",
             "formatString": "0.00%",
             "description": "Q2. Each category's share of total store profit, which is what the donut splits."
           },
