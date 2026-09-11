@@ -146,17 +146,36 @@ than a shortcut:
   ~260 GiB free under `TMPDIR` (40 at SF10, 8 at SF1) and `FABRIC_CORES` is what sizes the node. It
   refuses early rather than dying an hour in, but the dispatch has to pass the number:
   `gh workflow run Benchmark -f dataset=tpcds -f cores=32 -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false`.
-  **THE UPLOAD IS RETRIED AND THE GENERATION IS NOT.** Run 33742041035 died on ten OneLake 500s
-  partway through uploading SF100 — after dsdgen, after the customisation, after the whole scale
-  factor was already on local disk, i.e. the most expensive thing here failing last.
-  `_retry_onelake()` wraps the three calls that talk to OneLake (the recursive clear, the per-TABLE
-  copy, the archive-log rewrite) with six attempts at a widening backoff; a 5xx or a dropped
-  connection is retried, a 4xx never is, because that is a refusal. The copy is per table, so a
-  retry re-sends one table's bytes rather than the scale factor's, and the archive log is written
-  LAST so a failure leaves the watermark describing the previous state rather than a half-landed
-  one. `land`'s job timeout is 240 minutes on this dataset against 120 elsewhere: the runner is
-  free and only WAITING on the notebook, so a cap that fires loses the evidence while the notebook
-  keeps running workspace-side.
+  ⚠️ **THE SF100 UPLOAD NEEDS `overwrite=False`, AND THAT IS A SIZE LIMIT RATHER THAN WEATHER.**
+  duckrun computes `single_shot = overwrite and remote.is_abfss(base)`, and `single_shot` means
+  `obstore.put(..., use_multipart=False)` — the file BUFFERED IN MEMORY and sent as one `Put Blob`.
+  That path exists because it is the only thing OneLake honours as an atomic REPLACE (multipart's
+  `Put Block` draws 409 over a committed blob, and obstore's delete is upstream-broken there), so it
+  is right for replacing a file and wrong for writing a big new one: `store_sales` at SF100 is 32
+  files of ~400 MB and OneLake answers a single PUT that size with a bare **500**. `overwrite=False`
+  takes duckrun's streaming multipart path, which its own docstring says handles multi-GB blobs.
+  It is safe **only because `wipe()` empties the folder immediately before** — `overwrite=False`
+  SKIPS a key that exists, so against a populated folder it would land a stale mix in silence. The
+  wipe and the keyword are one decision; `test_tpcds_landing_sql.py` pins both, and their order.
+  The archive-log rewrite KEEPS `overwrite=True`: it genuinely replaces an existing blob and is a
+  few KB, so the limit cannot reach it.
+  **THE UPLOAD IS ALSO RETRIED AND THE GENERATION IS NOT.** `_retry_onelake()` wraps the three calls
+  that talk to OneLake (the recursive clear, the per-TABLE copy, the archive-log rewrite) with six
+  attempts at a widening backoff; a 5xx or a dropped connection is retried, a 4xx never is, because
+  that is a refusal. The copy is per table, so a retry re-sends one table's bytes rather than the
+  scale factor's, and the archive log is written LAST so a failure leaves the watermark describing
+  the previous state rather than a half-landed one.
+  ⚠️ **BUT THE RETRY DID NOT SAVE RUN 34550578120 AND COULD NOT HAVE.** All six attempts re-ran the
+  identical single-shot PUT and failed identically, with obstore's own ten internal retries burning
+  out in 3.45s inside each one. A 500 that repeats at 15/30/45/60/75s is a limit, not a hiccup —
+  **and run 33742041035's "ten OneLake 500s", recorded here as a transient, was almost certainly
+  this same limit.** Keep the retry for real transients; it is also what made the deterministic
+  shape legible instead of looking like one unlucky night.
+  `land`'s job timeout is 240 minutes on this dataset against 120 elsewhere: the runner is free and
+  only WAITING on the notebook, so a cap that fires loses the evidence while the notebook keeps
+  running workspace-side. Measured: 34550578120 did the whole generation in **36 minutes** at
+  `cores=32` — `dsdgen(sf=100)` 1,398s, 1,116 GiB free disk, 201 GiB memory — so the cap is
+  headroom, not a constraint.
   Its item GUID is recorded under role `compute` with `engine: landing`, so the generator's CU does
   not fold into whichever engine the dispatch happened to build.
   **THE NOTEBOOK'S DELETION IS CONFIRMED, NOT ASSUMED.** duckrun deletes it in a `finally`, so the

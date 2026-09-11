@@ -215,3 +215,46 @@ def test_the_retry_names_what_it_was_uploading(monkeypatch, capsys):
 
     G._retry_onelake("upload store_sales", flaky)
     assert "store_sales" in capsys.readouterr().out
+
+
+# ----------------------------------------------------------- the two upload paths are not the same
+#
+# duckrun: `single_shot = overwrite and remote.is_abfss(base)`, and single_shot is
+# `obstore.put(..., use_multipart=False)` -- one `Put Blob`, file buffered in memory. It is the only
+# way to REPLACE a committed blob on OneLake and it cannot carry a 400 MB one: run 34550578120's
+# store_sales died on a bare 500, six retries deep, after a clean 262M-row generation.
+
+
+def _land_source():
+    import inspect
+    return inspect.getsource(G.land)
+
+
+def test_the_table_uploads_stream_rather_than_replace():
+    """`overwrite=False` on the per-table copy is what makes SF100 land at all."""
+    src = _land_source()
+    assert 'dr.copy(os.path.join(work, t), "parquet_raw/" + t,\n' in src, \
+        "the per-table copy moved; re-check which overwrite= it now carries"
+    i = src.index('dr.copy(os.path.join(work, t)')
+    call = src[i:i + 200]
+    assert "overwrite=False" in call, (
+        "the per-table upload must be overwrite=False -- overwrite=True forces duckrun's "
+        "single-shot Put Blob, which OneLake 500s on a ~400 MB file")
+
+
+def test_the_wipe_runs_before_the_upload_that_depends_on_it():
+    """`overwrite=False` SKIPS an existing key, so against a populated folder it would land a stale
+    mix in silence. The wipe is the only thing making the destination empty, so the two are one
+    decision and their ORDER is the load-bearing half."""
+    src = _land_source()
+    assert src.index('wipe("parquet_raw/" + t)') < src.index('dr.copy(os.path.join(work, t)')
+
+
+def test_the_archive_log_still_replaces():
+    """The log is REWRITTEN every run, so it is the one upload that genuinely needs the single-shot
+    replace path — and at a few KB the size limit cannot reach it."""
+    src = _land_source()
+    i = src.index("dr.copy(ltmp")
+    assert "overwrite=True" in src[i:i + 120], (
+        "the archive log must keep overwrite=True; overwrite=False would SKIP the existing blob "
+        "and leave the watermark describing the previous scale factor")

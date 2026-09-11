@@ -58,13 +58,23 @@ that way, and none of them is a convention someone has to remember:
   * the notebook it creates is deleted and the deletion is CONFIRMED, so nothing is left billing
     between the one-off and the runs that use its output.
 
-THE UPLOAD IS RETRIED AND THE GENERATION IS NOT, which is the right way round. Everything before
-`land()` is deterministic and re-runnable; the upload is the last step and the one that can fail on
-something that is nobody's fault. Run 33742041035 died on ten OneLake 500s partway through SF100,
-throwing away the dsdgen, the customisation and the whole local parquet write. `_retry_onelake()`
-now wraps the three calls that talk to OneLake -- the recursive clear, the per-TABLE copy and the
-archive-log rewrite -- with six attempts at a widening backoff, retrying a 5xx or a dropped
-connection and never a 4xx, which is a refusal rather than a hiccup.
+THE TABLE UPLOADS GO `overwrite=False`, AND THAT IS THE WHOLE SF100 FIX. duckrun turns
+`overwrite=True` on an abfss target into a single-shot `Put Blob` with the file buffered in memory
+-- the only thing OneLake honours as an atomic REPLACE -- and OneLake answers a PUT of a ~400 MB
+store_sales file with a bare 500. `wipe()` empties the folder immediately before, so there is
+nothing to replace and the streaming multipart path is both correct and unbounded. See the block
+comment in `land()`; do not "tidy" that keyword back.
+
+THE UPLOAD IS ALSO RETRIED AND THE GENERATION IS NOT, which is the right way round: everything
+before `land()` is deterministic and re-runnable, while the upload is the last step and the one that
+can fail on something nobody controls. `_retry_onelake()` wraps the three calls that talk to OneLake
+-- the recursive clear, the per-TABLE copy and the archive-log rewrite -- with six attempts at a
+widening backoff, retrying a 5xx or a dropped connection and never a 4xx.
+⚠️ **THE RETRY DID NOT SAVE RUN 34550578120 AND COULD NOT HAVE.** All six attempts re-ran the
+identical single-shot PUT and failed identically; obstore's own ten internal retries burned out in
+3.45s inside each one. A 500 that repeats at 15/30/45/60/75s is a LIMIT, not weather -- and run
+33742041035's "ten OneLake 500s", recorded as a transient, was almost certainly this same limit.
+Keep the retry for real transients; it is also what made the deterministic shape legible.
 
 Run it once per scale factor, by hand, and never think about it again:
 
@@ -480,10 +490,34 @@ def land(dr, con, sf, work, verdict):
     url = "duckdb://tpcds/dsdgen?sf=" + str(sf) + "&duckdb=" + duckdb.__version__
     for t in TABLES:
         wipe("parquet_raw/" + t)
+        # ⚠️ `overwrite=False`, AND THE DESTINATION IS EMPTY BECAUSE `wipe()` JUST DELETED IT. That
+        # pairing is the whole point and inverting either half breaks SF100 outright.
+        #
+        # duckrun: `single_shot = overwrite and remote.is_abfss(base)`, and `single_shot` means
+        # `obstore.put(..., use_multipart=False)` -- the whole file BUFFERED IN MEMORY and sent as
+        # one `Put Blob`. That exists because OneLake cannot replace a committed blob any other way
+        # (multipart's `Put Block` draws 409, and obstore's delete is upstream-broken there), so it
+        # is the right path for REPLACING a file and the wrong one for writing a big new one:
+        # store_sales at SF100 is 32 files of roughly 400 MB and OneLake answers a single PUT that
+        # size with a bare 500. `overwrite=False` takes duckrun's streaming multipart path, which
+        # its own docstring says handles multi-GB blobs.
+        #
+        # Run 34550578120 is the measurement, and it is also why the retry above did not save it:
+        # every one of the six attempts re-ran the identical single-shot PUT and failed identically,
+        # with obstore's own ten internal retries burning out in 3.45s each time. A 500 that repeats
+        # at 15/30/45/60/75s intervals is not weather. Run 33742041035 -- "ten OneLake 500s" -- was
+        # almost certainly this same limit rather than the transient it was recorded as.
+        #
+        # `overwrite=False` is only safe because the wipe ran: duckrun SKIPS a key that already
+        # exists under it, so against a populated folder this would land a stale mix silently. The
+        # wipe is what makes the folder empty, and it raises on any status but 200/202/404, so it
+        # cannot fail quietly. It also makes the retry genuinely incremental — a second attempt
+        # skips what already landed instead of re-sending it.
+        #
         # Per TABLE, so a retry that succeeds re-sends one table's bytes and not the scale factor's.
         _retry_onelake("upload " + t,
                        lambda t=t: dr.copy(os.path.join(work, t), "parquet_raw/" + t,
-                                           overwrite=True))
+                                           overwrite=False))
         for f in verdict["files"][t]:
             stem = f[:-len(".parquet")]
             rows = con.sql("SELECT count(*) FROM read_parquet('"
@@ -500,6 +534,10 @@ def land(dr, con, sf, work, verdict):
         # LAST, and by design: the log is the watermark, so until this lands the archive still
         # describes the previous state rather than a half-landed one. It is also the smallest write
         # here and the one it would be maddening to lose the whole run to.
+        #
+        # `overwrite=True` STAYS HERE, unlike the table uploads above: this genuinely REPLACES an
+        # existing blob, which on OneLake only the single-shot `Put Blob` can do. It is a few KB, so
+        # the size limit that rules that path out for a 400 MB fact file does not reach it.
         _retry_onelake("archive log", lambda: dr.copy(ltmp, "", overwrite=True))
     _log("archive log rewritten: " + str(con.sql(
         "SELECT count(*) FROM _pq_archive_log").fetchone()[0]) + " row(s)")

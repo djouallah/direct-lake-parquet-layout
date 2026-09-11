@@ -98,11 +98,23 @@ same archive. Which is why the dataset is DISPATCH-ONLY now — `"scheduled": Fa
 `datasets.py` — rather than losing four grid cells a week to rediscovering it. The generation is a
 hand dispatch, once per scale factor, and then the dataset behaves like any other.
 
-The two guards that closed the two ways this failed before, both already in: `check_landing.py`
-refuses an empty archive on the FREE runner and names the dataset and the dispatch, and
-`download_tpcds.py`'s `_retry_onelake()` wraps the OneLake calls — run 33742041035 lost a whole
-SF100 generation to ten 500s on the last step, after dsdgen, the customisation and the local parquet
-write had all succeeded.
+**THE GENERATION HALF IS PROVEN — run 34550578120, 2026-09-11.** At `cores=32`: 1,116 GiB free
+disk, 201 GiB memory, `dsdgen(sf=100)` in 1,398s, raw counts matching the spec on all ten tables,
+the null-drop landing **262,082,396** `store_sales` and **142,557,716** `catalog_sales` — both
+exactly the paper's Table 4.3.1 — and **0 orphans across all 13 relationships**. 36 minutes end to
+end. Nothing about dsdgen, the section 4.5 customisation or the parquet write is open.
+
+**WHAT FAILED WAS THE UPLOAD, AND IT WAS A SIZE LIMIT RATHER THAN WEATHER — now fixed.**
+`dr.copy(..., overwrite=True)` becomes duckrun's `single_shot` path, one `Put Blob` with the file
+buffered in memory, and OneLake answers a ~400 MB `store_sales` file with a bare 500. All six
+`_retry_onelake()` attempts re-ran the identical PUT and failed identically. The per-table copy is
+`overwrite=False` now — duckrun's streaming multipart path — which is safe because `wipe()` empties
+the folder immediately before it; the archive-log rewrite keeps `overwrite=True` because it really
+does replace a blob and is a few KB. **Run 33742041035's "ten OneLake 500s" was almost certainly
+this same limit, not the transient it was recorded as.**
+
+The other original failure is closed too: `check_landing.py` refuses an empty archive on the FREE
+runner and names the dataset and the dispatch.
 
 ```bash
 gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=32   -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false
