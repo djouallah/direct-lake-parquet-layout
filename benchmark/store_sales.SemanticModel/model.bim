@@ -25,7 +25,7 @@
     "tables": [
       {
         "name": "date_dim",
-        "description": "The date dimension, 2,191 rows covering 2021-01-01..2026-12-31, marked as the model's date table. Keyed on d_date_sk_1, the paper's shifted key -- d_date_sk is not in the model at all, so the substitution cannot be undone by accident.",
+        "description": "The date dimension, 2,191 rows covering 2021-01-01..2026-12-31, marked as the model's date table (dataCategory Time). THE KEY COLUMN IS d_date, NOT d_date_sk_1: a Tabular table may carry at most ONE isKey column, and a marked date table requires it to be the DATE column -- both keyed is what Fabric rejected at create time on run 34563142340. d_date_sk_1 is still the relationship target for both facts (the paper's shifted key; d_date_sk is not in the model at all, so the substitution cannot be undone by accident), which needs uniqueness but not isKey. The time-intelligence measures name date_dim[d_date] explicitly, so they never depended on the marking.",
         "sourceLineageTag": "[mart].[date_dim]",
         "columns": [
           {
@@ -33,8 +33,7 @@
             "dataType": "int64",
             "sourceColumn": "d_date_sk_1",
             "sourceLineageTag": "d_date_sk_1",
-            "summarizeBy": "none",
-            "isKey": true
+            "summarizeBy": "none"
           },
           {
             "name": "d_date",

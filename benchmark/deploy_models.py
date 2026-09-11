@@ -250,7 +250,13 @@ def main():
                     continue
                 # One engine failing to deploy must not cost the others their run: record it and
                 # carry on. xmla_compare.py benchmarks whatever actually deployed.
-                failed[e] = f"{type(ex).__name__}: {msg.splitlines()[0][:200]}"
+                # 600, RAISED FROM 200, and the reason is a measurement. On run 34563142340 both
+                # phases failed with a Fabric item-create payload whose useful part is the
+                # `errorCode`, and 200 characters cut it off at the literal string `'Dataset_` --
+                # the diagnosis had to come from diffing the .bim against the four that deploy
+                # instead of from the error that named it. A deploy failure is rare and always
+                # costs a paid leg, so its one line is the wrong place to save width.
+                failed[e] = f"{type(ex).__name__}: {msg.splitlines()[0][:600]}"
                 print(f"  FAILED {name}: {failed[e]}", flush=True)
                 break
         if item_id is None:

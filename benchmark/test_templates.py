@@ -19,6 +19,7 @@ instead of passing `mode=`: `_is_directlake_bim()` greps the model.bim's RAW BYT
 Direct-Lake token, so a *description string* mentioning the mode was enough to flip it and make deploy
 attempt a reframe the model could not serve. Prose counts. It caught that for real, once.
 """
+import glob
 import json
 import os
 import pathlib
@@ -793,3 +794,42 @@ def test_the_tpcds_facts_carry_the_paper_measures():
     assert {"Store Revenue", "Store Net Profit", "Store Distinct Customers",
             "Store Profit % by Item Category", "Catalog Revenue", "Catalog Sales Quantity",
             "Catalog Sales Same Period LY", "Catalog Sales YoY"} <= got
+
+
+def test_no_template_declares_two_key_columns_on_one_table():
+    """A Tabular table may carry at most ONE `isKey` column, and Fabric refuses the model at CREATE
+    if it carries two — after the build has run and the capacity is spent.
+
+    Run 34563142340 is why this exists: `store_sales.SemanticModel` keyed `date_dim` on BOTH
+    `d_date_sk_1` (the relationship target) and `d_date` (what `dataCategory: Time` requires), and
+    both the Direct Lake and DirectQuery phases died with a `Dataset_` error code. Every other
+    template has exactly one key per dimension and none sets `dataCategory`, so nothing here had
+    ever exercised the combination.
+
+    Offline and model-wide rather than tpcds-only: the next template to mark a date table would hit
+    the identical thing, and this is the cheapest possible place to find out."""
+    import collections
+    for path in sorted(glob.glob(os.path.join(HERE, "*.SemanticModel", "model.bim"))):
+        model = json.loads(open(path, encoding="utf-8").read())["model"]
+        for t in model["tables"]:
+            keys = [c["name"] for c in t.get("columns", []) if c.get("isKey")]
+            assert len(keys) <= 1, (
+                f"{os.path.basename(os.path.dirname(path))}: table {t['name']!r} declares "
+                f"{len(keys)} key columns {keys} — Tabular allows one, and Fabric refuses the "
+                "model at create time")
+
+
+def test_a_marked_date_table_keys_its_date_column():
+    """`dataCategory: "Time"` IS "mark as date table", and its contract is that the DATE column is
+    the key. Keying the surrogate instead parses, deploys on some paths and then makes time
+    intelligence answer against the wrong column — a silent wrong number rather than a failure,
+    which is worse than the create error above."""
+    for path in sorted(glob.glob(os.path.join(HERE, "*.SemanticModel", "model.bim"))):
+        model = json.loads(open(path, encoding="utf-8").read())["model"]
+        for t in model["tables"]:
+            if t.get("dataCategory") != "Time":
+                continue
+            keys = [c for c in t.get("columns", []) if c.get("isKey")]
+            assert len(keys) == 1 and keys[0].get("dataType") in ("dateTime", "date"), (
+                f"{os.path.basename(os.path.dirname(path))}: {t['name']!r} is dataCategory Time "
+                f"but its key is {[(k['name'], k.get('dataType')) for k in keys]}")
