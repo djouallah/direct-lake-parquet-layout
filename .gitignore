@@ -24,3 +24,10 @@ dashboard.html
 
 # Blog drafts — published on WordPress, never from this repo
 blog/
+
+# One-off hand-run deploy scripts. `full_deploy.py` builds the datasets into ANOTHER workspace and
+# leaves them there, so it hardcodes two real workspace GUIDs — and this repo is public, where every
+# real GUID is a secret and no tracked file outside `history/` holds one. Ignored rather than
+# sanitised: the reusable half is already in `fabric_run.py` (`REMOTE_LAKEHOUSE`), and what is left
+# is a script whose whole value is naming the specific workspaces it points at.
+full_deploy.py
