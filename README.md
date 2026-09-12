@@ -560,7 +560,7 @@ it is never staler than the ledger under it:
 | dataset | profile | build | build&nbsp;% | directlake | query&nbsp;% | rows | avg row group | table size (MB) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | aemo | `readHeavyForPBI` | **32,541** | 100% | **1,618** | 100% | 144.0M | 9.6–16.0M | 4,117–4,351 |
-| aemo | `writeHeavy` | **35,776** | 110% | **3,675** | 227% | 144.0M | 1.4–11.1M | 5,298–5,752 |
+| aemo | `writeHeavy` | **35,289** | 108% | **3,769** | 233% | 144.0M | 1.4–11.1M | 5,298–5,752 |
 | bts | `readHeavyForPBI` | **3,231** | 100% | **962** | 100% | 180.5M | 6.7M | 2,585 |
 | bts | `writeHeavy` | **4,071** | 126% | **1,093** | 114% | 180.5M | 6.7–6.9M | 2,441 |
 | cms | `readHeavyForPBI` | **9,870** | 100% | **1,173** | 100% | 87.7M | 1.4–1.6M | 3,032–3,107 |
