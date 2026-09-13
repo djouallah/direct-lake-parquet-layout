@@ -154,20 +154,22 @@ def main() -> int:
     # TIMESTAMP, not a 379th iteration. `2.0.0.dev2609121639` is the newest `pip install --pre`
     # resolves (2026-09-12), and it vendors core `81bc275dd6` (2026-09-10).
     #
-    # **THE WHEEL AND `main` TRACK DIFFERENT BRANCHES, AND THIS IS WHY THE SMOKE TEST NO LONGER DOES
-    # NOT CONDEMN THIS PIN.** Measured on run 34738321320: this wheel reports core
-    # **`v2.0.0-alpha41344 / 81bc275dd6`** — the v2.0 RELEASE branch, which duckdb-python pins
-    # ("pin submodule to latest cyanoptera hash") — while the same run's CLI, built from `main`,
-    # reports `v2.1.0-alpha41532`. TODO.md's Iceberg-CTAS break (`INTERNAL Error: Transformer for
-    # rule 'Statement' … IcebergTransaction::Commit`) was recorded on the v2.1.0 line, so it is not
-    # a statement about this core. Do not read the two version strings as one number line.
+    # **THE WHEEL AND `main` TRACK DIFFERENT BRANCHES — DO NOT READ THE TWO VERSION STRINGS AS ONE
+    # NUMBER LINE.** This wheel reports core **`v2.0.0-alpha41344 / 81bc275dd6`**, the v2.0 RELEASE
+    # branch, which is what duckdb-python pins ("pin submodule to latest cyanoptera hash"); a CLI
+    # built from `main` reported `v2.1.0-alpha41532` on the same day. An Iceberg-CTAS assertion
+    # failure (`INTERNAL Error: Transformer for rule 'Statement' … IcebergTransaction::Commit`) seen
+    # on the v2.1.0 line was read here as a blocker for this pin and was nothing of the kind. It is
+    # also why `Iceberg pin smoke` no longer fetches a main CLI at all — see that workflow's header.
     #
-    # **VERIFIED AGAINST THE REAL CATALOG: run 34738480443, 2026-09-13.** `Iceberg pin smoke`'s
-    # property probe CTASes into the OneLake REST catalog ON THIS PIN and both geometry assertions
-    # held — rows + 1 GiB budget gave exactly 4 row groups (max 1,001,472 rows), the rows-only
-    # control went byte-bound at 13 (max 331,776), matching the local measurement the env block is
-    # sized from. So the leg can commit and `iceberg_geometry()` still binds. Re-dispatch that
-    # workflow after any further pin move; it is free and spends no Fabric build capacity.
+    # **VERIFIED AGAINST THE REAL CATALOG: run 34739218189, 2026-09-13, every step green.**
+    # `Iceberg pin smoke` on THIS PIN: attach + 1,000,000-row round-trip through the OneLake Iceberg
+    # REST catalog; `encoding_stats` present in a local `COPY` (17 dictionary-encoded chunks) AND in
+    # the parquet the ICEBERG WRITER produced (1) — duckdb#24957 is in the core writer and the
+    # iceberg writer does not lose it; and the geometry pair honoured, rows + 1 GiB giving exactly 4
+    # row groups (max 1,001,472 rows) against the rows-only control's byte-bound 13 (max 331,776).
+    # So the leg can commit and `iceberg_geometry()` still binds. Re-dispatch that workflow after
+    # any further pin move; it is free and spends no Fabric build capacity.
     #
     # It cannot be checked from a laptop on the corporate network: the pip proxy mirrors only up to
     # 1.6.0.dev379 and files.pythonhosted.org refuses the TLS handshake, so `--index-url` does not
