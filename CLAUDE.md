@@ -1230,6 +1230,19 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   The line is gone. Note the knock-on: duckrun's merge budget is a **0.3 share of the global
   limit** (`set_merge_memory_limit`), so the routed anti-join now gets 0.3 × default instead of
   0.3 × 4GB. Spill is unaffected — `temp_directory` is still set for both.
+  ⚠️ **AND IT WAS VIOLATED AGAIN, BY THE DuckDB VERSION ITSELF, FROM 2026-08-20 TO 2026-09-13.**
+  `fabric_run.py`'s `duckdb==` pin was `if engine == "iceberg"`, so iceberg ran a pinned
+  pre-release while duckrun resolved duckdb through `duckrun`'s own `duckdb>=1.5.4` — the latest
+  RELEASE. By the end that was 1.5.5 against 2.0.0.dev, **two majors apart inside a pair whose
+  entire claim is that only the writer differs**, and it was recorded nowhere as an exception. The
+  pin is GLOBAL now — one specifier, both legs. Read any duckrun-vs-iceberg comparison from that
+  window as engine AND version, and note the geometry finding is unaffected: dev365's row-group fix
+  is a statement about the iceberg writer against its own earlier self, not a cross-leg one.
+  ⚠️ **THE DUCKRUN HALF OF THAT PIN HAS NO CHEAP CHECK.** `Iceberg pin smoke` exercises the iceberg
+  writer through the OneLake REST catalog and touches duckrun's delta-rs path not at all, so a pin
+  move is verified for duckrun only by a `Benchmark -f engines=duckrun` dispatch — and duckrun is
+  the leg the 20-slot grid dispatches, so a break there is up to 20 red scheduled runs. Dispatch one
+  by hand after a pin move, before the next cell fires.
   **The `duckrun_auto` dispatch input is a KNOWING exception, and the only one.** ON — the default —
   duckrun picks its own sort and lets delta-rs size the write. OFF, `fct_summary` is written
   **unsorted** at the two dispatched geometry values, `row_group_size` (default `16000000`) and

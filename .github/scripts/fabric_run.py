@@ -141,10 +141,19 @@ def main() -> int:
     print(f"[fabric_run] engine={engine} cores={cores} notebook={name} "
           f"forwarding: {', '.join(sorted(env))}", flush=True)
 
+    # **ONE PIN FOR BOTH DuckDB LEGS, AND THE PAIR IS WHY.** duckrun and iceberg are meant to be the
+    # same DuckDB on the same notebook at the same `FABRIC_CORES`, differing ONLY in the writer —
+    # that is what makes their two CU columns the sharpest comparison on the dashboard. A pin on one
+    # leg breaks exactly that: it was `if engine == "iceberg"` from dev365 (2026-08-20) until
+    # 2026-09-13, so duckrun resolved duckdb through `duckrun`'s own `duckdb>=1.5.4` — the latest
+    # RELEASE, 1.5.5 — while iceberg ran a 2.0.0 pre-release. Two DuckDB majors apart, inside a pair
+    # whose whole claim is that only the writer differs, and recorded nowhere as an exception.
+    # **Any duckrun/iceberg comparison spanning that window is comparing engines AND versions.**
+    #
     # The iceberg target is `type: duckdb`, so on THAT leg the DuckDB build IS the writer — and
-    # dbt-duckdb exposes no writer config at all, so every iceberg run so far came out at DuckDB's
-    # default 122,880-row group: 1,172 row groups on fct_summary, an order of magnitude off every
-    # other engine. 1.6.0.dev365 fixed the iceberg writer; 1.6.0.dev379 carries the parquet layout
+    # dbt-duckdb exposes no writer config at all, so every iceberg run before dev365 came out at
+    # DuckDB's default 122,880-row group: 1,172 row groups on fct_summary, an order of magnitude off
+    # every other engine. 1.6.0.dev365 fixed the iceberg writer; 1.6.0.dev379 carries the parquet layout
     # fix (footer `encoding_stats`, duckdb#24957 — measured present in that wheel, core
     # `v2.0.0-alpha39998 / a00803f768`). An EXACT pre-release specifier resolves without `--pre`, so
     # nothing else floats to a nightly. Drop it for `duckdb>=2.0.0` on release.
@@ -176,11 +185,15 @@ def main() -> int:
     # route around it either. CI is genuinely the first check for this one line.
     #
     # FIRST in the list, not appended: duckrun brings duckdb in as a dependency, so a pin behind it
-    # is a second install replacing the one pip just resolved.
+    # is a second install replacing the one pip just resolved. duckrun declares `duckdb>=1.5.4` with
+    # no upper bound, so an exact pre-release satisfies it and there is no resolver conflict.
     #
-    # duckrun's own leg is deliberately NOT pinned — it writes Delta through delta-rs and already
-    # has row_group_size / file_size_mb as dispatch inputs.
-    pip = (["duckdb==2.0.0.dev2609121639"] if engine == "iceberg" else []) + ["duckrun>=0.4.50", "pytz"]
+    # ⚠️ **`Iceberg pin smoke` COVERS THE ICEBERG WRITER ONLY.** It CTASes through the OneLake REST
+    # catalog and reads the footer duckdb-iceberg wrote; nothing in it exercises duckrun's delta-rs
+    # write path. So the duckrun half of this pin is checked by a `Benchmark` dispatch and by
+    # nothing cheaper — run one (`-f engines=duckrun`) after any pin move, BEFORE a scheduled cell
+    # fires, since duckrun is the leg the 20-slot grid actually dispatches.
+    pip = ["duckdb==2.0.0.dev2609121639", "duckrun>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
     # throttling). That item was created and did bill, so it is recorded before the failure

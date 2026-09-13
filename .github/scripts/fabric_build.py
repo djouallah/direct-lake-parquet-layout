@@ -210,8 +210,9 @@ def main() -> int:
     os.environ.setdefault("DUCKDB_TEMP_DIR", os.path.join(scratch, "duckdb_spill"))
 
     # Nothing installs anything here — `fabric_run.py`'s `pip=` list is the whole package set, and
-    # it is where the DuckDB pin lives (an EXACT `duckdb==2.0.0.dev2609121639` on the ICEBERG leg only,
-    # because there dbt-duckdb is the writer). Still no `--pre` anywhere: an exact pre-release
+    # it is where the DuckDB pin lives (an EXACT `duckdb==2.0.0.dev2609121639` on BOTH
+    # DuckDB legs, because the duckrun/iceberg pair is only a writer comparison while the DuckDB
+    # under them is the same build). Still no `--pre` anywhere: an exact pre-release
     # specifier resolves on its own, so only duckdb moves and every other dependency stays on a
     # release. If a pinned build's extension repo ever lacks `azure`/`iceberg`, the leg dies at the
     # first OneLake read — loud, and the versions line below names the build that did it.
