@@ -159,36 +159,47 @@ grid without resolving that schedules four OOM kills a week.
 
 ---
 
-## The iceberg writer's `encoding_stats` has never been proved on the pin
+## The pin is fully verified — dispatch an iceberg leg and see whether the CU gap closes
 
-`Iceberg pin smoke` asserts it — *Iceberg-written parquet carries encoding_stats*, which reads the
-footer of the parquet the ICEBERG writer just produced rather than the one a local `COPY` wrote —
-and that step has **never run to completion**. Both recent dispatches skipped it: the workflow still
-fetched a `main` CLI, and on 34738321320 `INSTALL iceberg` 404'd for a main version with no
-published extension, taking every step after it down.
+**Run 34739218189 is the first all-green `Iceberg pin smoke`, and it is green on the wheel the leg
+actually installs** (`duckdb==2.0.0.dev2609121639`, core `v2.0.0-alpha41344 / 81bc275dd6`,
+extensions `iceberg 63fe159100` / `azure 8a5df75eaa`, both from `core`):
 
-**The CLI is gone now** (see the workflow header for why it was there and why it must not come
-back), so the step runs on the pinned wheel like everything else. One free dispatch answers it:
+| check | result |
+|---|---|
+| local parquet `encoding_stats` | 17 dictionary-encoded chunks |
+| OneLake Iceberg REST attach + round-trip | 1,000,000 rows |
+| **iceberg-WRITTEN parquet `encoding_stats`** | **1 dictionary-encoded chunk** |
+| `row-group-size` + 1 GiB budget | 4 row groups, expected exactly 4 — honoured |
+| `row-group-size` alone (control) | 13 row groups, expected more than 4 — honoured |
+
+The third row had never run to completion before: both earlier dispatches fetched a `main` CLI that
+died first. It is the one that matters — duckdb/duckdb#24957 is in the CORE writer, and this says
+the ICEBERG writer does not lose it on the way out.
+
+**What is open is whether it shows up in the numbers.** CLAUDE.md records iceberg as the one writer
+here emitting no RLE and leaving 10 of 53 chunks with no dictionary page at all, which is exactly
+the transcode `encoding_stats` lets Direct Lake skip — the PR measures a cold first-touch of a
+142M-row dictionary string column going 10,857.5 → 689.3 ms. No benchmark run carries the new pin
+yet. One dispatch answers it, and iceberg is not on the scheduled grid, so it has to be by hand:
 
 ```bash
-gh workflow run "Iceberg pin smoke" -f onelake=true
+gh workflow run Benchmark -f dataset=aemo -f engines=iceberg -f cores=8 -f skip_download=true
 ```
 
-Green closes the last open question about the pin. Red with the LOCAL `encoding_stats` step green is
-the interesting failure — the fix is in the core writer and the iceberg writer is losing it — and
-belongs in a duckdb-iceberg issue.
+Read `layout.encodings` for the iceberg mart against run 32444969823's (`PLAIN+PLAIN_DICTIONARY`,
+43/53 chunks with a dictionary page, 483.9 MB on `mw`) and the directlake CU against its 7,923.
+⚠️ **SERIAL** — never alongside another `Benchmark`; see CI etiquette.
 
-**Settled, and recorded here because two of them retract things this repo asserted:**
+**Settled, and recorded because two of them retract things this repo asserted:**
 
-- **The pin is `duckdb==2.0.0.dev2609121639` and it round-trips the real catalog** (run 34738480443):
-  CTAS into the OneLake REST catalog, rows + 1 GiB budget giving exactly 4 row groups (max 1,001,472
-  rows) against the rows-only control's 13 (max 331,776). Both honoured, matching the local
-  measurement `SMOKE_RG_*` is sized from. This entry used to read *do not move the pin*.
-- **The `IcebergTransaction::Commit` break is a `main` finding and the WHEEL IS NOT ON `main`.** The
-  pin reports core `v2.0.0-alpha41344 / 81bc275dd6` — the v2.0 RELEASE branch, which duckdb-python
-  pins ("the latest cyanoptera hash") — while the CLI that workflow used to fetch from `main`
-  reported `v2.1.0-alpha41532`. Two branches, two alpha counters. Reading them as one number line is
-  what made `v2.1.0-alpha40144` look like a blocker for a wheel it cannot describe.
+- **The `IcebergTransaction::Commit` break was a `main` finding and the WHEEL IS NOT ON `main`.** The
+  pin reports core `v2.0.0-alpha41344` — the v2.0 RELEASE branch, which duckdb-python pins ("the
+  latest cyanoptera hash") — while the CLI the smoke workflow used to fetch reported
+  `v2.1.0-alpha41532`. Two branches, two alpha counters. Reading them as one number line is what
+  made `v2.1.0-alpha40144` look like a blocker for a wheel it cannot describe, and produced this
+  entry's former *do not move the pin* heading. **The CLI is gone from that workflow** — see its
+  header for why it was ever there and why it must not return.
 - **A step guarded `always()` is only as reachable as its least reachable input.** The row-group
   probe is `always()` so one failure cannot hide another answer, but `azure/login`, the lakehouse and
   the token were plain `if: inputs.onelake`, i.e. `success()` — so a red step above skipped all three
