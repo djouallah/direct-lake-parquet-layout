@@ -241,15 +241,22 @@ jobs:
           done || true
 
       # ---------------------------------------------------------------- OneLake
+      # ⚠️ ALL THREE ARE `always()`, AND THAT IS WHAT MAKES THE PROBE'S OWN `always()` MEAN
+      # ANYTHING. They were plain `if: inputs.onelake`, i.e. `success()`, so a red CLI step above
+      # skipped the login, the lakehouse and the token — and the pinned-wheel probe, which is
+      # `always()` precisely so a main regression cannot hide the leg's answer, then died on
+      # `KeyError: 'ONELAKE_TOKEN'` having tested nothing. Measured: run 34738321320, where main's
+      # `v2.1.0-alpha41532` had no published iceberg extension (404) and took the pin's answer down
+      # with it. A step guarded `always()` is only as reachable as its least reachable input.
       - uses: azure/login@v2
-        if: inputs.onelake
+        if: always() && inputs.onelake
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
 
       - name: Provision the smoke lakehouse
-        if: inputs.onelake
+        if: always() && inputs.onelake
         run: |
           set -euo pipefail
           # `record.item()` writes the fragment to this path and will not create its directory.
@@ -257,7 +264,7 @@ jobs:
           python .github/scripts/provision.py smoke >> "$GITHUB_ENV"
 
       - name: Mint a OneLake token
-        if: inputs.onelake
+        if: always() && inputs.onelake
         run: |
           ST=$(az account get-access-token --resource https://storage.azure.com/ --query accessToken -o tsv)
           echo "::add-mask::$ST"; echo "ONELAKE_TOKEN=$ST" >> "$GITHUB_ENV"

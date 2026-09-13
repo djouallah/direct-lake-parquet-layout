@@ -154,14 +154,20 @@ def main() -> int:
     # TIMESTAMP, not a 379th iteration. `2.0.0.dev2609121639` is the newest `pip install --pre`
     # resolves (2026-09-12), and it vendors core `81bc275dd6` (2026-09-10).
     #
-    # ⚠️ **ITS CORE IS PAST THE COMMIT THE SMOKE WORKFLOW RECORDED AS BREAKING AN ICEBERG CTAS.**
-    # TODO.md's *DuckDB `main` cannot commit an Iceberg CTAS* is the standing note: `v2.1.0-alpha40144`
-    # (`780c7c743f`, the 2026-09-02 release-branch version bump) dies with `INTERNAL Error:
-    # Transformer for rule 'Statement' returned an unexpected type` inside `IcebergTransaction::Commit`,
-    # and 81bc275dd6 is eight days the far side of it. Whether the extension has caught up is an
-    # EMPIRICAL question and `DuckDB main smoke` is where it is asked — its property probe runs a real
-    # CTAS against the OneLake REST catalog ON THIS PIN, free, no Fabric build capacity. Dispatch it
-    # before dispatching an iceberg leg on a pin that has moved.
+    # **THE WHEEL AND THE CLI TRACK DIFFERENT BRANCHES, WHICH IS WHY A RED `DuckDB main smoke` DOES
+    # NOT CONDEMN THIS PIN.** Measured on run 34738321320: this wheel reports core
+    # **`v2.0.0-alpha41344 / 81bc275dd6`** — the v2.0 RELEASE branch, which duckdb-python pins
+    # ("pin submodule to latest cyanoptera hash") — while the same run's CLI, built from `main`,
+    # reports `v2.1.0-alpha41532`. TODO.md's Iceberg-CTAS break (`INTERNAL Error: Transformer for
+    # rule 'Statement' … IcebergTransaction::Commit`) was recorded on the v2.1.0 line, so it is not
+    # a statement about this core. Do not read the two version strings as one number line.
+    #
+    # ⚠️ **STILL UNVERIFIED AGAINST THE REAL CATALOG AS OF 2026-09-13.** `DuckDB main smoke`'s
+    # property probe runs a real CTAS against the OneLake REST catalog ON THIS PIN — free, no Fabric
+    # build capacity — and on 34738321320 it never got to: main's `v2.1.0-alpha41532` has no
+    # published iceberg extension (404), which skipped the token steps and killed the probe on
+    # `KeyError: 'ONELAKE_TOKEN'`. Those steps are `always()` now. Dispatch it and read that step
+    # before dispatching an iceberg leg.
     #
     # It cannot be checked from a laptop on the corporate network: the pip proxy mirrors only up to
     # 1.6.0.dev379 and files.pythonhosted.org refuses the TLS handshake, so `--index-url` does not

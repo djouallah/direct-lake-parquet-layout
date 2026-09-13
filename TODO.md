@@ -174,9 +174,18 @@ range(1000000)` — no properties, no partitioning, nothing exotic. The last gre
 `v2.0.0-alpha38837` (2026-08-24), so it regressed somewhere in between.
 
 **⚠️ THIS USED TO READ "do not move the pin", AND THE PIN HAS BEEN MOVED.** `fabric_run.py` now
-pins `duckdb==2.0.0.dev2609121639` (2026-09-12, core `81bc275dd6` of 2026-09-10) where it pinned
-`1.6.0.dev379` (core `v2.0.0-alpha39998 / a00803f768`, which round-tripped fine). The new core is
-eight days the far side of `780c7c743f`, so **whether the leg can still commit at all is OPEN**.
+pins `duckdb==2.0.0.dev2609121639` where it pinned `1.6.0.dev379` (core
+`v2.0.0-alpha39998 / a00803f768`, which round-tripped fine).
+
+**THE BREAK IS A `main` FINDING AND THE WHEEL IS NOT ON `main`.** Measured on run 34738321320: the
+new pin reports core **`v2.0.0-alpha41344 / 81bc275dd6`** — the v2.0 RELEASE branch, which
+duckdb-python pins ("pin submodule to latest cyanoptera hash") — while the CLI the same workflow
+fetches from `main` reports `v2.1.0-alpha41532`. Two branches, two alpha counters, and reading them
+as one number line is what produced the first draft of this entry. So `v2.1.0-alpha40144`'s
+`IcebergTransaction::Commit` assertion says nothing about the pin.
+
+**It is still UNVERIFIED against the real catalog**, because the probe that would answer has not
+managed to run — see below.
 
 **The check is free and is one dispatch:**
 
@@ -186,9 +195,17 @@ gh workflow run "DuckDB main smoke" -f onelake=true
 
 Read the step named *An Iceberg table property sets the row group size (on the leg's pinned wheel)*
 — it runs a real CTAS against the OneLake REST catalog **on the pin**, so it is the leg's own answer
-and not main's. Green means the extension caught up and an iceberg `Benchmark` leg can be dispatched;
-red with the `IcebergTransaction::Commit` backtrace means revert the one line in `fabric_run.py` to
+and not main's. Green means an iceberg `Benchmark` leg can be dispatched; red with the
+`IcebergTransaction::Commit` backtrace means revert the one line in `fabric_run.py` to
 `duckdb==1.6.0.dev379` and leave it there.
+
+⚠️ **RUN 34738321320 ANSWERED NEITHER, AND THE WORKFLOW HAS BEEN FIXED FOR IT.** `INSTALL iceberg`
+on main's `v2.1.0-alpha41532` drew a **404** — `extensions.duckdb.org` publishes no iceberg build at
+that version — and the login / provision / token steps were plain `if: inputs.onelake`, i.e.
+`success()`, so they SKIPPED and the probe died on `KeyError: 'ONELAKE_TOKEN'` having tested
+nothing. The probe's own `always()` was worth nothing while its inputs were not: **a step guarded
+`always()` is only as reachable as its least reachable input.** All three are `always()` now. The
+one thing that run did establish is the core string above.
 
 **Do not read a red smoke as a problem here without checking WHICH step failed** — the round-trip at
 the top runs on whatever the CLI built from `main` this morning and is expected to stay red until
