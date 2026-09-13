@@ -213,7 +213,10 @@ jobs:
       #
       # The pin is READ OUT OF fabric_run.py, never restated here: two copies of a version would
       # drift, and this step would then measure a wheel the leg does not use.
+      # `always()` for the same reason the OneLake steps are: it reports on the WHEEL, so a red CLI
+      # step above must not skip it. Run 34738321320 skipped it on main's iceberg 404.
       - name: What the iceberg leg actually installs (report only)
+        if: always()
         continue-on-error: true
         run: |
           set -uo pipefail

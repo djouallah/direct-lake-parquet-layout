@@ -2358,8 +2358,9 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   iceberg writer, dev379 added duckdb#24957's footer `encoding_stats`, and the pin is
   `2.0.0.dev2609121639` since 2026-09-13, core `v2.0.0-alpha41344 / 81bc275dd6`. **THE WHEEL TRACKS
   THE v2.0 RELEASE BRANCH AND THE SMOKE WORKFLOW'S CLI TRACKS `main` (v2.1.0-alpha), so a red smoke
-  does not condemn the pin** — TODO.md's Iceberg-CTAS break is a v2.1.0 finding. That pin has not
-  yet round-tripped against the real catalog; read TODO.md before dispatching an iceberg leg. Run 32444969823, on dev365, wrote the
+  does not condemn the pin** — TODO.md's Iceberg-CTAS break is a v2.1.0 finding. The pin is
+  verified against the real catalog (run 34738480443: CTAS green, 4 row groups against the
+  rows-only control's 13), so `iceberg_geometry()` still binds on it. Run 32444969823, on dev365, wrote the
   same 143,980,961 rows as **3 files / 53 row groups at 2.7M rows**,
   in family with duckrun's 9-73 and spark's 10-11, at 1,129 MB against the old 1,119.
   ⚠️ **AND THE COST BARELY MOVED, WHICH IS THE FINDING.** directlake CU went **9,288 → 7,923**, about

@@ -162,12 +162,12 @@ def main() -> int:
     # rule 'Statement' … IcebergTransaction::Commit`) was recorded on the v2.1.0 line, so it is not
     # a statement about this core. Do not read the two version strings as one number line.
     #
-    # ⚠️ **STILL UNVERIFIED AGAINST THE REAL CATALOG AS OF 2026-09-13.** `DuckDB main smoke`'s
-    # property probe runs a real CTAS against the OneLake REST catalog ON THIS PIN — free, no Fabric
-    # build capacity — and on 34738321320 it never got to: main's `v2.1.0-alpha41532` has no
-    # published iceberg extension (404), which skipped the token steps and killed the probe on
-    # `KeyError: 'ONELAKE_TOKEN'`. Those steps are `always()` now. Dispatch it and read that step
-    # before dispatching an iceberg leg.
+    # **VERIFIED AGAINST THE REAL CATALOG: run 34738480443, 2026-09-13.** `DuckDB main smoke`'s
+    # property probe CTASes into the OneLake REST catalog ON THIS PIN and both geometry assertions
+    # held — rows + 1 GiB budget gave exactly 4 row groups (max 1,001,472 rows), the rows-only
+    # control went byte-bound at 13 (max 331,776), matching the local measurement the env block is
+    # sized from. So the leg can commit and `iceberg_geometry()` still binds. Re-dispatch that
+    # workflow after any further pin move; it is free and spends no Fabric build capacity.
     #
     # It cannot be checked from a laptop on the corporate network: the pip proxy mirrors only up to
     # 1.6.0.dev379 and files.pythonhosted.org refuses the TLS handshake, so `--index-url` does not

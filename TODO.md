@@ -159,62 +159,52 @@ grid without resolving that schedules four OOM kills a week.
 
 ---
 
-## The iceberg pin has moved onto the core that could not commit an Iceberg CTAS — verify it
+## `DuckDB main smoke` stays red on the CLI half — `main` publishes no iceberg extension
 
-`v2.1.0-alpha40144` (source `780c7c743f`, the 2026-09-02 release-branch version bump) dies on the
-smoke workflow's plain round-trip:
+**The leg's own half is GREEN and the pin move is settled; what is open is the CLI question this
+workflow was built to ask.** On run 34738480443 `INSTALL iceberg` drew:
 
 ```
-INTERNAL Error: Transformer for rule 'Statement' returned an unexpected type.
-  ... IcebergTransaction::Commit ...
+HTTP Error: Failed to download extension "iceberg" at URL
+"http://extensions.duckdb.org/v2.1.0-alpha41532/linux_amd64/iceberg.duckdb_extension.gz" (HTTP 404)
 ```
 
-An assertion failure inside the extension, on `CREATE TABLE onelake.dbo.<t> AS SELECT … FROM
-range(1000000)` — no properties, no partitioning, nothing exotic. The last green smoke was
-`v2.0.0-alpha38837` (2026-08-24), so it regressed somewhere in between.
+Not a load failure and not the old `IcebergTransaction::Commit` assertion — there is simply no
+iceberg build published for that version of `main`. The header's fallback is the run's own extension
+bundle, which `artifacts.duckdb.org` proxies unauthenticated by artifact name and the CLI loads with
+`-unsigned`; wiring that in is the work, and it would also re-reach the encoding_stats-through-the-
+iceberg-writer proof, which has been skipped on both recent runs.
 
-**⚠️ THIS USED TO READ "do not move the pin", AND THE PIN HAS BEEN MOVED.** `fabric_run.py` now
-pins `duckdb==2.0.0.dev2609121639` where it pinned `1.6.0.dev379` (core
-`v2.0.0-alpha39998 / a00803f768`, which round-tripped fine).
+**Settled, and recorded here because two of them retract things this repo asserted:**
 
-**THE BREAK IS A `main` FINDING AND THE WHEEL IS NOT ON `main`.** Measured on run 34738321320: the
-new pin reports core **`v2.0.0-alpha41344 / 81bc275dd6`** — the v2.0 RELEASE branch, which
-duckdb-python pins ("pin submodule to latest cyanoptera hash") — while the CLI the same workflow
-fetches from `main` reports `v2.1.0-alpha41532`. Two branches, two alpha counters, and reading them
-as one number line is what produced the first draft of this entry. So `v2.1.0-alpha40144`'s
-`IcebergTransaction::Commit` assertion says nothing about the pin.
+- **The pin moved to `duckdb==2.0.0.dev2609121639` and is VERIFIED against the real catalog** (run
+  34738480443): CTAS into the OneLake REST catalog, rows + 1 GiB budget giving exactly 4 row groups
+  (max 1,001,472 rows) against the rows-only control's 13 (max 331,776). Both honoured, matching the
+  local measurement the `SMOKE_RG_*` env block is sized from. This entry used to read *do not move
+  the pin*.
+- **The `IcebergTransaction::Commit` break is a `main` finding and the WHEEL IS NOT ON `main`.** The
+  pin reports core `v2.0.0-alpha41344 / 81bc275dd6` — the v2.0 RELEASE branch, which duckdb-python
+  pins ("pin submodule to latest cyanoptera hash") — while the CLI this workflow fetches from `main`
+  reports `v2.1.0-alpha41532`. Two branches, two alpha counters. Reading them as one number line is
+  what made `v2.1.0-alpha40144` look like a blocker for a wheel it cannot describe. The backtrace is
+  still in run 33730547105's log and still worth an upstream issue.
+- **A step guarded `always()` is only as reachable as its least reachable input.** The pinned-wheel
+  probe is `always()` so a main regression cannot hide the leg's answer, but `azure/login`, the
+  lakehouse and the token were plain `if: inputs.onelake`, i.e. `success()` — so the 404 above
+  skipped all three and the probe died on `KeyError: 'ONELAKE_TOKEN'` having tested nothing (run
+  34738321320). All three are `always()` now, as is the wheel-report step.
 
-**It is still UNVERIFIED against the real catalog**, because the probe that would answer has not
-managed to run — see below.
-
-**The check is free and is one dispatch:**
+**Do not read a red smoke as a problem here without checking WHICH step failed.** The CLI half is
+expected to stay red until upstream publishes the extension; the pinned-wheel probe is the leg's
+answer and is the step to read after any pin move:
 
 ```bash
 gh workflow run "DuckDB main smoke" -f onelake=true
 ```
 
-Read the step named *An Iceberg table property sets the row group size (on the leg's pinned wheel)*
-— it runs a real CTAS against the OneLake REST catalog **on the pin**, so it is the leg's own answer
-and not main's. Green means an iceberg `Benchmark` leg can be dispatched; red with the
-`IcebergTransaction::Commit` backtrace means revert the one line in `fabric_run.py` to
-`duckdb==1.6.0.dev379` and leave it there.
-
-⚠️ **RUN 34738321320 ANSWERED NEITHER, AND THE WORKFLOW HAS BEEN FIXED FOR IT.** `INSTALL iceberg`
-on main's `v2.1.0-alpha41532` drew a **404** — `extensions.duckdb.org` publishes no iceberg build at
-that version — and the login / provision / token steps were plain `if: inputs.onelake`, i.e.
-`success()`, so they SKIPPED and the probe died on `KeyError: 'ONELAKE_TOKEN'` having tested
-nothing. The probe's own `always()` was worth nothing while its inputs were not: **a step guarded
-`always()` is only as reachable as its least reachable input.** All three are `always()` now. The
-one thing that run did establish is the core string above.
-
-**Do not read a red smoke as a problem here without checking WHICH step failed** — the round-trip at
-the top runs on whatever the CLI built from `main` this morning and is expected to stay red until
-upstream fixes it; the probe step is `if: always()` precisely so a main regression cannot hide the
-leg's own answer. Worth an upstream issue with the backtrace, which is in run 33730547105's log.
-
 It cannot be pre-checked from a laptop on this network: the pip proxy mirrors only up to
 `1.6.0.dev379` and `files.pythonhosted.org` refuses the TLS handshake, so `--index-url` does not
-route around it. CI is genuinely the first check for this one line.
+route around it. CI is genuinely the first check for that one line.
 
 ---
 
