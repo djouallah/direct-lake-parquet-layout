@@ -1,0 +1,713 @@
+{
+ "dbt": {
+  "duckrun": {
+   "sort_by_auto": {
+    "catalog_sales": [
+     "cs_warehouse_sk",
+     "cs_ship_mode_sk",
+     "cs_call_center_sk",
+     "cs_quantity",
+     "cs_coupon_amt"
+    ],
+    "store_sales": [
+     "ss_quantity",
+     "ss_store_sk",
+     "ss_ext_discount_amt",
+     "ss_ext_tax",
+     "ss_net_paid_inc_tax"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "false",
+  "build": "true",
+  "cores": "8",
+  "dataset": "tpcds",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "auto",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "auto",
+  "runs": "6",
+  "skip_download": "true",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "0C4B40A9-9922-48D9-9F12-5BF40FC47B39": {
+   "at": "2026-09-13T07:30:05+00:00",
+   "created": true,
+   "deleted": "2026-09-13T07:49:41+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_delta",
+   "role": "output"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-09-13T07:29:56+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "870835DE-2509-4B84-8FD9-43FA8633AB49": {
+   "at": "2026-09-13T07:29:17+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "landing"
+  },
+  "C3FC6DAB-9ED7-4859-B8E3-841F4BEDFDEF": {
+   "at": "2026-09-13T07:29:19+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-09-13T07:29:16+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  },
+  "FE8420DD-2566-4232-A4CE-474D4E20B569": {
+   "at": "2026-09-13T07:48:05+00:00",
+   "created": true,
+   "deleted": "2026-09-13T07:49:40+00:00",
+   "engine": "duckrun",
+   "kind": "Notebook",
+   "name": "dbt-duckrun-2ef5597a",
+   "role": "compute"
+  }
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": "auto",
+    "row_group_size": "auto",
+    "sorted": "true",
+    "vcores": "8"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "duckrun": {
+    "cache_buster": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.01,
+     "type": "INT32"
+    },
+    "ss_addr_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1008.39,
+     "type": "INT64"
+    },
+    "ss_cdemo_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1225.5,
+     "type": "INT64"
+    },
+    "ss_coupon_amt": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 169.79,
+     "type": "INT32"
+    },
+    "ss_customer_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1238.58,
+     "type": "INT64"
+    },
+    "ss_ext_discount_amt": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 169.79,
+     "type": "INT32"
+    },
+    "ss_ext_list_price": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 510.3,
+     "type": "INT32"
+    },
+    "ss_ext_sales_price": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 499.05,
+     "type": "INT32"
+    },
+    "ss_ext_tax": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 461.38,
+     "type": "INT32"
+    },
+    "ss_ext_wholesale_cost": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 470.49,
+     "type": "INT32"
+    },
+    "ss_hdemo_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 409.68,
+     "type": "INT64"
+    },
+    "ss_item_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 660.46,
+     "type": "INT64"
+    },
+    "ss_list_price": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 477.36,
+     "type": "INT32"
+    },
+    "ss_net_paid": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 617.93,
+     "type": "INT32"
+    },
+    "ss_net_paid_inc_tax": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 699.79,
+     "type": "INT32"
+    },
+    "ss_net_profit": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 666.93,
+     "type": "INT32"
+    },
+    "ss_promo_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 313.37,
+     "type": "INT64"
+    },
+    "ss_quantity": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.01,
+     "type": "INT64"
+    },
+    "ss_sales_price": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 472.33,
+     "type": "INT32"
+    },
+    "ss_sold_date_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 344.96,
+     "type": "INT64"
+    },
+    "ss_sold_time_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 521.08,
+     "type": "INT64"
+    },
+    "ss_store_sk": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 0.15,
+     "type": "INT64"
+    },
+    "ss_ticket_number": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 1917.24,
+     "type": "INT64"
+    },
+    "ss_wholesale_cost": {
+     "chunks": 109,
+     "dict_pages": 109,
+     "encodings": [
+      "PLAIN",
+      "RLE",
+      "RLE_DICTIONARY"
+     ],
+     "mb": 442.05,
+     "type": "INT32"
+    }
+   }
+  },
+  "engines": {
+   "duckrun": {
+    "guid": "0c4b40a9-9922-48d9-9f12-5bf40fc47b39",
+    "item": "dbt_tpcds_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   }
+  },
+  "landing": {
+   "files": 73,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/catalog_page": {
+     "files": 1,
+     "size_mb": 1.15
+    },
+    "parquet_raw/catalog_sales": {
+     "files": 32,
+     "size_mb": 9806.26
+    },
+    "parquet_raw/customer_address": {
+     "files": 1,
+     "size_mb": 18.76
+    },
+    "parquet_raw/customer_demographics": {
+     "files": 1,
+     "size_mb": 7.42
+    },
+    "parquet_raw/date_dim": {
+     "files": 1,
+     "size_mb": 0.07
+    },
+    "parquet_raw/item": {
+     "files": 1,
+     "size_mb": 18.59
+    },
+    "parquet_raw/promotion": {
+     "files": 1,
+     "size_mb": 0.05
+    },
+    "parquet_raw/ship_mode": {
+     "files": 1,
+     "size_mb": 0.0
+    },
+    "parquet_raw/store": {
+     "files": 1,
+     "size_mb": 0.04
+    },
+    "parquet_raw/store_sales": {
+     "files": 32,
+     "size_mb": 11550.17
+    }
+   },
+   "guid": "870835de-2509-4b84-8fd9-43fa8633ab49",
+   "item": "dbt_tpcds_landing",
+   "size_mb": 21402.51
+  },
+  "ordering": {
+   "duckrun": {
+    "columns": {
+     "cache_buster": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 109,
+      "runs": 1
+     },
+     "ss_addr_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999954
+     },
+     "ss_cdemo_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999957
+     },
+     "ss_coupon_amt": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 587072
+     },
+     "ss_customer_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999958
+     },
+     "ss_ext_discount_amt": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 587072
+     },
+     "ss_ext_list_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3998757
+     },
+     "ss_ext_sales_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3749701
+     },
+     "ss_ext_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 1113874
+     },
+     "ss_ext_wholesale_cost": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999329
+     },
+     "ss_hdemo_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999407
+     },
+     "ss_item_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999985
+     },
+     "ss_list_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3998757
+     },
+     "ss_net_paid": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3748532
+     },
+     "ss_net_paid_inc_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3750170
+     },
+     "ss_net_profit": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999344
+     },
+     "ss_promo_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3995906
+     },
+     "ss_quantity": {
+      "rg_overlap_pct": 37.0,
+      "rgs": 109,
+      "runs": 2
+     },
+     "ss_sales_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3749701
+     },
+     "ss_sold_date_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3997074
+     },
+     "ss_sold_time_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999877
+     },
+     "ss_store_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 307
+     },
+     "ss_ticket_number": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999959
+     },
+     "ss_wholesale_cost": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 109,
+      "runs": 3999329
+     }
+    },
+    "sample": {
+     "file": "part-00000-08c86b6c-ed25-4971-aa36-827d7f03f9e4-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.store_sales",
+    "vorder_files": {
+     "files": 55,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "tpcds",
+   "id": "34744597964",
+   "sha": "0492bc4beb9e40efdb38dc9bdc9fbcd10fa7c2f7",
+   "written": "2026-09-13T07:49:12.024903+00:00"
+  },
+  "stats": {
+   "duckrun": {
+    "catalog_page": {
+     "avg_row_group": 20400.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 1.26,
+     "total_rows": 20400,
+     "vorder": false
+    },
+    "catalog_sales": {
+     "avg_row_group": 2545673.5,
+     "compression": "SNAPPY",
+     "num_files": 56,
+     "num_row_groups": 56,
+     "schema": "mart",
+     "size_mb": 12605.27,
+     "total_rows": 142557716,
+     "vorder": false
+    },
+    "customer_address": {
+     "avg_row_group": 1000000.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 23.22,
+     "total_rows": 1000000,
+     "vorder": false
+    },
+    "customer_demographics": {
+     "avg_row_group": 1920800.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 12.08,
+     "total_rows": 1920800,
+     "vorder": false
+    },
+    "date_dim": {
+     "avg_row_group": 2191.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.09,
+     "total_rows": 2191,
+     "vorder": false
+    },
+    "item": {
+     "avg_row_group": 204000.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 19.76,
+     "total_rows": 204000,
+     "vorder": false
+    },
+    "promotion": {
+     "avg_row_group": 1000.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.06,
+     "total_rows": 1000,
+     "vorder": false
+    },
+    "ship_mode": {
+     "avg_row_group": 20.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.0,
+     "total_rows": 20,
+     "vorder": false
+    },
+    "stg_tpcds_archive_log": {
+     "avg_row_group": 72.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.01,
+     "total_rows": 72,
+     "vorder": false
+    },
+    "store": {
+     "avg_row_group": 402.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.04,
+     "total_rows": 402,
+     "vorder": false
+    },
+    "store_sales": {
+     "avg_row_group": 2404425.7,
+     "compression": "SNAPPY",
+     "num_files": 55,
+     "num_row_groups": 109,
+     "schema": "mart",
+     "size_mb": 13297.3,
+     "total_rows": 262082396,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_tpcds_archive_log",
+   "date_dim",
+   "item",
+   "store",
+   "promotion",
+   "ship_mode",
+   "catalog_page",
+   "customer_address",
+   "customer_demographics",
+   "store_sales",
+   "catalog_sales"
+  ]
+ },
+ "run": {
+  "finished": "2026-09-13T07:49:51+00:00",
+  "id": "34744597964",
+  "sha": "0492bc4beb9e40efdb38dc9bdc9fbcd10fa7c2f7",
+  "started": "2026-09-13T07:25:47+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/34744597964"
+ },
+ "schema": 1
+}
