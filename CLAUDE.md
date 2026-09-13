@@ -1238,11 +1238,12 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   pin is GLOBAL now — one specifier, both legs. Read any duckrun-vs-iceberg comparison from that
   window as engine AND version, and note the geometry finding is unaffected: dev365's row-group fix
   is a statement about the iceberg writer against its own earlier self, not a cross-leg one.
-  ⚠️ **THE DUCKRUN HALF OF THAT PIN HAS NO CHEAP CHECK.** `Iceberg pin smoke` exercises the iceberg
-  writer through the OneLake REST catalog and touches duckrun's delta-rs path not at all, so a pin
-  move is verified for duckrun only by a `Benchmark -f engines=duckrun` dispatch — and duckrun is
-  the leg the 20-slot grid dispatches, so a break there is up to 20 red scheduled runs. Dispatch one
-  by hand after a pin move, before the next cell fires.
+  **A DuckDB BUMP IS NOT SYMMETRIC ACROSS THE PAIR, AND ONLY ONE SIDE NEEDS A SMOKE TEST.** On
+  iceberg the DuckDB build IS the writer. On duckrun it is not: DuckDB reads Delta and hands out
+  Arrow over the C Data Interface — a stable ABI — and the writing is delta-rs, pinned separately as
+  duckrun's own `deltalake==1.5.0`, so a version move cannot change the bytes duckrun writes. What
+  it can touch is duckrun's Python calls into the duckdb module, and that fails loudly at leg start.
+  So `Iceberg pin smoke` covering the iceberg writer alone is the right shape, not a gap.
   **The `duckrun_auto` dispatch input is a KNOWING exception, and the only one.** ON — the default —
   duckrun picks its own sort and lets delta-rs size the write. OFF, `fct_summary` is written
   **unsorted** at the two dispatched geometry values, `row_group_size` (default `16000000`) and

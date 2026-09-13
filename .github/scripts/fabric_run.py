@@ -188,11 +188,13 @@ def main() -> int:
     # is a second install replacing the one pip just resolved. duckrun declares `duckdb>=1.5.4` with
     # no upper bound, so an exact pre-release satisfies it and there is no resolver conflict.
     #
-    # ⚠️ **`Iceberg pin smoke` COVERS THE ICEBERG WRITER ONLY.** It CTASes through the OneLake REST
-    # catalog and reads the footer duckdb-iceberg wrote; nothing in it exercises duckrun's delta-rs
-    # write path. So the duckrun half of this pin is checked by a `Benchmark` dispatch and by
-    # nothing cheaper — run one (`-f engines=duckrun`) after any pin move, BEFORE a scheduled cell
-    # fires, since duckrun is the leg the 20-slot grid actually dispatches.
+    # **A DuckDB BUMP IS A SMALL EXPOSURE ON THE DUCKRUN LEG, AND THIS IS WHY.** DuckDB's whole job
+    # there is to read Delta and hand out Arrow over the C Data Interface — a stable ABI — and the
+    # WRITING is delta-rs, pinned independently as duckrun's own `deltalake==1.5.0`. So the pin
+    # cannot move the bytes duckrun writes; what it can touch is duckrun's Python calls into the
+    # duckdb module, which fail loudly at leg start rather than quietly in the output. On the
+    # iceberg leg the same bump IS the writer, which is why that leg has a smoke test and this one
+    # does not need one.
     pip = ["duckdb==2.0.0.dev2609121639", "duckrun>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
