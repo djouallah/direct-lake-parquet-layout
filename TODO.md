@@ -52,12 +52,14 @@ diagnostic. If the re-dispatch lands near 6 minutes it was weather.
 **The mechanism is PROVEN** — run 33731443153, on the leg's then-pin `duckdb==1.6.0.dev379`
 (core `v2.0.0-alpha39998`), against the real OneLake REST catalog with the leg's own ATTACH
 options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4)`.
-⚠️ **BUT THAT PROBE COULD NOT HAVE CAUGHT 33733500776, AND HAS BEEN REBUILT.** Its table was
-2 narrow columns × 1M rows — roughly 10 MB — so the 128 MB budget never bound and a rows-only
-property genuinely worked there. It now writes a 50-column table twice: the shipping PAIR (rows +
-1 GiB, must give exactly 4 row groups) beside a rows-only CONTROL (must give MORE, i.e. the byte
-default binds). Locally those read 4 and 13. Re-run with
-`gh workflow run "Iceberg pin smoke" -f onelake=true` after any pin move.
+⚠️ **THAT PROBE COULD NOT HAVE CAUGHT 33733500776, WAS REBUILT, AND IS NOW GONE WITH ITS WORKFLOW.**
+Its first table was 2 narrow columns × 1M rows — roughly 10 MB — so the 128 MB budget never bound, a
+rows-only property genuinely worked, and it read green while the nyc leg moved nothing. Rebuilt on a
+50-column table written twice (the shipping PAIR of rows + 1 GiB against a rows-only CONTROL), it
+confirmed the pair at **4 row groups against the control's 13** on run 34739218189 — the last
+reading before the smoke workflow was deleted. There is no cheap re-check any more: a pin move now
+surfaces in the next `Benchmark -f engines=iceberg`, and `test_iceberg_geometry.py` still pins what
+the macro EMITS.
 
 **Expect the geometry alone not to close the gap**, and say so when reporting: iceberg is also
 8,961 MB against duckrun's 5,866 and carries `PLAIN_DICTIONARY` with **no RLE**, and neither the

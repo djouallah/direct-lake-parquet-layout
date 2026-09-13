@@ -168,17 +168,22 @@ def main() -> int:
     # branch, which is what duckdb-python pins ("pin submodule to latest cyanoptera hash"); a CLI
     # built from `main` reported `v2.1.0-alpha41532` on the same day. An Iceberg-CTAS assertion
     # failure (`INTERNAL Error: Transformer for rule 'Statement' … IcebergTransaction::Commit`) seen
-    # on the v2.1.0 line was read here as a blocker for this pin and was nothing of the kind. It is
-    # also why `Iceberg pin smoke` no longer fetches a main CLI at all — see that workflow's header.
+    # on the v2.1.0 line was read here as a blocker for this pin and was nothing of the kind.
     #
-    # **VERIFIED AGAINST THE REAL CATALOG: run 34739218189, 2026-09-13, every step green.**
-    # `Iceberg pin smoke` on THIS PIN: attach + 1,000,000-row round-trip through the OneLake Iceberg
-    # REST catalog; `encoding_stats` present in a local `COPY` (17 dictionary-encoded chunks) AND in
-    # the parquet the ICEBERG WRITER produced (1) — duckdb#24957 is in the core writer and the
-    # iceberg writer does not lose it; and the geometry pair honoured, rows + 1 GiB giving exactly 4
-    # row groups (max 1,001,472 rows) against the rows-only control's byte-bound 13 (max 331,776).
-    # So the leg can commit and `iceberg_geometry()` still binds. Re-dispatch that workflow after
-    # any further pin move; it is free and spends no Fabric build capacity.
+    # **VERIFIED AGAINST THE REAL CATALOG: run 34739218189, 2026-09-13, every step green.** On THIS
+    # PIN: attach + 1,000,000-row round-trip through the OneLake Iceberg REST catalog;
+    # `encoding_stats` present in a local `COPY` (17 dictionary-encoded chunks) AND in the parquet
+    # the ICEBERG WRITER produced (1) — duckdb#24957 is in the core writer and the iceberg writer
+    # does not lose it; and the geometry pair honoured, rows + 1 GiB giving exactly 4 row groups
+    # (max 1,001,472 rows) against the rows-only control's byte-bound 13 (max 331,776). So the leg
+    # can commit and `iceberg_geometry()` still binds.
+    # ⚠️ **THE WORKFLOW THAT MEASURED THAT IS DELETED** (`Iceberg pin smoke` / `iceberg-pin-smoke.yml`,
+    # removed 2026-09-13), so the numbers above are the LAST reading and a further pin move has no
+    # cheap check behind it — the next `Benchmark -f engines=iceberg` is where one would surface.
+    # Two of its lessons are worth not relearning: a `main` CLI could never speak for this wheel
+    # (different branches, see above), and **a step guarded `always()` is only as reachable as its
+    # least reachable input** — its OneLake probe died on `KeyError: 'ONELAKE_TOKEN'` having tested
+    # nothing, because the token step was gated on `success()`.
     #
     # It cannot be checked from a laptop on the corporate network: the pip proxy mirrors only up to
     # 1.6.0.dev379 and files.pythonhosted.org refuses the TLS handshake, so `--index-url` does not
@@ -193,8 +198,7 @@ def main() -> int:
     # WRITING is delta-rs, pinned independently as duckrun's own `deltalake==1.5.0`. So the pin
     # cannot move the bytes duckrun writes; what it can touch is duckrun's Python calls into the
     # duckdb module, which fail loudly at leg start rather than quietly in the output. On the
-    # iceberg leg the same bump IS the writer, which is why that leg has a smoke test and this one
-    # does not need one.
+    # iceberg leg the same bump IS the writer, so that is the half a pin move can actually surprise.
     pip = ["duckdb==2.0.0.dev2609121639", "duckrun>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity

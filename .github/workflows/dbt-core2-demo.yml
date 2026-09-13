@@ -23,7 +23,7 @@
 # for DuckDB alone is statically linked rather than fetched from their driver CDN. `dbt --version`
 # prints no Plugins section because there are no plugins.
 #
-# IT IS ITS OWN EVERYTHING, deliberately, in the shape `Iceberg pin smoke` already established:
+# IT IS ITS OWN EVERYTHING, deliberately, in the shape a since-deleted smoke workflow established:
 # its own lakehouse name (`provision.py core2` → `dbt_core2_demo`), because `ensure()` reuses an
 # item by DISPLAY NAME and `teardown` deletes by GUID — so borrowing `dbt_iceberg` would let this
 # demo share a real build's lakehouse and then delete it mid-run; and its own concurrency group,
@@ -196,7 +196,7 @@ jobs:
           # SET is enough and no GLOBAL is needed. Without it the write dies on
           # `Problem with the SSL CA cert` against onelake.blob.fabric.microsoft.com (runs
           # 34472868381, 34474543493) -- the same reason every OneLake-touching duckdb session in
-          # `iceberg-pin-smoke.yml` sets it. It lives in dbt_project.yml rather than the model header
+          # the iceberg leg sets it. It lives in dbt_project.yml rather than the model header
           # purely so no nested quoting has to survive two layers of heredoc.
           write("dbt_project.yml", """
               name: core2_demo
@@ -289,7 +289,7 @@ jobs:
       # WHAT IT ACTUALLY WROTE. The REST catalog returns no file list, so this globs the direct
       # abfss path `provision.py` handed back. `azure_transport_option_type = 'curl'` is REQUIRED on
       # a bare runner — without it the read dies on "Problem with the SSL CA cert", which is why
-      # every OneLake-touching duckdb session in `iceberg-pin-smoke.yml` sets it too.
+      # every OneLake-touching duckdb session on a bare runner needs it.
       - name: Read the parquet footer back
         run: |
           set -euo pipefail
