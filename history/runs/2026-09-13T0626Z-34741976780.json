@@ -1,0 +1,96 @@
+{
+ "dbt": {
+  "duckrun": {
+   "sort_by_auto": {
+    "catalog_sales": [
+     "cs_warehouse_sk",
+     "cs_ship_mode_sk",
+     "cs_call_center_sk",
+     "cs_quantity",
+     "cs_coupon_amt"
+    ],
+    "store_sales": [
+     "ss_quantity",
+     "ss_store_sk",
+     "ss_ext_discount_amt",
+     "ss_ext_tax",
+     "ss_net_paid_inc_tax"
+    ]
+   }
+  }
+ },
+ "engine": "duckrun",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "tpcds",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "auto",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "auto",
+  "runs": "6",
+  "skip_download": "true",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "5F304A52-7F7A-47D6-999D-967A8BB5E48E": {
+   "at": "2026-09-13T06:12:41+00:00",
+   "created": true,
+   "deleted": "2026-09-13T06:25:56+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_delta",
+   "role": "output"
+  },
+  "6A486842-8E4A-4DA8-B25D-27EBB3AA192E": {
+   "at": "2026-09-13T06:25:15+00:00",
+   "created": true,
+   "deleted": "2026-09-13T06:25:55+00:00",
+   "engine": "duckrun",
+   "kind": "Notebook",
+   "name": "dbt-duckrun-88c02ce3",
+   "role": "compute"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-09-13T06:12:31+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "870835DE-2509-4B84-8FD9-43FA8633AB49": {
+   "at": "2026-09-13T06:11:38+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "landing"
+  },
+  "C3FC6DAB-9ED7-4859-B8E3-841F4BEDFDEF": {
+   "at": "2026-09-13T06:11:40+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-09-13T06:11:36+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "run": {
+  "finished": "2026-09-13T06:26:07+00:00",
+  "id": "34741976780",
+  "sha": "ea9b4d7f8b63f41d6fdfcb928a7adf19758ab83c",
+  "started": "2026-09-13T06:07:55+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/34741976780"
+ },
+ "schema": 1
+}
