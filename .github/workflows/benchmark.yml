@@ -384,6 +384,18 @@ on:
         description: "files per source when skip_download is off"
         type: string
         default: "200"
+      # DIAGNOSTIC ONLY, and duckrun ONLY — every other target is a hard 4. tpcds is the one dataset
+      # with two large facts; they are independent DAG nodes, so at 4 threads both take a global
+      # `sort_by=auto` at once and the process is OOM-killed above DuckDB's own memory_limit (run
+      # 34741976780: rss 61.0 GiB on a 62.8 GiB node, spill stalled at 14.6 GiB, no dbt error).
+      # ⚠️ PARK THE RECORD of any non-4 run in history/runs/legacy/ — `variant()` cannot see thread
+      # count, so it keys to the same dashboard column as a 4-thread run and blends silently.
+      # A choice, not free text: dbt takes an int and `| int` turns a typo into 0.
+      duckrun_threads:
+        description: "duckrun DAG threads — DIAGNOSTIC, anything but 4 is not comparable"
+        type: choice
+        options: ["4", "2", "1"]
+        default: "4"
       runs:
         description: "benchmark passes — 1 cold, 2 warm, 3+ hot"
         type: string
@@ -545,6 +557,10 @@ env:
     || inputs.row_group_size }}
   DUCKDB_FILE_SIZE_MB: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
     || inputs.file_size_mb }}
+  # Spelled with an explicit schedule branch, never `inputs.x || '4'`: on a schedule the inputs
+  # context is EMPTY and dispatch defaults do NOT apply, so the fallback form cannot tell an absent
+  # input from a deliberate one. A scheduled run is always 4.
+  DBT_THREADS: ${{ github.event_name == 'schedule' && '4' || inputs.duckrun_threads }}
   # ON A SCHEDULE THE ENGINE COMES FROM THE HOUR — see the grid at the top of the file. Matched on
   # the hour PREFIX, so three branches cover twenty crons; the two spark hours differ only in
   # SPARK_RESOURCE_PROFILE above. `duckrun` is the trailing value, which makes it both the 03:17

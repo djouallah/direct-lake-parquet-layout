@@ -44,6 +44,7 @@ import record
 # failure in this file costs one un-attributed CU row; that one costs the wrong table.
 _FORWARD = ("DATASET", "FILES_PATH", "ONELAKE_TABLES_PATH", "WAREHOUSE_PATH", "ONELAKE_ENDPOINT",
             "DBT_SCHEMA", "DUCKDB_SORTED", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
+            "DBT_THREADS",
             "download_limit", "daily_download_limit")
 
 
