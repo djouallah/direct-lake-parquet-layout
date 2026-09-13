@@ -198,17 +198,18 @@ jobs:
       # READS `pragma_version()` INSTEAD OF `duckdb.__version__`.** Measured on run 32789694020:
       # `duckdb==1.6.0.dev365` — a `1.6.0.dev` version string — carries core
       # **`v2.0.0-alpha38615 / 16980de6d3`**, committed 2026-08-20, i.e. 102 commits BEFORE #24957
-      # and 222 dev iterations behind the CLI's alpha38837. `encoding_stats` reads ABSENT. So the
-      # PyPI version being on the old `1.6.0.devN` scheme says nothing about which core is inside;
-      # only the pragma does. Bumping does not help yet either — `pip install --pre duckdb`
-      # resolves to that same dev365, which is why this step reports both.
+      # and 222 dev iterations behind the CLI's alpha38837, and `encoding_stats` read ABSENT there.
+      # ⚠️ **RETRACTED, THE DEV NUMBER CAUGHT UP: `1.6.0.dev379` carries core
+      # `v2.0.0-alpha39998 / a00803f768` and `encoding_stats` reads PRESENT** (measured off-CI,
+      # 2026-09-13, on the wheel itself). What survives is the rule that produced the retraction —
+      # a `1.6.0.devN` string named no core then and a `2.0.0.dev<YYMMDDHHMM>` one names none now,
+      # so only the pragma answers.
       #
-      # **REPORTS, NEVER ASSERTS.** Today this is expected to read `absent`, and a red run there
-      # would say "iceberg is broken" when the true statement is "the wheel has not caught up".
-      # The whole value is the day that summary line flips to `present`: that is when the pin can
-      # move and the leg starts writing footers Direct Lake can adopt. `continue-on-error` covers
-      # the other half — a pre-release that has been yanked, or a pin that no longer resolves at
-      # all, must not fail a workflow whose subject is the CLI.
+      # **REPORTS, NEVER ASSERTS**, and this step reports BOTH the pin and the newest pre-release
+      # so the summary says whether a bump would even help. A red run here would say "iceberg is
+      # broken" when the true statement is "the wheel has not caught up"; `continue-on-error`
+      # covers the other half — a pre-release that has been yanked, or a pin that no longer
+      # resolves at all, must not fail a workflow whose subject is the CLI.
       #
       # The pin is READ OUT OF fabric_run.py, never restated here: two copies of a version would
       # drift, and this step would then measure a wheel the leg does not use.
@@ -360,7 +361,7 @@ jobs:
       # to ask it — one free runner, one throwaway lakehouse, no Fabric capacity.
       #
       # ⚠️ IT RUNS ON THE PINNED WHEEL, because the question is about THE LEG, not about main. The
-      # leg installs `duckdb==1.6.0.dev379` in its Fabric notebook; the CLI above is whatever main
+      # leg installs `duckdb==2.0.0.dev2609121639` in its Fabric notebook; the CLI above is whatever main
       # built this morning, and on 2026-09-03 that was `v2.1.0-alpha40144`, which dies with
       # `INTERNAL Error: Transformer for rule 'Statement' returned an unexpected type` inside
       # `IcebergTransaction::Commit` on a plain iceberg CTAS. Probing the property with a build the

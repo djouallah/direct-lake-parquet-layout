@@ -144,16 +144,35 @@ def main() -> int:
     # The iceberg target is `type: duckdb`, so on THAT leg the DuckDB build IS the writer — and
     # dbt-duckdb exposes no writer config at all, so every iceberg run so far came out at DuckDB's
     # default 122,880-row group: 1,172 row groups on fct_summary, an order of magnitude off every
-    # other engine. 1.6.0.dev365 fixed the iceberg writer; 1.6.0.dev379 adds the parquet layout fix
-    # (footer `encoding_stats`, duckdb#24957). An EXACT pre-release specifier resolves
-    # without `--pre`, so nothing else floats to a nightly. Drop it for `duckdb>=1.6.0` on release.
+    # other engine. 1.6.0.dev365 fixed the iceberg writer; 1.6.0.dev379 carries the parquet layout
+    # fix (footer `encoding_stats`, duckdb#24957 — measured present in that wheel, core
+    # `v2.0.0-alpha39998 / a00803f768`). An EXACT pre-release specifier resolves without `--pre`, so
+    # nothing else floats to a nightly. Drop it for `duckdb>=2.0.0` on release.
+    #
+    # **THE WHEEL'S VERSION SCHEME CHANGED ON 2026-09-03 (duckdb-python `77f2551d40`, "New
+    # versioning scheme"), so the pin jumps 1.6.0.dev379 → 2.0.0.dev<YYMMDDHHMM>** — a BUILD
+    # TIMESTAMP, not a 379th iteration. `2.0.0.dev2609121639` is the newest `pip install --pre`
+    # resolves (2026-09-12), and it vendors core `81bc275dd6` (2026-09-10).
+    #
+    # ⚠️ **ITS CORE IS PAST THE COMMIT THE SMOKE WORKFLOW RECORDED AS BREAKING AN ICEBERG CTAS.**
+    # TODO.md's *DuckDB `main` cannot commit an Iceberg CTAS* is the standing note: `v2.1.0-alpha40144`
+    # (`780c7c743f`, the 2026-09-02 release-branch version bump) dies with `INTERNAL Error:
+    # Transformer for rule 'Statement' returned an unexpected type` inside `IcebergTransaction::Commit`,
+    # and 81bc275dd6 is eight days the far side of it. Whether the extension has caught up is an
+    # EMPIRICAL question and `DuckDB main smoke` is where it is asked — its property probe runs a real
+    # CTAS against the OneLake REST catalog ON THIS PIN, free, no Fabric build capacity. Dispatch it
+    # before dispatching an iceberg leg on a pin that has moved.
+    #
+    # It cannot be checked from a laptop on the corporate network: the pip proxy mirrors only up to
+    # 1.6.0.dev379 and files.pythonhosted.org refuses the TLS handshake, so `--index-url` does not
+    # route around it either. CI is genuinely the first check for this one line.
     #
     # FIRST in the list, not appended: duckrun brings duckdb in as a dependency, so a pin behind it
     # is a second install replacing the one pip just resolved.
     #
     # duckrun's own leg is deliberately NOT pinned — it writes Delta through delta-rs and already
     # has row_group_size / file_size_mb as dispatch inputs.
-    pip = (["duckdb==1.6.0.dev379"] if engine == "iceberg" else []) + ["duckrun>=0.4.50", "pytz"]
+    pip = (["duckdb==2.0.0.dev2609121639"] if engine == "iceberg" else []) + ["duckrun>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
     # throttling). That item was created and did bill, so it is recorded before the failure

@@ -49,7 +49,7 @@ NOT the suspect** — that was suspected and is retracted on the local scaling m
 materialization either. The cap is now 150 minutes so the leg can report; the duration is the
 diagnostic. If the re-dispatch lands near 6 minutes it was weather.
 
-**The mechanism is PROVEN** — run 33731443153, on the leg's own `duckdb==1.6.0.dev379`
+**The mechanism is PROVEN** — run 33731443153, on the leg's then-pin `duckdb==1.6.0.dev379`
 (core `v2.0.0-alpha39998`), against the real OneLake REST catalog with the leg's own ATTACH
 options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4)`.
 ⚠️ **BUT THAT PROBE COULD NOT HAVE CAUGHT 33733500776, AND HAS BEEN REBUILT.** Its table was
@@ -159,9 +159,10 @@ grid without resolving that schedules four OOM kills a week.
 
 ---
 
-## DuckDB `main` cannot commit an Iceberg CTAS — do not move the pin
+## The iceberg pin has moved onto the core that could not commit an Iceberg CTAS — verify it
 
-`v2.1.0-alpha40144` (source `780c7c743f`) dies on the smoke workflow's plain round-trip:
+`v2.1.0-alpha40144` (source `780c7c743f`, the 2026-09-02 release-branch version bump) dies on the
+smoke workflow's plain round-trip:
 
 ```
 INTERNAL Error: Transformer for rule 'Statement' returned an unexpected type.
@@ -172,14 +173,31 @@ An assertion failure inside the extension, on `CREATE TABLE onelake.dbo.<t> AS S
 range(1000000)` — no properties, no partitioning, nothing exotic. The last green smoke was
 `v2.0.0-alpha38837` (2026-08-24), so it regressed somewhere in between.
 
-**The leg is unaffected**: `fabric_run.py` pins `duckdb==1.6.0.dev379`, whose core is
-`v2.0.0-alpha39998`, and that wheel round-trips fine — the property probe in the same workflow runs
-on it and passes. So this blocks a PIN MOVE, not today's builds.
+**⚠️ THIS USED TO READ "do not move the pin", AND THE PIN HAS BEEN MOVED.** `fabric_run.py` now
+pins `duckdb==2.0.0.dev2609121639` (2026-09-12, core `81bc275dd6` of 2026-09-10) where it pinned
+`1.6.0.dev379` (core `v2.0.0-alpha39998 / a00803f768`, which round-tripped fine). The new core is
+eight days the far side of `780c7c743f`, so **whether the leg can still commit at all is OPEN**.
 
-The smoke workflow will stay red at the round-trip step until upstream fixes it, and that is the
-workflow working. **Check WHICH step failed before reading a red smoke as a problem here** — the
-probe step is `if: always()` precisely so a main regression cannot hide the leg's own answer.
-Worth an upstream issue with the backtrace, which is in run 33730547105's log.
+**The check is free and is one dispatch:**
+
+```bash
+gh workflow run "DuckDB main smoke" -f onelake=true
+```
+
+Read the step named *An Iceberg table property sets the row group size (on the leg's pinned wheel)*
+— it runs a real CTAS against the OneLake REST catalog **on the pin**, so it is the leg's own answer
+and not main's. Green means the extension caught up and an iceberg `Benchmark` leg can be dispatched;
+red with the `IcebergTransaction::Commit` backtrace means revert the one line in `fabric_run.py` to
+`duckdb==1.6.0.dev379` and leave it there.
+
+**Do not read a red smoke as a problem here without checking WHICH step failed** — the round-trip at
+the top runs on whatever the CLI built from `main` this morning and is expected to stay red until
+upstream fixes it; the probe step is `if: always()` precisely so a main regression cannot hide the
+leg's own answer. Worth an upstream issue with the backtrace, which is in run 33730547105's log.
+
+It cannot be pre-checked from a laptop on this network: the pip proxy mirrors only up to
+`1.6.0.dev379` and `files.pythonhosted.org` refuses the TLS handshake, so `--index-url` does not
+route around it. CI is genuinely the first check for this one line.
 
 ---
 

@@ -2353,9 +2353,11 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   nothing. It now writes a 50-column table twice: the shipping PAIR beside a rows-only CONTROL that
   must produce MORE groups. When a probe's positive control is written by a different shape from the
   thing under test, it is not a control.
-  **That reason is void.** `fabric_run.py` pins `duckdb==1.6.0.dev379` on the iceberg leg (and only
-  that leg — duckrun writes Delta through delta-rs and is untouched); dev365 reworked the iceberg
-  writer, dev379 adds duckdb#24957's footer `encoding_stats`. Run 32444969823, on dev365, wrote the
+  **That reason is void.** `fabric_run.py` pins an exact DuckDB pre-release on the iceberg leg (and
+  only that leg — duckrun writes Delta through delta-rs and is untouched); dev365 reworked the
+  iceberg writer, dev379 added duckdb#24957's footer `encoding_stats`, and the pin is
+  `2.0.0.dev2609121639` since 2026-09-13 — **whose core is past the commit the smoke workflow
+  recorded as breaking an Iceberg CTAS, so read TODO.md before dispatching an iceberg leg**. Run 32444969823, on dev365, wrote the
   same 143,980,961 rows as **3 files / 53 row groups at 2.7M rows**,
   in family with duckrun's 9-73 and spark's 10-11, at 1,129 MB against the old 1,119.
   ⚠️ **AND THE COST BARELY MOVED, WHICH IS THE FINDING.** directlake CU went **9,288 → 7,923**, about
