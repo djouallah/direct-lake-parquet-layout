@@ -132,6 +132,25 @@ def _log_node_facts(engine: str) -> None:
     except Exception as ex:
         print(f"[fabric_build] versions: unreadable ({ex})", flush=True)
 
+    # **THE WHEEL VERSION ABOVE DOES NOT NAME THE CORE, WHICH IS WHY THIS LINE EXISTS.** Measured:
+    # `duckdb==1.6.0.dev365` carried core `v2.0.0-alpha38615 / 16980de6d3`, and the current
+    # `2.0.0.dev<YYMMDDHHMM>` scheme is a BUILD TIMESTAMP naming no core at all — so `pip freeze`
+    # answers "which wheel" and only `pragma_version()` answers "which DuckDB". That mattered enough
+    # to move the pin twice on the strength of it, and until 2026-09-13 the only thing reading it
+    # was a smoke workflow that is now deleted. This is the one place it is recorded.
+    #
+    # Its own connection, closed immediately: dbt has not opened one yet at this point, and a
+    # settings read belongs to `log_duckdb_settings()` on the session dbt actually uses. Best-effort
+    # — an unreadable version is a missing log line, never a dead leg.
+    try:
+        import duckdb as _duckdb
+        with _duckdb.connect() as _c:
+            core = _c.sql("SELECT library_version || ' / ' || source_id "
+                          "FROM pragma_version()").fetchone()[0]
+        print(f"[fabric_build] duckdb core: {core}", flush=True)
+    except Exception as ex:
+        print(f"[fabric_build] duckdb core: unreadable ({ex})", flush=True)
+
 
 class _Sampler:
     """One line every 15s while dbt runs: process RSS, free memory, and how much has spilled.
