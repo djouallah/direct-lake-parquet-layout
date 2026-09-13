@@ -289,11 +289,11 @@ page or not — could be *proven* dictionary-encoded without decoding it, which 
 reason fixing the geometry moved this leg's CU only ~15%: the 43 chunks that did carry a
 dictionary were still undeclared. The PR's measurement of what the one footer list is worth:
 cold first-touch of a 142M-row dictionary string column, **10,857.5 → 689.3 ms**. It is in no
-release — stable is 1.5.5, the fix lives in `main` (v2.0.0-alpha) — and the wheel this leg pins
-predates it, so no benchmark run here carries it yet. The dispatch-only `DuckDB main smoke`
-workflow watches for a build that does (it loads iceberg against OneLake and asserts the written
-parquet's `encoding_stats` declare a dictionary page); when a wheel ships it, the pin moves and
-the iceberg column should finally close on the others.
+release — stable is 1.5.5 — but the pre-release wheel this leg pins now CARRIES it, verified by
+the dispatch-only `Iceberg pin smoke` workflow, which installs that exact wheel, loads iceberg
+against OneLake and asserts the written parquet's `encoding_stats` declare a dictionary page. No
+benchmark run here carries it yet: the pin moved on 2026-09-13 and nothing has been dispatched on
+it since, so the iceberg column should close on the others at the next iceberg run.
 
 ```sql
 COPY (SELECT * FROM fct_summary ORDER BY date, time, price)  -- #2: sort is yours to do

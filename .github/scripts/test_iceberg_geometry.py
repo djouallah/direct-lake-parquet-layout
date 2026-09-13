@@ -281,7 +281,7 @@ def test_the_override_still_matches_the_adapter_it_was_copied_from():
 
 def test_the_smoke_probes_budget_matches_the_macros_constant():
     """A PROBE TESTING A BUDGET THE MACRO DOES NOT EMIT PROVES NOTHING, and this is the second time
-    that shape of hole has appeared here. The first: `duckdb-main.yml`'s row-group probe wrote
+    that shape of hole has appeared here. The first: `iceberg-pin-smoke.yml`'s row-group probe wrote
     `write.parquet.row-group-size` ALONE, on a 2-column x 1M-row table of roughly 10 MB — far below
     any 128 MB threshold, so the byte budget never bound, a rows-only property genuinely worked, and
     the probe read `4 row groups, honoured` while the nyc leg wrote 729 at 811,700 rows. It was
@@ -292,9 +292,9 @@ def test_the_smoke_probes_budget_matches_the_macros_constant():
     green on a geometry no leg ever writes.
     """
     wf = (pathlib.Path(__file__).resolve().parents[2]
-          / ".github" / "workflows" / "duckdb-main.yml").read_text(encoding="utf-8")
+          / ".github" / "workflows" / "iceberg-pin-smoke.yml").read_text(encoding="utf-8")
     declared = re.search(r'SMOKE_RG_BUDGET_MB:\s*"(\d+)"', wf)
-    assert declared, "duckdb-main.yml no longer declares SMOKE_RG_BUDGET_MB"
+    assert declared, "iceberg-pin-smoke.yml no longer declares SMOKE_RG_BUDGET_MB"
     emitted = geometry("5000000", "auto")["write.parquet.row-group-size-bytes"]
     assert int(declared.group(1)) * 1048576 == emitted, (declared.group(1), emitted)
 

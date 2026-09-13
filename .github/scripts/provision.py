@@ -117,7 +117,7 @@ TEARDOWN_KEEP = {"landing", "folder", "sql_endpoint"}
 # exist yet.
 DWH_SRC = SPEC["dwh_src"]
 
-# The `DuckDB main smoke` workflow's own lakehouse, and the NAME is the whole reason it exists.
+# The `Iceberg pin smoke` workflow's own lakehouse, and the NAME is the whole reason it exists.
 # `ensure()` REUSES an item it finds by display name and `teardown` DELETES by GUID whatever the
 # record holds — so pointing that workflow at `dbt_iceberg` would let a smoke dispatch fired
 # alongside a hand-dispatched iceberg build share the leg's lakehouse and then delete it mid-run.
@@ -616,7 +616,7 @@ elif mode == "iceberg":
             f"FILES_PATH={ensure_landing_shortcut(lh)}"]
 
 elif mode == "smoke":
-    # `DuckDB main smoke`'s lakehouse. Same shape as the `iceberg` mode above and deliberately NOT
+    # `Iceberg pin smoke`'s lakehouse. Same shape as the `iceberg` mode above and deliberately NOT
     # that mode — see SMOKE for why the name must not be the leg's. No landing shortcut: the smoke
     # test creates its own rows and reads nothing from the archive, so it needs no FILES_PATH.
     # `SMOKE_TABLE_PATH` is the direct abfss path the footer read globs, because the REST catalog

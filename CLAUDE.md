@@ -1453,7 +1453,7 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   broad one's worst case is a free deploy for a README edit.
   Start a build with `gh workflow run Benchmark` when you actually want one; that one is still
   dispatch-only and always will be.
-- **THERE ARE FOUR WORKFLOWS: `Benchmark`, `Capacity units`, `Dashboard` and `DuckDB main smoke`.**
+- **THERE ARE FOUR WORKFLOWS: `Benchmark`, `Capacity units`, `Dashboard` and `Iceberg pin smoke`.**
   `all.yml`, `dbt.yml` and `cu.yml` are deleted. **The first three share nothing but the JSON in
   `history/`; the fourth shares nothing with any of them at all.**
 
@@ -1462,18 +1462,33 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   | `Benchmark` | `benchmark.yml` | open the record, offline checks, plan, land, build, layout, resolve, bench, report, teardown, record | 20-slot weekly `cron` grid · dispatch — it is the only one that spends BUILD capacity |
   | `Capacity units` | `capacity.yml` | `cu/measure.py` → commits `history/cu.json` | `workflow_run` after Benchmark · `17 13 * * *` · dispatch |
   | `Dashboard` | `dashboard.yml` | `dashboard/build.mjs` → deploys the page | `push` to `dashboard/**` · dispatch |
-  | `DuckDB main smoke` | `duckdb-main.yml` | run the `main` DuckDB CLI: load `iceberg`, attach OneLake, assert parquet `encoding_stats` | dispatch only |
+  | `Iceberg pin smoke` | `iceberg-pin-smoke.yml` | install the leg's pinned duckdb WHEEL: load `iceberg`, attach OneLake, assert parquet `encoding_stats`, assert the row-group property binds | dispatch only |
 
-  **The fourth writes no record, reads no ledger and publishes nothing** — it exists to answer
-  "has `main` broken iceberg, and does it still carry duckdb/duckdb#24957's `encoding_stats`" before
-  anyone moves the `duckdb==` pin in `fabric_run.py`. Three things about it are deliberate and easy
-  to undo by accident. It provisions **`dbt_duckdb_main_smoke`** via `provision.py smoke`, never
-  `dbt_iceberg`: `ensure()` reuses an item by display name and `teardown` deletes by GUID, so
-  borrowing the leg's item would let a smoke dispatch share a hand-dispatched iceberg build's
-  lakehouse and then delete it mid-run. It is **NOT on the `onelake-<ref>` concurrency group** —
+  **The fourth writes no record, reads no ledger and publishes nothing** — it installs the EXACT
+  wheel the iceberg leg pins and answers three things about it before and after anyone moves the
+  `duckdb==` pin in `fabric_run.py`: does `iceberg` still load and reach the OneLake REST catalog,
+  does its parquet still carry duckdb/duckdb#24957's `encoding_stats` locally AND through the
+  iceberg writer, and does an Iceberg table property still set the row group size.
+  ⚠️ **IT RAN THE `main` CLI UNTIL 2026-09-13 AND MUST NOT AGAIN.** That was a workaround for a
+  wheel that lagged the fix (`1.6.0.dev365` carried a core 102 commits behind it), and it expired
+  the moment the wheel caught up. **The CLI is built from `main` and the wheel from the v2.0 RELEASE
+  branch** — duckdb-python pins "the latest cyanoptera hash" — so they are different branches with
+  independent alpha counters (`v2.1.0-alpha41532` against `v2.0.0-alpha41344` on one day), and
+  reading them as one number line produced two false alarms in two days: a *do not move the pin*
+  entry resting on a v2.1.0 CTAS assertion that could not describe the wheel, and run 34738321320
+  going red because `main` had no published iceberg extension, which took the probe that mattered
+  down with it. A smoke test for the leg runs what the leg runs.
+  Three more things are deliberate and easy to undo by accident. It provisions
+  **`dbt_duckdb_main_smoke`** via `provision.py smoke`, never `dbt_iceberg`: `ensure()` reuses an
+  item by display name and `teardown` deletes by GUID, so borrowing the leg's item would let a smoke
+  dispatch share a hand-dispatched iceberg build's lakehouse and then delete it mid-run — and that
+  display name keeps saying `main` for the same reason, since a tidier spelling creates a SECOND
+  lakehouse and leaves the first billing. It is **NOT on the `onelake-<ref>` concurrency group** —
   that group holds at most one pending run, so joining it would let a free five-minute check EVICT a
   queued `Benchmark`; it has its own group instead. And it is **dispatch-only**, like `Benchmark`:
   it creates a Fabric item, and the question it answers is one a human asks, not a nightly.
+  **Its OneLake steps are all `always()`**, because the row-group probe is `always()` and a step
+  guarded that way is only as reachable as its least reachable input.
 
   In the normal case a human starts nothing but a `Benchmark`: the ledger tops itself up after every
   build, and the page publishes itself when its code changes. The one thing a human now has to
@@ -2347,7 +2362,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   a trade. The writer clamps the budget DOWN to the file target, so a pinned row count with
   `file_size_mb=auto` gets 512 MB and not 1 GiB — read `num_row_groups` back.
   **A PROBE THAT RETURNS A PLAUSIBLE GREEN ON A TABLE TOO SMALL TO EXERCISE THE CONSTRAINT IS THE
-  SAME TRAP AS `vorder_files` ON dwh.** `duckdb-main.yml`'s row-group probe wrote the rows property
+  SAME TRAP AS `vorder_files` ON dwh.** `iceberg-pin-smoke.yml`'s row-group probe wrote the rows property
   alone on 2 narrow columns × 1M rows — roughly 10 MB, far under any byte threshold — so a rows-only
   property genuinely worked there, it read `4 row groups, honoured`, and the nyc leg then moved
   nothing. It now writes a 50-column table twice: the shipping PAIR beside a rows-only CONTROL that

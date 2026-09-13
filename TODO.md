@@ -57,7 +57,7 @@ options: `row groups: 4 (asked 250000 rows/group over 1,000,000 rows, expected 4
 property genuinely worked there. It now writes a 50-column table twice: the shipping PAIR (rows +
 1 GiB, must give exactly 4 row groups) beside a rows-only CONTROL (must give MORE, i.e. the byte
 default binds). Locally those read 4 and 13. Re-run with
-`gh workflow run "DuckDB main smoke" -f onelake=true` after any pin move.
+`gh workflow run "Iceberg pin smoke" -f onelake=true` after any pin move.
 
 **Expect the geometry alone not to close the gap**, and say so when reporting: iceberg is also
 8,961 MB against duckrun's 5,866 and carries `PLAIN_DICTIONARY` with **no RLE**, and neither the
@@ -159,52 +159,41 @@ grid without resolving that schedules four OOM kills a week.
 
 ---
 
-## `DuckDB main smoke` stays red on the CLI half — `main` publishes no iceberg extension
+## The iceberg writer's `encoding_stats` has never been proved on the pin
 
-**The leg's own half is GREEN and the pin move is settled; what is open is the CLI question this
-workflow was built to ask.** On run 34738480443 `INSTALL iceberg` drew:
+`Iceberg pin smoke` asserts it — *Iceberg-written parquet carries encoding_stats*, which reads the
+footer of the parquet the ICEBERG writer just produced rather than the one a local `COPY` wrote —
+and that step has **never run to completion**. Both recent dispatches skipped it: the workflow still
+fetched a `main` CLI, and on 34738321320 `INSTALL iceberg` 404'd for a main version with no
+published extension, taking every step after it down.
 
+**The CLI is gone now** (see the workflow header for why it was there and why it must not come
+back), so the step runs on the pinned wheel like everything else. One free dispatch answers it:
+
+```bash
+gh workflow run "Iceberg pin smoke" -f onelake=true
 ```
-HTTP Error: Failed to download extension "iceberg" at URL
-"http://extensions.duckdb.org/v2.1.0-alpha41532/linux_amd64/iceberg.duckdb_extension.gz" (HTTP 404)
-```
 
-Not a load failure and not the old `IcebergTransaction::Commit` assertion — there is simply no
-iceberg build published for that version of `main`. The header's fallback is the run's own extension
-bundle, which `artifacts.duckdb.org` proxies unauthenticated by artifact name and the CLI loads with
-`-unsigned`; wiring that in is the work, and it would also re-reach the encoding_stats-through-the-
-iceberg-writer proof, which has been skipped on both recent runs.
+Green closes the last open question about the pin. Red with the LOCAL `encoding_stats` step green is
+the interesting failure — the fix is in the core writer and the iceberg writer is losing it — and
+belongs in a duckdb-iceberg issue.
 
 **Settled, and recorded here because two of them retract things this repo asserted:**
 
-- **The pin moved to `duckdb==2.0.0.dev2609121639` and is VERIFIED against the real catalog** (run
-  34738480443): CTAS into the OneLake REST catalog, rows + 1 GiB budget giving exactly 4 row groups
-  (max 1,001,472 rows) against the rows-only control's 13 (max 331,776). Both honoured, matching the
-  local measurement the `SMOKE_RG_*` env block is sized from. This entry used to read *do not move
-  the pin*.
+- **The pin is `duckdb==2.0.0.dev2609121639` and it round-trips the real catalog** (run 34738480443):
+  CTAS into the OneLake REST catalog, rows + 1 GiB budget giving exactly 4 row groups (max 1,001,472
+  rows) against the rows-only control's 13 (max 331,776). Both honoured, matching the local
+  measurement `SMOKE_RG_*` is sized from. This entry used to read *do not move the pin*.
 - **The `IcebergTransaction::Commit` break is a `main` finding and the WHEEL IS NOT ON `main`.** The
   pin reports core `v2.0.0-alpha41344 / 81bc275dd6` — the v2.0 RELEASE branch, which duckdb-python
-  pins ("pin submodule to latest cyanoptera hash") — while the CLI this workflow fetches from `main`
-  reports `v2.1.0-alpha41532`. Two branches, two alpha counters. Reading them as one number line is
-  what made `v2.1.0-alpha40144` look like a blocker for a wheel it cannot describe. The backtrace is
-  still in run 33730547105's log and still worth an upstream issue.
-- **A step guarded `always()` is only as reachable as its least reachable input.** The pinned-wheel
-  probe is `always()` so a main regression cannot hide the leg's answer, but `azure/login`, the
-  lakehouse and the token were plain `if: inputs.onelake`, i.e. `success()` — so the 404 above
-  skipped all three and the probe died on `KeyError: 'ONELAKE_TOKEN'` having tested nothing (run
-  34738321320). All three are `always()` now, as is the wheel-report step.
-
-**Do not read a red smoke as a problem here without checking WHICH step failed.** The CLI half is
-expected to stay red until upstream publishes the extension; the pinned-wheel probe is the leg's
-answer and is the step to read after any pin move:
-
-```bash
-gh workflow run "DuckDB main smoke" -f onelake=true
-```
-
-It cannot be pre-checked from a laptop on this network: the pip proxy mirrors only up to
-`1.6.0.dev379` and `files.pythonhosted.org` refuses the TLS handshake, so `--index-url` does not
-route around it. CI is genuinely the first check for that one line.
+  pins ("the latest cyanoptera hash") — while the CLI that workflow used to fetch from `main`
+  reported `v2.1.0-alpha41532`. Two branches, two alpha counters. Reading them as one number line is
+  what made `v2.1.0-alpha40144` look like a blocker for a wheel it cannot describe.
+- **A step guarded `always()` is only as reachable as its least reachable input.** The row-group
+  probe is `always()` so one failure cannot hide another answer, but `azure/login`, the lakehouse and
+  the token were plain `if: inputs.onelake`, i.e. `success()` — so a red step above skipped all three
+  and the probe died on `KeyError: 'ONELAKE_TOKEN'` having tested nothing (run 34738321320). All
+  three are `always()` now.
 
 ---
 

@@ -154,7 +154,7 @@ def main() -> int:
     # TIMESTAMP, not a 379th iteration. `2.0.0.dev2609121639` is the newest `pip install --pre`
     # resolves (2026-09-12), and it vendors core `81bc275dd6` (2026-09-10).
     #
-    # **THE WHEEL AND THE CLI TRACK DIFFERENT BRANCHES, WHICH IS WHY A RED `DuckDB main smoke` DOES
+    # **THE WHEEL AND `main` TRACK DIFFERENT BRANCHES, AND THIS IS WHY THE SMOKE TEST NO LONGER DOES
     # NOT CONDEMN THIS PIN.** Measured on run 34738321320: this wheel reports core
     # **`v2.0.0-alpha41344 / 81bc275dd6`** — the v2.0 RELEASE branch, which duckdb-python pins
     # ("pin submodule to latest cyanoptera hash") — while the same run's CLI, built from `main`,
@@ -162,7 +162,7 @@ def main() -> int:
     # rule 'Statement' … IcebergTransaction::Commit`) was recorded on the v2.1.0 line, so it is not
     # a statement about this core. Do not read the two version strings as one number line.
     #
-    # **VERIFIED AGAINST THE REAL CATALOG: run 34738480443, 2026-09-13.** `DuckDB main smoke`'s
+    # **VERIFIED AGAINST THE REAL CATALOG: run 34738480443, 2026-09-13.** `Iceberg pin smoke`'s
     # property probe CTASes into the OneLake REST catalog ON THIS PIN and both geometry assertions
     # held — rows + 1 GiB budget gave exactly 4 row groups (max 1,001,472 rows), the rows-only
     # control went byte-bound at 13 (max 331,776), matching the local measurement the env block is
