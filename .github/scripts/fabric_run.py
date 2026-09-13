@@ -189,9 +189,18 @@ def main() -> int:
     # 1.6.0.dev379 and files.pythonhosted.org refuses the TLS handshake, so `--index-url` does not
     # route around it either. CI is genuinely the first check for this one line.
     #
-    # FIRST in the list, not appended: duckrun brings duckdb in as a dependency, so a pin behind it
-    # is a second install replacing the one pip just resolved. duckrun declares `duckdb>=1.5.4` with
-    # no upper bound, so an exact pre-release satisfies it and there is no resolver conflict.
+    # **THE ORDER HERE IS COSMETIC — THIS IS ONE `pip install`, NOT THREE.** duckrun's notebook
+    # harness appends the whole list to a single argv
+    # (`[sys.executable, '-m', 'pip', 'install', '-q'] + CFG['pip']`, `fabric_remote.py`'s
+    # `build_script_notebook`), so the resolver sees all three requirements together and there is no
+    # install to be "first". What makes duckdb bind is that it is an EXACT `==` against duckrun's
+    # open-ended `duckdb>=1.5.4`; leading the list only reads that way. An earlier comment here
+    # claimed a pin placed after duckrun would be "a second install replacing the one pip just
+    # resolved" — there is no second install, and no resolver conflict either.
+    #
+    # No `--pre` on that argv, and none is needed: PEP 440 admits a pre-release when the specifier
+    # names one explicitly. ⚠️ That stops being true the moment this is loosened to a RANGE — a bare
+    # `duckdb>=2.0.0` would skip every `2.0.0.dev*` and resolve nothing.
     #
     # **A DuckDB BUMP IS A SMALL EXPOSURE ON THE DUCKRUN LEG, AND THIS IS WHY.** DuckDB's whole job
     # there is to read Delta and hand out Arrow over the C Data Interface — a stable ABI — and the
