@@ -12,7 +12,7 @@
 # at that landing location. For a quick offline try, use the `duckrun` target with
 # ONELAKE_TABLES_PATH and FILES_PATH set to local folders.
 
-aemo_electricity:
+direct_lake_parquet_layout:
   target: duckrun
   outputs:
 

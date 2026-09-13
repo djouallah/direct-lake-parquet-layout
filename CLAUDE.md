@@ -330,7 +330,11 @@ the user's own criterion: SQLBI's generator with engineered weight distributions
 is the "too generic" objection wearing a different hat.
 
 **THE GATING RULES ARE IN `dbt_project.yml` AND THERE ARE THREE.** Read them there before touching
-an `+enabled`; the short form is: nothing on the `aemo_electricity` key ever (a generic test's fqn is
+an `+enabled`; the short form is: nothing on the `direct_lake_parquet_layout` key ever
+(**the dbt project was named `aemo_electricity` until 2026-09-13** — one dataset back — so
+every log line, node fqn and `target/compiled/` path from an earlier run carries that name
+instead; the rename is cosmetic and `history/` never stored it, so no record or dashboard
+column moved) (a generic test's fqn is
 the fqn of its **yml file**, which is why the patch files moved under `models/<dataset>/` and why
 that move *fixed* the documented folder-key trap rather than working around it); **both axes in one
 `+enabled` on the dialect key**, because the value is a scalar and a deeper folder key clobbers a
@@ -384,10 +388,10 @@ one-table rule: the archive log is not a source that can change shape, it is the
 this pipeline itself landed, and without the join there is no assertion available on that table at
 all.
 
-**Put the gate on the folder key, never on `aemo_electricity`.** This was a live bug: a generic
-test declared in `models/_*.yml` gets fqn `['aemo_electricity', '<test_name>']` — no folder
+**Put the gate on the folder key, never on `direct_lake_parquet_layout`.** This was a live bug: a generic
+test declared in `models/_*.yml` gets fqn `['direct_lake_parquet_layout', '<test_name>']` — no folder
 segment, because the patch files sit at the root of `models/` — so a project-level `+enabled`
-matches it too. `data_tests: aemo_electricity: +enabled: "{{ target.type in ['duckrun','duckdb'] }}"`
+matches it too. `data_tests: direct_lake_parquet_layout: +enabled: "{{ target.type in ['duckrun','duckdb'] }}"`
 therefore disabled the four `unique`/`not_null` tests along with the DuckDB-SQL singular ones, and
 **dwh and spark ran zero tests** for as long as it stood — while this file and `dbt.yml` both said
 the generic ones still applied. `dbt build --target dwh` was `dbt run` wearing a hat. Check a
@@ -471,7 +475,9 @@ instead of guessing at the error:
 
 ```bash
 gh run download <run-id> -R djouallah/direct-lake-parquet-layout -n dbt-target-dwh -D /tmp/t
-cat /tmp/t/compiled/aemo_electricity/models/dwh/marts/fct_summary.sql
+cat /tmp/t/compiled/direct_lake_parquet_layout/models/dwh/marts/fct_summary.sql
+# artifacts from runs before 2026-09-13 spell that path `compiled/aemo_electricity/` —
+# the dbt project was renamed, see the gating rules
 ```
 
 ## Jinja whitespace control will comment out your SQL

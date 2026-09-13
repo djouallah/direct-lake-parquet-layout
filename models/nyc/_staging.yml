@@ -5,7 +5,7 @@ version: 2
 #
 # THIS FILE'S LOCATION IS LOAD-BEARING. A generic test's fqn is the fqn of the YML FILE, not of the
 # model it patches, so living under models/nyc/ is what gives its tests the `nyc` segment that
-# `data_tests: aemo_electricity: nyc:` gates on. At the root of models/ it would carry no folder
+# `data_tests: direct_lake_parquet_layout: nyc:` gates on. At the root of models/ it would carry no folder
 # segment at all and no gate could reach it — which is exactly the bug that once left dwh and spark
 # running zero tests. Do not move it up.
 
