@@ -18,11 +18,11 @@
   <text x="235.18" y="214" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+32%</text>
   <text x="76" y="285.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">nyc</text>
   <text x="158" y="269.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="440.78" y="254" width="152.27" height="22" rx="3" fill="#3987e5"/>
-  <text x="602.05" y="270" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.3× cheaper</text>
+  <rect x="440.78" y="254" width="154.23" height="22" rx="3" fill="#3987e5"/>
+  <text x="604.01" y="270" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.3× cheaper</text>
   <text x="158" y="299.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="410.11" y="284" width="30.67" height="22" rx="3" fill="#e66767"/>
-  <text x="401.11" y="300" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+5%</text>
+  <rect x="377.74" y="284" width="63.04" height="22" rx="3" fill="#e66767"/>
+  <text x="368.74" y="300" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+10%</text>
   <text x="76" y="371.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">bts</text>
   <text x="158" y="355.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
   <rect x="440.78" y="340" width="73.34" height="22" rx="3" fill="#3987e5"/>
