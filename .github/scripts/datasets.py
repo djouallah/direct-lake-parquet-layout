@@ -295,31 +295,21 @@ DATASETS = {
         # leg spends capacity: the form's default of 200 would ask dsdgen for SF200, and SF1000
         # needs a node this workspace does not have.
         "download_limits": ("1", "10", "100"),
-        # THE ONE DATASET OFF THE WEEKLY GRID, AND IT IS DECLARED HERE RATHER THAN BY AN ABSENCE IN
-        # benchmark.yml. Every other dataset gets four cron cells; tpcds gets none, because its
-        # landing GENERATES its input in a Fabric notebook and a scheduled run FORCES skip_download
-        # on -- so a scheduled cell can never populate its own archive, and run 33734219062 is what
-        # that costs: `land` and `plan` green, the spark leg dead 29 models in on [PATH_NOT_FOUND]
-        # with a Livy session already acquired, four times a week. Generating a scale factor is a
-        # ONE-OFF someone does by hand; the runs that read it are ordinary dispatches.
-        #
-        # A FLAG RATHER THAN A SET SUBTRACTION IN THE TEST: `test_schedule_rotation.py` asserts the
-        # grid is (dataset x config) complete, so without this a restored dataset with no crons
-        # fails a test about the SCHEDULE for a reason that is about the DATASET. Default True, so
-        # no other entry states it. It joins the grid when it has produced one green run -- flip
-        # this, add four crons and four `DATASET` branches.
-        "scheduled": False,
+        # NO `scheduled` FLAG ANY MORE, AND NOTHING REPLACES IT. It marked tpcds as the one dataset
+        # off the weekly cron grid, because its landing GENERATES its input in a Fabric notebook
+        # while a scheduled run FORCED skip_download on -- so a scheduled cell could never populate
+        # its own archive, which run 33734219062 cost: `land` and `plan` green, the spark leg dead
+        # 29 models in on [PATH_NOT_FOUND] with a Livy session already acquired, four times a week.
+        # THE GRID IS GONE (2026-09-17, throttled capacity) and every run is a dispatch, so there is
+        # no schedule for a dataset to be on or off. What survives is the operating fact: generating
+        # a scale factor is a ONE-OFF somebody does by hand with `skip_download=false`, and the runs
+        # that read it are ordinary dispatches. If the grid is ever restored, this flag and the
+        # `SCHEDULED` tuple that read it have to come back with it.
     },
 }
 
 ALL = tuple(DATASETS)
 DEFAULT = "aemo"
-
-# The datasets the weekly cron grid covers. `scheduled: False` is an opt-OUT, so a new entry is on
-# the grid unless it says otherwise -- which is the safe default: a dataset silently missing from
-# the schedule is invisible, while one that should not be there fails loudly the moment somebody
-# adds its four crons. `.github/scripts/test_schedule_rotation.py` reads this and nothing else.
-SCHEDULED = tuple(name for name, spec in DATASETS.items() if spec.get("scheduled", True))
 
 # Which Fabric item KIND each engine writes into. Independent of the dataset — it is a property of
 # the adapter, not of the data — so it is not repeated per dataset above.

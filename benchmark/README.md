@@ -12,16 +12,15 @@ deploy) and XMLA (to query).
 
 **A weekly `schedule` GRID plus `workflow_dispatch`, on *Benchmark*
 ([benchmark.yml](../.github/workflows/benchmark.yml)) — the same workflow that builds the tables.**
-20 slots a week, one per (dataset × write config) cell, at 05:17 / 06:57 / 08:37 / 10:17 UTC —
-00:17–06:17 US Eastern either side of the DST boundary, which is the point: the query passes are
-interactive CU on shared capacity and should not land while anyone is using it. The slots are 100
-minutes apart because runs must stay serial on one Fabric capacity. This reverses a rule that said a
-human starts every run; what that rule protected is unchanged and now accepted rather than avoided,
-and cells come out a cron line at a time.
+⚠️ **DISPATCH ONLY — a human starts every run.** It ran on a 20-slot weekly grid (one cell per
+dataset × write config) until 2026-09-17, when it was removed because the Fabric capacity is
+throttled: the query passes are interactive CU on shared capacity, and twenty runs a week of that
+stopped being affordable. What the grid bought was same-generation engine columns; keeping them
+comparable is now the dispatcher's job, and the spark V-Order pair is what drifts first.
 **`push`, `workflow_run` and `repository_dispatch` are still never used** — that workflow commits the
 run record, so a push trigger would let its own commit start the next paid build.
-⚠️ A scheduled event supplies NO inputs (dispatch defaults do not apply to `schedule`), so every
-input there carries its own scheduled value; see the header of `benchmark.yml` before adding one.
+Every input is read straight off the form now (`${{ inputs.<name> }}`); the per-input scheduled
+literals went with the trigger. See the header of `benchmark.yml` before adding a non-dispatch one.
 
 **The timings are not what the published page reports.** `cu/` measures what the querying *cost* in
 capacity units, and reads none of this directory's output — the engines are all fast, so the CU is

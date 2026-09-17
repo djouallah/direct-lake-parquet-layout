@@ -26,7 +26,7 @@ notice, with several it silently records another dataset's layout under this run
 | mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** | ~88M rows full-drain (PY2019-2025), **91 columns**, of which **54 are >50% NULL** | 26M rows at SF10, 262M at SF100, **24 columns** |
 | skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens | BOTH regimes at once: `Nature_of_Payment` 92% one value / `Form_of_Payment` 86% / `Dispute_Status` 100% beside `Covered_Recipient_Specialty_1` ~302 values and the payer id ~1,000 — plus SPARSITY nothing else has | synthetic: parameterised per column, INDEPENDENT across columns — the regime that never exercises the trade-off. **Not a point on this surface** |
 | items | `dbt_landing`, `dbt_delta`, … | `dbt_nyc_landing`, `dbt_nyc_delta`, … | `dbt_bts_landing`, `dbt_bts_delta`, … | `dbt_green_landing`, `dbt_green_delta`, … | `dbt_cms_landing`, `dbt_cms_delta`, … | `dbt_tpcds_landing`, `dbt_tpcds_delta`, … |
-| schedule | 4 weekly cells | 4 | 4 | 4 | 4 | **none — dispatch-only** (`scheduled: False`; its landing generates its own input) |
+| schedule | none | none | none | none | none | none — **every dataset is dispatch-only since 2026-09-17; the 20-slot weekly grid is gone, throttled capacity** |
 
 **Why the fifth one exists.** The first four vary SKEW at a roughly constant width — 5, 17, 20, 22
 columns. None of them varies WIDTH, and none of them is SPARSE. CMS Open Payments (Sunshine Act
@@ -121,17 +121,15 @@ measure, not because another system is sitting at it.
 Nine things about it differ from every other dataset here, and each is the dataset's nature rather
 than a shortcut:
 
-- **IT IS THE ONE DATASET OFF THE WEEKLY GRID, BY `"scheduled": False` IN THE REGISTRY.** Every
-  other dataset has four cron cells; tpcds has none, and that is declared in `datasets.py` rather
-  than left as an absence in `benchmark.yml` — `datasets.SCHEDULED` is what
-  `test_schedule_rotation.py` asserts the grid against, so the grid stays (dataset x config)
-  complete and this one dataset is a stated exception instead of a hole nobody notices.
-  **The reason is the landing, not the dataset's worth.** A scheduled run FORCES `skip_download`
-  on, so a scheduled cell can never generate its own archive: run 33734219062 is `land` and `plan`
-  both green and the spark leg dead 29 models in on `[PATH_NOT_FOUND]`, with a Livy session already
-  acquired, four times a week. Generating a scale factor is a one-off somebody does by hand; the
-  runs that read it are ordinary dispatches. It joins the grid once it has produced one green run —
-  flip the flag, add four crons, add four `DATASET` branches, and the grid goes 20 slots to 24.
+- ⚠️ **IT USED TO BE THE ONE DATASET OFF THE WEEKLY GRID, AND THE GRID IS GONE — SO THERE IS NO
+  LONGER ANYTHING TO BE OFF.** `"scheduled": False` and `datasets.SCHEDULED` are deleted along with
+  `test_schedule_rotation.py`; every dataset is dispatch-only now. The operating fact that made
+  tpcds the exception still holds and is what to remember: a scheduled run FORCED `skip_download`
+  on, so a scheduled cell could never generate its own archive — run 33734219062 is `land` and
+  `plan` both green and the spark leg dead 29 models in on `[PATH_NOT_FOUND]`, with a Livy session
+  already acquired, four times a week. **Generating a scale factor is a one-off somebody does by
+  hand with `skip_download=false`; the runs that read it are ordinary dispatches.** If the grid is
+  ever restored, the flag and the tuple have to come back with it.
 - **`download_limit` IS THE SCALE FACTOR** (1, 10 or 100), not a file count. `plan` refuses anything
   else *before* a leg starts, because the form's default is 200 and the generator is not free.
 - **GENERATING IS A ONE-OFF, AND IT SPENDS FABRIC COMPUTE — the only landing here that does.**
@@ -1478,7 +1476,7 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
 
   | workflow | file | does | triggered by |
   |---|---|---|---|
-  | `Benchmark` | `benchmark.yml` | open the record, offline checks, plan, land, build, layout, resolve, bench, report, teardown, record | 20-slot weekly `cron` grid · dispatch — it is the only one that spends BUILD capacity |
+  | `Benchmark` | `benchmark.yml` | open the record, offline checks, plan, land, build, layout, resolve, bench, report, teardown, record | **dispatch only** — it is the only one that spends BUILD capacity |
   | `Capacity units` | `capacity.yml` | `cu/measure.py` → commits `history/cu.json` | `workflow_run` after Benchmark · `17 13 * * *` · dispatch |
   | `Dashboard` | `dashboard.yml` | `dashboard/build.mjs` → deploys the page | `push` to `dashboard/**` · dispatch |
   | `dbt Core 2 demo` | `dbt-core2-demo.yml` | dbt-core 2.x writing an Iceberg table into the OneLake catalog — a DEMO, not a measurement | dispatch only |
@@ -1647,80 +1645,40 @@ does not: the parity table says the four engines hold the *same rows*, this meas
 takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
 [benchmark/README.md](benchmark/README.md) has the detail; what matters when touching this repo:
 
-- **THE SCHEDULE IS A 5×4 GRID — 20 cron lines, every dataset against every write config, once a
-  week — plus `workflow_dispatch`. `push`, `workflow_run` and `repository_dispatch` are still
-  forbidden.** This REVERSES a rule that read "a human starts every run — not a nightly, not behind
-  an `if:`", and the reasoning that rule carried is unchanged and now simply accepted: the
-  benchmark's query passes are **interactive CU** on shared Fabric capacity, the class of usage a
-  capacity admin sees and asks about. Twenty runs a week of that is the deliberate cost, and cells
-  come out a cron line at a time if it stops being worth it.
-  **`push` is forbidden for a different reason and that one has not moved**: this workflow COMMITS
-  the run record, so a `push:` trigger would let its own commit start the next paid build. A clock
-  is not a commit, which is why a schedule does not reopen that loop.
-  **THE GRID REPLACED A ONE-AXIS ROTATION, AND THAT IS WHY IT EXISTS.** The old schedule rotated the
-  DATASET by weekday and pinned everything else to the form default, so duckrun was measured on all
-  five datasets every week and `dwh` and `spark` only when somebody dispatched them — which put
-  engine columns weeks apart in age on a page whose whole argument is comparing them side by side.
-  The config axis is `duckrun` (auto) · `dwh` (V-Order) · `spark readHeavyForPBI` ·
-  `spark writeHeavy`. **`iceberg` is deliberately not in it** — its layout is whatever the DuckDB
-  build writes rather than anything anyone dispatched, so there is no config axis to rotate it on.
-  (That used to double as the reason it was out of the layout tables; the `duckdb==1.6.0.dev365` pin
-  ended that half and `ENGINES_HIDDEN` is empty now, so iceberg IS in those tables — it just still
-  has nothing to vary, and every iceberg run is a hand dispatch.) **Both spark profiles ARE**, so the
-  V-Order pair — the sharpest experiment on the page — stays same-generation on every dataset.
-  **THE HOUR SELECTS THE CONFIG; THE DATASET IS NO LONGER A FUNCTION OF THE WEEKDAY.** It cannot be:
-  20 cells over 7 days only divides while a dataset's whole row fires on its own day, which is the
-  arrangement that leaves the weekend empty. Cell (dataset i, hour j) fires on weekday `(i + 2j) % 7`
-  — five distinct weekdays in every hour column, 2–3 slots a day, no day idle. Slots are 03:17 /
-  04:57 / 06:37 / 08:17 UTC: that is the only window off work on BOTH sides of the DST boundary
-  (22:17–03:17 EST, 23:17–04:17 EDT; 13:17–18:17 in the metrics model's +10 clock), and four slots
-  inside five hours is **100 minutes apart** — hence the ragged minutes, which also keep every slot
-  off the top of the hour where GitHub delays scheduled runs most. 100 minutes clears the longest
-  run ever recorded here (84 min; median 32) by 16, and `cancel-in-progress: false` makes an overrun
-  QUEUE the next slot rather than kill it — only a **second** consecutive overrun evicts the pending
-  run and costs one cell that week.
-  **THE WINDOW IS AFTER WORK, NOT MIDNIGHT — local 22:00–06:00 — AND 03:17 IS THE EARLIEST LEGAL
-  START, WHICH THE GRID IS PINNED TO. Do not let it drift later again.** It sat two hours later
-  (05:17/06:57/08:37/10:17) and the last slot was 06:17 EDT, morning in East US, reading as a night
-  slot in every comment in the file until run 31941551767 fired there at 06:23 EDT. 22:00 local is
-  03:00 UTC under EST and 02:00 under EDT, so 03:00 is where the two seasons overlap and 100-minute
-  spacing fixes the other three.
-  **The extra hour bought CONTAINMENT, which is the part worth keeping: the whole run fits, not just
-  its start.** 08:17 plus the 84-minute worst case ends 05:41 EDT / 04:41 EST, median 32 minutes
-  ends 04:49 EDT. At a 23:00 floor that was NOT true — the earliest legal grid there ended 06:41 EDT
-  and the overrun had to be accepted as a cost. `test_schedule_rotation.py`'s
-  `test_every_slot_runs_to_completion_while_east_us_is_off_work` asserts BOTH endpoints of every
-  slot at BOTH offsets, so neither the start nor the tail can drift out and no season can be the
-  one that is wrong.
-  **THREE ENV CHAINS BRANCH ON `github.event.schedule`, AND EACH IS SPELLED EXACTLY ONCE.** `DATASET`
-  matches the cron **exact-string, whitespace included** (20 branches — no factorization exists, the
-  dataset varies with both axes); `BENCH_ENGINES` and `SPARK_RESOURCE_PROFILE` match the **hour
-  prefix** (`'57 4 '`, `'37 6 '`, `'17 8 '`), which is what keeps them three branches rather than
-  twenty. `RUNIN_DATASET`, `RUN_ENGINE`, `RUNIN_SPARK_RESOURCE_PROFILE`, `plan`'s `ENGINES` and the
-  record's commit message all **read the env back** (`${{ env.DATASET }}` and friends) rather than
-  restating the chain — the duplicated `RUNIN_DATASET` copy is gone, and with it the whole class of
-  bug where the build takes one cell and the record files another.
-  `.github/scripts/test_schedule_rotation.py` resolves every cron through all three chains and
-  asserts it lands on the cell its `# <dataset> <config>` comment claims — **those comments are
-  load-bearing** — plus that all 20 cells fire exactly once, that no branch names a dead cron, that
-  the hour prefixes cannot be ambiguous, that no two crons share a (weekday, time), and that
-  same-day slots stay ≥100 minutes apart. It runs in the free `checks` job before any capacity is
-  spent. The scheduled sort is `duckrun_auto` on, i.e. `auto`, which is dataset-neutral — rotation
-  cannot hand a mart a key belonging to another dataset. That used to be a live hazard the `plan`
-  job refused; the field that made it possible is gone.
-  ⚠️ **On a `schedule` event the `inputs` context is EMPTY and `workflow_dispatch` defaults do NOT
-  apply**, so every input in that file carries its own scheduled value spelled
-  `github.event_name == 'schedule' && '<value>' || inputs.<name>` — or, for the three that rotate,
-  `github.event_name != 'schedule' && inputs.<name> || <cron branches> || '<fallback>'`. Never
+- ⚠️ **THERE IS NO SCHEDULE. `workflow_dispatch` ONLY — and `push`, `workflow_run` and
+  `repository_dispatch` stay forbidden here as they always were.** The 20-slot weekly grid (5
+  datasets × 4 write configs, one cell a week each) was **removed on 2026-09-17 because the Fabric
+  capacity is throttled**. Its own justification is what condemned it: the benchmark's query passes
+  are **interactive CU** on shared capacity, the class of usage a capacity admin sees and asks
+  about, and twenty runs a week of that was a deliberate cost that stopped being affordable. This
+  restores the older rule verbatim — *a human starts every run, not a nightly, not behind an `if:`*.
+  **`push` is forbidden for a separate reason that never moved**: this workflow COMMITS the run
+  record, so a `push:` trigger would let its own commit start the next paid build.
+  **WHAT THE GRID BOUGHT IS WHAT IS NOW LOST, and it is worth knowing before reading the page.** It
+  replaced a one-axis rotation that varied only the DATASET and pinned everything else to the form
+  default, so duckrun was measured on all five datasets weekly while `dwh` and `spark` moved only
+  when somebody dispatched them — which put engine columns weeks apart in age on a page whose whole
+  argument is comparing them side by side. That failure mode is back, and it is now the dispatcher's
+  job to avoid: **engine columns stay same-generation only if you dispatch them together**, and the
+  spark V-Order pair (`readHeavyForPBI` against `writeHeavy`) is the experiment that drifts first,
+  because it is the only one whose two halves must be the same generation to mean anything.
+  **Restoring it is mechanical**: a `schedule:` block of 20 crons, the per-cron `DATASET` /
+  `BENCH_ENGINES` / `SPARK_RESOURCE_PROFILE` branches, and `test_schedule_rotation.py` — all three
+  are in the commit that removed them, along with the timing arithmetic (slots at 03:17 / 04:57 /
+  06:37 / 08:17 UTC, 100 minutes apart, the only window off work either side of the DST boundary).
+  ⚠️ **AND EVERY INPUT IS READ DIRECTLY NOW — `${{ inputs.<name> }}`, nothing else.** Each one used
+  to carry a scheduled literal beside it, because on a `schedule` event the `inputs` context is
+  EMPTY and `workflow_dispatch` defaults do NOT apply. Those ~35 branches went with the trigger. If
+  any non-dispatch trigger is ever added back they **all** have to come back with it, and never as
   `inputs.x || 'default'`: that cannot tell an absent input from a deliberate one, so it would
-  override `build: false` and turn the scouting recipe's `gap_seconds: 0` back into 600. The failures
-  are silent and expensive — blank `engines` is fatal in `plan`, and blank `build`/`benchmark` are
-  falsy so a scheduled run would spend a runner and build nothing. **Every scheduled value is the form
-  default, `cores` included — 8, not the 64 a hand dispatch usually passes** — with `dataset`,
-  `engines` and `spark_resource_profile` as the three exceptions: 64 is for a run somebody is waiting
-  on, and nobody waits on a scheduled one. So it opens its own `·8c` column rather than joining the
-  64c history, which is correct — `vcores` is part of `variant()`, and the CU rate (`cores / 2`) says
-  they are different machines.
+  override `build: false` and turn the scouting recipe's `gap_seconds: 0` back into 600. The
+  failures are silent and expensive — blank `engines` is fatal in `plan`, and blank
+  `build`/`benchmark` are falsy, so such a run spends a runner and builds nothing.
+  **One consequence for the page: `cores` is now whatever the dispatch passes.** The grid pinned it
+  to the form default of 8, so scheduled runs all shared a `·8c` column; a hand dispatch often
+  passes 64. `vcores` is part of `variant()`, so the two are different columns and the CU rate
+  (`cores / 2`) says they are different machines — which is correct, and now entirely up to whoever
+  dispatches. Pass `-f cores=8` to join the history the grid built.
 - **It measures a USER SESSION, and nothing is ever cleared. The pass number is the tier.**
   `deploy_models.py` **deletes and recreates** each semantic model, so it starts with an empty
   VertiPaq store; `xmla_compare.py` then walks the whole 25-query suite `runs` times — pass 1 **cold**,
@@ -1886,8 +1844,15 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   - **`Capacity units` fires on `workflow_run` after `Benchmark`, and on dispatch. The daily
     `schedule` is GONE.** The `workflow_run` trigger is a scoped reversal of the "dispatch only" rule
     and it is earned: the rule's stated reason was that *publishing is a decision*, and an automatic
-    measurement now publishes nothing. `Benchmark` has a schedule of its own, so a CU read fires after
-    it automatically — that read is a LOWER BOUND, and the 13:17 cron is what raises it.
+    measurement now publishes nothing. A CU read therefore fires after every Benchmark — which is now
+    always a run somebody started — and that read is a LOWER BOUND.
+    ⚠️ **NOTHING RAISES IT OFF THAT BOUND ANY MORE.** The `17 13 * * *` settling cron went with
+    `Benchmark`'s grid on 2026-09-17: its time was arithmetic on the grid's last slot, and a daily
+    clock read of a repo nobody dispatched to is spend for nothing. **A CU figure that matters needs
+    a SECOND dispatch of `Capacity units`, ~90 minutes after the build finished** — `max(old, new)`
+    means it can only improve the number. The `workflow_run` read is kept rather than made manual
+    too, because it is not a clock: it follows a human-started run, publishes nothing, and costs
+    about two DAX queries and no Fabric capacity at all.
   - **`workflow_run`, never `workflow_call`** — see the three taxes below. It also means
     `benchmark.yml` needs **no edit**: the CU read is a separate run that starts after Benchmark
     completes, so Benchmark's duration, status and job graph are untouched. No conclusion filter: a
@@ -1901,30 +1866,27 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
     branch on that event regardless of where the build ran.
   - **`Capacity units` is NOT `continue-on-error`.** It was, while it gated a page deploy in the same
     run: a throttled metrics model had to cost a stale number rather than a stale page. Unattended on
-    a schedule that inverts — a failed read would report green and the ledger would quietly stop being
-    topped up. Red, so the scheduled-failure mail arrives; nothing downstream breaks, because the page
-    keeps serving the last good ledger.
-- **TWO AUTOMATIC READS, DOING DIFFERENT JOBS — and the second is what makes a number true.** A CU
+    a `workflow_run` that inverts — a failed read would report green and the ledger would quietly
+    stop being topped up. Red instead, so the failure shows on the run the Benchmark triggered;
+    nothing downstream breaks, because the page keeps serving the last good ledger.
+- **ONE AUTOMATIC READ, AND IT IS A LOWER BOUND. SETTLING IS A SECOND DISPATCH, BY HAND.** A CU
   hour keeps growing for up to ~70 minutes (~6 min ingestion lag, 5–64 min smoothing), and
   `measure.py` has **no settle logic** — every read re-reads the whole window from the floor and
   merges with `max(old, new)`, so a re-read is idempotent and monotonic and two reads of one window
   can only RAISE a number, never lower one. That is what makes a pair of reads safe and a
-  badly-timed one merely useless rather than wrong. The `workflow_run` read fires within a minute of
-  a `Benchmark` finishing and is a deliberate LOWER BOUND, there so a fresh run's column is populated
-  immediately; `cron: "17 13 * * *"` is the settling read.
-  **ITS TIME IS ARITHMETIC, NOT A ROUND NUMBER.** `Benchmark`'s schedule is a grid of 2–3 slots a day,
-  the LAST at 08:17; a run is a measured median of 31 minutes and max of 84 across 47 duckrun records,
-  so that slot finishes by ~09:41 worst case, and plus the ~70 minute settle that is ~10:51. 13:17
-  clears it by 146 minutes — it was derived off a 10:17 last slot and did not have to move when the
-  grid shifted earlier — and every earlier slot of the day is long settled by then, so ONE read finishes the
-  whole day. An earlier read would land mid-smoothing on a typical run, add almost nothing, and say
-  nothing at all about the slots still to come.
-  **It is aimed at the SCHEDULED runs, not at every run** — that was the old daily `17 21 * * *`, which
-  is not coming back — so **a run you start by hand still needs a dispatch to settle it.** The page's `may
-  still rise` caveat is derived from the clock and expires after two hours, so past that a
-  hand-started run's low number reads as settled whether or not it is. Note GitHub disables a
-  schedule after 60 days of repo inactivity, silently; if that bites, the `workflow_run` read still
-  populates the column, it just never gets raised.
+  badly-timed one merely useless rather than wrong — and it is what made a PAIR of reads safe, back
+  when there was a pair. The `workflow_run` read fires within a minute of a `Benchmark` finishing
+  and is a deliberate LOWER BOUND, there so a fresh run's column is populated immediately rather
+  than sitting blank; `cron: "17 13 * * *"` was the settling read that raised it.
+  ⚠️ **ITS TIME WAS ARITHMETIC ON A GRID THAT NO LONGER EXISTS, SO THE CRON IS DELETED.** It was
+  timed off the grid's LAST slot (08:17, plus a measured max run of 84 minutes, plus the ~70 minute
+  settle = ~10:51, which 13:17 cleared by 146 minutes). With every run a dispatch at an arbitrary
+  hour there is no last slot to anchor to, and a daily read aimed at nothing is spend for nothing.
+  The old daily `17 21 * * *` that preceded it is not coming back either.
+  **So EVERY run's CU is a lower bound until somebody dispatches `Capacity units` again**, and the
+  page does not know that: its `may still rise` caveat is derived from the clock and expires after
+  two hours, so past that an unsettled number reads as settled. Dispatch ~90 minutes after the build
+  finished when a figure matters.
   One run is about **two DAX queries** (`discover_columns()` plus one `read_cu()` per capacity, and
   `CU_CAPACITY_ID` is pinned to one), so the cadence is nearly free.
   **Do NOT add a high-water mark to narrow the floor.** It is one query either way — the aggregation
@@ -2616,9 +2578,11 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   of the arrangement), and now the measurement does not even run in this workflow. The snapshot is
   still not immune, and that is all the `ref:` protects.
 - **`Dashboard` is `push` to `dashboard/**` plus dispatch; `Capacity units` is `workflow_run` after
-  Benchmark plus a 13:17 `cron` plus dispatch; `Benchmark` is a 20-slot weekly grid plus dispatch.** This replaced a blanket
-  "`workflow_dispatch` only" that applied when one workflow both measured and published. What each
-  reason protects now: for `Benchmark`, capacity — unchanged and absolute. For the page, that
+  Benchmark plus dispatch; `Benchmark` is DISPATCH ONLY.** ⚠️ **NO WORKFLOW IN THIS REPO CARRIES A
+  `cron` ANY MORE** — `Benchmark`'s 20-slot grid and `Capacity units`' 13:17 settling read were both
+  removed on 2026-09-17 because the Fabric capacity is throttled. What survives of the older blanket
+  "`workflow_dispatch` only" rule, and what each part protects: for `Benchmark`, capacity — now
+  absolute again rather than deliberately spent. For the page, that
   publishing is a decision — still true, and satisfied because pushing to `dashboard/` IS that
   decision; it still never republishes because a number moved. For the ledger commit, that no
   workflow which commits answers a push — still true, and the `dashboard/**` filter is what keeps it

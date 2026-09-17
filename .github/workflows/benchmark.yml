@@ -44,150 +44,33 @@ name: Benchmark
 # The teardown is not optional: a deleted item keeps its CU rows in the metrics model, so there is
 # nothing to be gained by leaving one standing and background CU to be paid for if you do.
 #
-# **A `schedule` GRID PLUS `workflow_dispatch`. No `push`, no `workflow_run`, no
-# `repository_dispatch`, and that part is still absolute.** The schedule reverses a long-standing
-# "dispatch only" rule; what that rule protected is unchanged and worth knowing, because it is now
-# accepted rather than avoided: every run lands Fabric legs on paid capacity and the query passes are
-# INTERACTIVE CU on shared capacity, the class of usage a capacity admin notices and asks about.
-# TWENTY runs a week — every dataset against every write config — is the deliberate cost, and it is
-# up from seven: the old schedule rotated the dataset only and left `dwh` and `spark` to whoever
-# remembered to dispatch them, which put engine columns weeks apart in age on a page that compares
-# them side by side. If it ever becomes a problem, cells come out a cron line at a time.
+# **`workflow_dispatch` ONLY. No `schedule`, no `push`, no `workflow_run`, no
+# `repository_dispatch`.** A human starts every run, and that is the whole trigger policy.
 #
-# **`push` stays forbidden for a DIFFERENT reason, and dropping it would break the `record` job.**
+# ⚠️ **THE 20-SLOT WEEKLY GRID IS GONE (2026-09-17), AND THE REASON IS CAPACITY RATHER THAN
+# THE GRID'S DESIGN.** It fired every scheduled dataset against every write config once a week — 20
+# runs of Fabric legs plus INTERACTIVE CU on shared capacity — and that capacity is throttled, so
+# the unattended spend had to stop. What the grid bought is what is now lost, and it is worth stating
+# rather than rediscovering: engine columns on the page stay same-generation only while somebody
+# dispatches them together, and the spark V-Order pair (`readHeavyForPBI` against `writeHeavy`) is
+# the experiment that drifts first. Reinstating it means restoring a `schedule:` block, the per-cron
+# `DATASET` / `BENCH_ENGINES` / `SPARK_RESOURCE_PROFILE` branches and `test_schedule_rotation.py` —
+# all three are in the commit that removed them.
+#
+# **`push` stays forbidden for a reason of its own, and dropping it would break the `record` job.**
 # This workflow COMMITS `history/runs/<record>.json`, so a `push:` trigger would make the commit
 # start the next build. `paths-ignore` does not soften that and never did: it is per-PUSH, not
-# per-file, so a commit touching a doc AND anything else still fires. The schedule is safe here
-# precisely because a clock is not a commit.
+# per-file, so a commit touching a doc AND anything else still fires.
 #
-# ⚠️ **ON A `schedule` EVENT THE `inputs` CONTEXT IS EMPTY — `workflow_dispatch` defaults DO NOT
-# APPLY.** Every `inputs.*` reference below therefore carries its own scheduled value, spelled
-# `github.event_name == 'schedule' && '<value>' || inputs.<name>` — or, for the three that ROTATE,
-# `github.event_name != 'schedule' && inputs.<name> || <cron branches> || '<fallback>'`. Read that
-# shape before adding an input, because the failures are silent and expensive: blank `engines` is
-# fatal in `plan`, and blank `build`/`benchmark` are FALSY so a scheduled run would spend a runner
-# and build nothing.
-# It is deliberately NOT written `inputs.x || 'default'`: that form cannot tell an absent input from
-# a deliberate one, so it would override `build: false` and turn the documented scouting recipe's
+# **Every `inputs.*` reference below is read DIRECTLY**, because a dispatch always populates the
+# whole form. Each one used to carry a scheduled value beside it
+# (`github.event_name == 'schedule' && '<value>' || inputs.<name>`), because the `inputs` context is
+# EMPTY on a `schedule` event and `workflow_dispatch` defaults do NOT apply there. Those branches
+# went with the trigger. ⚠️ If a non-dispatch trigger is ever added back they ALL have to come
+# back with it — and never as `inputs.x || 'default'`, which cannot tell an absent input from a
+# deliberate one, so it would override `build: false` and turn the documented scouting recipe's
 # `gap_seconds: 0` back into 600.
 on:
-  # **THE SCHEDULE IS A 5x4 GRID — EVERY SCHEDULED DATASET AGAINST EVERY CONFIG, ONCE A WEEK.** It
-  # used to rotate ONE axis (the dataset, by weekday) and pin everything else to the form default, so
-  # duckrun was measured on every dataset every week and `dwh` and `spark` only when somebody
-  # dispatched by hand — which read on the page as engine columns weeks apart in age, compared as
-  # though they were the same generation. The grid is:
-  #
-  #     dataset   aemo · nyc · bts · green · cms
-  #     config    duckrun (auto) · dwh (V-Order) · spark readHeavyForPBI · spark writeHeavy
-  #
-  # = 20 slots a week, 2-3 a day, no day idle. `iceberg` is deliberately NOT in it: its layout is
-  # whatever the Iceberg REST catalog path defaults to rather than anything anyone dispatched, which
-  # is why the dashboard's `ENGINES_HIDDEN` already keeps it out of the layout tables. Both spark
-  # profiles ARE in it, so the V-Order pair — the sharpest experiment on the page — stays
-  # same-generation on every dataset instead of drifting apart.
-  #
-  # **THE HOUR SELECTS THE CONFIG. THE DATASET IS NOT A FUNCTION OF THE WEEKDAY** — it cannot be,
-  # once 20 combos spread over 7 days; that only divides while a dataset's whole row fires on its own
-  # day, which is the arrangement that leaves the weekend empty. Cell (dataset i, hour j) fires on
-  # weekday (i + 2j) mod 7, which puts five DISTINCT weekdays in every hour column:
-  #
-  #     Sun   03:17 aemo  duckrun    06:37 green spark V-Order   08:17 nyc   spark default
-  #     Mon   03:17 nyc   duckrun    06:37 cms   spark V-Order   08:17 bts   spark default
-  #     Tue   03:17 bts   duckrun    04:57 aemo  dwh             08:17 green spark default
-  #     Wed   03:17 green duckrun    04:57 nyc   dwh             08:17 cms   spark default
-  #     Thu   03:17 cms   duckrun    04:57 bts   dwh             06:37 aemo  spark V-Order
-  #     Fri   04:57 green dwh        06:37 nyc   spark V-Order
-  #     Sat   04:57 cms   dwh        06:37 bts   spark V-Order   08:17 aemo  spark default
-  #
-  # **THE REGISTRY HAS SIX DATASETS AND THE GRID HAS FIVE, AND THAT IS DECLARED RATHER THAN
-  # NOTICED.** `tpcds` is DISPATCH-ONLY: it carries `"scheduled": False` in
-  # `.github/scripts/datasets.py`, which is what keeps it out of here and what
-  # `test_schedule_rotation.py` reads — so a missing row is a stated property of the dataset, not
-  # four cron lines somebody forgot. The reason is its landing: it GENERATES its input in a
-  # Fabric notebook rather than downloading one, a scheduled run FORCES `skip_download` on, and a
-  # scheduled cell whose scale factor nobody had generated by hand is exactly how run 33734219062
-  # spent Fabric compute to discover its input was not there. It joins the grid when it has
-  # produced one green run — flip the flag, add four crons, add four `DATASET` branches.
-  #
-  # **THE TIMES ARE NOT ROUND AND THE MINUTES ARE NOT DECORATIVE.** The query passes draw interactive
-  # CU on shared capacity, so no slot may land while anyone is using it — and the only window asleep
-  # on BOTH sides of the DST boundary is 03:17-08:17 UTC (22:17-03:17 EST, 23:17-04:17 EDT; 13:17-18:17
-  # in the metrics model's own +10 clock, so a night's results are there to read the same evening).
-  # Four slots inside five hours is 100 minutes apart, hence 17/57/37/17 — which also keeps every one
-  # of them OFF the top of the hour, where GitHub delays scheduled runs most.
-  #
-  # **THE WINDOW IS AFTER WORK, NOT MIDNIGHT: local 22:00-06:00.** 22:00 is 03:00 UTC under EST and
-  # 02:00 under EDT, so 03:00 is where the two seasons' windows begin to overlap and **03:17 is the
-  # EARLIEST LEGAL START. The grid is pinned to it — it does not float, and it must not drift later
-  # again.** It sat two hours later for a while and the LAST slot was the casualty: 10:17 UTC is
-  # 06:17 EDT, which is morning in East US by any reading, and it read as a night slot in every
-  # comment here until run 31941551767 fired at 06:23 EDT.
-  #
-  # **THE WHOLE RUN FITS, NOT JUST ITS START, AND THAT IS WHAT THE EXTRA HOUR BOUGHT.** The 08:17
-  # slot plus the 84-minute worst case ends 05:41 EDT / 04:41 EST — inside the window on both sides,
-  # with the median 32-minute run ending 04:49 EDT. At the 23:00 floor this was NOT true (a 09:17
-  # start ran to 06:41 EDT) and the overrun was an accepted cost; it is now a guarantee, and
-  # `test_schedule_rotation.py` asserts both endpoints of every slot at BOTH offsets, so neither the
-  # start nor the tail can drift out and no season can be the one that is wrong.
-  #
-  # 100 minutes clears the worst run ever recorded here (84 min; the median is 32) by 16. Runs must
-  # stay SERIAL — one Fabric capacity, and two overlapping runs throttle each other into quietly
-  # wrong numbers — and `cancel-in-progress: false` makes an overrun QUEUE the next slot rather than
-  # kill it. Only a SECOND consecutive overrun evicts the pending run and costs one cell that week.
-  # Three-slots-in-a-row days are structural at 3 a day over 4 hour-slots and are accepted.
-  #
-  # **THE TRAILING COMMENT ON EACH CRON LINE IS LOAD-BEARING**: `# <dataset> <config>`, parsed by
-  # `.github/scripts/test_schedule_rotation.py`, which resolves every cron through the three env
-  # chains below and asserts the result is the cell the comment claims — plus that all 20 cells are
-  # present exactly once, that no two crons share a (weekday, time), that same-day slots stay
-  # >= 100 minutes apart, and that every slot both STARTS and FINISHES inside the East US 22:00-06:00
-  # window at BOTH UTC offsets. `github.event.schedule` carries the cron string that fired, which is the
-  # ONLY schedule-time signal a workflow-level `env` expression can branch on (no shell runs there,
-  # and expressions have no arithmetic, so day-of-year-modulo is not expressible where `DATASET` has
-  # to live). `DATASET` matches it EXACTLY, whitespace included — rewriting '17 3 * * 0' as
-  # '17 04 * * 0' fires on the same minute and matches nothing, falling through to aemo silently.
-  # The engine and profile chains match on the HOUR PREFIX instead, which is what keeps them four
-  # branches rather than twenty.
-  #
-  # Three things to expect from an unattended run. GitHub DISABLES a schedule after 60 days of
-  # repository inactivity, silently, and re-enabling is manual. `Capacity units` fires on this
-  # workflow completing, which reads CU within a minute of the build finishing — that read is a LOWER
-  # BOUND (a CU hour keeps growing for ~70 minutes) — and its own 13:17 cron is the settling read,
-  # timed off the LAST slot of the day (08:17 + the 84-minute worst case + the ~70-minute settle,
-  # i.e. settled by 10:51, so 13:17 clears it by 146 minutes — it was derived off a 10:17 last slot
-  # with 26 minutes of slack, so moving the grid EARLIER only widened it and capacity.yml's own cron
-  # did not have to follow).
-  # `max(old, new)` over a 14-day floor makes a late raise safe.
-  #
-  # **Every scheduled value is the form default, `cores` included — 8, not the 64 a hand dispatch
-  # usually passes** — with `dataset`, `engines` and `spark_resource_profile` as the three exceptions,
-  # rotating as above. 64 is for an interactive run somebody is waiting on; a nightly is not waited
-  # on, so the wall clock does not buy anything worth the vCores. It does mean the nightly opens its
-  # own `duckrun·8c`-style column rather than joining the 64c history — `vcores` is part of
-  # `variant()` — which is correct: 8 and 64 are different machines and the CU rate (`cores / 2`)
-  # says so on the page.
-  schedule:
-    # 03:17 duckrun · 04:57 dwh · 06:37 spark V-Order · 08:17 spark default  (all UTC; night in East US)
-    - cron: "17 3 * * 0"     # aemo  duckrun
-    - cron: "57 4 * * 2"     # aemo  dwh
-    - cron: "37 6 * * 4"     # aemo  spark_vorder
-    - cron: "17 8 * * 6"    # aemo  spark_default
-    - cron: "17 3 * * 1"     # nyc   duckrun
-    - cron: "57 4 * * 3"     # nyc   dwh
-    - cron: "37 6 * * 5"     # nyc   spark_vorder
-    - cron: "17 8 * * 0"    # nyc   spark_default
-    - cron: "17 3 * * 2"     # bts   duckrun
-    - cron: "57 4 * * 4"     # bts   dwh
-    - cron: "37 6 * * 6"     # bts   spark_vorder
-    - cron: "17 8 * * 1"    # bts   spark_default
-    - cron: "17 3 * * 3"     # green duckrun
-    - cron: "57 4 * * 5"     # green dwh
-    - cron: "37 6 * * 0"     # green spark_vorder
-    - cron: "17 8 * * 2"    # green spark_default
-    - cron: "17 3 * * 4"     # cms   duckrun
-    - cron: "57 4 * * 6"     # cms   dwh
-    - cron: "37 6 * * 1"     # cms   spark_vorder
-    - cron: "17 8 * * 3"    # cms   spark_default
   workflow_dispatch:
     inputs:
       # THE TWO THAT GET CHANGED: which engine, and how big a machine.
@@ -238,12 +121,13 @@ on:
       # that set for free, before any leg starts, because the form's default of 200 would otherwise
       # ask dsdgen for a volume nobody chose.
       #
-      # ⚠️ AND tpcds IS DISPATCH-ONLY -- it is the one dataset in the registry with no cron cells, by
-      # `"scheduled": False` in .github/scripts/datasets.py. Generating a scale factor is a ONE-OFF
-      # that has to happen by hand first (`skip_download=false download_limit=<sf>`, and SF100 needs
+      # ⚠️ AND tpcds NEEDS ITS LANDING GENERATED BY HAND FIRST, unlike every other dataset, which
+      # downloads one. `skip_download=false download_limit=<sf>` is that run, and SF100 needs
       # `cores=32` or more -- the generator refuses below ~260 GiB free under TMPDIR and FABRIC_CORES
-      # is what sizes the node), because a scheduled run FORCES skip_download on and therefore can
-      # never populate its own landing. See the grid block at the top of this file.
+      # is what sizes the node. It is a ONE-OFF; the runs that read the archive are ordinary
+      # dispatches. (This used to be enforced by `"scheduled": False` in datasets.py, keeping tpcds
+      # off the weekly cron grid, because a scheduled run FORCED skip_download on and so could never
+      # populate its own landing. The grid is gone, so the flag is too -- the operating fact is not.)
       dataset:
         description: "dataset — aemo (uniform), nyc (extreme skew), bts (competing skew), green (extreme skew, small), cms (wide + sparse) or tpcds (the white paper's TPC-DS subset)"
         type: choice
@@ -454,44 +338,14 @@ env:
   # workflow_dispatch defaults do NOT apply: `inputs.dataset || 'aemo'` cannot tell an absent input
   # from a deliberate one, and a blank here would disable every model in the project.
   #
-  # ON A SCHEDULE THE DATASET COMES FROM THE CRON THAT FIRED — one branch per cron line at the top of
-  # the file, compared as EXACT strings against `github.event.schedule` (the cron AS WRITTEN there).
-  # Unlike the two hour-keyed chains below this one cannot factor: the grid spreads 20 cells over 7
-  # days, so a dataset appears at four different (weekday, hour) positions and nothing shorter than
-  # the whole cron string identifies one. All 20 are spelled out INCLUDING aemo's four, even though
-  # the trailing fallback would cover them — the fallback is the safety net for an UNMATCHED cron,
-  # and letting it double as aemo's value would turn a deleted branch into a silent aemo build
-  # instead of a test failure. It stays 'aemo' rather than blank because a blank DATASET makes every
-  # `+enabled` gate false, so `dbt build` reports "Nothing to do" and exits 0 — a green leg that
-  # built nothing. `RUNIN_DATASET` in the `open` job REFERENCES this value rather than restating it,
-  # so the build and the record cannot claim different datasets.
-  DATASET: ${{ github.event_name != 'schedule' && inputs.dataset
-    || github.event.schedule == '17 3 * * 0' && 'aemo'
-    || github.event.schedule == '57 4 * * 2' && 'aemo'
-    || github.event.schedule == '37 6 * * 4' && 'aemo'
-    || github.event.schedule == '17 8 * * 6' && 'aemo'
-    || github.event.schedule == '17 3 * * 1' && 'nyc'
-    || github.event.schedule == '57 4 * * 3' && 'nyc'
-    || github.event.schedule == '37 6 * * 5' && 'nyc'
-    || github.event.schedule == '17 8 * * 0' && 'nyc'
-    || github.event.schedule == '17 3 * * 2' && 'bts'
-    || github.event.schedule == '57 4 * * 4' && 'bts'
-    || github.event.schedule == '37 6 * * 6' && 'bts'
-    || github.event.schedule == '17 8 * * 1' && 'bts'
-    || github.event.schedule == '17 3 * * 3' && 'green'
-    || github.event.schedule == '57 4 * * 5' && 'green'
-    || github.event.schedule == '37 6 * * 0' && 'green'
-    || github.event.schedule == '17 8 * * 2' && 'green'
-    || github.event.schedule == '17 3 * * 4' && 'cms'
-    || github.event.schedule == '57 4 * * 6' && 'cms'
-    || github.event.schedule == '37 6 * * 1' && 'cms'
-    || github.event.schedule == '17 8 * * 3' && 'cms'
-    || 'aemo' }}
+  # `RUNIN_DATASET` in the `open` job REFERENCES this value rather than restating it, so the build
+  # and the record cannot claim different datasets.
+  DATASET: ${{ inputs.dataset }}
   AZURE_TRANSPORT_OPTION_TYPE: curl
   CURL_CA_INFO: /etc/ssl/certs/ca-certificates.crt
   DUCKDB_TEMP_DIR: /tmp/duckdb_spill
-  CI_DOWNLOAD_LIMIT: ${{ github.event_name == 'schedule' && '200' || inputs.download_limit }}
-  FABRIC_CORES: ${{ github.event_name == 'schedule' && '8' || inputs.cores }}
+  CI_DOWNLOAD_LIMIT: ${{ inputs.download_limit }}
+  FABRIC_CORES: ${{ inputs.cores }}
   # Spark leg only, ON by default: profiles.yml puts spark.native.enabled into the Livy conf. That
   # single key is Microsoft's current documented session-level recipe.
   # Measured across seven spark runs, NEE moves NOTHING here — analytics CU 1,149/1,306/1,480 with it
@@ -501,26 +355,22 @@ env:
   # should measure that. Read the NEE bullet in CLAUDE.md before drawing conclusions from a run with
   # it on — execution-side semantic divergences (`round()`, DECIMAL->FLOAT), silent JVM fallback for
   # unsupported operators, and V-Order behaviour under NEE still undocumented.
-  SPARK_NATIVE_ENABLED: ${{ (github.event_name == 'schedule' || inputs.native_execution_engine)
+  SPARK_NATIVE_ENABLED: ${{ inputs.native_execution_engine
     && 'true' || 'false' }}
   # Spark leg only. writeHeavy is the workspace default, so the default dispatch writes what a plain
   # Fabric session writes — and therefore NO V-Order, which readHeavyForPBI alone enables.
   #
-  # ON A SCHEDULE THE PROFILE COMES FROM THE HOUR: the 06:37 slots are the V-Order half of the pair
-  # and the 08:17 slots the default half, which is what keeps both sides of the sharpest experiment
-  # on the page the same generation on every dataset. Matched on the hour PREFIX rather than the
-  # whole cron — the four prefixes ('17 3 ', '57 4 ', '37 6 ', '17 8 ') are distinct and none is a
-  # prefix of another, so one branch covers all five of that hour's datasets. Every other slot reads
-  # writeHeavy, which is inert on a duckrun or dwh night and is what `stats.py` records either way.
+  # ⚠️ THE V-ORDER PAIR IS NOW YOURS TO KEEP ALIGNED. The weekly grid dispatched `readHeavyForPBI`
+  # and `writeHeavy` on the same dataset in the same week, which is what made the sharpest experiment
+  # on the page a same-generation comparison. With the grid gone, both halves only stay comparable if
+  # you dispatch them together — this is the first thing that drifts.
   # `RUNIN_SPARK_RESOURCE_PROFILE` REFERENCES this rather than restating it.
-  SPARK_RESOURCE_PROFILE: ${{ github.event_name != 'schedule' && inputs.spark_resource_profile
-    || startsWith(github.event.schedule, '37 6 ') && 'readHeavyForPBI'
-    || 'writeHeavy' }}
+  SPARK_RESOURCE_PROFILE: ${{ inputs.spark_resource_profile }}
   # dwh leg only. Same boolean spelling as SPARK_NATIVE_ENABLED above, and normalised to the STRINGS
   # 'true'/'false' because two readers compare it as one: the `server` job decides whether to run the
   # `ALTER`, and `stats.py` records it under `layout.config.dwh` so the page can put a V-Ordered dwh
   # column beside an un-V-Ordered one. Both take the same value from here, so they cannot disagree.
-  DWH_VORDER: ${{ (github.event_name == 'schedule' || inputs.dwh_vorder) && 'true' || 'false' }}
+  DWH_VORDER: ${{ inputs.dwh_vorder && 'true' || 'false' }}
   # DuckDB legs only, and all three now say the same thing: `duckrun_auto`. There was a
   # `DUCKDB_SORT_BY` carrying a dispatched key, and `DUCKDB_SORTED` was DERIVED from whether that
   # key was blank; the key is gone (one field cannot name a sort for five different marts — see the
@@ -551,31 +401,23 @@ env:
   #
   # `duckrun_auto` defaults true, so on a `schedule` — where the inputs context is EMPTY and
   # dispatch defaults do NOT apply — the scheduled literal is the auto branch.
-  DUCKDB_SORTED: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'true'
+  DUCKDB_SORTED: ${{ inputs.duckrun_auto && 'true'
     || 'false' }}
-  DUCKDB_ROW_GROUP_SIZE: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+  DUCKDB_ROW_GROUP_SIZE: ${{ inputs.duckrun_auto && 'auto'
     || inputs.row_group_size }}
-  DUCKDB_FILE_SIZE_MB: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+  DUCKDB_FILE_SIZE_MB: ${{ inputs.duckrun_auto && 'auto'
     || inputs.file_size_mb }}
-  # Spelled with an explicit schedule branch, never `inputs.x || '4'`: on a schedule the inputs
-  # context is EMPTY and dispatch defaults do NOT apply, so the fallback form cannot tell an absent
-  # input from a deliberate one. A scheduled run is always 4.
-  DBT_THREADS: ${{ github.event_name == 'schedule' && '4' || inputs.duckrun_threads }}
-  # ON A SCHEDULE THE ENGINE COMES FROM THE HOUR — see the grid at the top of the file. Matched on
-  # the hour PREFIX, so three branches cover twenty crons; the two spark hours differ only in
-  # SPARK_RESOURCE_PROFILE above. `duckrun` is the trailing value, which makes it both the 03:17
-  # slots' engine and the fallback for an unmatched cron — safe here in a way the DATASET fallback is
-  # not, because an engine name reaching `plan` is validated against LEGS and a wrong-but-valid one
-  # builds a real leg that the record names correctly. This is the ONE place the scheduled engine is
-  # spelled: `RUN_ENGINE`, `plan`'s `ENGINES` and the record's commit message all read it back.
-  BENCH_ENGINES: ${{ github.event_name != 'schedule' && inputs.engines
-    || startsWith(github.event.schedule, '57 4 ') && 'dwh'
-    || startsWith(github.event.schedule, '37 6 ') && 'spark'
-    || startsWith(github.event.schedule, '17 8 ') && 'spark'
-    || 'duckrun' }}
-  BENCH_RUNS: ${{ github.event_name == 'schedule' && '6' || inputs.runs }}
-  BENCH_THINK_SECONDS: ${{ github.event_name == 'schedule' && '4' || inputs.think_seconds }}
-  BENCH_GAP_SECONDS: ${{ github.event_name == 'schedule' && '600' || inputs.gap_seconds }}
+  # Read straight off the form, and never `inputs.x || '4'`: that form cannot tell an absent input
+  # from a deliberate one. It carried an explicit schedule branch until the grid was removed.
+  DBT_THREADS: ${{ inputs.duckrun_threads }}
+  # ONE ENGINE PER DISPATCH, straight off the form. `plan` validates the name against LEGS, so a
+  # value that is not an engine is fatal there rather than building nothing quietly. This is the ONE
+  # place the engine is spelled: `RUN_ENGINE`, `plan`'s `ENGINES` and the record's commit message all
+  # read it back rather than restating it, so the build and the record cannot disagree.
+  BENCH_ENGINES: ${{ inputs.engines }}
+  BENCH_RUNS: ${{ inputs.runs }}
+  BENCH_THINK_SECONDS: ${{ inputs.think_seconds }}
+  BENCH_GAP_SECONDS: ${{ inputs.gap_seconds }}
   BENCH_TOP_DUID: ${{ inputs.top_duid }}
   PYTHONIOENCODING: utf-8
 
@@ -608,19 +450,18 @@ jobs:
           # a contradiction in the record rather than being taken on trust. That is the
           # same shape as dwh_vorder's declared/measured pair.
           # THE WORKFLOW-LEVEL VALUE, READ BACK — not a second copy of the rotation. This carried a
-          # byte-identical duplicate of the `DATASET` chain, and `test_schedule_rotation.py` existed
-          # largely to prove the two had not drifted; at 20 cron lines that duplication is 20 more
-          # lines that can disagree, and the disagreement is silent (the build uses one dataset, the
-          # record files the result under another). A reference cannot drift.
+          # byte-identical duplicate of the `DATASET` chain back when that chain had 20 cron
+          # branches, and a test existed largely to prove the two had not drifted — 20 more lines
+          # that can disagree, silently (the build uses one dataset, the record files the result
+          # under another). A reference cannot drift, so keep this one a reference.
           RUNIN_DATASET: ${{ env.DATASET }}
-          RUNIN_BUILD: ${{ github.event_name == 'schedule' && 'true' || inputs.build }}
-          RUNIN_BENCHMARK: ${{ github.event_name == 'schedule' && 'true' || inputs.benchmark }}
-          RUNIN_CORES: ${{ github.event_name == 'schedule' && '8' || inputs.cores }}
+          RUNIN_BUILD: ${{ inputs.build }}
+          RUNIN_BENCHMARK: ${{ inputs.benchmark }}
+          RUNIN_CORES: ${{ inputs.cores }}
           RUNIN_SPARK_RESOURCE_PROFILE: ${{ env.SPARK_RESOURCE_PROFILE }}
-          RUNIN_DWH_VORDER: ${{ (github.event_name == 'schedule' || inputs.dwh_vorder)
+          RUNIN_DWH_VORDER: ${{ inputs.dwh_vorder
             && 'true' || 'false' }}
-          RUNIN_NATIVE_EXECUTION_ENGINE: ${{ github.event_name == 'schedule' && 'true'
-            || inputs.native_execution_engine }}
+          RUNIN_NATIVE_EXECUTION_ENGINE: ${{ inputs.native_execution_engine }}
           # The duckdb write knobs, which this block did NOT carry — so a record could not say what
           # geometry its dispatch asked for, and answering "what did that run request?" meant reading
           # the workflow file at that SHA. These are the INTENT; `layout.config` is what was measured,
@@ -631,16 +472,15 @@ jobs:
           # and the build therefore ran `auto` — an intent block contradicting the run it describes,
           # which is the one thing it exists not to do. Same reason `RUNIN_SORT_BY` was deleted rather
           # than fixed: it claimed the aemo key on every nyc/bts/green/cms night.
-          RUNIN_DUCKRUN_AUTO: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto)
+          RUNIN_DUCKRUN_AUTO: ${{ inputs.duckrun_auto
             && 'true' || 'false' }}
           RUNIN_ROW_GROUP_SIZE: ${{ env.DUCKDB_ROW_GROUP_SIZE }}
           RUNIN_FILE_SIZE_MB: ${{ env.DUCKDB_FILE_SIZE_MB }}
-          RUNIN_SKIP_DOWNLOAD: ${{ github.event_name == 'schedule' && 'true'
-            || inputs.skip_download }}
-          RUNIN_DOWNLOAD_LIMIT: ${{ github.event_name == 'schedule' && '200' || inputs.download_limit }}
-          RUNIN_RUNS: ${{ github.event_name == 'schedule' && '6' || inputs.runs }}
-          RUNIN_THINK_SECONDS: ${{ github.event_name == 'schedule' && '4' || inputs.think_seconds }}
-          RUNIN_GAP_SECONDS: ${{ github.event_name == 'schedule' && '600' || inputs.gap_seconds }}
+          RUNIN_SKIP_DOWNLOAD: ${{ inputs.skip_download }}
+          RUNIN_DOWNLOAD_LIMIT: ${{ inputs.download_limit }}
+          RUNIN_RUNS: ${{ inputs.runs }}
+          RUNIN_THINK_SECONDS: ${{ inputs.think_seconds }}
+          RUNIN_GAP_SECONDS: ${{ inputs.gap_seconds }}
         run: python .github/scripts/record.py init
       - uses: actions/upload-artifact@v4
         with:
@@ -725,7 +565,7 @@ jobs:
     # (the taxi archive sat at three months for exactly this reason) and it should not have to buy a
     # build to get one. `plan` is free, so running it for a land-only dispatch costs nothing; the
     # BUILD matrices carry their own `inputs.build` now rather than inheriting this gate.
-    if: github.event_name == 'schedule' || inputs.build || !inputs.skip_download
+    if: inputs.build || !inputs.skip_download
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -740,12 +580,12 @@ jobs:
       - id: p
         env:
           ENGINES: ${{ env.BENCH_ENGINES }}
-          ROW_GROUP_SIZE: ${{ (github.event_name == 'schedule' || inputs.duckrun_auto) && 'auto'
+          ROW_GROUP_SIZE: ${{ inputs.duckrun_auto && 'auto'
             || inputs.row_group_size }}
           # Both of these exist for ONE dataset's check below, and both are spelled the long way for
           # the reason every value in this file is: on a `schedule` the `inputs` context is EMPTY, so
           # `inputs.skip_download || 'true'` cannot tell an absent input from a deliberate one.
-          SKIP_DOWNLOAD: ${{ (github.event_name == 'schedule' || inputs.skip_download) && 'true'
+          SKIP_DOWNLOAD: ${{ inputs.skip_download && 'true'
             || 'false' }}
           DOWNLOAD_LIMIT: ${{ env.CI_DOWNLOAD_LIMIT }}
           # Reported, not validated — it is a boolean the form cannot get wrong. Declared here
@@ -863,7 +703,7 @@ jobs:
     # the failure shape run 33739194650 produced on the `fabric` cap: a truncated log, no OOM line,
     # and no way to tell a slow write from a hung one. The runner is free, so the cap is a hang guard
     # and raising it costs nothing.
-    timeout-minutes: ${{ (github.event_name != 'schedule' && inputs.dataset == 'tpcds') && 240 || 120 }}
+    timeout-minutes: ${{ inputs.dataset == 'tpcds' && 240 || 120 }}
     # No `outputs:`. This job used to export FILES_PATH for every leg to share; each leg now gets its
     # own from `provision.py <engine>`, pointing at the `Files/landing` shortcut in its own lakehouse
     # — which is what splits the landing read CU per engine. The FILES_PATH set here is the DIRECT
@@ -899,10 +739,10 @@ jobs:
       # `engine: landing`, so its CU is attributed to the generator rather than folded into whichever
       # engine this dispatch happened to build.
       - name: Download the dataset (obstore -> OneLake)
-        if: ${{ github.event_name != 'schedule' && !inputs.skip_download }}
+        if: ${{ !inputs.skip_download }}
         run: python "$(python .github/scripts/datasets.py --download)"
       - name: Say the archive was reused
-        if: ${{ github.event_name == 'schedule' || inputs.skip_download }}
+        if: ${{ inputs.skip_download }}
         run: echo "skip_download is on — building on the landed archive as-is" >&2
       # AN EMPTY ARCHIVE IS REFUSED HERE, ON THE FREE RUNNER, rather than 29 models into a paid leg.
       # Run 33734219062 is why: a scheduled `tpcds` cell whose landing had never been generated, so
@@ -945,7 +785,7 @@ jobs:
     # land-only dispatch, so its having run no longer implies a build was asked for. The schedule
     # clause is not optional: on that event the `inputs` context is EMPTY, so `inputs.build` is
     # falsy and the nightly would build nothing while reporting success.
-    if: (github.event_name == 'schedule' || inputs.build) && needs.plan.outputs.fabric != '[]'
+    if: inputs.build && needs.plan.outputs.fabric != '[]'
     runs-on: ubuntu-latest
     # 150, RAISED FROM 90, and the reason is a measurement rather than headroom-for-its-own-sake.
     # Run 33739194650 was cancelled here at the 90-minute mark with nyc's `fct_trips` still writing
@@ -1006,7 +846,7 @@ jobs:
     needs: [plan, land]
     # Same as `fabric` above: `inputs.build` here, and the schedule clause because that event has no
     # `inputs` context at all.
-    if: (github.event_name == 'schedule' || inputs.build) && needs.plan.outputs.server != '[]'
+    if: inputs.build && needs.plan.outputs.server != '[]'
     runs-on: ubuntu-latest
     # Backlog-draining spark runs (1024-file folds) reach ~40 min; leave room for one retry.
     timeout-minutes: 60
@@ -1166,7 +1006,7 @@ jobs:
     # build means no benchmark timings and `incomplete()` drops the whole record from the page. So
     # it was 10-15 minutes of paid OneLake reads (the iceberg item alone 12m+) for a table read by
     # one human who is already looking at the dbt log above it.
-    if: ${{ !cancelled() && (github.event_name == 'schedule' || inputs.build)
+    if: ${{ !cancelled() && inputs.build
             && needs.fabric.result != 'failure' && needs.server.result != 'failure' }}
     runs-on: ubuntu-latest
     # get_stats() over OneLake is slow on the iceberg item (12m+ observed); 15 minutes was cancelling
@@ -1222,7 +1062,7 @@ jobs:
     needs: [checks, layout]
     # `!failure() && !cancelled()` so a SKIPPED build (benchmark-only dispatch) still gets here,
     # while a FAILED build does not: benchmarking tables that did not finish writing measures nothing.
-    if: (github.event_name == 'schedule' || inputs.benchmark) && !failure() && !cancelled()
+    if: inputs.benchmark && !failure() && !cancelled()
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -1308,7 +1148,7 @@ jobs:
       # Before the first token is minted, not after: the gap is idle time by design, and burning it
       # on the far side of the deploy would spend a third of the token's life waiting.
       - name: ${{ matrix.engine }} — idle gap for the capacity chart
-        if: matrix.index != 0 && (github.event_name == 'schedule' && '600' || inputs.gap_seconds) != '0'
+        if: matrix.index != 0 && inputs.gap_seconds != '0'
         run: |
           echo "sleeping ${BENCH_GAP_SECONDS}s before ${{ matrix.engine }} so the Fabric capacity"
           echo "chart shows a clean separation between models (>5min CU smoothing window)."

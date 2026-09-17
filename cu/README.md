@@ -138,20 +138,18 @@ This is the `Capacity units` workflow (`.github/workflows/capacity.yml`), and it
 | trigger | why |
 |---|---|
 | `workflow_run` after `Benchmark` | so a fresh run's column is populated in minutes rather than blank. Deliberately a **lower bound** — the settle has not happened yet. |
-| `cron: "17 13 * * *"` | the settling read for the day's scheduled runs, timed off the LAST of `Benchmark`'s slots |
 | `workflow_dispatch` | by hand, when you want a number now, need `since`, or want to RAISE a lower bound |
 
-**THE 13:17 CRON IS AIMED AT THE SCHEDULED RUNS, NOT AT EVERY RUN.** A CU hour keeps growing for up
-to ~70 minutes after the work, and the post-Benchmark read fires within a minute of the build
-finishing, so that one is always a lower bound. The timing is arithmetic, not a round number:
-`Benchmark`'s schedule is a grid of 2–3 slots a day and the last starts 10:17; a run is a measured
-median of 31 minutes and max of 84 over 47 duckrun records, so it finishes by ~11:41 worst case, plus
-the ~70 minute settle that is ~12:51, and 13:17 clears it. Every earlier slot of the day is long
-settled by then, so ONE read finishes the whole day. An earlier read would have landed mid-smoothing
-and said nothing at all about the slots still to come.
+⚠️ **THE SETTLING CRON IS GONE, SO EVERY NUMBER IS A LOWER BOUND UNTIL YOU DISPATCH THIS AGAIN.** A
+CU hour keeps growing for up to ~70 minutes after the work, and the post-Benchmark read fires within
+a minute of the build finishing, so that one is always short. `cron: "17 13 * * *"` used to raise it:
+its time was arithmetic on the LAST slot of `Benchmark`'s weekly grid (last start 10:17, a measured
+max run of 84 minutes, plus the ~70 minute settle = ~12:51, which 13:17 cleared). **That grid was
+removed on 2026-09-17 because the Fabric capacity is throttled**, so there is no last slot to anchor
+to and a daily read aimed at nothing is spend for nothing. The daily `17 21 * * *` it replaced is
+not coming back either.
 
-This replaced a daily `17 21 * * *` that settled anything measured at any hour. **So a run you start
-by hand still needs a dispatch to settle it** — the `max(old, new)` rule means such a dispatch can
+**So every run — there are only hand-started ones now — needs a dispatch to settle it** — the `max(old, new)` rule means such a dispatch can
 only ever improve the ledger, since a re-read of the same window cannot lower a number. Watch the
 page's `may still rise` caveat too: it is derived from the clock and expires after two hours, so past
 that a hand-started run's low number looks settled whether or not it is.

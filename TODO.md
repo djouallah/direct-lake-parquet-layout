@@ -154,10 +154,11 @@ rather than in the duckrun notebook, so the 62.8 GiB ceiling does not apply to t
 not size them — but neither has ever seen this dataset, and `store_sales` at 262M rows is the largest
 table either has been asked to write here. Expect to find something.
 
-**The four grid cells go back once a build is green** (flip `scheduled`, add four crons, add four
-`DATASET` branches; the grid goes 20 slots to 24 and cell (i,j) still fires on weekday (i+2j)%7, so
-no existing cell moves). ⚠️ **Note the scheduled `cores` is 8 for every cell** — putting tpcds on the
-grid without resolving that schedules four OOM kills a week.
+⚠️ **THIS NO LONGER ENDS WITH "PUT IT ON THE GRID": there is no grid.** The 20-slot weekly cron
+was removed on 2026-09-17 (throttled capacity) along with `datasets.SCHEDULED` and the `scheduled`
+flag, so tpcds is dispatch-only exactly like every other dataset and nothing needs flipping. What
+still matters from that plan is the reason it was held back — **tpcds needs `cores=32`**, and the
+grid would have pinned every cell to 8, i.e. four OOM kills a week. Dispatch it explicitly.
 
 ---
 

@@ -12,8 +12,8 @@ name: Capacity units
 # the published page fetches `history/cu.json` at view time, so committing it IS how the numbers
 # reach a reader.
 #
-#   Benchmark        builds, benchmarks, tears down, commits the run record   grid cron · dispatch
-#   Capacity units   this — reads the model, commits the ledger               after Benchmark · 13:17 cron · dispatch
+#   Benchmark        builds, benchmarks, tears down, commits the run record   dispatch
+#   Capacity units   this — reads the model, commits the ledger               after Benchmark · dispatch
 #   Dashboard        builds and deploys the page                              push to dashboard/ · dispatch
 #
 # **THE `workflow_run` TRIGGER IS A REVERSAL OF A STANDING RULE, AND IT IS SCOPED.** The rule was
@@ -21,8 +21,8 @@ name: Capacity units
 # *publishing is a decision*: a page that republishes itself whenever a measurement lands will
 # eventually publish one nobody looked at, on a public repo. The dynamic page severed that link and
 # this split completes it. **An automatic measurement now publishes nothing.** What is untouched:
-# `Benchmark` now runs on its own schedule, so this fires after it — but within a minute of the build
-# finishing, which is why that read is a lower bound and not a settled number.
+# every `Benchmark` is started by a human, so this fires after a run somebody asked for — but within
+# a minute of the build finishing, which is why that read is a lower bound and not a settled number.
 #
 # **Why `workflow_run` and not `workflow_call`.** A called workflow can never hold MORE permission
 # than its caller grants — run 30735526504 died as a `startup_failure` with no jobs and no log for
@@ -37,27 +37,24 @@ name: Capacity units
 # `if: always()`). The read is idempotent and costs about two DAX queries, so gating on success would
 # only lose data.
 #
-# **TWO AUTOMATIC READS, AND THEY DO DIFFERENT JOBS — the second is what makes a number true.** A CU
-# hour keeps growing for up to ~70 minutes after the work (~6 min ingestion lag, 5–64 min smoothing),
-# and `measure.py` has no settle logic: every read re-reads the whole window from the floor and
-# merges with `max(old, new)`, so re-reading is idempotent and monotonic — two reads of the same
-# window can only RAISE a number, never lower one. That is what makes a pair of reads safe and a
-# badly-timed one merely useless rather than wrong.
+# ⚠️ **THERE IS ONE AUTOMATIC READ NOW, AND IT IS A LOWER BOUND. SETTLING IS A SECOND DISPATCH,
+# BY HAND.** A CU hour keeps growing for up to ~70 minutes after the work (~6 min ingestion lag,
+# 5–64 min smoothing), and `measure.py` has no settle logic: every read re-reads the whole window
+# from the floor and merges with `max(old, new)`, so re-reading is idempotent and monotonic — two
+# reads of the same window can only RAISE a number, never lower one. That is what makes a badly
+# timed read merely useless rather than wrong, and it is what made a pair of reads safe.
 #
-#   `workflow_run`, ~1 min after a Benchmark   a deliberate LOWER BOUND, so a fresh run's column is
-#                                              populated immediately instead of sitting blank
-#   `cron: 17 13 * * *`                        the settling read for the day's SCHEDULED runs, timed
-#                                              from the last slot plus the run length plus smoothing
+# The pair was `workflow_run` (~1 min after a Benchmark, the lower bound, so a fresh run's column is
+# populated immediately instead of sitting blank) plus `cron: 17 13 * * *`, the settling read timed
+# off the last slot of `Benchmark`'s weekly grid. **That grid is gone (2026-09-17, throttled
+# capacity) and the cron went with it**: it was arithmetic on slot times that no longer exist, and a
+# daily clock read of a repo nobody dispatched to is spend for nothing. The old daily `17 21 * * *`
+# it replaced is not coming back either.
 #
-# **A dispatch you started by hand still needs a dispatch to settle it.** The 13:17 cron is aimed at
-# `Benchmark`'s schedule grid — 2-3 slots a day, the last at 08:17 UTC — not at any run at any hour;
-# that was the old daily `17 21 * * *`, which is not coming back. Watch the page's `may still rise`
-# caveat: it is derived from the clock and expires after two hours, so past that a hand-started run's
-# number reads as settled whether or not it is.
-#
-# GitHub DISABLES a schedule after 60 days of repository inactivity, silently; re-enabling is manual.
-# If that ever bites, the `workflow_run` read still fires and still populates the column — it just
-# never gets raised.
+# **So a run's CU is a LOWER BOUND until somebody dispatches this again, and the page does not know
+# that.** Its `may still rise` caveat is derived from the clock and expires after two hours, so past
+# that an unsettled number reads as settled. If a CU figure matters, dispatch this ~90 minutes after
+# the Benchmark finished; `max(old, new)` means a second read can only improve it.
 on:
   workflow_dispatch:
     inputs:
@@ -72,32 +69,16 @@ on:
         description: "workspace GUID; blank = the repo secret"
         type: string
         default: ""
-  # THE SETTLING READ, and its time is arithmetic rather than a round number. `Benchmark`'s schedule
-  # is a GRID — 2-3 slots a day at 03:17 / 04:57 / 06:37 / 08:17 UTC, one per (dataset, config) cell
-  # — so this is timed off the LAST slot of the day, not off a single nightly. Measured over 47
-  # duckrun records a run is a MEDIAN of 31 minutes and a MAX of 84, so the 08:17 slot finishes by
-  # ~09:41 worst case. A CU hour then keeps growing for up to ~70 minutes (~6 min ingestion lag,
-  # 5–64 min smoothing), which puts that worst case settled at ~10:51. 13:17 clears it by 146
-  # minutes, and every earlier slot of the day is long settled by then — ONE read finishes the day.
-  #
-  # THE GRID MOVED TWO HOURS EARLIER AND THIS CRON DID NOT HAVE TO FOLLOW: it was derived off a
-  # 10:17 last slot with 26 minutes of slack, so moving the grid earlier only widened that to 146.
-  # Leave it here — an earlier read buys nothing and a `workflow_run` read already fires per build.
-  #
-  # An earlier read — "an hour after the first slot" — would land mid-smoothing on a typical run,
-  # measure almost nothing the `workflow_run` read had not already seen, and say nothing at all
-  # about the three slots still to come. This is why the delay is anchored to the last run FINISHING
-  # plus the settle, not to the cron that started anything.
-  #
-  # It is NOT the old daily top-up that used to live here (`17 21 * * *`), which existed to settle
-  # anything measured at any hour. This one has a single job: raise the scheduled runs' own numbers
-  # off the lower bound the `workflow_run` read leaves. A hand-started dispatch is still what settles
-  # a dispatch you started by hand.
-  schedule:
-    - cron: "17 13 * * *"
   # Fires within a minute of a Benchmark finishing, so it is deliberately a LOWER BOUND — there to
-  # populate a fresh run's column immediately, not to be final. The cron above is what finishes the
-  # job for the day's scheduled runs.
+  # populate a fresh run's column immediately rather than to be final. **Nothing raises it off that
+  # bound automatically any more**: the 13:17 settling cron was arithmetic on the weekly grid's last
+  # slot, and the grid is gone (2026-09-17, throttled capacity). A second dispatch ~90 minutes later
+  # is what settles a number now, and `max(old, new)` means it can only improve one.
+  #
+  # KEPT RATHER THAN MADE MANUAL TOO, because it is not a clock: it fires only after a Benchmark a
+  # human started, it publishes nothing, and it costs about two DAX queries — no Fabric build or
+  # query capacity at all. Dispatch-only would leave a fresh run's column blank until somebody
+  # remembered, which is the one failure the lower-bound read exists to prevent.
   workflow_run:
     workflows: [Benchmark]
     types: [completed]
@@ -131,8 +112,8 @@ jobs:
       # input's `default:` cannot take a context, so the fallback lives here, where `secrets` IS
       # available. measure.py keeps no default either — a hardcoded fallback would put the value back
       # in the repo and outvote the secret whenever the env var arrived empty.
-      # On a `workflow_run` OR `schedule` event the `inputs` context is empty, so both of the
-      # input-fed values below fall through to the secret / to blank, which is what is wanted.
+      # On a `workflow_run` event the `inputs` context is empty, so both of the input-fed values
+      # below fall through to the secret / to blank, which is what is wanted.
       # That is safe HERE only because both of this workflow's inputs default to blank anyway —
       # `benchmark.yml` has to spell out a scheduled value per input for exactly this reason.
       CU_METRICS_WORKSPACE_ID: ${{ secrets.CU_METRICS_WORKSPACE_ID }}
