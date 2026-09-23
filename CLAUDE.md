@@ -1748,7 +1748,12 @@ takes to **query** them. Ported from `djouallah/duckrun`'s `parquet_layout.yml`.
   `bench_drop`, roles `bench_dl`/`bench_dq`/`semantic_model_dq`) — OneLake bills a read against the
   item HOSTING the shortcut, so each phase's storage transactions land on its own GUIDs instead of
   mixing into the engine's ETL column, and the DQ endpoint's `SQL Endpoint Query` compute is the
-  phase's own item too. The dashboard's classes are therefore `etl` / `directlake` / `directquery`
+  phase's own item too.
+  ⚠️ **THE `_dq` ENDPOINT DOES NOT RELIABLY SYNC ITS SHORTCUT TABLES ON ITS OWN.** Unsynced, every
+  DQ query dies `Expression.Error: The key didn't match any rows in the table` and the warm-up burns
+  8 minutes — runs 35836350582, 35057720361, 34743798519; on the second the shortcuts had existed 22
+  minutes. `provision.py bench_sync` forces it with `refreshMetadata` before the DQ deploy and fails
+  the step naming the missing tables. Waiting longer is not the fix. The dashboard's classes are therefore `etl` / `directlake` / `directquery`
   (the class once called `analytics` is renamed; nothing on disk stored it). `deploy()` takes one
   per-engine argument, `lakehouse=` (always — dwh's tables sit behind the same shortcuts); `mode=`
   is `engines.DEPLOY_MODE` / `DEPLOY_MODE_DQ`, single constants per phase from `BENCH_PHASE`, and

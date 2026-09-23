@@ -1210,9 +1210,17 @@ jobs:
       # over the `_dq` lakehouse's SQL analytics endpoint. `!cancelled()` rather than the default —
       # a Direct Lake failure must not cost the DirectQuery measurement, the same ethos as the
       # non-fail-fast matrix. Its numbers render in their own report section, never in the ranking.
+      # The DQ model reads through the `_dq` endpoint's catalog, which does not reliably pick up the
+      # shortcut tables on its own (22 min and still empty on run 35057720361). Force the sync and
+      # refuse here, rather than deploy and spend eight minutes of warm-up on "key didn't match".
+      - name: ${{ matrix.engine }} — sync DirectQuery endpoint metadata
+        id: sync_dq
+        if: ${{ !cancelled() }}
+        run: python .github/scripts/provision.py bench_sync ${{ matrix.engine }}
+
       - name: ${{ matrix.engine }} — deploy semantic model (DirectQuery)
         id: deploy_dq
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.sync_dq.outcome == 'success' }}
         env:
           BENCH_PHASE: dq
         run: python benchmark/deploy_models.py

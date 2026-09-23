@@ -177,3 +177,91 @@ def test_bench_lakehouse_name_is_the_output_item_plus_the_phase(tmp_path, monkey
     assert prov.bench_lakehouse_name("dwh", "dq") == "dbt_dwh_dq"
     with pytest.raises(SystemExit):
         prov.bench_lakehouse_name("duckrun", "warm")
+
+
+# ---- bench_sync: the `_dq` endpoint's metadata sync, forced and checked -------------------------
+
+NYC = ["mart.dim_date", "mart.dim_zone", "mart.fct_trips", "landing.stg_parquet_archive_log"]
+
+
+class SyncFabric:
+    """A `_dq` lakehouse with an endpoint whose refreshMetadata answers from `rounds`, one per POST:
+    each round is {tableName: status}; a name left out is absent from the result."""
+
+    def __init__(self, rounds, lro=True):
+        self.rounds = list(rounds)
+        self.lro = lro
+        self.posts = []
+        self._pending = None
+
+    def _result(self):
+        rnd = self.rounds.pop(0)
+        return {"value": [{"tableName": t, "status": s} for t, s in rnd.items()]}
+
+    def get(self, url, headers=None, **kw):
+        if url.endswith(f"/workspaces/{WS}/lakehouses"):
+            return Resp(200, {"value": [{"id": "LH-DQ", "displayName": "dbt_nyc_delta_dq"}]})
+        if url.endswith("/lakehouses/LH-DQ"):
+            return Resp(200, {"properties": {"sqlEndpointProperties": {"id": "EP"}}})
+        if url.endswith("/operations/OP/result"):
+            return Resp(200, self._pending)
+        if url.endswith("/operations/OP"):
+            return Resp(200, {"status": "Succeeded"})
+        raise AssertionError(f"unexpected GET {url}")
+
+    def post(self, url, headers=None, json=None, **kw):
+        assert url.endswith("/sqlEndpoints/EP/refreshMetadata"), url
+        self.posts.append(json)
+        if not self.lro:
+            return Resp(200, self._result())
+        self._pending = self._result()
+        r = Resp(202)
+        r.headers = {"x-ms-operation-id": "OP", "Retry-After": "1"}
+        return r
+
+    def delete(self, url, **kw):
+        raise AssertionError("bench_sync must not DELETE")
+
+
+def run_bench_sync(monkeypatch, fab):
+    fake_requests = types.SimpleNamespace(get=fab.get, delete=fab.delete, post=fab.post)
+    auth = types.ModuleType("duckrun.auth")
+    auth.get_fabric_token = lambda: "TEST-TOKEN"
+    monkeypatch.setitem(sys.modules, "requests", fake_requests)
+    monkeypatch.setitem(sys.modules, "duckrun", types.ModuleType("duckrun"))
+    monkeypatch.setitem(sys.modules, "duckrun.auth", auth)
+    monkeypatch.setattr("time.sleep", lambda *_: None)
+    monkeypatch.setenv("WS_ID", WS)
+    monkeypatch.setenv("DATASET", "nyc")
+    monkeypatch.delenv("RUN_RECORD", raising=False)
+    monkeypatch.setattr(sys, "argv", ["provision.py", "bench_sync", "duckrun"])
+    sys.modules.pop("provision", None)
+    importlib.import_module("provision")
+
+
+def test_a_synced_endpoint_passes_through_the_lro(monkeypatch):
+    fab = SyncFabric([{t: "Success" for t in NYC}])
+    run_bench_sync(monkeypatch, fab)
+    assert len(fab.posts) == 1
+    scoped = {f"{d['schema']}.{t}" for d in fab.posts[0]["tables"] for t in d["tableNames"]}
+    assert scoped == set(NYC), "the refresh is scoped to exactly the tables the model reads"
+
+
+def test_not_run_counts_as_synced_and_a_200_is_the_result(monkeypatch):
+    fab = SyncFabric([{t: "NotRun" for t in NYC}], lro=False)
+    run_bench_sync(monkeypatch, fab)
+    assert len(fab.posts) == 1
+
+
+def test_a_missing_table_is_retried_then_passes(monkeypatch):
+    fab = SyncFabric([{t: "Success" for t in NYC[1:]}, {t: "Success" for t in NYC}])
+    run_bench_sync(monkeypatch, fab)
+    assert len(fab.posts) == 2
+
+
+def test_a_table_that_never_syncs_is_fatal_and_named(monkeypatch):
+    fail = {**{t: "Success" for t in NYC}, "mart.fct_trips": "Failure"}
+    fab = SyncFabric([fail] * 4)
+    with pytest.raises(SystemExit, match="mart.fct_trips"):
+        run_bench_sync(monkeypatch, fab)
+    assert len(fab.posts) == 4

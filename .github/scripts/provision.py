@@ -6,6 +6,7 @@ Usage:
   python provision.py land                 # the ONE shared landing lakehouse (holds Files)
   python provision.py {duckrun|iceberg|dwh|spark}   # that engine's OUTPUT item
   python provision.py bench_prepare <engine>  # BOTH per-phase shortcut lakehouses for the bench job
+  python provision.py bench_sync <engine>  # force + check the `_dq` endpoint's metadata sync
   python provision.py bench_drop {dl|dq}   # delete one phase's semantic model + lakehouse, mid-run
   python provision.py teardown <record>    # DELETE every item that record names, except landing
 
@@ -530,8 +531,8 @@ def bench_prepare(engine):
 
     Up front rather than each-on-demand is deliberate: the `_dq` phase queries through the
     lakehouse's SQL analytics endpoint, which provisions asynchronously and then has to sync the
-    shortcut tables' metadata — giving it the whole DL phase to do that is what keeps the DQ
-    warm-up probe from being the thing that pays for the lag. Attribution stays clean either way
+    shortcut tables' metadata. That sync is FORCED (`sync_sql_endpoint`), not assumed — it is
+    started here best-effort and checked, fatally, by `bench_sync` right before the DQ deploy. Attribution stays clean either way
     (it is per GUID), and the endpoint's small sync CU bills to the `_dq` item, i.e. honestly
     inside the directquery class.
 
@@ -545,12 +546,92 @@ def bench_prepare(engine):
         ensure_tables_shortcuts(lh, engine)
         if ph == "dq":
             for _ in range(60):                        # ~10 minutes at 10s
-                if record_sql_endpoint(lh, name):
+                ep = record_sql_endpoint(lh, name)
+                if ep:
                     break
                 time.sleep(10)
             else:
                 raise SystemExit(f"{name}: SQL endpoint never provisioned — the DQ phase "
                                  f"cannot be attributed without it")
+            # Start the sync now so it has the DL phase to finish in; `bench_sync` is the check.
+            try:
+                sync_sql_endpoint(ep, name, attempts=1)
+            except SystemExit as ex:
+                sys.stderr.write(f"  {name}: early metadata sync incomplete ({ex}) — "
+                                 f"bench_sync retries before the DQ deploy\n")
+
+
+def _lro(r, what):
+    """Follow a Fabric long-running operation to its result body. A 200 IS the result."""
+    if r.status_code == 200:
+        return r.json()
+    if r.status_code != 202:
+        raise SystemExit(f"{what}: {r.status_code} {r.text[:300]}")
+    op = r.headers.get("x-ms-operation-id")
+    if not op:
+        raise SystemExit(f"{what}: 202 without x-ms-operation-id")
+    for _ in range(180):                               # ~15 minutes, the API's own default timeout
+        time.sleep(int(r.headers.get("Retry-After") or 5))
+        r = _req("GET", f"{FAB}/operations/{op}")
+        status = (r.json() or {}).get("status") if r.status_code == 200 else None
+        if status == "Succeeded":
+            res = _req("GET", f"{FAB}/operations/{op}/result")
+            if res.status_code != 200:
+                raise SystemExit(f"{what}: result {res.status_code} {res.text[:300]}")
+            return res.json()
+        if status == "Failed":
+            raise SystemExit(f"{what}: operation failed: {r.text[:300]}")
+    raise SystemExit(f"{what}: operation {op} never finished")
+
+
+def sync_sql_endpoint(ep, name, attempts=4):
+    """Force the `_dq` lakehouse's SQL analytics endpoint to sync its shortcut tables, and check it.
+
+    The DQ model reads `Sql.Database(...){[Schema=..., Item=...]}` — a table the endpoint has not
+    synced is `Expression.Error: The key didn't match any rows in the table`, which is what killed
+    the DQ phase on runs 35836350582, 35057720361 and 34743798519. The endpoint does NOT reliably
+    pick up schema shortcuts on its own: on 35057720361 the shortcuts existed 22 minutes and the
+    endpoint still had no tables, so waiting was never the fix. `refreshMetadata` is.
+
+    Scoped to the tables the model reads (`table_schemas`, all ≤25 per the API's cap). `Success`
+    and `NotRun` (already current) both count as synced; anything else is retried, then fatal
+    HERE rather than as eight minutes of warm-up after the model is deployed.
+    """
+    want = {f"{s}.{t}" for s, ts in datasets.table_schemas(DATASET).items() for t in ts}
+    body = {"tables": [{"schema": s, "tableNames": ts}
+                       for s, ts in datasets.table_schemas(DATASET).items()]}
+    missing = want
+    for attempt in range(1, attempts + 1):
+        res = _lro(_req("POST", f"{FAB}/workspaces/{ws}/sqlEndpoints/{ep}/refreshMetadata",
+                        json=body), f"{name}: refreshMetadata")
+        got = {t.get("tableName"): t for t in (res or {}).get("value", [])}
+        missing = sorted(t for t in want
+                         if (got.get(t) or {}).get("status") not in ("Success", "NotRun"))
+        if not missing:
+            sys.stderr.write(f"  {name}: SQL endpoint synced {len(want)} table(s)\n")
+            return
+        errs = "; ".join(f"{t}: {(got.get(t) or {}).get('status', 'absent')} "
+                         f"{((got.get(t) or {}).get('error') or {}).get('errorCode', '')}".rstrip()
+                         for t in missing)
+        sys.stderr.write(f"  {name}: sync attempt {attempt}/{attempts} left {errs}\n")
+        if attempt < attempts:
+            time.sleep(30 * attempt)
+    raise SystemExit(f"{name}: SQL endpoint never synced {', '.join(missing)} — "
+                     f"the DirectQuery model would not find them")
+
+
+def bench_sync(engine):
+    """Before the DQ deploy: sync the `_dq` lakehouse's endpoint and refuse if it will not."""
+    name = bench_lakehouse_name(engine, "dq")
+    lh = find("lakehouses", name)
+    if not lh:
+        raise SystemExit(f"{name} does not exist — bench_prepare must run first")
+    r = _req("GET", f"{FAB}/workspaces/{ws}/lakehouses/{lh['id']}")
+    r.raise_for_status()
+    ep = ((r.json().get("properties") or {}).get("sqlEndpointProperties") or {}).get("id")
+    if not ep:
+        raise SystemExit(f"{name}: no SQL endpoint")
+    sync_sql_endpoint(ep, name)
 
 
 # Which record roles each phase's `bench_drop` owns. The model goes FIRST: it reads through the
@@ -647,6 +728,10 @@ elif mode == "bench_prepare":
     # Prints nothing to stdout — the names are derivable (bench_lakehouse_name) and the GUIDs go
     # into the RUN_RECORD fragment like every other item.
     bench_prepare(sys.argv[2])
+
+elif mode == "bench_sync":
+    # Right before the DQ deploy: force the `_dq` endpoint's metadata sync, fatal if it won't.
+    bench_sync(sys.argv[2])
 
 elif mode == "bench_drop":
     # End of one bench phase: delete that phase's semantic model and lakehouse immediately, so the
