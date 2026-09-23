@@ -8,7 +8,7 @@ that produced them. For how CI drives it against Fabric, see [CI.md](CI.md).
 No Fabric account, no credentials:
 
 ```bash
-pip install duckrun                      # brings dbt-duckdb, duckdb, deltalake
+pip install "duckrun[dbt]"               # the adapter, plus duckdb and deltalake
 export FILES_PATH=./landing              # where the script lands raw CSVs
 export ONELAKE_TABLES_PATH=./warehouse   # where duckrun writes Delta tables
 python download_aemo.py                  # land the raw CSVs once, then:

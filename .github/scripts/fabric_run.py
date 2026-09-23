@@ -209,7 +209,12 @@ def main() -> int:
     # cannot move the bytes duckrun writes; what it can touch is duckrun's Python calls into the
     # duckdb module, which fail loudly at leg start rather than quietly in the output. On the
     # iceberg leg the same bump IS the writer, so that is the half a pin move can actually surprise.
-    pip = ["duckdb==2.0.0.dev2609121639", "duckrun>=0.4.50", "pytz"]
+    # `duckrun[dbt]`, NOT a bare name: fabric_build.py runs dbt IN this notebook, and duckrun
+    # 0.5.0 moved dbt-core and dbt-duckdb behind that extra. The extra is NOT added for us here.
+    # duckrun injects it only into its OWN default spec or a bare `git+` URL (see `_requirement`
+    # in fabric_remote.py); an explicit list like this one is passed through VERBATIM, so a bare
+    # `duckrun` ships a notebook with no adapter and the leg dies at `dbt parse`.
+    pip = ["duckdb==2.0.0.dev2609121639", "duckrun[dbt]>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
     # throttling). That item was created and did bill, so it is recorded before the failure
@@ -234,7 +239,8 @@ def main() -> int:
             lakehouse=os.environ.get("REMOTE_LAKEHOUSE") or datasets.spec()["landing"],
             env=env,
             cores=cores,
-            # duckrun brings dbt-duckdb + duckdb + deltalake. The floor is load-bearing, not a
+            # `duckrun[dbt]` brings the adapters + duckdb + deltalake (the extra is why; see the
+            # note on the `pip` list above). The floor is load-bearing, not a
             # freshness preference: below 0.4.50 a naive TIMESTAMP mart column (nyc's tpep_*,
             # green's lpep_*) lands as Delta timestamp_ntz, which Fabric's SQL analytics endpoint
             # silently OMITS — the DL phase passes and the DQ phase dies on the first query naming
