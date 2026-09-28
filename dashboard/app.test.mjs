@@ -4551,51 +4551,80 @@ test("summaryWriter: the four rows, and nothing else", () => {
   assert.equal(d.summaryWriter(["iceberg"]), null);
 });
 
-test("the scorecard: rows in order, × fastest per dataset, a dash for what never ran", () => {
+/** One run per warm value — `dq`, when given, pairs with it index for index. */
+function many(tag, engine, cfg, warms, dqs = null, opts = {}) {
+  return warms.map((w, i) => sw(`${tag}-${i}.json`, engine, { cfg, dl: [1, w],
+    dq: dqs ? [1, dqs[i]] : null, hours: 48 + i, ...opts }));
+}
+
+test("the scorecard: a writer is fastest only when every run beat every run of the others", () => {
   const runs = [
-    // Warm is the second number, and the only one the summary reads — the colds are deliberately
-    // ordered AGAINST it so a cold-reading cell would fail.
-    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [900, 20] }),              // warm 20 -> fastest
-    sw("a-2.json", "spark", { cfg: PBI, dl: [150, 30], dq: [900, 100] }),  // 1.5x ; dq fastest
-    sw("a-3.json", "spark", { cfg: WH, dl: [100, 40] }),                   // 2.0x
-    sw("a-4.json", "dwh", { cfg: { vorder: "true" }, dl: [300, 60], dq: [700, 200], vorderEnabled: true }),
-    // Excluded: V-Order switched off is not the default warehouse, and would otherwise win.
-    sw("a-5.json", "dwh", { cfg: { vorder: "false" }, dl: [1, 1], vorderEnabled: false }),
+    ...many("a", "duckrun", AUTO, [10, 11, 12]),
+    ...many("b", "spark", PBI, [20, 21, 22], [100, 101, 102]),
+    ...many("c", "spark", WH, [30, 31, 32]),
+    ...many("d", "dwh", { vorder: "true" }, [40, 41, 42], [200, 201, 202], { vorderEnabled: true }),
+    // Excluded: V-Order off is not the default warehouse. Included, its one run would win the
+    // median AND make the column `too few runs`.
+    sw("e-1.json", "dwh", { cfg: { vorder: "false" }, dl: [1, 1], vorderEnabled: false }),
   ];
   const html = d.renderSummary(runs, ledger({ OUT: 1.0, SEM: 2.0 }));
   const r = scoreRows(html);
   assert.deepEqual(Object.keys(r), d.SUMMARY_ROWS.map((x) => x.label));
-  // aemo is the first column of each band; each band is DS_N datasets plus `fastest in`.
   assert.equal(r["delta_rs"][0], "fastest");
-  assert.equal(r["spark readHeavyForPBI"][0], "1.5×");
-  assert.equal(r["spark writeHeavy"][0], "2.0×");
-  assert.equal(r["dwh"][0], "3.0×", "the V-Order-off run did not become the reference");
-  assert.equal(r["delta_rs"][DS_N], "1 of 1", "fastest in");
+  assert.equal(r["spark readHeavyForPBI"][0], "1.9×");
+  assert.equal(r["dwh"][0], "3.7×", "the V-Order-off run did not become the reference");
+  assert.equal(r["delta_rs"][DS_N], "1 of 1", "clear wins");
   assert.equal(r["dwh"][DS_N], "0 of 1");
-  // DirectQuery band: only PBI and dwh ran it. The others are a dash, never 0 and never `fastest`.
   const dq = DS_N + 1;
   assert.equal(r["spark readHeavyForPBI"][dq], "fastest");
   assert.equal(r["dwh"][dq], "2.0×");
-  assert.equal(r["delta_rs"][dq], "—");
-  assert.equal(r["delta_rs"][dq + DS_N], "—", "no DQ anywhere -> no count either");
-  // A dataset nobody ran is a column of dashes, and says so in its header.
-  assert.ok(r["delta_rs"].slice(1, DS_N).every((c) => c === "—"));
-  assert.ok(plain(html).includes("not measured"));
-  assert.ok(html.includes('title="warm 20 ms · 1 run"'), "hover carries the raw times");
-  assert.ok(/class="right h0"/.test(html) && /class="right h3"/.test(html), "shaded by ratio");
+  assert.equal(r["delta_rs"][dq], "—", "never a 0 and never `fastest`");
+  assert.equal(r["delta_rs"][dq + DS_N], "—");
+  assert.ok(r["delta_rs"].slice(1, DS_N).every((c) => c === "—"), "unrun datasets are dashes");
+  const text = plain(html);
+  assert.ok(text.includes("clear winner") && text.includes("not measured"));
+  assert.ok(/Direct Lake:\*\* `delta_rs` clearly faster on AEMO/.test(text), text);
+  assert.ok(/DirectQuery:\*\* `spark readHeavyForPBI` clearly faster on AEMO/.test(text), text);
+  // Best DQ median 101 over best DL median 11.
+  assert.ok(text.includes("took 9× longer through DirectQuery on the one dataset"), text);
+  assert.ok(html.includes('title="warm median 11 ms · runs 10–12 ms · 3 runs"'), "hover shows the range");
+  assert.equal((html.match(/class="right h0"/g) || []).length, 2, "exactly the two clear winners");
 });
 
-test("every dataset is normalised to its OWN fastest writer", () => {
+test("overlapping ranges: no winner is called, and the verdict says so", () => {
   const runs = [
-    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [100, 0.5] }),
-    sw("a-2.json", "spark", { cfg: PBI, dl: [200, 1] }),
-    sw("n-1.json", "duckrun", { cfg: AUTO, dl: [3000, 30], ds: "nyc" }),
-    sw("n-2.json", "spark", { cfg: PBI, dl: [1000, 10], ds: "nyc" }),
+    ...many("a", "duckrun", AUTO, [10, 11, 30]),   // lowest median, but its slow run overlaps
+    ...many("b", "spark", PBI, [20, 21, 22]),
   ];
-  const r = scoreRows(d.renderSummary(runs, ledger({ OUT: 1.0, SEM: 2.0 })));
-  assert.deepEqual(r["delta_rs"].slice(0, 2), ["fastest", "3.0×"]);
-  assert.deepEqual(r["spark readHeavyForPBI"].slice(0, 2), ["2.0×", "fastest"]);
-  assert.equal(r["delta_rs"][DS_N], "1 of 2");
+  const html = d.renderSummary(runs, ledger({}));
+  const r = scoreRows(html);
+  assert.ok(!/class="right h0"/.test(html), "no green anywhere");
+  assert.equal(r["delta_rs"][0], "1.00×", "the lowest median is a grey ratio, not `fastest`");
+  assert.equal(r["delta_rs"][DS_N], "0 of 1");
+  const text = plain(html);
+  assert.ok(text.includes("no clear winner"));
+  assert.ok(text.includes("no writer was clearly faster on any dataset"), text);
+});
+
+test("under three runs a column cannot be called, however good the numbers", () => {
+  const runs = [
+    ...many("a", "duckrun", AUTO, [1, 2]),
+    ...many("b", "spark", PBI, [100, 101, 102]),
+  ];
+  const html = d.renderSummary(runs, ledger({}));
+  assert.ok(!/class="right h0"/.test(html));
+  assert.ok(plain(html).includes("too few runs"));
+});
+
+test("summaryVerdict: clear, noise, few", () => {
+  const c = (runs) => ({ ms: runs[Math.floor(runs.length / 2)], n: runs.length, runs });
+  assert.deepEqual(d.summaryVerdict({ a: c([1, 2, 3]), b: c([4, 5, 6]) }),
+    { status: "clear", winner: "a" });
+  assert.deepEqual(d.summaryVerdict({ a: c([1, 2, 4]), b: c([4, 5, 6]) }),
+    { status: "noise", winner: null }, "touching is not clearing");
+  assert.equal(d.summaryVerdict({ a: c([1, 2, 3]) }).status, "few", "nothing to beat");
+  assert.equal(d.summaryVerdict({ a: c([1, 2, 3]), b: c([9, 9]) }).status, "few");
+  assert.equal(d.summaryVerdict({}).status, "few");
 });
 
 test("two layouts for one row: the one with the most runs is the cell, and the note says so", () => {

@@ -284,23 +284,18 @@ details.note p, details.note p.note { margin:.5rem 0 0; max-width:none; }
    instead of in a note the reader meets four rows later. */
 sub { font-size:.78em; color:var(--dim); vertical-align:baseline; margin-left:.45em;
   font-weight:400; }
-/* THE SUMMARY SCORECARD. Five shades from fastest to slowest; the ratio is printed in every cell, so
-   the colour is never the only carrier. Tints rather than saturated fills, so the number on top stays
-   readable in both themes. */
-:root { --h0:#c7e9c0; --h1:#e5f5e0; --h2:#fff4c2; --h3:#fdd9b5; --h4:#f9b9a8; }
+/* THE SUMMARY SCORECARD. ONE shade: a clear winner. Everything inside the noise is plain grey, because
+   a graded colour on noise is a ranking the data does not support. */
+:root { --h0:#c7e9c0; }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --h0:#2e6b3f; --h1:#233a29; --h2:#3b3820; --h3:#4a321f;
-    --h4:#562626; } }
-:root[data-theme="dark"] { --h0:#2e6b3f; --h1:#233a29; --h2:#3b3820; --h3:#4a321f; --h4:#562626; }
+  :root:not([data-theme="light"]) { --h0:#2e6b3f; } }
+:root[data-theme="dark"] { --h0:#2e6b3f; }
 table.scorecard { width:auto; min-width:100%; }
 table.scorecard sub { display:block; margin-left:0; }
 table.scorecard th.band { text-align:center; border-left:2px solid var(--line); }
-table.scorecard td.h0, table.scorecard td.h1, table.scorecard td.h2, table.scorecard td.h3,
-table.scorecard td.h4 { color:var(--fg); }
-.scorecard .h0, .legend .h0 { background:var(--h0); } .scorecard .h1, .legend .h1 { background:var(--h1); }
-.scorecard .h2, .legend .h2 { background:var(--h2); } .scorecard .h3, .legend .h3 { background:var(--h3); }
-.scorecard .h4, .legend .h4 { background:var(--h4); }
-.scorecard td.dim { color:var(--dim); }
+table.scorecard td.h0 { color:var(--fg); }
+.scorecard .h0, .legend .h0 { background:var(--h0); }
+.scorecard td.dim, .scorecard td.noise { color:var(--dim); }
 .scorecard td.total { font-weight:600; }
 .legend { display:flex; flex-wrap:wrap; gap:.4rem 1rem; font-size:.8rem; color:var(--dim);
   margin:.4rem 0 0; }

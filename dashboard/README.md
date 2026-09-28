@@ -98,7 +98,7 @@ without a build, a token or a dispatch.
 
 | | |
 |---|---|
-| *(none)* | the **Summary** — one scorecard, four writers × every dataset, warm query time as × the fastest writer |
+| *(none)* | the **Summary** — one scorecard, four writers × every dataset, warm query time; a writer is called fastest only when every one of its runs beat every run of the others |
 | `?dataset=nyc` | which dataset the page is about. Carries its mart with it. Any of `dataset`/`record`/`rows`/`table` opens the per-dataset page |
 | `?record=30776174056` | render one run alone — a substring of the record's filename, so a run id or a date both work |
 | `?ref=some-branch` | read `history/` from another branch |

@@ -4177,7 +4177,8 @@ const SUMMARY_BANDS = [
 
 /**
  * `[{ds, label, runs, multi, cells: {row: {dl, dq}}}]` — one entry per dataset in `DATASET_TABLE`
- * order, EVERY dataset, measured or not. A cell is `{ms, n}` or absent.
+ * order, EVERY dataset, measured or not. A cell is `{ms, n, runs}` or absent — `ms` the median,
+ * `runs` every run's own warm total, ascending, for `summaryVerdict`.
  *
  * When several layout groups map to one row — duckrun `auto` dispatched at two geometries — the one
  * with the MOST runs is shown, the newest on a tie, and `multi` names the row so the note can say so.
@@ -4216,20 +4217,15 @@ export function summaryData(records, ledger) {
       for (const band of SUMMARY_BANDS) {
         const ms = p.ms[band.tier] || 0;
         if (!(ms > 0)) continue;
-        const n = g[1].filter((m) => ((times[m.qid] || {})[band.tier] || 0) > 0).length;
-        row[band.id] = { ms, n };
+        const runs = g[1].map((m) => (times[m.qid] || {})[band.tier] || 0).filter((v) => v > 0)
+          .sort((x, y) => x - y);
+        row[band.id] = { ms, n: runs.length, runs };
       }
       out.cells[id] = row;
     });
     return out;
   });
 }
-
-// Five shades, fastest to slowest. The ratio is also PRINTED in every cell, so the colour is never the
-// only carrier — red/green alone would fail a colour-blind reader.
-const SUMMARY_SHADES = [[1, "fastest"], [1.25, "≤ 1.25×"], [1.5, "≤ 1.5×"], [2, "≤ 2×"],
-  [Infinity, "> 2×"]];
-export const summaryShade = (ratio) => SUMMARY_SHADES.findIndex(([cap]) => ratio <= cap);
 
 /** `?a=1&b=2`-style carry of the params a reader set, skipping any left at its default. */
 function carryParams(opts, keys) {
@@ -4241,63 +4237,133 @@ function carryParams(opts, keys) {
   return carry;
 }
 
-/** The summary view: one heading, one scorecard, a legend and one note. Nothing else. */
+// Below this many runs a writer's range is too thin to call anything — one lucky dispatch would do.
+export const SUMMARY_MIN_RUNS = 3;
+
+/**
+ * `{status, winner}` for one dataset and band: `clear` with the winning row id, `noise`, or `few`.
+ *
+ * **A CLEAR WINNER IS ONE WHOSE EVERY RUN BEAT EVERY RUN OF EVERY OTHER WRITER, with at least
+ * `SUMMARY_MIN_RUNS` runs each.** That is the whole rule, and it is written to be checkable by a
+ * reader with the hover tooltips alone.
+ *
+ * **THIS REVERSES THE REPO'S "NO TIE BAND" RULE, FOR THIS VIEW ONLY.** Argmin-by-any-margin is right
+ * for a report read by someone who knows the spread; this view is for someone who does not, and it
+ * printed a green `fastest` on every dataset while — measured 2026-09-29 — every Direct Lake warm
+ * range overlapped every other (aemo: 3.1–19.2 s, 3.7–17.6, 2.6–7.2, 2.6–8.7). A green label on noise
+ * is the exact misreading the view exists to prevent.
+ *
+ * `few` beats `noise`: a column with an under-sampled writer is one that COULD NOT be called, which is
+ * a different statement from one that was measured and found level.
+ */
+export function summaryVerdict(cells) {
+  const present = Object.entries(cells || {}).filter(([, c]) => c && c.n > 0);
+  if (present.length < 2 || present.some(([, c]) => c.n < SUMMARY_MIN_RUNS)) {
+    return { status: "few", winner: null };
+  }
+  const [bestId, best] = present.reduce((a, b) => (b[1].ms < a[1].ms ? b : a));
+  const slowest = best.runs[best.runs.length - 1];
+  const clear = present.every(([id, c]) => id === bestId || slowest < c.runs[0]);
+  return clear ? { status: "clear", winner: bestId } : { status: "noise", winner: null };
+}
+
+const SUMMARY_STATUS = { clear: "clear winner", noise: "no clear winner", few: "too few runs" };
+
+/** The computed verdict above the table: one sentence per band, plus the DL-vs-DQ magnitude. */
+function summaryLede(data, verdicts) {
+  const out = [];
+  const label = (id) => SUMMARY_ROWS.find((r) => r.id === id).label;
+  for (const band of SUMMARY_BANDS) {
+    const by = {};
+    for (const d of data) {
+      const v = verdicts[band.id][d.ds];
+      if (v.status === "clear") (by[v.winner] = by[v.winner] || []).push(d.label);
+    }
+    const ids = SUMMARY_ROWS.map((r) => r.id).filter((id) => by[id]);
+    out.push(`**${band.label}:** ` + (ids.length
+      ? ids.map((id, i) => `\`${label(id)}\`${i ? "" : " clearly faster"} on ${by[id].join(", ")}`)
+        .join("; ") + "; no clear winner anywhere else."
+      : "no writer was clearly faster on any dataset — the differences are inside run-to-run noise."));
+  }
+  // THE BIGGEST DIFFERENCE IN THE DATA, and the per-band ratios hide it by construction: each band is
+  // normalised to its own fastest. Best DQ median over best DL median, per dataset measured both ways.
+  const ratios = data.map((d) => {
+    const best = (b) => Math.min(...SUMMARY_ROWS.map((r) => ((d.cells[r.id] || {})[b] || {}).ms)
+      .filter((v) => v > 0));
+    const x = best("dq") / best("dl");
+    return Number.isFinite(x) ? x : null;
+  }).filter((x) => x !== null);
+  if (ratios.length) {
+    const lo = Math.min(...ratios), hi = Math.max(...ratios);
+    out.push("**DirectQuery against Direct Lake:** the same warm queries took " +
+      `${fmt(lo, 0)}${Math.round(hi) !== Math.round(lo) ? `–${fmt(hi, 0)}` : ""}× longer through ` +
+      `DirectQuery on ${ratios.length === 1 ? "the one dataset" : `each of the ${ratios.length} datasets`} ` +
+      "measured both ways, whoever wrote the parquet.");
+  }
+  return out;
+}
+
+/** The summary view: a heading, the computed verdict, one scorecard, a legend and one note. */
 export function renderSummary(records, ledger, opts = {}) {
   const data = summaryData(records, ledger);
   const carry = carryParams(opts, ["repo", "ref"]);
-  const secs = (ms) => `${fmt(ms / 1000, ms >= 100000 ? 0 : 1)} s`;
+  const verdicts = Object.fromEntries(SUMMARY_BANDS.map((band) => [band.id,
+    Object.fromEntries(data.map((d) => [d.ds, summaryVerdict(Object.fromEntries(
+      SUMMARY_ROWS.map((r) => [r.id, (d.cells[r.id] || {})[band.id]]).filter(([, c]) => c)))]))]));
   const head1 = ['<th class="left" rowspan="2">parquet writer</th>'];
   const head2 = [];
   const body = SUMMARY_ROWS.map(() => []);
   for (const band of SUMMARY_BANDS) {
     head1.push(`<th class="band" colspan="${data.length + 1}">${esc(band.label)}` +
-      ` <span class="muted">· warm</span></th>`);
+      ' <span class="muted">· warm</span></th>');
     const wins = SUMMARY_ROWS.map(() => [0, 0]);
     for (const d of data) {
       const vals = SUMMARY_ROWS.map((r) => ((d.cells[r.id] || {})[band.id]));
       const present = vals.filter(Boolean).map((c) => c.ms);
       const best = present.length ? Math.min(...present) : null;
+      const v = verdicts[band.id][d.ds];
       const href = `?${[`dataset=${encodeURIComponent(d.ds)}`, ...carry].join("&")}`;
       head2.push(`<th class="right"><a href="${href}">${esc(d.label)}</a>` +
-        `<sub>${best === null ? "not measured" : `fastest ${secs(best)}`}</sub></th>`);
+        `<sub>${best === null ? "not measured" : SUMMARY_STATUS[v.status]}</sub></th>`);
       vals.forEach((c, i) => {
         if (!c) { body[i].push(`<td class="right dim">${DASH}</td>`); return; }
         wins[i][1] += 1;
+        const won = v.status === "clear" && v.winner === SUMMARY_ROWS[i].id;
+        if (won) wins[i][0] += 1;
+        const tip = `warm median ${fmt(c.ms, 0)} ms · runs ${fmt(c.runs[0], 0)}–` +
+          `${fmt(c.runs[c.runs.length - 1], 0)} ms · ${c.n} run${c.n === 1 ? "" : "s"}`;
         const ratio = c.ms / best;
-        const shade = summaryShade(ratio);
-        if (shade === 0) wins[i][0] += 1;
-        const tip = `warm ${fmt(c.ms, 0)} ms · ` +
-          `${c.n} run${c.n === 1 ? "" : "s"}`;
-        // Two decimals under 1.1×: a non-winner printing `1.0×` reads as a tie, and there is none.
-        const text = shade === 0 ? "<strong>fastest</strong>" : `${fmt(ratio, ratio < 1.1 ? 2 : 1)}×`;
-        body[i].push(`<td class="right h${shade}" title="${escAttr(tip)}">${text}</td>`);
+        // Two decimals under 1.1×: `1.0×` beside `1.0×` reads as identical when it is not.
+        const text = won ? "<strong>fastest</strong>" : `${fmt(ratio, ratio < 1.1 ? 2 : 1)}×`;
+        body[i].push(`<td class="right ${won ? "h0" : "noise"}" title="${escAttr(tip)}">${text}</td>`);
       });
     }
-    head2.push('<th class="right">fastest in</th>');
+    head2.push('<th class="right">clear wins</th>');
     wins.forEach(([w, of], i) => body[i].push(of
       ? `<td class="right total">${w} of ${of}</td>` : `<td class="right dim">${DASH}</td>`));
   }
   const rows = SUMMARY_ROWS.map((r, i) => `<tr><th class="left" scope="row">${esc(r.label)}` +
     `<sub>${esc(r.sub)}</sub></th>${body[i].join("")}</tr>`).join("\n");
-  const legend = '<p class="legend">' + SUMMARY_SHADES.map(([, lbl], i) =>
-    `<span><i class="h${i}"></i>${esc(lbl)}</span>`).join("") +
-    '<span><i class="none"></i>not measured</span></p>';
+  const legend = '<p class="legend">' +
+    '<span><i class="h0"></i>clearly fastest — every run beat every run of the others ' +
+    `(≥ ${SUMMARY_MIN_RUNS} runs each)</span>` +
+    '<span><i class="none"></i>within run-to-run noise, or not measured</span></p>';
   const multi = SUMMARY_ROWS.filter((r) => data.some((d) => d.multi.includes(r.id)))
     .map((r) => `\`${r.label}\``);
   return [
-    "<h3>Which parquet writer makes Power BI fastest?</h3>",
-    para("Same data, same semantic model, same DAX queries — only the writer of the parquet " +
-      "differs. Each cell is how much slower that writer was than the **fastest** writer on the " +
-      "same dataset: `2.0×` means twice as slow. Click a dataset for its full page."),
+    "<h3>Which parquet writer makes Power BI faster?</h3>",
+    ...summaryLede(data, verdicts).map((t) => para(t)),
     `<div class="scroll"><table class="scorecard">\n<thead><tr>${head1.join("")}</tr>` +
       `<tr>${head2.join("")}</tr></thead>\n<tbody>\n${rows}\n</tbody></table></div>`,
     legend,
-    note("A cell is the median, over that layout's runs, of the whole DAX suite's WARM time — a " +
-      "user's second visit, with the data already loaded — summed over the queries every writer on " +
-      "that dataset ran. Hover a cell for the time and the run count; warm is one sample per run, so " +
-      "a small gap on one or two runs can flip on the next. A dash means that writer was never run " +
-      "and benchmarked on that dataset. TPC-DS is synthetic data. Capacity units, " +
-      "`duckdb iceberg` and every other layout are on each dataset's own page." +
+    note("Same data, same semantic model, same DAX queries — only the writer of the parquet differs. " +
+      "A cell is the median, over that layout's runs, of the whole DAX suite's WARM time — a user's " +
+      "second visit, with the data already loaded — as a multiple of the lowest median on that " +
+      "dataset; hover it for the range of its runs. A writer is only called **fastest** when every " +
+      "one of its runs beat every run of every other writer shown, with at least " +
+      `${SUMMARY_MIN_RUNS} runs each; a grey ratio is inside the noise and ranks nothing. A dash ` +
+      "means that writer was never run and benchmarked on that dataset. TPC-DS is synthetic data. " +
+      "Capacity units, `duckdb iceberg` and every other layout are on each dataset's own page." +
       (multi.length ? ` Where ${multi.join(", ")} ran more than one configuration on a dataset, ` +
         "the one with the most runs is shown." : "")),
   ].join("\n");

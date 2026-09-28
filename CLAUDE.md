@@ -1949,8 +1949,17 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
 - **A BARE URL OPENS THE SUMMARY, NOT aemo.** `renderSummary` is one scorecard: four rows — `delta_rs`
   (duckrun `auto`), `spark readHeavyForPBI`, `spark writeHeavy`, `dwh` with V-Order on — against every
   dataset in a Direct Lake band and a DirectQuery band. Each cell is the median WARM time of the whole
-  DAX suite as **× the fastest writer on that dataset**, shaded in five steps. Warm only, by the
-  user's call: cold is one transcode-dominated sample per run, hot is the query cache. **IT RANKS BY
+  DAX suite as a multiple of the lowest median on that dataset. Warm only, by the user's call: cold is
+  one transcode-dominated sample per run, hot is the query cache.
+  ⚠️ **A WINNER IS CALLED ONLY WHEN IT IS REAL, AND THAT REVERSES "NO TIE BAND" FOR THIS VIEW ONLY.**
+  `summaryVerdict`: green `fastest` only when every run of the writer beat every run of every other
+  writer shown, with ≥ `SUMMARY_MIN_RUNS` (3) runs each; otherwise the column reads `no clear winner`
+  or `too few runs` and every ratio is grey. The first version shaded argmin green on every dataset,
+  and measured 2026-09-29 **every Direct Lake warm range overlapped every other on every dataset**
+  (aemo: 3.1–19.2 s, 3.7–17.6, 2.6–7.2, 2.6–8.7) — it was printing noise as results to exactly the
+  reader it was built for. As of that date the only clear winners are DirectQuery: dwh on AEMO and
+  NYC, delta_rs on Green. A computed lede states that per band, plus the one large real difference the
+  per-band ratios hide: DirectQuery is ~9–13× slower than Direct Lake whoever wrote the parquet. **IT RANKS BY
   SPEED, NOT CU, BECAUSE THE USER ASKED FOR THAT ON THIS VIEW** (2026-09-29); CU stays the objective
   on every dataset page. Nothing is re-derived: each dataset runs the per-dataset path
   (`selectRuns` → `sameGeneration` → `runEntries` → `layoutGroups` → `queryTime` → `martPoints`),
