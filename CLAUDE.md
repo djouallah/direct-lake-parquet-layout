@@ -1946,6 +1946,20 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
 - **The page's knobs are QUERY PARAMS now, not dispatch inputs.** `?record=30776174056` renders one
   run alone, `?ref=`/`?repo=` read another branch or fork, `?table=` picks the layout table. A link to
   one run's page is a link. The `record` workflow input and `CU_RECORD` are gone.
+- **A BARE URL OPENS THE SUMMARY, NOT aemo.** `renderSummary` is one scorecard: four rows — `delta_rs`
+  (duckrun `auto`), `spark readHeavyForPBI`, `spark writeHeavy`, `dwh` with V-Order on — against every
+  dataset in a Direct Lake band and a DirectQuery band. Each cell is the median cold + warm of the
+  whole DAX suite as **× the fastest writer on that dataset**, shaded in five steps. **IT RANKS BY
+  SPEED, NOT CU, BECAUSE THE USER ASKED FOR THAT ON THIS VIEW** (2026-09-29); CU stays the objective
+  on every dataset page. Nothing is re-derived: each dataset runs the per-dataset path
+  (`selectRuns` → `sameGeneration` → `runEntries` → `layoutGroups` → `queryTime` → `martPoints`),
+  with `queryTime` over the four chosen groups only, so every cell of a dataset sums the same queries.
+  `summaryWriter` decides the rows; a dwh run with V-Order declared OR measured off is not `dwh`, a
+  spark run with no recorded profile is in no row, and where one row maps to several layout groups the
+  one with the most runs wins and the note names the row. `optsFromSearch` sets `view: "dataset"` for
+  any of `dataset`/`record`/`rows`/`table`; a caller passing no `view` (`build.mjs`, the tests) gets
+  the per-dataset page. **Consequence: `sizeLinks` now carries `dataset=` even for aemo**, or
+  `?rows=…` alone would land on the summary.
 
 - **EVERYTHING IS KEYED ON THE ITEM GUID, and that is the whole design.** The old reader matched item
   DISPLAY NAMES: `engine_of()` substring matching against `CU_ENGINES` in order, a `shared` column for

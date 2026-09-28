@@ -2266,7 +2266,7 @@ test("the size switch appears only when there IS a choice, and defaults to the b
   assert.deepEqual(sizes, [[591729858, 1], [143980961, 2]], "biggest first, with its run count");
   const html = d.sizeLinks(sizes, 591729858);
   assert.ok(/<strong class="on"[^>]*>592M/.test(html), `active is the biggest: ${html}`);
-  assert.ok(/<a href="\?rows=143980961">144M/.test(html), `the other is a link: ${html}`);
+  assert.ok(/<a href="\?rows=143980961&dataset=aemo">144M/.test(html), `the other is a link: ${html}`);
   // ...and the whole page lands on the biggest without being asked.
   const { cols, reference } = d.compose(two, ledger({ OUT: 1.0, SEM: 2.0 }), {});
   assert.equal(reference, 591729858);
@@ -2403,7 +2403,7 @@ test("the dispatch inputs are query params now", () => {
   // `?record=30776174056` is a link to one run's page. It used to be a workflow dispatch.
   assert.deepEqual(d.optsFromSearch("?record=30776174056&ref=topic&table=fct_scada"), {
     repo: d.DEFAULTS.repo, ref: "topic", dataset: "aemo", table: "fct_scada",
-    record: "30776174056", rows: null,
+    record: "30776174056", rows: null, view: "dataset",
   });
   assert.deepEqual(d.optsFromSearch(""), { ...d.DEFAULTS });
 });
@@ -2569,7 +2569,7 @@ test("boot prefers an inlined snapshot over the network", async () => {
   });
   const doc = fakeDoc(snap);
   // No fetch is stubbed: reaching the network at all would throw and fail this test.
-  await d.boot(doc, { search: "" });
+  await d.boot(doc, { search: "?dataset=aemo" });
   assert.ok(plain(doc.nodes.app.innerHTML).includes("Capacity units"));
   assert.ok(rows(doc.nodes.app.innerHTML).some((r) => r.startsWith("| **etl** |")));
   assert.ok(plain(doc.nodes.status.innerHTML).includes("Offline copy"));
@@ -4130,7 +4130,8 @@ test("the switch carries the other params but NEVER the table", () => {
 /** The query params of the one link in a switcher, parsed — `href=` contains `ref=` as a
  *  substring, so a naive includes() check passes for the wrong reason. */
 function linkParams(html) {
-  const href = (html.match(/href="\?([^"]*)"/) || [null, ""])[1];
+  // The first DATASET link — `Summary` leads the switch and carries no dataset at all.
+  const href = (html.match(/href="\?([^"]*dataset=[^"]*)"/) || [null, ""])[1];
   return [...new URLSearchParams(href).keys()].sort();
 }
 
@@ -4495,4 +4496,147 @@ test("the flag footnote names a dataset that deviates from its profile's common 
   const t = prof.renderProfileTable(rows);
   assert.match(t, /transcode\): `writeHeavy` no \(bts yes\)/);
   assert.match(t, /V-Order[^:]*: `writeHeavy` no\./, "a uniform flag prints once, no exceptions");
+});
+
+// ---------------------------------------------------------------------------------- the summary
+//
+// The landing view: four writers down the side, every dataset across, each cell how much slower than
+// the fastest writer on that dataset. These pin who is a row, what a cell says, and that a bare URL
+// opens it while every per-dataset link still opens the page it always did.
+
+/** A benchmarked run for the summary: `dl`/`dq` are `[cold, warm]` over one query. */
+function sw(file, engine, opts = {}) {
+  const { cfg = {}, dl = [100, 10], dq = null, ds = "aemo", vorderEnabled, hours = 48 } = opts;
+  const mart = d.DATASET_TABLE[ds];
+  const r = full(file, engine, { config: { [engine]: cfg },
+    stats: { [engine]: { [mart]: { total_rows: 1 } } }, tables: [mart],
+    timings: timings({ q1: [dl[0], dl[1], 1] }), finishedHoursAgo: hours });
+  if (ds !== "aemo") r.inputs = { dataset: ds };
+  if (dq) r.benchmark.timings[`aemo_${engine}_dq`] = timings({ q1: [dq[0], dq[1], 1] });
+  if (engine === "duckrun" && cfg.sorted) r.dbt = { duckrun: { sort_by_auto: { [mart]: ["c"] } } };
+  if (vorderEnabled !== undefined) r.layout.ordering = { [engine]: { vorder_enabled: vorderEnabled } };
+  return r;
+}
+
+const AUTO = { sorted: "true" };
+const PBI = { resource_profile: "readHeavyForPBI" };
+const WH = { resource_profile: "writeHeavy" };
+
+/** `{row label: [cell text, …]}` off the scorecard, in column order. */
+function scoreRows(html) {
+  const out = {};
+  for (const m of html.matchAll(/<tr><th class="left" scope="row">([^<]*)<sub>[\s\S]*?<\/th>([\s\S]*?)<\/tr>/g)) {
+    out[m[1]] = [...m[2].matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)]
+      .map((c) => plain(c[1]).replace(/\*\*/g, "").trim());
+  }
+  return out;
+}
+
+const DS_N = Object.keys(d.DATASET_TABLE).length;
+
+test("summaryWriter: the four rows, and nothing else", () => {
+  assert.equal(d.summaryWriter(["duckrun", null, "auto"]), "delta_rs");
+  assert.equal(d.summaryWriter(["duckrun", null, false]), null, "unsorted duckrun is not auto");
+  assert.equal(d.summaryWriter(["duckrun", null, "date,time"]), null, "a hand key is not auto");
+  assert.equal(d.summaryWriter(["spark", "readHeavyForPBI"]), "spark_pbi");
+  assert.equal(d.summaryWriter(["spark", "writeHeavy"]), "spark_wh");
+  assert.equal(d.summaryWriter(["spark", "readHeavyForSpark"]), null);
+  assert.equal(d.summaryWriter(["spark", null]), null, "no recorded profile is not guessed at");
+  assert.equal(d.summaryWriter(["dwh", null, false, null, null, "true", true]), "dwh");
+  assert.equal(d.summaryWriter(["dwh", null, false, null, null, "true", false]), null,
+    "V-Order measured off is not the default warehouse");
+  assert.equal(d.summaryWriter(["dwh", null, false, null, null, "false", true]), null,
+    "nor declared off");
+  assert.equal(d.summaryWriter(["iceberg"]), null);
+});
+
+test("the scorecard: rows in order, × fastest per dataset, a dash for what never ran", () => {
+  const runs = [
+    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [100, 20] }),              // 120 -> fastest
+    sw("a-2.json", "spark", { cfg: PBI, dl: [150, 30], dq: [500, 100] }),  // 180 -> 1.5x ; dq fastest
+    sw("a-3.json", "spark", { cfg: WH, dl: [200, 40] }),                   // 240 -> 2.0x
+    sw("a-4.json", "dwh", { cfg: { vorder: "true" }, dl: [300, 60], dq: [700, 200], vorderEnabled: true }),
+    // Excluded: V-Order switched off is not the default warehouse, and would otherwise win.
+    sw("a-5.json", "dwh", { cfg: { vorder: "false" }, dl: [1, 1], vorderEnabled: false }),
+  ];
+  const html = d.renderSummary(runs, ledger({ OUT: 1.0, SEM: 2.0 }));
+  const r = scoreRows(html);
+  assert.deepEqual(Object.keys(r), d.SUMMARY_ROWS.map((x) => x.label));
+  // aemo is the first column of each band; each band is DS_N datasets plus `fastest in`.
+  assert.equal(r["delta_rs"][0], "fastest");
+  assert.equal(r["spark readHeavyForPBI"][0], "1.5×");
+  assert.equal(r["spark writeHeavy"][0], "2.0×");
+  assert.equal(r["dwh"][0], "3.0×", "the V-Order-off run did not become the reference");
+  assert.equal(r["delta_rs"][DS_N], "1 of 1", "fastest in");
+  assert.equal(r["dwh"][DS_N], "0 of 1");
+  // DirectQuery band: only PBI and dwh ran it. The others are a dash, never 0 and never `fastest`.
+  const dq = DS_N + 1;
+  assert.equal(r["spark readHeavyForPBI"][dq], "fastest");
+  assert.equal(r["dwh"][dq], "1.5×");
+  assert.equal(r["delta_rs"][dq], "—");
+  assert.equal(r["delta_rs"][dq + DS_N], "—", "no DQ anywhere -> no count either");
+  // A dataset nobody ran is a column of dashes, and says so in its header.
+  assert.ok(r["delta_rs"].slice(1, DS_N).every((c) => c === "—"));
+  assert.ok(plain(html).includes("not measured"));
+  assert.ok(html.includes('title="cold 100 ms · warm 20 ms · 1 run"'), "hover carries the raw times");
+  assert.ok(/class="right h0"/.test(html) && /class="right h3"/.test(html), "shaded by ratio");
+});
+
+test("every dataset is normalised to its OWN fastest writer", () => {
+  const runs = [
+    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [100, 0.5] }),
+    sw("a-2.json", "spark", { cfg: PBI, dl: [200, 1] }),
+    sw("n-1.json", "duckrun", { cfg: AUTO, dl: [3000, 10], ds: "nyc" }),
+    sw("n-2.json", "spark", { cfg: PBI, dl: [1000, 10], ds: "nyc" }),
+  ];
+  const r = scoreRows(d.renderSummary(runs, ledger({ OUT: 1.0, SEM: 2.0 })));
+  assert.deepEqual(r["delta_rs"].slice(0, 2), ["fastest", "3.0×"]);
+  assert.deepEqual(r["spark readHeavyForPBI"].slice(0, 2), ["2.0×", "fastest"]);
+  assert.equal(r["delta_rs"][DS_N], "1 of 2");
+});
+
+test("two layouts for one row: the one with the most runs is the cell, and the note says so", () => {
+  const runs = [
+    sw("a-1.json", "duckrun", { cfg: { ...AUTO, row_group_size: "2000000" }, dl: [10, 1] }),
+    sw("a-2.json", "duckrun", { cfg: AUTO, dl: [100, 20] }),
+    sw("a-3.json", "duckrun", { cfg: AUTO, dl: [100, 20] }),
+  ];
+  const data = d.summaryData(runs, ledger({ OUT: 1.0, SEM: 2.0 }));
+  assert.equal(data[0].cells.delta_rs.dl.ms, 120, "the two-run layout, not the faster one-off");
+  assert.equal(data[0].cells.delta_rs.dl.n, 2);
+  assert.deepEqual(data[0].multi, ["delta_rs"]);
+  assert.ok(plain(d.renderSummary(runs, ledger({}))).includes("the one with the most runs is shown"));
+});
+
+test("a bare URL opens the summary; naming a dataset, run, generation or table does not", () => {
+  assert.equal(d.optsFromSearch("").view, "summary");
+  assert.equal(d.optsFromSearch("?ref=topic").view, "summary");
+  for (const q of ["?dataset=aemo", "?record=123", "?rows=5", "?table=fct_scada"]) {
+    assert.equal(d.optsFromSearch(q).view, "dataset", q);
+  }
+  const runs = [sw("a-1.json", "duckrun", { cfg: AUTO })];
+  const led = ledger({ OUT: 1.0, SEM: 2.0 });
+  const sum = d.compose(runs, led, d.optsFromSearch(""));
+  assert.ok(sum.html.includes('class="scorecard"'));
+  assert.ok(/<strong class="on" aria-current="page">Summary<\/strong>/.test(sum.html));
+  assert.ok(sum.html.includes('href="?dataset=aemo"'), "every dataset is one click away");
+  // A caller passing no view — build.mjs, every older test — keeps the per-dataset page.
+  const page = d.compose(runs, led, {});
+  assert.ok(!page.html.includes('class="scorecard"'));
+  assert.ok(page.html.includes('<a href="?">Summary</a>'), "and the page links back to it");
+});
+
+test("the dataset headers link to each page and carry repo/ref, never record", () => {
+  const html = d.renderSummary([], ledger({}), { ref: "topic", record: "123" });
+  assert.ok(html.includes('href="?dataset=nyc&ref=topic"'), html);
+  assert.ok(!/record=/.test(html));
+});
+
+test("a near-tie loser prints two decimals, never a `1.0×` that reads as a draw", () => {
+  const runs = [
+    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [99, 1] }),
+    sw("a-2.json", "spark", { cfg: PBI, dl: [102, 1] }),
+  ];
+  const r = scoreRows(d.renderSummary(runs, ledger({})));
+  assert.equal(r["spark readHeavyForPBI"][0], "1.03×");
 });

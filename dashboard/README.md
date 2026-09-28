@@ -98,7 +98,8 @@ without a build, a token or a dispatch.
 
 | | |
 |---|---|
-| `?dataset=nyc` | which dataset the page is about — `aemo` (default) or `nyc`. Carries its mart with it |
+| *(none)* | the **Summary** — one scorecard, four writers × every dataset, query speed as × the fastest writer |
+| `?dataset=nyc` | which dataset the page is about. Carries its mart with it. Any of `dataset`/`record`/`rows`/`table` opens the per-dataset page |
 | `?record=30776174056` | render one run alone — a substring of the record's filename, so a run id or a date both work |
 | `?ref=some-branch` | read `history/` from another branch |
 | `?repo=owner/name` | read another fork's records entirely |

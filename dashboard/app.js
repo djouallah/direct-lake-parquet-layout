@@ -74,6 +74,10 @@ export const DEFAULTS = {
   // because the answer is per dataset and only knowable from the records — nyc has 43,734,157 and
   // 591,729,858, aemo has one count across all 79 of its runs and therefore no switch at all.
   rows: null,
+  // WHICH VIEW. `summary` — the one-table scorecard across every dataset — is what a bare URL opens;
+  // `?dataset=` or `?record=` opens the per-dataset page. `optsFromSearch` sets it, so a caller that
+  // passes no `view` (a test, `build.mjs`) keeps the per-dataset page it always rendered.
+  view: "summary",
 };
 
 export const SERVER = "https://github.com";
@@ -238,11 +242,13 @@ export const DATASET_MART_COLUMNS = {
 export function datasetLinks(counts = {}, active = DEFAULTS.dataset, opts = {}) {
   const names = Object.keys(DATASET_TABLE);
   if (names.length < 2) return "";
-  const carry = [];
-  for (const k of ["repo", "ref", "record"]) {
-    const v = opts[k];
-    if (v && v !== DEFAULTS[k]) carry.push(`${k}=${encodeURIComponent(v)}`);
-  }
+  const carry = carryParams(opts, ["repo", "ref", "record"]);
+  // `Summary` FIRST, and marked when `active` is null — the landing view. Its link carries no
+  // `record`: pinning a run is a per-dataset question, and `optsFromSearch` reads a `record` as one.
+  const sumQs = carryParams(opts, ["repo", "ref"]).join("&");
+  const summary = active === null
+    ? '<strong class="on" aria-current="page">Summary</strong>'
+    : `<a href="?${sumQs}">Summary</a>`;
   const links = names.map((ds) => {
     const info = datasetInfo(ds);
     const n = counts[ds];
@@ -251,7 +257,7 @@ export function datasetLinks(counts = {}, active = DEFAULTS.dataset, opts = {}) 
     const qs = [`dataset=${encodeURIComponent(ds)}`, ...carry].join("&");
     return `<a href="?${qs}">${label}</a>`;
   });
-  return `<p class="datasets"><span class="muted">dataset</span>${links.join("")}</p>`;
+  return `<p class="datasets"><span class="muted">dataset</span>${summary}${links.join("")}</p>`;
 }
 
 /**
@@ -289,13 +295,10 @@ function shortRows(n) {
  */
 export function sizeLinks(sizes = [], active = null, opts = {}) {
   if (!Array.isArray(sizes) || sizes.length < 2) return "";
-  const carry = [];
-  const ds = opts.dataset;
-  if (ds && ds !== DEFAULTS.dataset) carry.push(`dataset=${encodeURIComponent(ds)}`);
-  for (const k of ["repo", "ref", "record"]) {
-    const v = opts[k];
-    if (v && v !== DEFAULTS[k]) carry.push(`${k}=${encodeURIComponent(v)}`);
-  }
+  // `dataset` is carried ALWAYS, default or not: a bare URL opens the summary now, so `?rows=` alone
+  // would land a reader there instead of on the generation they clicked.
+  const ds = opts.dataset || DEFAULTS.dataset;
+  const carry = [`dataset=${encodeURIComponent(ds)}`, ...carryParams(opts, ["repo", "ref", "record"])];
   const links = sizes.map(([rows, n]) => {
     const label = `${esc(shortRows(rows))} <span class="muted">· ${fmt(n, 0)}</span>`;
     if (rows === active) return `<strong class="on" aria-current="page">${label}</strong>`;
@@ -4087,6 +4090,218 @@ export function pageLede(cols, opts = {}) {
  * admin notices. An engine that builds cheaply and queries expensively has optimised the half that
  * does not hurt.
  */
+/**
+ * `{keyOf, entries}` — ONE ENTRY PER RUN, carrying that run's own CU and a key into its own query
+ * timings. Shared by `renderPage` and `summaryData`, so the per-dataset page and the summary group
+ * and time the same runs the same way.
+ *
+ * EVERY run maps to its column, not just the one the column was named after: the chart's mean is
+ * over an engine's whole history at that configuration, and matching on the chosen record's filename
+ * would have collapsed every sample but the newest.
+ *
+ * The query half groups on the parquet a run MEASURED, and two runs of one column can write
+ * different parquet — grouping the columns and averaging their runs is what put a 3-file and a
+ * 4-file `duckrun sorted` in one bar, at a mean belonging to neither. `qid` is the entry's index
+ * because a record has no id of its own that is guaranteed present.
+ */
+export function runEntries(cols, runs, ledger) {
+  const byVariant = new Map(cols.map(({ col, rec }) =>
+    [JSON.stringify([baseEngine(col), variant(rec)]), col]));
+  const keyOf = (rec) => byVariant.get(JSON.stringify([rec.engine, variant(rec)]));
+  const entries = [];
+  for (const rec of runs) {
+    const col = keyOf(rec);
+    if (col === undefined || col === null) continue;
+    const cells = runCu(rec, ledger).cells;
+    entries.push({ col, rec, qid: String(entries.length),
+      cu: classTotal(cells, "directlake"),
+      // The DirectQuery phase's own items — its semantic model, its shortcut lakehouse and that
+      // lakehouse's SQL endpoint — for the layout table's `directquery CUs` column.
+      dq: classTotal(cells, "directquery"),
+      // The BUILD half of the same read, for the layout table's `etl CUs` column. Taken here because
+      // this is where the ledger is in scope; `martPoints` filters it to one core count.
+      etl: classTotal(cells, "etl") });
+  }
+  return { keyOf, entries };
+}
+
+// ------------------------------------------------------------------------------------ the summary
+//
+// THE LANDING PAGE, and the one view built for a reader who has never seen this project. Every
+// per-dataset page carries a scatter, five tables and an analysis — accurate, and too much for a
+// first visit. This is ONE table: the four parquet writers a Fabric user actually chooses between,
+// down the side; every dataset, across; each cell how much SLOWER that writer's parquet made Power
+// BI than the fastest writer on the same dataset.
+//
+// **IT RANKS BY SPEED, NOT CU, AND THAT IS A DELIBERATE EXCEPTION.** Everywhere else CU is the
+// objective. The summary answers the question a newcomer asks — "which writer makes my report
+// fast?" — at the user's explicit request; CU stays on every dataset's own page.
+//
+// NOTHING IS RE-DERIVED. Each dataset goes through the same `selectRuns` -> `sameGeneration` ->
+// `columnsFor` -> `runEntries` -> `layoutGroups` -> `queryTime` -> `martPoints` path its own page
+// takes, so a cell here and the same layout's cold/warm on that page are one median.
+
+/** The rows, in the order they print. `sub` is the one-line gloss under the name. */
+export const SUMMARY_ROWS = [
+  { id: "delta_rs", label: "delta_rs", sub: "duckrun, auto sort" },
+  { id: "spark_pbi", label: "spark readHeavyForPBI", sub: "V-Order on" },
+  { id: "spark_wh", label: "spark writeHeavy", sub: "workspace default, no V-Order" },
+  { id: "dwh", label: "dwh", sub: "Fabric Warehouse, V-Order on (default)" },
+];
+
+/**
+ * A `layoutKey` -> the summary row it belongs to, or null.
+ *
+ * `delta_rs` is duckrun's `auto` only — the one duckrun layout still dispatched (see
+ * `LAYOUTS_SHOWN`). spark is split by profile and a run recording NO profile is left out rather
+ * than guessed at. dwh is the default warehouse, so a run whose V-Order was declared OR measured
+ * off is not it.
+ */
+export function summaryWriter(key) {
+  const [engine, profile, sort, , , declaredVorder, vorder] = key || [];
+  if (engine === "duckrun") return sort === "auto" ? "delta_rs" : null;
+  if (engine === "spark") {
+    return profile === "readHeavyForPBI" ? "spark_pbi" : profile === "writeHeavy" ? "spark_wh" : null;
+  }
+  if (engine === "dwh") return vorder === false || declaredVorder === "false" ? null : "dwh";
+  return null;
+}
+
+// The two bands, each a pair of pass positions summed: a user's FIRST visit and SECOND. Hot is left
+// out — it is the query cache, and says little about what the parquet costs to read.
+const SUMMARY_BANDS = [
+  { id: "dl", label: "Direct Lake", tiers: [TIERS[0][0], TIERS[1][0]] },
+  { id: "dq", label: "DirectQuery", tiers: [TIERS_DQ[0][0], TIERS_DQ[1][0]] },
+];
+
+/**
+ * `[{ds, label, runs, multi, cells: {row: {dl, dq}}}]` — one entry per dataset in `DATASET_TABLE`
+ * order, EVERY dataset, measured or not. A cell is `{ms, cold, warm, n}` or absent.
+ *
+ * When several layout groups map to one row — duckrun `auto` dispatched at two geometries — the one
+ * with the MOST runs is shown, the newest on a tie, and `multi` names the row so the note can say so.
+ *
+ * `queryTime` runs over the CHOSEN groups' runs only: `benchTotals` sums each tier over the query set
+ * common to what it is given, so this makes every cell of a dataset a sum over the same queries.
+ */
+export function summaryData(records, ledger) {
+  const led = normaliseLedger(ledger);
+  return Object.keys(DATASET_TABLE).map((ds) => {
+    const mart = DATASET_TABLE[ds];
+    const out = { ds, label: datasetInfo(ds).label, runs: 0, multi: [], cells: {} };
+    const { runs: whole } = selectRuns(records, ds);
+    if (!whole.length) return out;
+    const { runs } = sameGeneration(whole, mart);
+    const { entries } = runEntries(columnsFor(runs), runs, led);
+    const picked = {}, seen = {};
+    const newest = (g) => Math.max(...g[1].map((m) => Number(m.qid)));
+    for (const g of layoutGroups(entries, mart)) {
+      const id = summaryWriter(g[0]);
+      if (!id) continue;
+      seen[id] = (seen[id] || 0) + 1;
+      const cur = picked[id];
+      if (!cur || g[1].length > cur[1].length
+          || (g[1].length === cur[1].length && newest(g) > newest(cur))) picked[id] = g;
+    }
+    out.multi = Object.keys(seen).filter((id) => seen[id] > 1);
+    const chosen = SUMMARY_ROWS.map((r) => [r.id, picked[r.id]]).filter(([, g]) => g);
+    const members = chosen.flatMap(([, g]) => g[1]);
+    out.runs = members.length;
+    const { times } = queryTime(members.map(({ qid, rec }) => ({ col: qid, rec })));
+    const points = martPoints(chosen.map(([, g]) => g), times);
+    chosen.forEach(([id, g], i) => {
+      const p = points[i];
+      const row = {};
+      for (const band of SUMMARY_BANDS) {
+        const [cold, warm] = band.tiers.map((t) => p.ms[t] || 0);
+        if (!(cold > 0 && warm > 0)) continue;
+        const n = g[1].filter((m) => ((times[m.qid] || {})[band.tiers[0]] || 0) > 0).length;
+        row[band.id] = { ms: cold + warm, cold, warm, n };
+      }
+      out.cells[id] = row;
+    });
+    return out;
+  });
+}
+
+// Five shades, fastest to slowest. The ratio is also PRINTED in every cell, so the colour is never the
+// only carrier — red/green alone would fail a colour-blind reader.
+const SUMMARY_SHADES = [[1, "fastest"], [1.25, "≤ 1.25×"], [1.5, "≤ 1.5×"], [2, "≤ 2×"],
+  [Infinity, "> 2×"]];
+export const summaryShade = (ratio) => SUMMARY_SHADES.findIndex(([cap]) => ratio <= cap);
+
+/** `?a=1&b=2`-style carry of the params a reader set, skipping any left at its default. */
+function carryParams(opts, keys) {
+  const carry = [];
+  for (const k of keys) {
+    const v = (opts || {})[k];
+    if (v && v !== DEFAULTS[k]) carry.push(`${k}=${encodeURIComponent(v)}`);
+  }
+  return carry;
+}
+
+/** The summary view: one heading, one scorecard, a legend and one note. Nothing else. */
+export function renderSummary(records, ledger, opts = {}) {
+  const data = summaryData(records, ledger);
+  const carry = carryParams(opts, ["repo", "ref"]);
+  const secs = (ms) => `${fmt(ms / 1000, ms >= 100000 ? 0 : 1)} s`;
+  const head1 = ['<th class="left" rowspan="2">parquet writer</th>'];
+  const head2 = [];
+  const body = SUMMARY_ROWS.map(() => []);
+  for (const band of SUMMARY_BANDS) {
+    head1.push(`<th class="band" colspan="${data.length + 1}">${esc(band.label)}` +
+      ` <span class="muted">· first + second visit</span></th>`);
+    const wins = SUMMARY_ROWS.map(() => [0, 0]);
+    for (const d of data) {
+      const vals = SUMMARY_ROWS.map((r) => ((d.cells[r.id] || {})[band.id]));
+      const present = vals.filter(Boolean).map((c) => c.ms);
+      const best = present.length ? Math.min(...present) : null;
+      const href = `?${[`dataset=${encodeURIComponent(d.ds)}`, ...carry].join("&")}`;
+      head2.push(`<th class="right"><a href="${href}">${esc(d.label)}</a>` +
+        `<sub>${best === null ? "not measured" : `fastest ${secs(best)}`}</sub></th>`);
+      vals.forEach((c, i) => {
+        if (!c) { body[i].push(`<td class="right dim">${DASH}</td>`); return; }
+        wins[i][1] += 1;
+        const ratio = c.ms / best;
+        const shade = summaryShade(ratio);
+        if (shade === 0) wins[i][0] += 1;
+        const tip = `cold ${fmt(c.cold, 0)} ms · warm ${fmt(c.warm, 0)} ms · ` +
+          `${c.n} run${c.n === 1 ? "" : "s"}`;
+        // Two decimals under 1.1×: a non-winner printing `1.0×` reads as a tie, and there is none.
+        const text = shade === 0 ? "<strong>fastest</strong>" : `${fmt(ratio, ratio < 1.1 ? 2 : 1)}×`;
+        body[i].push(`<td class="right h${shade}" title="${escAttr(tip)}">${text}</td>`);
+      });
+    }
+    head2.push('<th class="right">fastest in</th>');
+    wins.forEach(([w, of], i) => body[i].push(of
+      ? `<td class="right total">${w} of ${of}</td>` : `<td class="right dim">${DASH}</td>`));
+  }
+  const rows = SUMMARY_ROWS.map((r, i) => `<tr><th class="left" scope="row">${esc(r.label)}` +
+    `<sub>${esc(r.sub)}</sub></th>${body[i].join("")}</tr>`).join("\n");
+  const legend = '<p class="legend">' + SUMMARY_SHADES.map(([, lbl], i) =>
+    `<span><i class="h${i}"></i>${esc(lbl)}</span>`).join("") +
+    '<span><i class="none"></i>not measured</span></p>';
+  const multi = SUMMARY_ROWS.filter((r) => data.some((d) => d.multi.includes(r.id)))
+    .map((r) => `\`${r.label}\``);
+  return [
+    "<h3>Which parquet writer makes Power BI fastest?</h3>",
+    para("Same data, same semantic model, same DAX queries — only the writer of the parquet " +
+      "differs. Each cell is how much slower that writer was than the **fastest** writer on the " +
+      "same dataset: `2.0×` means twice as slow. Click a dataset for its full page."),
+    `<div class="scroll"><table class="scorecard">\n<thead><tr>${head1.join("")}</tr>` +
+      `<tr>${head2.join("")}</tr></thead>\n<tbody>\n${rows}\n</tbody></table></div>`,
+    legend,
+    note("A cell is the median, over that layout's runs, of the whole DAX suite's first-visit plus " +
+      "second-visit time (cold + warm), summed over the queries every writer on that dataset ran. " +
+      "Hover a cell for cold, warm and the run count — cold and warm are one sample per run, so a " +
+      "small gap on one or two runs can flip on the next. A dash means that writer was never run " +
+      "and benchmarked on that dataset. TPC-DS is synthetic data. Capacity units, " +
+      "`duckdb iceberg` and every other layout are on each dataset's own page." +
+      (multi.length ? ` Where ${multi.join(", ")} ran more than one configuration on a dataset, ` +
+        "the one with the most runs is shown." : "")),
+  ].join("\n");
+}
+
 export function renderPage(cols, runs, ledger, opts = {}) {
   const repo = opts.repo || DEFAULTS.repo;
   const martTable = opts.table || DEFAULTS.table;
@@ -4116,29 +4331,7 @@ export function renderPage(cols, runs, ledger, opts = {}) {
   // EVERY run maps to its column, not just the one the column was named after: the chart's mean is
   // over an engine's whole history at that configuration, and matching on the chosen record's filename
   // would have collapsed every sample but the newest.
-  const byVariant = new Map(cols.map(({ col, rec }) =>
-    [JSON.stringify([baseEngine(col), variant(rec)]), col]));
-  const keyOf = (rec) => byVariant.get(JSON.stringify([rec.engine, variant(rec)]));
-
-  // ONE ENTRY PER RUN, carrying that run's own directlake CU and a key into its own query timings.
-  // The query half groups on the parquet a run MEASURED, and two runs of one column can write
-  // different parquet — grouping the columns and averaging their runs is what put a 3-file and a
-  // 4-file `duckrun sorted` in one bar, at a mean belonging to neither. `qid` is the entry's index
-  // because a record has no id of its own that is guaranteed present.
-  const anaEntries = [];
-  for (const rec of runs) {
-    const col = keyOf(rec);
-    if (col === undefined || col === null) continue;
-    const cells = runCu(rec, ledger).cells;
-    anaEntries.push({ col, rec, qid: String(anaEntries.length),
-      cu: classTotal(cells, "directlake"),
-      // The DirectQuery phase's own items — its semantic model, its shortcut lakehouse and that
-      // lakehouse's SQL endpoint — for the layout table's `directquery CUs` column.
-      dq: classTotal(cells, "directquery"),
-      // The BUILD half of the same read, for the layout table's `etl CUs` column. Taken here because
-      // this is where the ledger is in scope; `martPoints` filters it to one core count.
-      etl: classTotal(cells, "etl") });
-  }
+  const { keyOf, entries: anaEntries } = runEntries(cols, runs, ledger);
   // ONE FILTER, SHARED BY ALL THREE LAYOUT RENDERERS — see `shownLayouts`. The fit table, the
   // scatter inside it and the mart block are one measurement described three ways, so they take the
   // same array; `held` is what the note under the table names.
@@ -4329,6 +4522,10 @@ export function compose(records, ledgerDoc, opts = {}) {
   // test, a script), where `{dataset: "nyc"}` alone used to fall through to aemo's `fct_summary` and
   // render a taxi page whose layout columns all dashed out and whose sort keys read `sorted`. That
   // is the wrong-mart failure being SILENT, which is the only reason it is worth a line here.
+  if (opts.view === "summary") {
+    return { html: [datasetLinks(datasetCounts, null, opts),
+      renderSummary(records, ledger, opts)].join("\n"), skipped: [], cols: [] };
+  }
   opts = { ...opts, dataset, datasetCounts, table: opts.table || DATASET_TABLE[dataset] };
   const { runs: whole, skipped } = selectRuns(records, dataset);
   if (!whole.length) {
@@ -4427,6 +4624,10 @@ export function optsFromSearch(search) {
     // on the default rather than emptying the page; see `sameGeneration`.
     rows: /^\d+$/.test((p.get("rows") || "").trim())
       ? Number((p.get("rows") || "").trim()) : null,
+    // A bare URL is the summary; naming a dataset, a run, a generation or a table is asking for the
+    // per-dataset page.
+    view: ["dataset", "record", "rows", "table"].some((k) => (p.get(k) || "").trim())
+      ? "dataset" : "summary",
   };
 }
 
