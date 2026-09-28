@@ -4167,16 +4167,17 @@ export function summaryWriter(key) {
   return null;
 }
 
-// The two bands, each a pair of pass positions summed: a user's FIRST visit and SECOND. Hot is left
-// out — it is the query cache, and says little about what the parquet costs to read.
+// The two bands, each ONE pass position: WARM, a user's second visit — the data resident, the query
+// reading the parquet as the layout left it. Cold is out because it is one sample per run dominated by
+// transcode and capacity weather, hot because it is the query cache (2026-09-29, the user's call).
 const SUMMARY_BANDS = [
-  { id: "dl", label: "Direct Lake", tiers: [TIERS[0][0], TIERS[1][0]] },
-  { id: "dq", label: "DirectQuery", tiers: [TIERS_DQ[0][0], TIERS_DQ[1][0]] },
+  { id: "dl", label: "Direct Lake", tier: TIERS[1][0] },
+  { id: "dq", label: "DirectQuery", tier: TIERS_DQ[1][0] },
 ];
 
 /**
  * `[{ds, label, runs, multi, cells: {row: {dl, dq}}}]` — one entry per dataset in `DATASET_TABLE`
- * order, EVERY dataset, measured or not. A cell is `{ms, cold, warm, n}` or absent.
+ * order, EVERY dataset, measured or not. A cell is `{ms, n}` or absent.
  *
  * When several layout groups map to one row — duckrun `auto` dispatched at two geometries — the one
  * with the MOST runs is shown, the newest on a tie, and `multi` names the row so the note can say so.
@@ -4213,10 +4214,10 @@ export function summaryData(records, ledger) {
       const p = points[i];
       const row = {};
       for (const band of SUMMARY_BANDS) {
-        const [cold, warm] = band.tiers.map((t) => p.ms[t] || 0);
-        if (!(cold > 0 && warm > 0)) continue;
-        const n = g[1].filter((m) => ((times[m.qid] || {})[band.tiers[0]] || 0) > 0).length;
-        row[band.id] = { ms: cold + warm, cold, warm, n };
+        const ms = p.ms[band.tier] || 0;
+        if (!(ms > 0)) continue;
+        const n = g[1].filter((m) => ((times[m.qid] || {})[band.tier] || 0) > 0).length;
+        row[band.id] = { ms, n };
       }
       out.cells[id] = row;
     });
@@ -4250,7 +4251,7 @@ export function renderSummary(records, ledger, opts = {}) {
   const body = SUMMARY_ROWS.map(() => []);
   for (const band of SUMMARY_BANDS) {
     head1.push(`<th class="band" colspan="${data.length + 1}">${esc(band.label)}` +
-      ` <span class="muted">· first + second visit</span></th>`);
+      ` <span class="muted">· warm</span></th>`);
     const wins = SUMMARY_ROWS.map(() => [0, 0]);
     for (const d of data) {
       const vals = SUMMARY_ROWS.map((r) => ((d.cells[r.id] || {})[band.id]));
@@ -4265,7 +4266,7 @@ export function renderSummary(records, ledger, opts = {}) {
         const ratio = c.ms / best;
         const shade = summaryShade(ratio);
         if (shade === 0) wins[i][0] += 1;
-        const tip = `cold ${fmt(c.cold, 0)} ms · warm ${fmt(c.warm, 0)} ms · ` +
+        const tip = `warm ${fmt(c.ms, 0)} ms · ` +
           `${c.n} run${c.n === 1 ? "" : "s"}`;
         // Two decimals under 1.1×: a non-winner printing `1.0×` reads as a tie, and there is none.
         const text = shade === 0 ? "<strong>fastest</strong>" : `${fmt(ratio, ratio < 1.1 ? 2 : 1)}×`;
@@ -4291,10 +4292,10 @@ export function renderSummary(records, ledger, opts = {}) {
     `<div class="scroll"><table class="scorecard">\n<thead><tr>${head1.join("")}</tr>` +
       `<tr>${head2.join("")}</tr></thead>\n<tbody>\n${rows}\n</tbody></table></div>`,
     legend,
-    note("A cell is the median, over that layout's runs, of the whole DAX suite's first-visit plus " +
-      "second-visit time (cold + warm), summed over the queries every writer on that dataset ran. " +
-      "Hover a cell for cold, warm and the run count — cold and warm are one sample per run, so a " +
-      "small gap on one or two runs can flip on the next. A dash means that writer was never run " +
+    note("A cell is the median, over that layout's runs, of the whole DAX suite's WARM time — a " +
+      "user's second visit, with the data already loaded — summed over the queries every writer on " +
+      "that dataset ran. Hover a cell for the time and the run count; warm is one sample per run, so " +
+      "a small gap on one or two runs can flip on the next. A dash means that writer was never run " +
       "and benchmarked on that dataset. TPC-DS is synthetic data. Capacity units, " +
       "`duckdb iceberg` and every other layout are on each dataset's own page." +
       (multi.length ? ` Where ${multi.join(", ")} ran more than one configuration on a dataset, ` +

@@ -4504,7 +4504,8 @@ test("the flag footnote names a dataset that deviates from its profile's common 
 // the fastest writer on that dataset. These pin who is a row, what a cell says, and that a bare URL
 // opens it while every per-dataset link still opens the page it always did.
 
-/** A benchmarked run for the summary: `dl`/`dq` are `[cold, warm]` over one query. */
+/** A benchmarked run for the summary: `dl`/`dq` are `[cold, warm]` over one query; the summary
+ *  reads warm only. */
 function sw(file, engine, opts = {}) {
   const { cfg = {}, dl = [100, 10], dq = null, ds = "aemo", vorderEnabled, hours = 48 } = opts;
   const mart = d.DATASET_TABLE[ds];
@@ -4552,9 +4553,11 @@ test("summaryWriter: the four rows, and nothing else", () => {
 
 test("the scorecard: rows in order, × fastest per dataset, a dash for what never ran", () => {
   const runs = [
-    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [100, 20] }),              // 120 -> fastest
-    sw("a-2.json", "spark", { cfg: PBI, dl: [150, 30], dq: [500, 100] }),  // 180 -> 1.5x ; dq fastest
-    sw("a-3.json", "spark", { cfg: WH, dl: [200, 40] }),                   // 240 -> 2.0x
+    // Warm is the second number, and the only one the summary reads — the colds are deliberately
+    // ordered AGAINST it so a cold-reading cell would fail.
+    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [900, 20] }),              // warm 20 -> fastest
+    sw("a-2.json", "spark", { cfg: PBI, dl: [150, 30], dq: [900, 100] }),  // 1.5x ; dq fastest
+    sw("a-3.json", "spark", { cfg: WH, dl: [100, 40] }),                   // 2.0x
     sw("a-4.json", "dwh", { cfg: { vorder: "true" }, dl: [300, 60], dq: [700, 200], vorderEnabled: true }),
     // Excluded: V-Order switched off is not the default warehouse, and would otherwise win.
     sw("a-5.json", "dwh", { cfg: { vorder: "false" }, dl: [1, 1], vorderEnabled: false }),
@@ -4572,13 +4575,13 @@ test("the scorecard: rows in order, × fastest per dataset, a dash for what neve
   // DirectQuery band: only PBI and dwh ran it. The others are a dash, never 0 and never `fastest`.
   const dq = DS_N + 1;
   assert.equal(r["spark readHeavyForPBI"][dq], "fastest");
-  assert.equal(r["dwh"][dq], "1.5×");
+  assert.equal(r["dwh"][dq], "2.0×");
   assert.equal(r["delta_rs"][dq], "—");
   assert.equal(r["delta_rs"][dq + DS_N], "—", "no DQ anywhere -> no count either");
   // A dataset nobody ran is a column of dashes, and says so in its header.
   assert.ok(r["delta_rs"].slice(1, DS_N).every((c) => c === "—"));
   assert.ok(plain(html).includes("not measured"));
-  assert.ok(html.includes('title="cold 100 ms · warm 20 ms · 1 run"'), "hover carries the raw times");
+  assert.ok(html.includes('title="warm 20 ms · 1 run"'), "hover carries the raw times");
   assert.ok(/class="right h0"/.test(html) && /class="right h3"/.test(html), "shaded by ratio");
 });
 
@@ -4586,7 +4589,7 @@ test("every dataset is normalised to its OWN fastest writer", () => {
   const runs = [
     sw("a-1.json", "duckrun", { cfg: AUTO, dl: [100, 0.5] }),
     sw("a-2.json", "spark", { cfg: PBI, dl: [200, 1] }),
-    sw("n-1.json", "duckrun", { cfg: AUTO, dl: [3000, 10], ds: "nyc" }),
+    sw("n-1.json", "duckrun", { cfg: AUTO, dl: [3000, 30], ds: "nyc" }),
     sw("n-2.json", "spark", { cfg: PBI, dl: [1000, 10], ds: "nyc" }),
   ];
   const r = scoreRows(d.renderSummary(runs, ledger({ OUT: 1.0, SEM: 2.0 })));
@@ -4602,7 +4605,7 @@ test("two layouts for one row: the one with the most runs is the cell, and the n
     sw("a-3.json", "duckrun", { cfg: AUTO, dl: [100, 20] }),
   ];
   const data = d.summaryData(runs, ledger({ OUT: 1.0, SEM: 2.0 }));
-  assert.equal(data[0].cells.delta_rs.dl.ms, 120, "the two-run layout, not the faster one-off");
+  assert.equal(data[0].cells.delta_rs.dl.ms, 20, "the two-run layout, not the faster one-off");
   assert.equal(data[0].cells.delta_rs.dl.n, 2);
   assert.deepEqual(data[0].multi, ["delta_rs"]);
   assert.ok(plain(d.renderSummary(runs, ledger({}))).includes("the one with the most runs is shown"));
@@ -4634,8 +4637,8 @@ test("the dataset headers link to each page and carry repo/ref, never record", (
 
 test("a near-tie loser prints two decimals, never a `1.0×` that reads as a draw", () => {
   const runs = [
-    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [99, 1] }),
-    sw("a-2.json", "spark", { cfg: PBI, dl: [102, 1] }),
+    sw("a-1.json", "duckrun", { cfg: AUTO, dl: [1, 100] }),
+    sw("a-2.json", "spark", { cfg: PBI, dl: [1, 103] }),
   ];
   const r = scoreRows(d.renderSummary(runs, ledger({})));
   assert.equal(r["spark readHeavyForPBI"][0], "1.03×");

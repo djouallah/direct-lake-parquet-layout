@@ -1948,8 +1948,9 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   one run's page is a link. The `record` workflow input and `CU_RECORD` are gone.
 - **A BARE URL OPENS THE SUMMARY, NOT aemo.** `renderSummary` is one scorecard: four rows — `delta_rs`
   (duckrun `auto`), `spark readHeavyForPBI`, `spark writeHeavy`, `dwh` with V-Order on — against every
-  dataset in a Direct Lake band and a DirectQuery band. Each cell is the median cold + warm of the
-  whole DAX suite as **× the fastest writer on that dataset**, shaded in five steps. **IT RANKS BY
+  dataset in a Direct Lake band and a DirectQuery band. Each cell is the median WARM time of the whole
+  DAX suite as **× the fastest writer on that dataset**, shaded in five steps. Warm only, by the
+  user's call: cold is one transcode-dominated sample per run, hot is the query cache. **IT RANKS BY
   SPEED, NOT CU, BECAUSE THE USER ASKED FOR THAT ON THIS VIEW** (2026-09-29); CU stays the objective
   on every dataset page. Nothing is re-derived: each dataset runs the per-dataset path
   (`selectRuns` → `sameGeneration` → `runEntries` → `layoutGroups` → `queryTime` → `martPoints`),
