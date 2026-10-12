@@ -25,6 +25,9 @@ dashboard.html
 # Blog drafts — published on WordPress, never from this repo
 blog/
 
+# Talk material — presented, never published from this repo
+talks/
+
 # One-off hand-run deploy scripts. `full_deploy.py` builds the datasets into ANOTHER workspace and
 # leaves them there, so it hardcodes two real workspace GUIDs — and this repo is public, where every
 # real GUID is a secret and no tracked file outside `history/` holds one. Ignored rather than
