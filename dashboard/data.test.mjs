@@ -353,6 +353,28 @@ test("writer-blind: cold explained by size and row groups leaves no writer resid
   assert.ok(by.warehouse / by["delta-rs"] > 1.4);
 });
 
+test("dictionary: with the footer declaration recorded, remap and hashing are measured apart", () => {
+  const recs = [];
+  for (let i = 0; i < 8; i++) {
+    const remap = i % 2 === 0;
+    const enc = {
+      mw: { encodings: ["PLAIN", "RLE_DICTIONARY"], mb: 50, dict_pages: 10, chunks: 10, declared: 10, dict_declared: remap ? 10 : 6 },
+      price: { encodings: ["PLAIN", "RLE_DICTIONARY"], mb: 25, dict_pages: 10, chunks: 10, declared: 10, dict_declared: remap ? 10 : 0 },
+    };
+    recs.push(rec({ id: i + 1, enc, cold: remap ? 400 : 1600, cfg: { sorted: "true" } }));
+  }
+  const f = r.findDictionary(r.context(recs));
+  assert.equal(f.status, "clear");
+  assert.match(f.html, /Measured: remap against hashing/);
+  assert.match(f.html, /slower, over 8 and 8 column-runs/);
+});
+
+test("dictionary: without the declaration it says so and is only partly measured", () => {
+  const f = r.findDictionary(r.context([rec({ id: 1 })]));
+  assert.equal(f.status, "partial");
+  assert.match(f.short, /do not yet capture the footer declaration/);
+});
+
 test("csv quotes what needs quoting and reads nested keys", () => {
   const text = r.csvOf([{ a: "x,y", b: { c: 2 } }], ["a", "b.c"]);
   assert.equal(text, 'a,b.c\n"x,y",2');

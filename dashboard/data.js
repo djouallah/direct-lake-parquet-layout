@@ -239,6 +239,13 @@ export function flattenColumns(run, probeMap) {
       encodings: e ? (e.encodings || []).join("+") : null,
       dictFull: e && e.chunks ? e.dict_pages === e.chunks : null,
       dictPages: e ? e.dict_pages ?? null : null, chunks: e ? e.chunks ?? null : null,
+      // From the footer's own `encoding_stats` (stats.py, absent on records written before it read
+      // them): chunks that declare their page encodings at all, and chunks declared ENTIRELY
+      // dictionary-encoded — the ones Direct Lake can remap instead of hashing every value.
+      declared: e && typeof e.declared === "number" ? e.declared : null,
+      dictDeclared: e && typeof e.dict_declared === "number" ? e.dict_declared : null,
+      // Remap-eligible: every chunk of the column declared fully dictionary-encoded.
+      remap: e && typeof e.dict_declared === "number" && e.chunks ? e.dict_declared === e.chunks : null,
       runs: o && typeof o.runs === "number" ? o.runs : null,
       runsPer1k: o && typeof o.runs === "number" && run.sampleRows ? (o.runs / run.sampleRows) * 1000 : null,
       cold: marginal("cold"), warm: marginal("warm"),

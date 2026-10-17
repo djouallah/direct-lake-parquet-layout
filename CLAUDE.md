@@ -1844,7 +1844,11 @@ the user's post *Writing parquet that VertiPaq likes*. The home page is one CARD
 sessions' own items (`readCu` in `data.js`) — and deliberately NOT build CU, by the user's call
 (2026-10-17: "duckdb kills everyone" on write cost, which is not the question). It compares cold
 against warm and generates every claim sentence from the records with a strict `clear` /
-`inside the noise` / `too few runs` label. **Every bullet below
+`inside the noise` / `too few runs` label. `layout.encodings.<engine>.<column>` gained
+`declared` / `dict_declared` on 2026-10-17: chunks whose footer carries `encoding_stats`, and chunks
+declared ENTIRELY dictionary-encoded (remap-eligible), decoded from the footer Thrift by
+`stats.footer_encoding_stats` because neither DuckDB's `parquet_metadata()` nor pyarrow exposes it.
+The footer `encodings` list cannot answer this — a dictionary page is listed as PLAIN either way. **Every bullet below
 that describes how the page PRESENTS** — `renderSummary`, the scorecard, the scatter, the layout
 tables, `LAYOUTS_SHOWN` / `PROFILES_HIDDEN` / `ENGINES_HIDDEN`, `layoutKey`, the generation switch,
 `?rows=`/`?table=`/`?record=` — **describes `dashboard/app.js`, which is no longer served.** It is

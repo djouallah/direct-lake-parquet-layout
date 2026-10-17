@@ -410,20 +410,42 @@ export function findDictionary(ctx) {
     return [esc(fam(f).label), top || "—", chunks ? `${((pages / chunks) * 100).toFixed(chunks - pages ? 1 : 0)}%` : "—"];
   });
   const gaps = C.filter((c) => c.dictFull === false);
+  // MEASURED, where the run recorded its footers' encoding_stats: each column-run is on the remap path
+  // (every chunk declared fully dictionary-encoded) or the hashing path. Cold cost is compared against
+  // that column's own median, so a timestamp and a flag can share one comparison.
+  const measured = C.filter((c) => c.remap !== null && c.cold > 0);
+  const colMed = {};
+  for (const c of measured) (colMed[`${c.ds}|${c.column}`] = colMed[`${c.ds}|${c.column}`] || []).push(c.cold);
+  for (const k of Object.keys(colMed)) colMed[k] = median(colMed[k]);
+  const rel = (c) => c.cold / colMed[`${c.ds}|${c.column}`];
+  const remapRel = measured.filter((c) => c.remap).map(rel), hashRel = measured.filter((c) => !c.remap).map(rel);
+  const gap = remapRel.length && hashRel.length ? median(hashRel) / median(remapRel) : null;
+  const declRows = fams.map((f) => {
+    const mine = C.filter((c) => c.family === f && c.declared !== null);
+    if (!mine.length) return [esc(fam(f).label), "not recorded yet", "—"];
+    const ch = mine.reduce((s2, c) => s2 + (c.chunks || 0), 0);
+    const dcl = mine.reduce((s2, c) => s2 + (c.declared || 0), 0), dd = mine.reduce((s2, c) => s2 + (c.dictDeclared || 0), 0);
+    return [esc(fam(f).label), `${((dcl / ch) * 100).toFixed(0)}%`, `${((dd / ch) * 100).toFixed(0)}%`];
+  });
   const m = layoutModel(ctx, dsList(ctx));
   const ice = m.fams.find((f) => f.family === "duckdb-iceberg");
-  const short = `Direct Lake loads a column chunk two ways: a cheap remap when the chunk is entirely dictionary-encoded AND its footer's encoding_stats say so, or hashing every value when not. ${gaps.length ? `${fmtInt(gaps.length)} column-runs had chunks with no dictionary page at all.` : ""} The records do not yet capture the footer declaration.`;
+  const short = `Direct Lake loads a column chunk two ways: a cheap remap when the chunk is entirely dictionary-encoded AND its footer's encoding_stats say so, or hashing every value when not. ${gaps.length ? `${fmtInt(gaps.length)} column-runs had chunks with no dictionary page at all.` : ""} ${measured.length ? "" : "The records do not yet capture the footer declaration."}`;
   const html = `
     <p class="claim">Direct Lake transcodes a parquet column chunk one of <b>two ways</b>. If every page of the chunk is dictionary-encoded and the footer's <code>encoding_stats</code> prove it, it <b>remaps</b> the parquet dictionary IDs straight onto VertiPaq's: a cheap ID swap. Otherwise it <b>hashes every value</b> into a new dictionary. That includes a chunk that does have a dictionary but whose footer does not declare it.</p>
     <p>The footer's <code>encodings</code> list cannot settle it. A dictionary-encoded chunk lists <code>PLAIN</code> for its dictionary page, and so does one whose pages fell back to <code>PLAIN</code> midway. Only <code>encoding_stats</code> (<code>PageEncodingStats</code>) says which pages are which, without decoding them. How much the declaration is worth: <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> added it to DuckDB's writer and measured a 142M-row dictionary string column's cold first-touch falling from <b>10,857.5 ms to 689.3 ms</b>. Same pages, one footer list.</p>
+    ${measured.length ? `<h4>Measured: remap against hashing</h4>
+    <p>${gap !== null ? `Columns whose every chunk was declared fully dictionary-encoded loaded at a median <b>${fmtX(median(remapRel))}</b> of that column's typical cold cost; columns on the hashing path at <b>${fmtX(median(hashRel))}</b>, ${gap >= 1 ? `${fmtX(gap)} slower` : `${fmtX(1 / gap)} faster`}, over ${fmtInt(remapRel.length)} and ${fmtInt(hashRel.length)} column-runs.` : `${fmtInt(measured.length)} column-runs carry the footer declaration, all on the ${remapRel.length ? "remap" : "hashing"} path, so there is nothing to compare yet.`}</p>
+    ${table(["writer", "chunks that declare encoding_stats", "chunks declared fully dictionary-encoded"], declRows, "num")}` : ""}
     <h4>What the run records can and cannot say</h4>
-    <p>They record, per column chunk, whether it has a dictionary page. A chunk with none is certainly on the hashing path. They do <b>not</b> record <code>encoding_stats</code>, so a chunk with a dictionary page could be on either path, and this page cannot classify it. Every DuckDB → Iceberg run in the history was written before the DuckDB build carrying #24957 was pinned, so its dictionaries were undeclared${ice ? `. That is the likely reason it is the one writer still <b>${pctOff(ice.resid)}</b> off the layout's prediction in finding "Power BI never sees the writer"` : ""}.</p>
+    <p>Every run records, per column chunk, whether it has a dictionary page; a chunk with none is certainly on the hashing path. Runs from 2026-10-17 on also record the footer's <code>encoding_stats</code> (the table above); older runs do not, so for them a chunk with a dictionary page could be on either path. Every DuckDB → Iceberg run in the history was written before the DuckDB build carrying #24957 was pinned, so its dictionaries were undeclared${ice ? `. That is the likely reason it is the one writer still <b>${pctOff(ice.resid)}</b> off the layout's prediction in finding "Power BI never sees the writer"` : ""}.</p>
     ${table(["writer", "encodings it writes (most common)", "chunks with a dictionary page"], rows)}
     ${gaps.length ? `<h4>Column-runs with chunks that have no dictionary page: certain hashing</h4>
     ${table(["column-run", "chunks with a dictionary page", "size", "extra cold time"],
       gaps.slice(0, 12).map((g) => [`<code>${esc(g.column)}</code> · ${esc(label(g.ds))} · ${esc(g.writerLabel)}`, `${g.dictPages} of ${g.chunks}`, fmtMb(g.mb), fmtMs(g.cold)]), "num")}` : ""}
-    <p class="note">To measure this directly, <code>stats.py</code> would need to read each chunk's <code>encoding_stats</code> and record, per column, how many chunks are declared fully dictionary-encoded. The page would then split columns into remap and hashing, and compare their cold cost.</p>`;
-  return { id: "dictionary", title: "Dictionary encoding, declared", short, status: "partial", html,
+    <p class="note"><code>stats.py</code> reads each mart file's footer Thrift directly for this (neither DuckDB's <code>parquet_metadata()</code> nor pyarrow exposes <code>encoding_stats</code>) and records, per column, the chunks that declare their encodings and the chunks declared entirely dictionary-encoded.</p>`;
+  const status = !measured.length ? "partial" : gap === null || remapRel.length < MIN_RUNS || hashRel.length < MIN_RUNS ? "few"
+    : gap >= 1.3 ? "clear" : "noise";
+  return { id: "dictionary", title: "Dictionary encoding, declared", short, status, html,
     head: ["2 ways", "to load a column: reuse its dictionary, or rebuild it"],
     card: "A column stored fully as a dictionary, with the file saying so, loads fast. Otherwise Power BI rebuilds the dictionary value by value." };
 }

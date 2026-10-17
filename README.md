@@ -191,6 +191,12 @@ emitted no `encoding_stats` at all until [duckdb#24957][ddb-estats] (merged 2026
 142M-row dictionary string column's cold first-touch at **10,857.5 ms** before the footer change
 and **689.3 ms** after — same pages, one new footer list, ~15× on the transcode.
 
+**The run records measure the declaration directly since 2026-10-17.** Neither DuckDB's
+`parquet_metadata()` nor pyarrow exposes `encoding_stats`, so `stats.py` decodes each mart file's
+footer Thrift itself (`footer_encoding_stats`) and records per column the chunks that declare their
+page encodings (`declared`) and the chunks declared entirely dictionary-encoded (`dict_declared`):
+the remap-eligible ones. The dashboard's dictionary finding splits remap from hashing on it.
+
 **And it is a cold-only cost.** Once transcoded, segments are VertiPaq's own store and the
 parquet encoding is out of the picture; a `PLAIN` or undeclared column makes first touch
 expensive, not every query. What survives into warm and hot is the row order (rule #2), never

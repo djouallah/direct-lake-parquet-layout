@@ -592,6 +592,158 @@ def vorder_tags(con, guid, schema, table, live_files):
         return {}
 
 
+# ---------------------------------------------------------------------------- encoding_stats
+#
+# WHY THE FOOTER IS READ BY HAND. Direct Lake transcodes a column chunk one of two ways: it REMAPS the
+# parquet dictionary IDs onto VertiPaq's when the chunk is entirely dictionary-encoded and the
+# footer's `encoding_stats` (`PageEncodingStats`) prove it, and it HASHES every value otherwise —
+# including a chunk that has a dictionary page its footer never declares (README rule #3,
+# duckdb#24957: 10,857.5 -> 689.3 ms cold first-touch from that one footer list). The `encodings`
+# list cannot settle it — a dictionary-encoded chunk lists PLAIN for its dictionary page, and so does
+# one whose pages fell back to PLAIN — and neither DuckDB's `parquet_metadata()` nor pyarrow exposes
+# `encoding_stats` (checked: DuckDB 1.5.5, pyarrow 24). So the footer's Thrift is decoded here: the
+# compact protocol is small, and only three paths through FileMetaData are needed.
+
+_PAGE_DATA = (0, 3)            # PageType DATA_PAGE, DATA_PAGE_V2
+_PAGE_DICT = 2                 # PageType DICTIONARY_PAGE
+_ENC_DICT = (2, 8)             # Encoding PLAIN_DICTIONARY, RLE_DICTIONARY
+
+
+class _Compact:
+    """The Thrift compact protocol, read-only, generic: a struct becomes `{field id: value}`."""
+
+    def __init__(self, buf):
+        self.b, self.i = memoryview(buf), 0
+
+    def byte(self):
+        v = self.b[self.i]
+        self.i += 1
+        return v
+
+    def varint(self):
+        shift = out = 0
+        while True:
+            v = self.byte()
+            out |= (v & 0x7F) << shift
+            if not v & 0x80:
+                return out
+            shift += 7
+
+    def zigzag(self):
+        n = self.varint()
+        return (n >> 1) ^ -(n & 1)
+
+    def value(self, t):
+        if t in (1, 2):                                # BOOL in a struct: the type IS the value
+            return t == 1
+        if t == 3:
+            return self.byte()
+        if t in (4, 5, 6):
+            return self.zigzag()
+        if t == 7:
+            self.i += 8
+            return None
+        if t == 8:
+            n = self.varint()
+            v = bytes(self.b[self.i:self.i + n])
+            self.i += n
+            return v
+        if t in (9, 10):
+            head = self.byte()
+            n, et = head >> 4, head & 0x0F
+            if n == 15:
+                n = self.varint()
+            return [self.byte() == 1 if et in (1, 2) else self.value(et) for _ in range(n)]
+        if t == 11:
+            n = self.varint()
+            if not n:
+                return {}
+            kv = self.byte()
+            return {self.value(kv >> 4): self.value(kv & 0x0F) for _ in range(n)}
+        if t == 12:
+            return self.struct()
+        raise ValueError(f"unknown thrift compact type {t}")
+
+    def struct(self):
+        out, last = {}, 0
+        while True:
+            head = self.byte()
+            if head == 0:
+                return out
+            delta, t = head >> 4, head & 0x0F
+            fid = last + delta if delta else self.zigzag()
+            out[fid] = self.value(t)
+            last = fid
+
+
+def footer_encoding_stats(footer):
+    """`{column path: [chunk, ...]}` from a parquet FileMetaData blob, each chunk
+    `{"declared": bool, "dict_only": bool}`.
+
+    `declared` — the chunk's metadata carries `encoding_stats` at all. `dict_only` — it does, it lists
+    a dictionary page, and every DATA page it counts is dictionary-encoded: the chunk the engine can
+    remap. Field ids are the parquet-format spec's: FileMetaData.4 row_groups, RowGroup.1 columns,
+    ColumnChunk.3 meta_data, ColumnMetaData.3 path_in_schema / .13 encoding_stats, and
+    PageEncodingStats.1 page_type / .2 encoding.
+    """
+    out = {}
+    for rg in _Compact(footer).struct().get(4) or []:
+        for cc in rg.get(1) or []:
+            md = cc.get(3) or {}
+            path = ".".join(p.decode("utf-8", "replace") for p in md.get(3) or [])
+            es = md.get(13)
+            dict_only = bool(es) and any(e.get(1) == _PAGE_DICT for e in es) and all(
+                e.get(2) in _ENC_DICT for e in es if e.get(1) in _PAGE_DATA)
+            out.setdefault(path, []).append({"declared": es is not None, "dict_only": dict_only})
+    return out
+
+
+def declared_dictionaries(con, guid, schema, table, live_files):
+    """`{column: {"declared": n, "dict_declared": n}}` over the mart's live files' footers.
+
+    Read with obstore range requests: per file one HEAD for the size, the last 8 bytes for the footer
+    length, then the footer itself — a few KB to a few MB a file, never the data. Same store-building
+    path as `vorder_tags`, so no new dependency. Best-effort: `{}` on anything, and the record then
+    simply has no declaration counts, which reads as "not measured" rather than "undeclared".
+    """
+    try:
+        import obstore
+        from dbt.adapters.duckrun import objectstore, secret
+        base = f"{tables_path(guid)}/{schema}/{table}"
+        store = objectstore.build_store(base, secret.refreshed(con.storage_options))
+        marker = f"/{schema}/{table}/"
+        cols = {}
+        for f in sorted({str(x) for x in live_files}):
+            key = unquote(f.split(marker, 1)[1] if marker in f else f.rsplit("/", 1)[-1])
+            size = int(obstore.head(store, key)["size"])
+            tail = bytes(obstore.get_range(store, key, start=size - 8, end=size))
+            if tail[4:] != b"PAR1":
+                raise ValueError(f"{key} does not end in PAR1")
+            n = int.from_bytes(tail[:4], "little")
+            footer = bytes(obstore.get_range(store, key, start=size - 8 - n, end=size - 8))
+            for path, chunks in footer_encoding_stats(footer).items():
+                c = cols.setdefault(path, {"declared": 0, "dict_declared": 0})
+                c["declared"] += sum(ch["declared"] for ch in chunks)
+                c["dict_declared"] += sum(ch["dict_only"] for ch in chunks)
+        return cols
+    except Exception as e:                              # noqa: BLE001 — never fail the layout job
+        sys.stderr.write(f"  encoding_stats unavailable for {schema}.{table} "
+                         f"({type(e).__name__}: {e})\n")
+        return {}
+
+
+def merge_declarations(encodings, declared):
+    """Fold the footer counts into the per-column `encodings` document, in place and by NAME.
+
+    A column the footer read did not see keeps no key, so "not measured" stays distinguishable from
+    "zero declared".
+    """
+    for name, d in (declared or {}).items():
+        if name in encodings:
+            encodings[name].update(d)
+    return encodings
+
+
 def ordering_for(con, guid, schema, at, rows, kind="lakehouses"):
     """DID THE WRITER PHYSICALLY REORDER THE ROWS? Three signals over the mart, one document.
 
@@ -1034,7 +1186,13 @@ def one_engine(item, kind):
     # one the rest of this document reports on.
     schema = (st.get(MART) or {}).get("schema")
     at, chunks = mart_chunks(con, f"{schema}.{MART}") if schema else (None, [])
-    return guid, st, encodings_from(at, chunks), ordering_for(con, guid, schema, at, chunks, kind)
+    enc = encodings_from(at, chunks)
+    # The footer's own `encoding_stats`: which chunks Direct Lake can REMAP rather than hash. Rides on
+    # the live file list the metadata fetch already holds, so it reads only footers, never data.
+    if enc and "file_name" in at:
+        merge_declarations(enc, declared_dictionaries(con, guid, schema, MART,
+                                                      {r[at["file_name"]] for r in chunks}))
+    return guid, st, enc, ordering_for(con, guid, schema, at, chunks, kind)
 
 
 def main():
