@@ -802,24 +802,36 @@ function methodSection(ctx) {
 
 // ------------------------------------------------------------------------------- performance tab
 //
-// `?page=perf`: for ONE dataset and ONE storage mode, how fast each writer's output is to query. One
-// dot per writer at the median cold and median warm total of its runs, and a plain table under it.
-// Kept deliberately simple: no spread marks, no verdicts. Direct Lake and DirectQuery are never drawn
-// together — the toggle switches the whole page.
+// `?page=perf`: how fast each writer's output is to query, every dataset on ONE chart. One dot per
+// (dataset, writer) at the median cold and median warm total of its runs, labelled with the dataset;
+// the log axes put a 20 s dataset beside a 100 s one. A plain table under it. Kept deliberately
+// simple: no spread marks, no verdicts. Direct Lake and DirectQuery are never drawn together — the
+// toggle switches the whole page.
 
 export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
 
-/** One entry per writer measured on `ds` in `phase`, in `WRITERS` order. */
-export function perfGroups(ctx, ds, phase = "dl") {
-  const R = ctx.runs.filter((r) => r.ds === ds && r[phase] && r[phase].cold && r[phase].warm);
-  const by = new Map();
-  for (const r of R) (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
+/** One entry per (dataset, writer) measured in `phase`, datasets in page order, writers in `WRITERS` order. */
+export function perfGroups(ctx, phase = "dl") {
   const order = WRITERS.map((w) => w.key);
   const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
-  return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, runs]) => ({
-    key, label: runs[0].writerLabel, family: runs[0].family, filled: runs[0].reorders, runs: runs.length,
+  return dsList(ctx).flatMap((ds) => {
+    const by = new Map();
+    for (const r of ctx.runs) {
+      if (r.ds !== ds || !r[phase] || !r[phase].cold || !r[phase].warm) continue;
+      (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
+    }
+    return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, runs]) => ({
+    ds, dsLabel: label(ds), key, label: runs[0].writerLabel, family: runs[0].family, filled: runs[0].reorders, runs: runs.length,
     cold: median(runs.map((r) => r[phase].cold)), warm: median(runs.map((r) => r[phase].warm)),
     cu: median(runs.map((r) => (r.cu || {})[phase]).filter((v) => typeof v === "number" && v > 0)) }));
+  });
+}
+
+/** The legend: one entry per writer, drawn with the exact mark it gets on the chart. */
+function writerLegend(groups) {
+  const seen = new Map();
+  for (const g of groups) if (!seen.has(g.key)) seen.set(g.key, g);
+  return `<div class="legend">${[...seen.values()].map((g) => `<span class="key"><svg viewBox="0 0 16 16" width="14" height="14">${mark(8, 8, g, 5).replace(/<circle[^>]*fill="transparent"\/>/, "")}</svg>${esc(g.label)}</span>`).join("")}</div>`;
 }
 
 /** The cold × warm chart: one labelled dot per writer, at its median run. */
@@ -829,7 +841,7 @@ export function perfChart(groups, { w = 860, h = 520 } = {}) {
   const span = (v) => [Math.min(...v) / 1.3, Math.max(...v) * 1.3];
   const sx = scale(span(groups.map((g) => g.cold)), true, m.l, w - m.r);
   const sy = scale(span(groups.map((g) => g.warm)), true, h - m.b, m.t);
-  const p = [`<svg viewBox="0 0 ${w} ${h}" class="chart perf" role="img" aria-label="warm against cold query time, one dot per writer">`];
+  const p = [`<svg viewBox="0 0 ${w} ${h}" class="chart perf" role="img" aria-label="warm against cold query time, one dot per writer per dataset">`];
   for (const t of sy.ticks) {
     const yy = sy.f(t);
     p.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`,
@@ -847,7 +859,7 @@ export function perfChart(groups, { w = 860, h = 520 } = {}) {
   for (const g of groups) {
     const x = sx.f(g.cold), y = sy.f(g.warm), n = g.runs;
     p.push(mark(x, y, { family: g.family, filled: g.filled,
-      tip: `${g.label} · ${n} run${n === 1 ? "" : "s"} · cold ${fmtMs(g.cold)} · warm ${fmtMs(g.warm)}${g.cu ? ` · read ${fmtCu(g.cu)}` : ""}` }, 7));
+      tip: `${g.dsLabel} · ${g.label} · ${n} run${n === 1 ? "" : "s"} · cold ${fmtMs(g.cold)} · warm ${fmtMs(g.warm)}${g.cu ? ` · read ${fmtCu(g.cu)}` : ""}` }, 7));
   }
   // Each label tries right, left, above and below its dot, and takes the first spot that covers no
   // writer's dot and no label already placed; if none is free it goes right and is nudged down.
@@ -855,7 +867,7 @@ export function perfChart(groups, { w = 860, h = 520 } = {}) {
   const hits = (b) => dots.some((d) => d.x > b.x0 - 8 && d.x < b.x1 + 8 && d.y > b.y0 - 8 && d.y < b.y1 + 8)
     || placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
   groups.forEach((g, i) => {
-    const { x, y } = dots[i], tw = g.label.length * 7.2;
+    const { x, y } = dots[i], tw = g.dsLabel.length * 6.6;
     const box = (lx, ly, anchor) => ({ lx, ly, anchor, x0: anchor === "end" ? lx - tw : anchor === "middle" ? lx - tw / 2 : lx,
       x1: anchor === "end" ? lx : anchor === "middle" ? lx + tw / 2 : lx + tw, y0: ly - 11, y1: ly + 3 });
     const tries = [box(x + 11, y + 4, "start"), box(x - 11, y + 4, "end"), box(x, y - 13, "middle"), box(x, y + 21, "middle")];
@@ -864,7 +876,7 @@ export function perfChart(groups, { w = 860, h = 520 } = {}) {
     dots.splice(i, 0, self);
     if (!b) { b = tries[0]; while (placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0)) b = box(b.lx, b.ly + 14, "start"); }
     placed.push(b);
-    p.push(`<text x="${b.lx.toFixed(1)}" y="${b.ly.toFixed(1)}" class="plabel" text-anchor="${b.anchor}">${esc(g.label)}</text>`);
+    p.push(`<text x="${b.lx.toFixed(1)}" y="${b.ly.toFixed(1)}" class="plabel" text-anchor="${b.anchor}">${esc(g.dsLabel)}</text>`);
   });
   p.push("</svg>");
   return p.join("");
@@ -872,25 +884,17 @@ export function perfChart(groups, { w = 860, h = 520 } = {}) {
 
 export function perfSection(ctx, opts = {}) {
   const phase = PERF_PHASES[opts.phase] ? opts.phase : "dl";
-  const timed = (ds) => ctx.runs.filter((r) => r.ds === ds && r[phase] && r[phase].cold && r[phase].warm).length;
-  const sets = dsList(ctx);
-  const ds = sets.includes(opts.dataset) && timed(opts.dataset) ? opts.dataset : sets.find((x) => timed(x)) || sets[0];
   const pill = (on, url, text) => `<a class="pill${on ? " on" : ""}" href="${url}"${on ? ' aria-current="true"' : ""}>${text}</a>`;
-  const dsPills = sets.map((x) => pill(x === ds, href({ page: "perf", dataset: x, phase: phase === "dl" ? "" : phase }),
-    `${esc(label(x))} <span class="n">${timed(x)}</span>`)).join("");
   const phPills = Object.entries(PERF_PHASES).map(([k, v]) =>
-    pill(k === phase, href({ page: "perf", dataset: ds, phase: k === "dl" ? "" : k }), esc(v))).join("");
-  const groups = perfGroups(ctx, ds, phase);
-  const pd = ctx.perDataset[ds] || {};
-  const nq = ((phase === "dl" ? pd.queriesDl : pd.queriesDq) || []).length;
-  const rows = [...groups].sort((a, b) => a.warm - b.warm).map((g) => [
-    `<b>${esc(g.label)}</b>`, fmtInt(g.runs), fmtMs(g.cold), fmtMs(g.warm), fmtCu(g.cu)]);
+    pill(k === phase, href({ page: "perf", phase: k === "dl" ? "" : k }), esc(v))).join("");
+  const groups = perfGroups(ctx, phase);
+  const rows = groups.map((g) => [esc(g.dsLabel), `<b>${esc(g.label)}</b>`, fmtInt(g.runs), fmtMs(g.cold), fmtMs(g.warm), fmtCu(g.cu)]);
   return `
-    <div class="filters"><div class="pills" aria-label="dataset">${dsPills}</div><div class="pills" aria-label="storage mode">${phPills}</div></div>
-    <p class="dim">${esc(DATASETS[ds].blurb)}. ${esc(PERF_PHASES[phase])}, total time of the same ${nq} queries for every writer. Each dot is the writer's median run.</p>
+    <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
+    <p class="dim">${esc(PERF_PHASES[phase])}. Each dot is one writer on one dataset: the median total time of that dataset's queries, the same queries for every writer. Colour and shape are the writer, the label is the dataset.</p>
     <figure class="perffig">${perfChart(groups)}</figure>
-    ${legend(familiesIn(groups))}
-    ${table(["writer", "runs", "cold", "warm", "read CU"], rows, "num sortable")}`;
+    ${writerLegend(groups)}
+    ${table(["dataset", "writer", "runs", "cold", "warm", "read CU"], rows, "num sortable")}`;
 }
 
 // ------------------------------------------------------------------------------------- the page

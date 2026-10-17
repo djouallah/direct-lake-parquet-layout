@@ -371,7 +371,7 @@ test("the build inlines every module and leaves no relative import behind", asyn
 
 // --------------------------------------------------------------------------------- performance tab
 
-test("performance tab: one labelled dot per writer, filtered by dataset, one storage mode at a time", () => {
+test("performance tab: every dataset on one chart, one dot per writer per dataset, one storage mode at a time", () => {
   const recs = vorderFixture();
   for (const x of recs) {
     const t = x.benchmark.timings, k = Object.keys(t)[0];
@@ -379,18 +379,17 @@ test("performance tab: one labelled dot per writer, filtered by dataset, one sto
   }
   const page = r.render(recs, { page: "perf" }).html;
   assert.match(page, /id="perf"/);
-  for (const ds of ["aemo", "nyc", "bts", "green"]) assert.match(page, new RegExp(`dataset=${ds}`));
-  assert.equal((page.match(/class="plabel"/g) || []).length, 2);
-  assert.match(page, /Spark, V-Order/);
-  // The default dataset is the first one with timed runs; ?dataset= switches it.
-  assert.match(page, /class="pill on"[^>]*>AEMO/);
-  assert.match(r.render(recs, { page: "perf", dataset: "nyc" }).html, /class="pill on"[^>]*>NYC taxi/);
-  // Plain: one dot per writer and a table, no spread marks and no verdict badges.
+  // 4 datasets x 2 writers, each dot labelled with its dataset.
+  assert.equal((page.match(/class="plabel"/g) || []).length, 8);
+  for (const ds of ["AEMO", "NYC taxi", "BTS flights", "Green taxi"]) assert.match(page, new RegExp(`class="plabel"[^>]*>${ds}<`));
+  assert.doesNotMatch(page, /dataset=/);
+  // Plain: no spread marks and no verdict badges.
   assert.doesNotMatch(page, /inside the noise|class="pt run"|xrange/);
-  assert.match(page, /<th>cold<\/th><th>warm<\/th><th>read CU<\/th>/);
+  assert.match(page, /<th>dataset<\/th><th>writer<\/th><th>runs<\/th><th>cold<\/th><th>warm<\/th><th>read CU<\/th>/);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
-  const ctx = d.build(recs, PROBE_COLUMNS);
-  const dl = r.perfGroups(ctx, "aemo", "dl"), dq = r.perfGroups(ctx, "aemo", "dq");
+  const ctx = r.context(recs);
+  const dl = r.perfGroups(ctx, "dl"), dq = r.perfGroups(ctx, "dq");
+  assert.equal(dl.length, 8);
   assert.equal(dq[0].cold, dl[0].cold * 7);
   assert.match(r.render(recs, { page: "perf", phase: "dq" }).html, /class="pill on"[^>]*>DirectQuery/);
 });
