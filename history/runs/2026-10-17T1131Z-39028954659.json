@@ -1,0 +1,138 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "aemo",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "1024",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "131072",
+  "runs": "6",
+  "skip_download": "true",
+  "sort_by": "date,time,price",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "layout": {
+  "config": {
+   "duckrun": {
+    "file_size_mb": null,
+    "row_group_size": "131072",
+    "sorted": "true",
+    "vcores": "8"
+   },
+   "dwh": {
+    "vorder": "true"
+   },
+   "iceberg": {
+    "file_size_mb": "1024",
+    "row_group_size": "131072",
+    "vcores": "8"
+   },
+   "spark": {
+    "native_execution_engine": "true",
+    "resource_profile": "writeHeavy"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "engines": {
+   "duckrun": {
+    "guid": null,
+    "item": "dbt_delta",
+    "kind": "lakehouses",
+    "writer": "delta-rs"
+   },
+   "dwh": {
+    "guid": null,
+    "item": "dbt_dwh",
+    "kind": "warehouses",
+    "writer": "warehouse"
+   },
+   "iceberg": {
+    "guid": null,
+    "item": "dbt_iceberg",
+    "kind": "lakehouses",
+    "writer": "duckdb (iceberg)"
+   },
+   "spark": {
+    "guid": null,
+    "item": "dbt_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "landing": {
+   "files": 8168,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.37
+    },
+    "csv_raw/daily": {
+     "files": 3042,
+     "size_mb": 170004.56
+    },
+    "csv_raw/duid": {
+     "files": 4,
+     "size_mb": 0.16
+    },
+    "csv_raw/price_today": {
+     "files": 2550,
+     "size_mb": 381.24
+    },
+    "csv_raw/scada_today": {
+     "files": 2571,
+     "size_mb": 103.76
+    }
+   },
+   "guid": "4fbe4130-1717-4fc9-a985-3fb7b4a13067",
+   "item": "dbt_landing",
+   "size_mb": 170490.09
+  },
+  "run": {
+   "dataset": "aemo",
+   "id": "39028954659",
+   "sha": "9776b0e39795a3eb16026dc66f3bf2c0d61c9bd9",
+   "written": "2026-10-17T11:31:20.284938+00:00"
+  },
+  "stats": {
+   "duckrun": {},
+   "dwh": {},
+   "iceberg": {},
+   "spark": {}
+  },
+  "tables": [
+   "stg_csv_archive_log",
+   "dim_calendar",
+   "dim_duid",
+   "fct_price",
+   "fct_scada",
+   "fct_price_today",
+   "fct_scada_today",
+   "fct_summary"
+  ]
+ },
+ "run": {
+  "finished": "2026-10-17T11:31:51+00:00",
+  "id": "39028954659",
+  "sha": "9776b0e39795a3eb16026dc66f3bf2c0d61c9bd9",
+  "started": "2026-10-17T11:30:32+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/39028954659"
+ },
+ "schema": 1
+}
