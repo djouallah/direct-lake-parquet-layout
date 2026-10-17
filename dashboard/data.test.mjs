@@ -388,6 +388,18 @@ test("row-group tension: bins pooled across engines, sweet spot where the slower
   assert.equal(r.rowGroupBins(runs.slice(0, 2)), null);   // one bin is not a curve
 });
 
+test("pooled tension: per-dataset relative cold and warm, median across datasets, sweet spot between", () => {
+  const curves = {
+    aemo: [{ k: 4, rel_cold: 1.0, rel_warm: 1.5, n: 3 }, { k: 2, rel_cold: 1.05, rel_warm: 1.1, n: 3 }, { k: 0, rel_cold: 1.4, rel_warm: 1.0, n: 3 }],
+    nyc: [{ k: 4, rel_cold: 1.0, rel_warm: 1.6, n: 3 }, { k: 2, rel_cold: 1.1, rel_warm: 1.05, n: 3 }, { k: 0, rel_cold: 1.5, rel_warm: 1.0, n: 3 }],
+    cms: [{ k: -1, rel_cold: 1.0, rel_warm: 1.0, n: 3 }, { k: 0, rel_cold: 1.2, rel_warm: 1.1, n: 3 }],
+  };
+  const p = r.pooledTension(curves);
+  assert.deepEqual(p.rows.map((x) => x.k), [0, 2, 4]);   // k=-1 has one dataset: not drawn
+  assert.equal(p.sweet.k, 2);
+  assert.match(r.pooledTensionSvg(p), /sweet spot/);
+});
+
 test("csv quotes what needs quoting and reads nested keys", () => {
   const text = r.csvOf([{ a: "x,y", b: { c: 2 } }], ["a", "b.c"]);
   assert.equal(text, 'a,b.c\n"x,y",2');

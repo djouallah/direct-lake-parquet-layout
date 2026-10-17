@@ -211,6 +211,102 @@ export function rowGroupBins(runs) {
   return { rows, sweet };
 }
 
+// ---------------------------------------------------------------- every dataset on one axis
+//
+// Row-group COUNT is not comparable across tables of different sizes; ROWS PER ROW GROUP is. So the
+// cross-dataset chart bins every run by rows per row group (octaves: 0.5M, 1M, 2M, 4M, 8M, 16M) and
+// draws each dataset as one line, as a multiple of that dataset's own best bin. Where the lines all
+// sit near 1.0x at once is the interval the datasets converge on.
+
+const DS_ORDER = ["aemo", "nyc", "bts", "green", "cms", "tpcds"];
+
+export function rowsPerRgCurves(ctx) {
+  const out = {};
+  for (const ds of dsList(ctx)) {
+    const bins = new Map();
+    for (const r of ctx.runs) {
+      if (r.ds !== ds || !r.rowsPerRg || !r.dl.cold || !r.dl.warm) continue;
+      const k = Math.round(Math.log2(r.rowsPerRg / 1e6));
+      (bins.get(k) || bins.set(k, []).get(k)).push(r);
+    }
+    const rows = [...bins].filter(([, v]) => v.length >= 2).sort((a, b) => a[0] - b[0]).map(([k, v]) => ({
+      k, n: v.length, cold: median(v.map((r) => r.dl.cold)), warm: median(v.map((r) => r.dl.warm)) }));
+    if (rows.length < 2) continue;
+    for (const m of ["cold", "warm"]) {
+      const best = Math.min(...rows.map((x) => x[m]));
+      for (const x of rows) x[`rel_${m}`] = x[m] / best;
+    }
+    out[ds] = rows;
+  }
+  return out;
+}
+
+/**
+ * The blog's chart, every dataset at once: per rows-per-row-group bin, each dataset's cold and warm as
+ * a multiple of its own best bin, then the MEDIAN across the datasets measured there (at least two).
+ * The sweet spot is the bin where the slower of the two pooled lines is lowest.
+ */
+export function pooledTension(curves) {
+  const ks = [...new Set(Object.values(curves).flatMap((rows) => rows.map((x) => x.k)))].sort((a, b) => a - b);
+  const rows = ks.map((k) => {
+    const here = Object.entries(curves).map(([ds, rs]) => [ds, rs.find((x) => x.k === k)]).filter(([, x]) => x);
+    return { k, datasets: here.length, cold: median(here.map(([, x]) => x.rel_cold)),
+      warm: median(here.map(([, x]) => x.rel_warm)), per: here };
+  }).filter((x) => x.datasets >= 2);
+  if (rows.length < 2) return null;
+  const sweet = rows.reduce((a, b) => (Math.max(b.cold, b.warm) < Math.max(a.cold, a.warm) ? b : a));
+  return { rows, sweet };
+}
+
+const binLabel = (k) => fmtRows(2 ** k * 1e6);
+
+export function pooledTensionSvg(p, { w = 760, h = 360 } = {}) {
+  if (!p) return `<p class="empty">Not enough datasets measured at different row-group sizes yet.</p>`;
+  const { rows, sweet } = p;
+  // More row groups to the RIGHT, as in the blog: big row groups (few of them) on the left.
+  const ks = rows.map((x) => x.k).sort((a, b) => b - a);
+  const m = { l: 56, r: 70, t: 24, b: 58 };
+  const fx = (k) => m.l + ((ks[0] - k) / (ks[0] - ks[ks.length - 1] || 1)) * (w - m.l - m.r);
+  const dots = rows.flatMap((x) => x.per.flatMap(([, d]) => [d.rel_cold, d.rel_warm]));
+  const top = Math.max(1.6, Math.min(2.5, Math.max(...dots) * 1.03));
+  const fy = (v) => h - m.b - ((Math.min(v, top) - 1) / (top - 1)) * (h - m.b - m.t);
+  const step = (w - m.l - m.r) / Math.max(1, ks.length - 1);
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart wide" role="img" aria-label="cold and warm against row-group size, every dataset">`,
+    `<rect x="${(fx(sweet.k) - step / 2).toFixed(1)}" y="${m.t}" width="${step.toFixed(1)}" height="${h - m.b - m.t}" class="sweet"/>`,
+    `<text x="${fx(sweet.k).toFixed(1)}" y="${m.t + 14}" class="sweet-label" text-anchor="middle">sweet spot</text>`];
+  for (const t of linTicks(1, top, 5).filter((v) => v >= 1 && v <= top)) {
+    parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${fy(t).toFixed(1)}" y2="${fy(t).toFixed(1)}" class="grid"/>`,
+      `<text x="${m.l - 8}" y="${(fy(t) + 4).toFixed(1)}" class="tick" text-anchor="end">${t.toFixed(t % 1 ? 1 : 0)}×</text>`);
+  }
+  for (const k of ks) parts.push(`<text x="${fx(k).toFixed(1)}" y="${h - m.b + 17}" class="tick" text-anchor="middle">${binLabel(k)}</text>`);
+  parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - m.b + 36}" class="axis" text-anchor="middle">rows per row group  ·  more, smaller row groups →</text>`,
+    `<text transform="translate(14,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">× the best each dataset got</text>`);
+  const SERIES = [["cold", "var(--c1)"], ["warm", "var(--c2)"]];
+  // Each dataset's own value, faint, so the pooled line never hides how much it is pooling over.
+  for (const [mm, css] of SERIES) {
+    for (const x of rows) {
+      for (const [ds, d] of x.per) {
+        parts.push(`<g class="pt" data-tip="${esc(`${label(ds)} · ~${binLabel(x.k)} rows per row group · ${mm} ${fmtX(d[`rel_${mm}`])} its best · ${d.n} runs`)}"><circle cx="${(fx(x.k) + (mm === "cold" ? -5 : 5)).toFixed(1)}" cy="${fy(d[`rel_${mm}`]).toFixed(1)}" r="3" fill="${css}" opacity=".28"/><circle cx="${(fx(x.k) + (mm === "cold" ? -5 : 5)).toFixed(1)}" cy="${fy(d[`rel_${mm}`]).toFixed(1)}" r="8" fill="transparent"/></g>`);
+      }
+    }
+  }
+  const ordered = [...rows].sort((a, b) => b.k - a.k);
+  const labels = [];
+  for (const [mm, css] of SERIES) {
+    parts.push(`<polyline points="${ordered.map((x) => `${fx(x.k).toFixed(1)},${fy(x[mm]).toFixed(1)}`).join(" ")}" class="tline bold" style="stroke:${css}"/>`);
+    for (const x of ordered) {
+      parts.push(`<g class="pt" data-tip="${esc(`${mm}, median of ${x.datasets} datasets: ${fmtX(x[mm])} their best · ~${binLabel(x.k)} rows per row group`)}"><circle cx="${fx(x.k).toFixed(1)}" cy="${fy(x[mm]).toFixed(1)}" r="5" fill="${css}" stroke="var(--bg)" stroke-width="2"/><circle cx="${fx(x.k).toFixed(1)}" cy="${fy(x[mm]).toFixed(1)}" r="11" fill="transparent"/></g>`);
+    }
+    const last = ordered[ordered.length - 1];
+    labels.push({ x: fx(last.k) + 10, y: fy(last[mm]) + 4, name: mm });
+  }
+  labels.sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 14);
+  for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label strong">${esc(l.name)}</text>`);
+  parts.push("</svg>");
+  return parts.join("");
+}
+
 const TENSION = [["relCold", "cold", "var(--c1)", ""], ["relWarm", "warm", "var(--c2)", "6 4"], ["relCu", "read CU", "var(--c3)", "2 3"]];
 
 /** The row-group tension chart: cold, warm and read CU as multiples of their own best bin. */
@@ -618,6 +714,7 @@ export function findRowGroups(ctx) {
     .filter((t) => t.distinct >= 3 && t.timed.length >= 5);
   const nCold = all.filter(coldSlower), nWarm = all.filter(warmFaster), against = all.filter(warmSlower);
   const nCu = all.filter((t) => t.cuRho !== null && t.cuRho > 0.2), cuKnown = all.filter((t) => t.cuRho !== null);
+  const pooled = pooledTension(rowsPerRgCurves(ctx));
   const sweetSpots = dsList(ctx).map((ds) => ({ ds, bins: rowGroupBins(ctx.runs.filter((r) => r.ds === ds)) }))
     .filter((t) => t.bins);
   const short = all.length
@@ -669,6 +766,9 @@ export function findRowGroups(ctx) {
   });
   const html = `
     <p class="claim">${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
+    <h4>All datasets: the sweet spot</h4>
+    ${pooledTensionSvg(pooled)}
+    <p>Every dataset's runs, binned by rows per row group. For each dataset, cold and warm are divided by the best that dataset got, so all of them share one axis. The bold lines are the median across datasets; the faint dots are each dataset on its own. ${pooled ? `Cold is best with big row groups (${binLabel(pooled.rows.reduce((a, b) => (b.cold < a.cold ? b : a)).k)} rows each) and warm with small ones (${binLabel(pooled.rows.reduce((a, b) => (b.warm < a.warm ? b : a)).k)}). Where the slower of the two is lowest, the sweet spot, is <b>~${binLabel(pooled.sweet.k)} rows per row group</b>: cold at ${fmtX(pooled.sweet.cold)} and warm at ${fmtX(pooled.sweet.warm)} of their best.${pooled.rows[0].k === pooled.sweet.k ? ` The sweet spot is the smallest row group with at least two datasets measured, so the side where row groups get <b>too</b> small, and warm turns back up, is not in these runs yet. A bin needs two datasets to be drawn.` : ""}` : ""}</p>
     <h4>The sweet spot, per dataset</h4>
     <p>Every run of the dataset, binned by row-group count. Each line is that measure's median per bin, divided by its best bin, so 1.0× is the best it got and every line can share the axis. Cold wants fewer row groups and warm wants more. The shaded bin is where the slower of the two is closest to its own best. Hover a point for its run count: a bin of two runs is a hint, not a result.</p>
     ${facets(sweetSpots.map((t) => ({ title: `${label(t.ds)} · ~${fmtInt(t.bins.sweet.rgs)} row groups, ~${fmtRows(t.bins.sweet.rowsPerRg)} rows each`, html: tensionSvg(t.bins) })))}

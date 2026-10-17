@@ -16,13 +16,16 @@
 :root { color-scheme: light dark;
   --bg:#fcfcfb; --fg:#0b0b0b; --dim:#52514e; --line:#e4e3df; --soft:#f3f2ef; --code:#efeeea;
   --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#8a8984;
+  --d1:#2a78d6; --d2:#eb6834; --d3:#1baf7a; --d4:#eda100; --d5:#e87ba4; --d6:#4a3aa7;
   --good:#0f7b4a; --meh:#8a6100; --few:#6b6a66; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
     --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#8f8e88;
+    --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
     --good:#4cc38a; --meh:#e0b048; --few:#9a9992; } }
 :root[data-theme="dark"] { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
   --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#8f8e88;
+    --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
   --good:#4cc38a; --meh:#e0b048; --few:#9a9992; }
 
 * { box-sizing:border-box; }
@@ -123,6 +126,11 @@ button { font:inherit; font-size:.9rem; padding:.35rem .8rem; border-radius:6px;
 svg.chart .sweet { fill:var(--c3); opacity:.12; }
 svg.chart .sweet-label { fill:var(--dim); font-size:10.5px; font-weight:600; }
 svg.chart .tline { fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
+svg.chart .panel-title { fill:var(--fg); font-size:12px; font-weight:600; }
+svg.chart .row-label.small { font-size:10px; }
+svg.chart.wide { max-width:820px; margin:1rem 0; }
+svg.chart .tline.bold { stroke-width:3.5; }
+svg.chart .row-label.strong { font-size:13px; font-weight:600; }
 svg.chart .dimtick { opacity:.7; font-size:9.5px; }
 svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
 footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
