@@ -155,10 +155,18 @@ svg.chart .dimtick { opacity:.7; font-size:9.5px; }
 .pill.on { background:var(--fg); color:var(--bg); border-color:var(--fg); }
 .pill .n { opacity:.6; font-size:.8em; margin-left:.2rem; }
 .perf h2 { border-top:0; margin-top:.5rem; }
-figure.perffig { margin:1rem 0 0; padding:.6rem; background:var(--soft); border-radius:10px; }
-svg.chart.perf { max-width:none; }
-svg.chart .plabel { fill:var(--fg); font-size:12.5px; font-weight:600; paint-order:stroke; stroke:var(--soft); stroke-width:3px; }
-svg.chart .corner { fill:var(--dim); font-size:11px; font-style:italic; }
+.perf h3 { margin:2rem 0 .3rem; font-size:1.1rem; }
+.perf p.headline { font-size:1.2rem; line-height:1.5; border-left:3px solid var(--good); padding:.2rem 0 .2rem 1rem; margin:1.2rem 0; }
+table.grid { min-width:0; }
+table.grid th, table.grid td { text-align:center; vertical-align:middle; }
+table.grid tbody th { text-align:left; background:none; color:var(--fg); white-space:nowrap; position:static; }
+table.grid td { font-variant-numeric:tabular-nums; min-width:5.5rem; }
+table.grid td b { display:block; font-size:1.05rem; }
+table.grid td span { display:block; color:var(--dim); font-size:.78rem; }
+table.grid td.best { background:color-mix(in srgb, var(--good) 18%, transparent); }
+table.grid td.best b { color:var(--good); }
+table.grid td.slow b { color:var(--meh); }
+table.grid td.na { color:var(--dim); }
 svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
 footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
 @media (max-width:600px) { body { font-size:16px; } header h1 { font-size:1.6rem; } .claim { font-size:1.05rem; } }

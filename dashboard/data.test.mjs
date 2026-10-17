@@ -371,29 +371,34 @@ test("the build inlines every module and leaves no relative import behind", asyn
 
 // --------------------------------------------------------------------------------- performance tab
 
-test("performance tab: every dataset on one chart, one dot per writer per dataset, one storage mode at a time", () => {
-  const recs = vorderFixture();
+test("performance tab: writer x dataset grids, 1.0x is the best writer on that dataset, one storage mode at a time", () => {
+  const { recs, ledger } = withCu(vorderFixture());
   for (const x of recs) {
     const t = x.benchmark.timings, k = Object.keys(t)[0];
     t[`${k}_dq`] = Object.fromEntries(Object.entries(t[k]).map(([q, v]) => [q, { cold_ms: v.cold_ms * 7, warm_ms: v.warm_ms * 7, hot_median_ms: 1 }]));
   }
-  const page = r.render(recs, { page: "perf" }).html;
+  const page = r.render(recs, { page: "perf" }, ledger).html;
   assert.match(page, /id="perf"/);
-  // 4 datasets x 2 writers, each dot labelled with its dataset.
-  assert.equal((page.match(/class="plabel"/g) || []).length, 8);
-  for (const ds of ["AEMO", "NYC taxi", "BTS flights", "Green taxi"]) assert.match(page, new RegExp(`class="plabel"[^>]*>${ds}<`));
-  assert.doesNotMatch(page, /dataset=/);
-  // Plain: no spread marks and no verdict badges.
-  assert.doesNotMatch(page, /inside the noise|class="pt run"|xrange/);
-  assert.match(page, /<th>dataset<\/th><th>writer<\/th><th>runs<\/th><th>cold<\/th><th>warm<\/th><th>read CU<\/th>/);
+  assert.equal((page.match(/<table class="grid">/g) || []).length, 3);  // read CU, warm, cold
+  for (const ds of ["AEMO", "NYC taxi", "BTS flights", "Green taxi"]) assert.match(page, new RegExp(`<th>${ds}</th>`));
+  // The ledger bills V-Order ~1,000 CU against ~2,000 without, on every dataset: named in plain words.
+  assert.match(page, /Cheapest to read: <b>Spark, V-Order<\/b> on 4 of 4 datasets/);
+  // Read CU leads the page.
+  assert.ok(page.indexOf("Read CU") < page.indexOf("Warm: second visit"));
+  // Cold: V-Order (~101) is best, no V-Order (~201) is ~2x on every dataset.
+  const ctx = r.context(recs, {}, ledger);
+  const cold = r.perfGrid(r.perfGroups(ctx, "dl"), "cold", d.fmtMs);
+  assert.equal((cold.match(/class="best"/g) || []).length, 4);
+  assert.match(cold, /<th scope="row">Spark, V-Order<\/th><td class="best"[^>]*><b>1\.0×/);
+  assert.match(cold, /<th scope="row">Spark, no V-Order<\/th><td class="[^"]*"[^>]*><b>1.9×/);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
-  const ctx = r.context(recs);
   const dl = r.perfGroups(ctx, "dl"), dq = r.perfGroups(ctx, "dq");
-  assert.equal(dl.length, 8);
   assert.equal(dq[0].cold, dl[0].cold * 7);
-  assert.match(r.render(recs, { page: "perf", phase: "dq" }).html, /class="pill on"[^>]*>DirectQuery/);
+  assert.match(r.render(recs, { page: "perf", phase: "dq" }, ledger).html, /DirectQuery only/);
 });
 
-test("performance tab: a dataset with no timed runs says so instead of drawing an empty chart", () => {
-  assert.match(r.perfChart([]), /No timed runs/);
+test("performance tab: no timed runs is a sentence, not an empty grid", () => {
+  const recs = vorderFixture();
+  for (const x of recs) x.benchmark.timings = {};
+  assert.match(r.render(recs, { page: "perf" }).html, /No timed runs yet/);
 });

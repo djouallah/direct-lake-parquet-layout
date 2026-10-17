@@ -802,11 +802,12 @@ function methodSection(ctx) {
 
 // ------------------------------------------------------------------------------- performance tab
 //
-// `?page=perf`: how fast each writer's output is to query, every dataset on ONE chart. One dot per
-// (dataset, writer) at the median cold and median warm total of its runs, labelled with the dataset;
-// the log axes put a 20 s dataset beside a 100 s one. A plain table under it. Kept deliberately
-// simple: no spread marks, no verdicts. Direct Lake and DirectQuery are never drawn together — the
-// toggle switches the whole page.
+// `?page=perf`: which writer's output is cheapest and fastest to READ, every dataset at once. It leads
+// with read CU, because that is where writers differ most. One writer x dataset grid per measure; each
+// cell is the writer's median run as a multiple of the BEST writer on that dataset (1.0x = best,
+// green), with the actual value under it. Absolute numbers cannot share a chart across datasets — a
+// bigger table costs more whoever wrote it — so each dataset is read against itself. One storage mode
+// at a time: Direct Lake and DirectQuery are never in the same table. Deliberately plain.
 
 export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
 
@@ -821,65 +822,53 @@ export function perfGroups(ctx, phase = "dl") {
       (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
     }
     return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, runs]) => ({
-    ds, dsLabel: label(ds), key, label: runs[0].writerLabel, family: runs[0].family, filled: runs[0].reorders, runs: runs.length,
-    cold: median(runs.map((r) => r[phase].cold)), warm: median(runs.map((r) => r[phase].warm)),
-    cu: median(runs.map((r) => (r.cu || {})[phase]).filter((v) => typeof v === "number" && v > 0)) }));
+      ds, dsLabel: label(ds), key, label: runs[0].writerLabel, runs: runs.length,
+      cold: median(runs.map((r) => r[phase].cold)), warm: median(runs.map((r) => r[phase].warm)),
+      cu: median(runs.map((r) => (r.cu || {})[phase]).filter((v) => typeof v === "number" && v > 0)) }));
   });
 }
 
-/** The legend: one entry per writer, drawn with the exact mark it gets on the chart. */
-function writerLegend(groups) {
-  const seen = new Map();
-  for (const g of groups) if (!seen.has(g.key)) seen.set(g.key, g);
-  return `<div class="legend">${[...seen.values()].map((g) => `<span class="key"><svg viewBox="0 0 16 16" width="14" height="14">${mark(8, 8, g, 5).replace(/<circle[^>]*fill="transparent"\/>/, "")}</svg>${esc(g.label)}</span>`).join("")}</div>`;
+/** Per dataset: the best (lowest) writer on `measure`, and the worst as a multiple of it. */
+export function perfBest(groups, measure) {
+  const out = [];
+  for (const ds of [...new Set(groups.map((g) => g.ds))]) {
+    const G = groups.filter((g) => g.ds === ds && g[measure] > 0).sort((a, b) => a[measure] - b[measure]);
+    if (G.length < 2) continue;
+    out.push({ ds, best: G[0], worst: G[G.length - 1], spread: G[G.length - 1][measure] / G[0][measure] });
+  }
+  return out;
 }
 
-/** The cold × warm chart: one labelled dot per writer, at its median run. */
-export function perfChart(groups, { w = 860, h = 520 } = {}) {
-  if (!groups.length) return `<p class="empty">No timed runs for this dataset yet.</p>`;
-  const m = { l: 64, r: 160, t: 14, b: 48 };
-  const span = (v) => [Math.min(...v) / 1.3, Math.max(...v) * 1.3];
-  const sx = scale(span(groups.map((g) => g.cold)), true, m.l, w - m.r);
-  const sy = scale(span(groups.map((g) => g.warm)), true, h - m.b, m.t);
-  const p = [`<svg viewBox="0 0 ${w} ${h}" class="chart perf" role="img" aria-label="warm against cold query time, one dot per writer per dataset">`];
-  for (const t of sy.ticks) {
-    const yy = sy.f(t);
-    p.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`,
-      `<text x="${m.l - 6}" y="${(yy + 3.5).toFixed(1)}" class="tick" text-anchor="end">${esc(fmtMs(t))}</text>`);
-  }
-  for (const t of sx.ticks) {
-    const xx = sx.f(t);
-    p.push(`<line x1="${xx.toFixed(1)}" x2="${xx.toFixed(1)}" y1="${m.t}" y2="${h - m.b}" class="grid"/>`,
-      `<text x="${xx.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${esc(fmtMs(t))}</text>`);
-  }
-  p.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 8}" class="axis" text-anchor="middle">cold: first visit, every column loaded from parquet (total, log scale) →</text>`,
-    `<text transform="translate(14,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">warm: second visit (total, log scale) →</text>`,
-    `<text x="${m.l + 10}" y="${h - m.b - 10}" class="corner">lower left = faster on both</text>`);
-  const dots = groups.map((g) => ({ x: sx.f(g.cold), y: sy.f(g.warm) }));
-  for (const g of groups) {
-    const x = sx.f(g.cold), y = sy.f(g.warm), n = g.runs;
-    p.push(mark(x, y, { family: g.family, filled: g.filled,
-      tip: `${g.dsLabel} · ${g.label} · ${n} run${n === 1 ? "" : "s"} · cold ${fmtMs(g.cold)} · warm ${fmtMs(g.warm)}${g.cu ? ` · read ${fmtCu(g.cu)}` : ""}` }, 7));
-  }
-  // Each label tries right, left, above and below its dot, and takes the first spot that covers no
-  // writer's dot and no label already placed; if none is free it goes right and is nudged down.
-  const placed = [];
-  const hits = (b) => dots.some((d) => d.x > b.x0 - 8 && d.x < b.x1 + 8 && d.y > b.y0 - 8 && d.y < b.y1 + 8)
-    || placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
-  groups.forEach((g, i) => {
-    const { x, y } = dots[i], tw = g.dsLabel.length * 6.6;
-    const box = (lx, ly, anchor) => ({ lx, ly, anchor, x0: anchor === "end" ? lx - tw : anchor === "middle" ? lx - tw / 2 : lx,
-      x1: anchor === "end" ? lx : anchor === "middle" ? lx + tw / 2 : lx + tw, y0: ly - 11, y1: ly + 3 });
-    const tries = [box(x + 11, y + 4, "start"), box(x - 11, y + 4, "end"), box(x, y - 13, "middle"), box(x, y + 21, "middle")];
-    const self = dots.splice(i, 1)[0];
-    let b = tries.find((t) => !hits(t));
-    dots.splice(i, 0, self);
-    if (!b) { b = tries[0]; while (placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0)) b = box(b.lx, b.ly + 14, "start"); }
-    placed.push(b);
-    p.push(`<text x="${b.lx.toFixed(1)}" y="${b.ly.toFixed(1)}" class="plabel" text-anchor="${b.anchor}">${esc(g.dsLabel)}</text>`);
-  });
-  p.push("</svg>");
-  return p.join("");
+/** Writer x dataset: each cell `v / best on that dataset`, the best cell marked. */
+export function perfGrid(groups, measure, fmt) {
+  const datasets = [...new Set(groups.map((g) => g.ds))];
+  const writers = [...new Map(groups.map((g) => [g.key, g.label]))];
+  const best = Object.fromEntries(datasets.map((ds) => {
+    const v = groups.filter((g) => g.ds === ds && g[measure] > 0).map((g) => g[measure]);
+    return [ds, v.length ? Math.min(...v) : null];
+  }));
+  const head = `<tr><th>writer</th>${datasets.map((ds) => `<th>${esc(label(ds))}</th>`).join("")}</tr>`;
+  const body = writers.map(([key, name]) => `<tr><th scope="row">${esc(name)}</th>${datasets.map((ds) => {
+    const g = groups.find((x) => x.ds === ds && x.key === key);
+    if (!g || !(g[measure] > 0)) return `<td class="na">—</td>`;
+    const x = g[measure] / best[ds];
+    const cls = x < 1.0005 ? "best" : x >= 2 ? "slow" : "";
+    return `<td class="${cls}" title="${esc(`${g.label} on ${g.dsLabel}: ${fmt(g[measure])}, median of ${g.runs} run${g.runs === 1 ? "" : "s"}`)}"><b>${x.toFixed(1)}×</b><span>${esc(fmt(g[measure]))}</span></td>`;
+  }).join("")}</tr>`).join("");
+  return `<div class="tablewrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+
+/** One plain sentence: who is best most often, and how far apart best and worst are. */
+function perfHeadline(groups, measure, word) {
+  const B = perfBest(groups, measure);
+  if (!B.length) return "";
+  const wins = new Map();
+  for (const b of B) wins.set(b.best.label, (wins.get(b.best.label) || 0) + 1);
+  const who = [...wins].sort((a, b) => b[1] - a[1])
+    .map(([w, n], i) => `<b>${esc(w)}</b> on ${n}${i === 0 ? ` of ${B.length} datasets` : ""}`);
+  const lo = Math.min(...B.map((b) => b.spread)), hi = Math.max(...B.map((b) => b.spread));
+  const spread = lo.toFixed(1) === hi.toFixed(1) ? `${hi.toFixed(1)}×` : `${lo.toFixed(1)}× to ${hi.toFixed(1)}×`;
+  return `<p class="headline">${word[0].toUpperCase()}${word.slice(1)}: ${who.join(", ")}. On the same dataset, the most expensive writer costs ${spread} as much.</p>`;
 }
 
 export function perfSection(ctx, opts = {}) {
@@ -888,13 +877,18 @@ export function perfSection(ctx, opts = {}) {
   const phPills = Object.entries(PERF_PHASES).map(([k, v]) =>
     pill(k === phase, href({ page: "perf", phase: k === "dl" ? "" : k }), esc(v))).join("");
   const groups = perfGroups(ctx, phase);
-  const rows = groups.map((g) => [esc(g.dsLabel), `<b>${esc(g.label)}</b>`, fmtInt(g.runs), fmtMs(g.cold), fmtMs(g.warm), fmtCu(g.cu)]);
+  if (!groups.length) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No timed runs yet.</p>`;
+  const mode = esc(PERF_PHASES[phase]);
+  const hasCu = groups.some((g) => g.cu);
   return `
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
-    <p class="dim">${esc(PERF_PHASES[phase])}. Each dot is one writer on one dataset: the median total time of that dataset's queries, the same queries for every writer. Colour and shape are the writer, the label is the dataset.</p>
-    <figure class="perffig">${perfChart(groups)}</figure>
-    ${writerLegend(groups)}
-    ${table(["dataset", "writer", "runs", "cold", "warm", "read CU"], rows, "num sortable")}`;
+    ${hasCu ? perfHeadline(groups, "cu", "cheapest to read") : ""}
+    <p class="dim">${mode} only. Each cell is a writer's median run on that dataset, as a multiple of the best writer on the same dataset: <b>1.0×</b> is the best (green), 2.0× is twice as much. The actual number is under it.</p>
+    ${hasCu ? `<h3>Read CU: what the ${mode} session billed</h3>${perfGrid(groups, "cu", fmtCu)}` : ""}
+    <h3>Warm: second visit</h3>
+    ${perfGrid(groups, "warm", fmtMs)}
+    <h3>Cold: first visit, every column loaded from parquet</h3>
+    ${perfGrid(groups, "cold", fmtMs)}`;
 }
 
 // ------------------------------------------------------------------------------------- the page
@@ -987,7 +981,7 @@ export function render(records, opts = {}, ledger = null) {
     const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id })}">${esc(next.title)} →</a>` : ""}</nav>`;
     body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>${pager}`;
   } else if (opts.page === "perf") {
-    body = `<section id="perf" class="perf"><h2>Which writer is fastest to query</h2>${perfSection(ctx, opts)}</section>`;
+    body = `<section id="perf" class="perf"><h2>Which writer is cheapest to read</h2>${perfSection(ctx, opts)}</section>`;
   } else if (PAGES[opts.page]) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
