@@ -147,6 +147,22 @@ svg.chart .tline.thin { stroke-width:1.8; opacity:.85; }
 svg.chart .tline.all { stroke:var(--fg); stroke-width:3.5; fill:none; stroke-linejoin:round; }
 svg.chart .row-label.strong { font-size:13px; font-weight:600; }
 svg.chart .dimtick { opacity:.7; font-size:9.5px; }
+.filters { display:flex; flex-wrap:wrap; gap:.6rem 1.2rem; margin:1rem 0 .4rem; }
+.pills { display:flex; flex-wrap:wrap; gap:.35rem; }
+.pill { padding:.3rem .8rem; border-radius:999px; border:1px solid var(--line); background:var(--soft);
+  color:var(--fg); text-decoration:none; font-size:.9rem; }
+.pill:hover { border-color:var(--fg); }
+.pill.on { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.pill .n { opacity:.6; font-size:.8em; margin-left:.2rem; }
+.perf h2 { border-top:0; margin-top:.5rem; }
+ul.verdicts { padding-left:1.2rem; margin:.8rem 0; }
+ul.verdicts li { margin:.35rem 0; }
+figure.perffig { margin:1rem 0 0; padding:.6rem; background:var(--soft); border-radius:10px; }
+svg.chart.perf { max-width:none; }
+svg.chart .xrange { stroke-width:2.5; stroke-linecap:round; opacity:.45; }
+svg.chart .run circle:first-child { opacity:.35; }
+svg.chart .plabel { fill:var(--fg); font-size:12.5px; font-weight:600; paint-order:stroke; stroke:var(--soft); stroke-width:3px; }
+svg.chart .corner { fill:var(--dim); font-size:11px; font-style:italic; }
 svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
 footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
 @media (max-width:600px) { body { font-size:16px; } header h1 { font-size:1.6rem; } .claim { font-size:1.05rem; } }
@@ -167,6 +183,7 @@ footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px sol
 <nav class="tabs" aria-label="pages">
   <a href="how.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
   <a href="./" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Experiments</a>
+  <a href="./?page=perf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3v18h18"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="17" cy="12" r="1.6"/><circle cx="19" cy="5" r="1.6"/></svg>Performance</a>
   <a href="writers.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>Third-party writers</a>
 </nav>
   <header>

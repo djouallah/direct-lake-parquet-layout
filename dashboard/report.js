@@ -5,7 +5,7 @@
 // The home page is one card per finding — a headline number, the claim, a status — and a card opens
 // that finding's evidence (`?finding=<id>`). Method, how Power BI reads parquet and the raw data are
 // pages of their own (`?page=`). Speed AND read CU: what the layout costs to query is half the answer.
-import { DATASETS, MIN_RUNS, build, median, spearman, strength, verdict, fmtInt, fmtMs, fmtMb, fmtX, fmtRows, fmtCu, loadRemote, DEFAULTS } from "./data.js";
+import { DATASETS, MIN_RUNS, WRITERS, build, median, spearman, strength, verdict, fmtInt, fmtMs, fmtMb, fmtX, fmtRows, fmtCu, loadRemote, DEFAULTS } from "./data.js";
 import { PROBE_COLUMNS } from "./probe_columns.js";
 
 // --------------------------------------------------------------------------------------- marks
@@ -800,6 +800,161 @@ function methodSection(ctx) {
     ${table(["dataset", "rows", "runs", "timed runs", "queries", "writers"], rows)}`;
 }
 
+// ------------------------------------------------------------------------------- performance tab
+//
+// `?page=perf`: for ONE dataset and ONE storage mode, which writer is fastest to query. Each writer is
+// a dot at the median cold and median warm total of its runs, with a cross spanning the middle half of
+// its runs on each axis (the interquartile range: with 70 runs, a min-max cross is one bad night wide).
+// Crosses that overlap are the noise, and the chart has to make that obvious without a caption; the
+// headline above it says it in words, with the same strict rule as every other verdict here
+// (`verdict`: every run of the winner beat every run of everyone else). A writer with fewer than
+// `MIN_RUNS` runs is neither drawn nor ranked — one thin writer would otherwise turn every headline
+// into "too few runs" — but keeps its table row and is named under the chart.
+// Direct Lake and DirectQuery are never drawn together — the toggle switches the whole page.
+
+export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
+
+/** The `q` quantile of `xs`, linearly interpolated. */
+export function quantile(xs, q) {
+  const v = xs.filter((x) => typeof x === "number" && Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const i = (v.length - 1) * q, lo = Math.floor(i);
+  return v[lo] + (v[Math.min(lo + 1, v.length - 1)] - v[lo]) * (i - lo);
+}
+
+/** One entry per writer measured on `ds` in `phase`, in `WRITERS` order. */
+export function perfGroups(ctx, ds, phase = "dl") {
+  const R = ctx.runs.filter((r) => r.ds === ds && r[phase] && r[phase].cold && r[phase].warm);
+  const by = new Map();
+  for (const r of R) (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
+  const order = WRITERS.map((w) => w.key);
+  const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
+  return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, runs]) => {
+    const c = runs.map((r) => r[phase].cold), w = runs.map((r) => r[phase].warm);
+    const cu = runs.map((r) => (r.cu || {})[phase]).filter((v) => typeof v === "number" && v > 0);
+    return { key, label: runs[0].writerLabel, family: runs[0].family, filled: runs[0].reorders,
+      points: runs.map((r) => ({ x: r[phase].cold, y: r[phase].warm, id: r.id, when: r.when })),
+      cold: median(c), warm: median(w), colds: c, warms: w,
+      coldLo: Math.min(...c), coldHi: Math.max(...c), warmLo: Math.min(...w), warmHi: Math.max(...w),
+      coldQ1: quantile(c, 0.25), coldQ3: quantile(c, 0.75), warmQ1: quantile(w, 0.25), warmQ3: quantile(w, 0.75),
+      cu: median(cu), cus: cu };
+  });
+}
+
+/** The cold × warm chart: crosses for the middle half, faint dots for every run, a labelled dot per writer. */
+export function perfChart(groups, { w = 860, h = 520 } = {}) {
+  if (!groups.length) return `<p class="empty">No timed runs for this dataset yet.</p>`;
+  const m = { l: 64, r: 160, t: 14, b: 48 };
+  // The axes frame the crosses, not every run: a handful of bad nights would otherwise squeeze the
+  // writers into one corner. A run beyond an axis is pinned to that edge, so it is still visible.
+  const span = (lo, hi) => [Math.min(...lo) / 1.5, Math.max(...hi) * 1.5];
+  const sx = scale(span(groups.map((g) => g.coldQ1), groups.map((g) => g.coldQ3)), true, m.l, w - m.r);
+  const sy = scale(span(groups.map((g) => g.warmQ1), groups.map((g) => g.warmQ3)), true, h - m.b, m.t);
+  const px = (v) => sx.f(Math.min(Math.max(v, sx.a), sx.b)), py = (v) => sy.f(Math.min(Math.max(v, sy.a), sy.b));
+  const p = [`<svg viewBox="0 0 ${w} ${h}" class="chart perf" role="img" aria-label="warm against cold query time, one dot per writer">`];
+  for (const t of sy.ticks) {
+    const yy = sy.f(t);
+    p.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`,
+      `<text x="${m.l - 6}" y="${(yy + 3.5).toFixed(1)}" class="tick" text-anchor="end">${esc(fmtMs(t))}</text>`);
+  }
+  for (const t of sx.ticks) {
+    const xx = sx.f(t);
+    p.push(`<line x1="${xx.toFixed(1)}" x2="${xx.toFixed(1)}" y1="${m.t}" y2="${h - m.b}" class="grid"/>`,
+      `<text x="${xx.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${esc(fmtMs(t))}</text>`);
+  }
+  p.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 8}" class="axis" text-anchor="middle">cold: first visit, every column loaded from parquet (total, log scale) →</text>`,
+    `<text transform="translate(14,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">warm: second visit (total, log scale) →</text>`,
+    `<text x="${m.l + 10}" y="${h - m.b - 10}" class="corner">lower left = faster on both</text>`);
+  for (const g of groups) {
+    const css = fam(g.family).css, x = sx.f(g.cold), y = sy.f(g.warm);
+    p.push(`<line x1="${sx.f(g.coldQ1).toFixed(1)}" x2="${sx.f(g.coldQ3).toFixed(1)}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" class="xrange" style="stroke:${css}"/>`,
+      `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${sy.f(g.warmQ1).toFixed(1)}" y2="${sy.f(g.warmQ3).toFixed(1)}" class="xrange" style="stroke:${css}"/>`);
+  }
+  for (const g of groups) {
+    for (const q of g.points) {
+      p.push(`<g class="pt run" data-tip="${esc(`${g.label} · run ${q.id} (${q.when}) · cold ${fmtMs(q.x)} · warm ${fmtMs(q.y)}`)}"><circle cx="${px(q.x).toFixed(1)}" cy="${py(q.y).toFixed(1)}" r="3" fill="${fam(g.family).css}"/><circle cx="${px(q.x).toFixed(1)}" cy="${py(q.y).toFixed(1)}" r="8" fill="transparent"/></g>`);
+    }
+  }
+  const dots = groups.map((g) => ({ x: sx.f(g.cold), y: sy.f(g.warm) }));
+  for (const g of groups) {
+    const x = sx.f(g.cold), y = sy.f(g.warm), n = g.points.length;
+    p.push(mark(x, y, { family: g.family, filled: g.filled,
+      tip: `${g.label} · median of ${n} run${n === 1 ? "" : "s"} · cold ${fmtMs(g.cold)} (${fmtMs(g.coldLo)}–${fmtMs(g.coldHi)}) · warm ${fmtMs(g.warm)} (${fmtMs(g.warmLo)}–${fmtMs(g.warmHi)})${g.cu ? ` · read ${fmtCu(g.cu)}` : ""}` }, 7));
+  }
+  // Each label tries right, left, above and below its dot, and takes the first spot that covers no
+  // writer's dot and no label already placed; if none is free it goes right and is nudged down.
+  const placed = [];
+  const hits = (b) => dots.some((d) => d.x > b.x0 - 8 && d.x < b.x1 + 8 && d.y > b.y0 - 8 && d.y < b.y1 + 8)
+    || placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0);
+  groups.forEach((g, i) => {
+    const { x, y } = dots[i], tw = g.label.length * 7.2;
+    const box = (lx, ly, anchor) => ({ lx, ly, anchor, x0: anchor === "end" ? lx - tw : anchor === "middle" ? lx - tw / 2 : lx,
+      x1: anchor === "end" ? lx : anchor === "middle" ? lx + tw / 2 : lx + tw, y0: ly - 11, y1: ly + 3 });
+    const tries = [box(x + 11, y + 4, "start"), box(x - 11, y + 4, "end"), box(x, y - 13, "middle"), box(x, y + 21, "middle")];
+    const self = dots.splice(i, 1)[0];
+    let b = tries.find((t) => !hits(t));
+    dots.splice(i, 0, self);
+    if (!b) { b = tries[0]; while (placed.some((o) => b.x0 < o.x1 && b.x1 > o.x0 && b.y0 < o.y1 && b.y1 > o.y0)) b = box(b.lx, b.ly + 14, "start"); }
+    placed.push(b);
+    p.push(`<text x="${b.lx.toFixed(1)}" y="${b.ly.toFixed(1)}" class="plabel" text-anchor="${b.anchor}">${esc(g.label)}</text>`);
+  });
+  p.push("</svg>");
+  return p.join("");
+}
+
+const PERF_STATUS = { clear: "clear", noise: "inside the noise", few: "too few runs" };
+
+/** One headline sentence per measure, from `verdict` — never a winner the runs do not support. */
+function perfLine(groups, what, values, fmt, word) {
+  const v = verdict(Object.fromEntries(groups.map((g) => [g.label, values(g)])));
+  const g = groups.find((x) => x.label === v.best);
+  const med = g ? fmt(median(values(g))) : "";
+  const text = !g ? `Only one writer measured, so nothing to compare ${what} yet.`
+    : v.status === "clear" ? `<b>${esc(g.label)}</b> is the ${word} ${what} (${med}): every one of its runs beat every run of every other writer.`
+      : v.status === "noise" ? `No clear ${word} ${what}: the runs overlap. <b>${esc(g.label)}</b> has the best median (${med}), but some of its runs are worse than another writer's.`
+        : `Too few runs to call ${what} (at least ${MIN_RUNS} per writer). Best median so far: <b>${esc(g.label)}</b> (${med}).`;
+  return `<li>${text} <span class="badge ${v.status}">${PERF_STATUS[v.status]}</span></li>`;
+}
+
+export function perfSection(ctx, opts = {}) {
+  const phase = PERF_PHASES[opts.phase] ? opts.phase : "dl";
+  const timed = (ds) => ctx.runs.filter((r) => r.ds === ds && r[phase] && r[phase].cold && r[phase].warm).length;
+  const sets = dsList(ctx);
+  const ds = sets.includes(opts.dataset) && timed(opts.dataset) ? opts.dataset : sets.find((x) => timed(x)) || sets[0];
+  const pill = (on, url, text) => `<a class="pill${on ? " on" : ""}" href="${url}"${on ? ' aria-current="true"' : ""}>${text}</a>`;
+  const dsPills = sets.map((x) => pill(x === ds, href({ page: "perf", dataset: x, phase: phase === "dl" ? "" : phase }),
+    `${esc(label(x))} <span class="n">${timed(x)}</span>`)).join("");
+  const phPills = Object.entries(PERF_PHASES).map(([k, v]) =>
+    pill(k === phase, href({ page: "perf", dataset: ds, phase: k === "dl" ? "" : k }), esc(v))).join("");
+  const all = perfGroups(ctx, ds, phase);
+  // Thin writers leave the chart and the ranking only while at least two writers remain to compare.
+  const thick = all.filter((g) => g.points.length >= MIN_RUNS);
+  const groups = thick.length >= 2 ? thick : all;
+  const thin = all.filter((g) => !groups.includes(g));
+  const pd = ctx.perDataset[ds] || {};
+  const nq = ((phase === "dl" ? pd.queriesDl : pd.queriesDq) || []).length;
+  const untimed = ctx.runs.filter((r) => r.ds === ds).length - timed(ds);
+  const lines = groups.length < 2 ? [perfLine(groups, "warm", (g) => g.warms, fmtMs, "fastest")] : [
+    perfLine(groups, "warm", (g) => g.warms, fmtMs, "fastest"),
+    perfLine(groups, "cold", (g) => g.colds, fmtMs, "fastest"),
+    groups.some((g) => g.cus.length) ? perfLine(groups.filter((g) => g.cus.length), "to read", (g) => g.cus, fmtCu, "cheapest") : ""];
+  const rows = [...groups, ...thin].sort((a, b) => a.warm - b.warm).map((g) => [
+    thin.includes(g) ? `${esc(g.label)} <span class="dim">(not drawn)</span>` : `<b>${esc(g.label)}</b>`, fmtInt(g.points.length), fmtMs(g.warm), `${fmtMs(g.warmLo)}–${fmtMs(g.warmHi)}`,
+    fmtMs(g.cold), `${fmtMs(g.coldLo)}–${fmtMs(g.coldHi)}`, fmtX(g.cold / g.warm), fmtCu(g.cu)]);
+  const cuRows = groups.filter((g) => g.cus.length).map((g) => ({ label: g.label, family: g.family, filled: g.filled, values: g.cus }));
+  return `
+    <div class="filters"><div class="pills" aria-label="dataset">${dsPills}</div><div class="pills" aria-label="storage mode">${phPills}</div></div>
+    <p class="dim">${esc(DATASETS[ds].blurb)}. ${esc(PERF_PHASES[phase])}: the total of ${nq} queries, the same set for every writer.</p>
+    <ul class="verdicts">${lines.join("")}</ul>
+    <figure class="perffig">${perfChart(groups)}</figure>
+    ${legend(familiesIn(groups), { extra: `<span class="key"><svg viewBox="0 0 24 12" width="24" height="12"><line x1="1" x2="23" y1="6" y2="6" stroke="var(--dim)" stroke-width="2"/></svg>middle half of its runs</span>` })}
+    <p class="note">The big dot is the writer's median run, the small dots are every run, and the cross spans the middle half of its runs on each axis; a run beyond an axis sits on its edge. When two crosses overlap, a typical run of the "slower" writer is as fast as a typical run of the "faster" one: one Fabric capacity runs everything and its load moves from run to run.${thin.length ? ` Not drawn or ranked, with fewer than ${MIN_RUNS} runs: ${thin.map((g) => `${esc(g.label)} (${g.points.length})`).join(", ")}.` : ""}${untimed ? ` ${untimed} run${untimed === 1 ? "" : "s"} of this dataset did not finish the ${esc(PERF_PHASES[phase])} suite and ${untimed === 1 ? "is" : "are"} not shown.` : ""}</p>
+    ${table(["writer", "runs", "warm", "warm range", "cold", "cold range", "cold ÷ warm", "read CU"], rows, "num sortable")}
+    ${cuRows.length ? `<h4>What reading it cost</h4>
+    <p class="dim">Capacity units the whole session billed (all six passes), per run.</p>
+    ${strips({ rows: cuRows, x: { label: `read CU, ${PERF_PHASES[phase]} session (log scale)`, fmt: fmtCu } })}` : ""}`;
+}
+
 // ------------------------------------------------------------------------------------- the page
 
 // The home page: one card per LAYOUT PROPERTY, in PROPERTIES order.
@@ -889,6 +1044,8 @@ export function render(records, opts = {}, ledger = null) {
     const prev = found[idx - 1], next = found[idx + 1];
     const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id })}">${esc(next.title)} →</a>` : ""}</nav>`;
     body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>${pager}`;
+  } else if (opts.page === "perf") {
+    body = `<section id="perf" class="perf"><h2>Which writer is fastest to query</h2>${perfSection(ctx, opts)}</section>`;
   } else if (PAGES[opts.page]) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
@@ -956,7 +1113,7 @@ export async function boot(doc = document, loc = location) {
   const app = doc.getElementById("app"), status = doc.getElementById("status");
   const q = new URLSearchParams(loc.search);
   const opts = { dataset: DATASETS[q.get("dataset")] ? q.get("dataset") : "",
-    finding: q.get("finding") || "", page: q.get("page") || "",
+    finding: q.get("finding") || "", page: q.get("page") || "", phase: q.get("phase") || "",
     repo: q.get("repo") || DEFAULTS.repo, ref: q.get("ref") || DEFAULTS.ref };
   try {
     let records, ledger, note;
@@ -973,6 +1130,13 @@ export async function boot(doc = document, loc = location) {
     }
     const { html, ctx } = render(records, opts, ledger);
     app.innerHTML = html;
+    // The tabs are static HTML; the Performance tab is a view of this same page, so mark it here.
+    if (opts.page === "perf") {
+      for (const t of doc.querySelectorAll(".tabs a")) {
+        if (t.getAttribute("href") === "./?page=perf") t.setAttribute("aria-current", "page");
+        else t.removeAttribute("aria-current");
+      }
+    }
     if (status) status.textContent = note;
     wire(app, doc, ctx);
   } catch (ex) {

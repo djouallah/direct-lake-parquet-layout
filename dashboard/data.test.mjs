@@ -368,3 +368,34 @@ test("the build inlines every module and leaves no relative import behind", asyn
   assert.match(html, /<script id="snapshot" type="application\/json"><\/script>/);
   assert.match(html, /export function propSparkVOrder/);
 });
+
+// --------------------------------------------------------------------------------- performance tab
+
+test("performance tab: one labelled dot per writer, filtered by dataset, one storage mode at a time", () => {
+  const recs = vorderFixture();
+  for (const x of recs) {
+    const t = x.benchmark.timings, k = Object.keys(t)[0];
+    t[`${k}_dq`] = Object.fromEntries(Object.entries(t[k]).map(([q, v]) => [q, { cold_ms: v.cold_ms * 7, warm_ms: v.warm_ms * 7, hot_median_ms: 1 }]));
+  }
+  const page = r.render(recs, { page: "perf" }).html;
+  assert.match(page, /id="perf"/);
+  for (const ds of ["aemo", "nyc", "bts", "green"]) assert.match(page, new RegExp(`dataset=${ds}`));
+  assert.equal((page.match(/class="plabel"/g) || []).length, 2);
+  assert.match(page, /Spark, V-Order/);
+  // The default dataset is the first one with timed runs; ?dataset= switches it.
+  assert.match(page, /class="pill on"[^>]*>AEMO/);
+  assert.match(r.render(recs, { page: "perf", dataset: "nyc" }).html, /class="pill on"[^>]*>NYC taxi/);
+  // V-Order is faster cold on every run here (100-102 against 200-202): a clear call, not a guess.
+  assert.match(page, /<b>Spark, V-Order<\/b> is the fastest cold/);
+  // Warm overlaps (50/70/90 against 55/75/95): no winner is called.
+  assert.match(page, /No clear fastest warm/);
+  // DirectQuery reads the dq totals and never the Direct Lake ones.
+  const ctx = d.build(recs, PROBE_COLUMNS);
+  const dl = r.perfGroups(ctx, "aemo", "dl"), dq = r.perfGroups(ctx, "aemo", "dq");
+  assert.equal(dq[0].cold, dl[0].cold * 7);
+  assert.match(r.render(recs, { page: "perf", phase: "dq" }).html, /class="pill on"[^>]*>DirectQuery/);
+});
+
+test("performance tab: a dataset with no timed runs says so instead of drawing an empty chart", () => {
+  assert.match(r.perfChart([]), /No timed runs/);
+});
