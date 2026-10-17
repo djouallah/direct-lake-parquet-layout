@@ -183,7 +183,10 @@ than a shortcut:
   non-zero if the notebook survives. It deliberately does NOT reuse `provision.drop_guid`, which is
   exactly this poll: `provision.py` reads `sys.argv[1]` at module level and runs its whole mode
   dispatch on import, so importing it would provision something.
-- **IT NEEDS `cores=32` TO BUILD, NOT JUST TO GENERATE — TWO LARGE FACTS SORT AT ONCE AND A 62.8 GiB
+- ⚠️ **SUPERSEDED: tpcds BUILDS AT `cores=8` NOW.** Run 39004631159 (2026-10-17, DuckDB 2.0 pin
+  `2.0.0.dev2610161340`) built SF100 at `cores=8` / 4 threads on attempt 1. The OOM below was the
+  older DuckDB; dispatch tpcds at `cores=8` like every other dataset. Kept as history:
+  **IT NEEDED `cores=32` TO BUILD, NOT JUST TO GENERATE — TWO LARGE FACTS SORT AT ONCE AND A 62.8 GiB
   NODE CANNOT HOLD BOTH.** Measured on run 34559633288, `engines=duckrun cores=8`: node `MemTotal
   62.8 GiB`, DuckDB `memory_limit 50.2 GiB`, and the leg OOM-KILLED three times (once per rung of
   the retry ladder) with the signature this file already documents — **no dbt error at all, just
