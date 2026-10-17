@@ -190,7 +190,8 @@ table.left th, table.left td { text-align:left; }
   <tbody>
     <tr><td>Databricks</td><td><code>maxRecordsPerFile</code></td><td><code>parquet.dictionary.page.size</code></td><td><code>CLUSTER BY</code> one key</td><td><a href="#databricks">recipe →</a></td></tr>
     <tr><td>delta-rs / Python</td><td><code>max_row_group_size</code></td><td><code>dictionary_page_size_limit</code></td><td><code>ORDER BY</code> before writing</td><td><a href="#deltars">recipe →</a></td></tr>
-    <tr><td>DuckDB <code>COPY</code></td><td><code>ROW_GROUP_SIZE</code></td><td><code>DICTIONARY_SIZE_LIMIT</code></td><td><code>ORDER BY</code> in the query</td><td><a href="#duckdb">recipe →</a></td></tr>
+    <tr><td>DuckDB → Delta (duckrun)</td><td>built in</td><td>built in</td><td><code>SORTED BY</code></td><td><a href="#duckdb">recipe →</a></td></tr>
+    <tr><td>DuckDB → Iceberg</td><td><code>write.parquet.row-group-size</code></td><td>not settable yet</td><td><code>ORDER BY</code> in the CTAS</td><td><a href="#duckdb">recipe →</a></td></tr>
   </tbody>
 </table></div>
 <p class="note">Whatever you write with, check what you actually got by reading the parquet footer.
@@ -280,12 +281,9 @@ df.write.format("delta").mode("append").saveAsTable(fq)                         
   as its default, each value tuned against a Spark V-Order reference with DAX timings as the signal.</p>
 <pre><code>from deltalake import write_deltalake, WriterProperties, ColumnProperties
 
-# ~8 row groups per table, clamped into the 1M-16M segment band
-rg = max(1_000_000, min(16_000_000, -(-table.num_rows // 8)))
-
 wp = WriterProperties(
     compression="SNAPPY",                     # transcoding is decode-bound
-    max_row_group_size=rg,                    # rule 1, in ROWS
+    max_row_group_size=4_000_000,             # rule 1, in ROWS: mid-band of the measured 2-6M
     dictionary_page_size_limit=32 * 1024**2,  # rule 2: THE knob; the ~1 MB default drops wide columns to PLAIN
     data_page_size_limit=1024**2,
     data_page_row_count_limit=1_000_000,      # stops a very compressible column becoming one giant page
@@ -296,7 +294,7 @@ wp = WriterProperties(
 
 # rule 3: `table` must already be sorted by the filter column; no writer setting sorts for you
 write_deltalake(path, table, writer_properties=wp,
-                target_file_size=1024**3)     # keep files well above one row group's bytes</code></pre>
+                target_file_size=256 * 1024**2)   # a row group cannot span files: keep this above one group's bytes</code></pre>
 <ul>
   <li><b>The dictionary limit is the one to remember.</b> One 144M-row <code>DECIMAL(18,4)</code> column
     measured 618.6 MB as PLAIN against 423.1 MB dictionary-encoded.</li>
@@ -307,30 +305,62 @@ write_deltalake(path, table, writer_properties=wp,
 </section>
 
 <section class="pane" data-name="duckdb" aria-label="DuckDB">
-<h2>DuckDB <code>COPY</code></h2>
-<p class="claim">DuckDB's defaults were the worst layout in this project. Three options fix most of it.</p>
-<pre><code>COPY (SELECT * FROM fct_summary ORDER BY date, time)     -- rule 3: the sort is yours to do
-  TO 'fct_summary.parquet' (
-    FORMAT parquet,
-    COMPRESSION snappy,
-    ROW_GROUP_SIZE 6_000_000,                  -- rule 1: the 122,880 default cost 3.5x cold
-    DICTIONARY_SIZE_LIMIT 2_000_000,           -- rule 2: DISTINCT VALUES, not bytes. Never 0: that disables it
-    STRING_DICTIONARY_PAGE_SIZE_LIMIT 32_000_000  -- the byte cap; both must clear (default 1 MB)
-);</code></pre>
+<h2>DuckDB</h2>
+<p class="claim">Power BI reads a lakehouse table, not a loose parquet file, so the real question is which
+  table format DuckDB writes: Delta through duckrun, or Iceberg through DuckDB's own iceberg extension.</p>
+
+<h3>DuckDB → Delta, with duckrun</h3>
+<p>duckrun runs your SQL in DuckDB and writes the Delta table with delta-rs, with the layout from the
+  <a href="#deltars">delta-rs tab</a> already applied: millions of rows per row group, dictionaries kept,
+  <code>encoding_stats</code> declared. The one decision left to you is the sort.</p>
+<pre><code>import duckrun
+
+con = duckrun.connect(
+    "abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/&lt;lakehouse&gt;.Lakehouse/Tables/dbo",
+    read_only=False)
+
+con.sql("""
+    CREATE OR REPLACE TABLE fct_sales SORTED BY (order_date) AS   -- or SORTED BY AUTO
+    SELECT * FROM staging_sales
+""")
+
+con.get_stats("fct_sales")   # files, row groups, encodings: check what you got</code></pre>
+<p>In dbt, the same thing is the duckrun adapter plus one config line:</p>
+<pre><code>{{ config(materialized='table', sort_by='auto') }}
+select * from {{ ref('stg_sales') }}</code></pre>
 <ul>
-  <li><b>The dictionary limit hides inside the row-group size.</b> It defaults to
-    <code>ROW_GROUP_SIZE / 5</code>, so at the default geometry any column with more than 24,576 distinct
-    values per row group silently falls back to PLAIN. On our AEMO table that was <code>mw</code>: 0
-    dictionary pages across 1,172 chunks.</li>
-  <li><b>Do not raise it blindly.</b> A near-unique column's dictionary is as big as its data and makes
-    the file larger. Aim at the mid-cardinality columns the default is losing.</li>
-  <li><b>The footer declaration needs a newer DuckDB.</b> <code>encoding_stats</code> arrived in
-    <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>, not yet in a stable release:
-    10,857 → 689 ms cold first touch on a 142M-row string column.</li>
+  <li><b><code>SORTED BY</code> is one global sort</b> over the table, not a per-file one; <code>AUTO</code>
+    profiles the data and picks the key. It is what made duckrun read at 0.90× V-Ordered Spark's
+    Direct Lake CU in this repo.</li>
+  <li><b>The sort applies to full writes.</b> Merge, microbatch and delete+insert keep the table's existing layout.</li>
 </ul>
-<p>Check what you got, before and after:</p>
-<pre><code>SELECT path_in_schema, any_value(encodings)
-FROM parquet_metadata('fct_summary.parquet') GROUP BY 1;</code></pre>
+
+<h3>DuckDB → Iceberg</h3>
+<p>DuckDB's iceberg extension writes through an Iceberg REST catalog, OneLake's included, and OneLake
+  exposes the table to Direct Lake. There are no <code>COPY</code> options on this path: the geometry
+  comes from <b>Iceberg table properties, set when the table is created</b>.</p>
+<pre><code>ATTACH '&lt;warehouse&gt;' AS lake (TYPE iceberg, ENDPOINT '&lt;rest endpoint&gt;', TOKEN '&lt;token&gt;');
+
+CREATE TABLE lake.dbo.fct_sales WITH (
+    'write.parquet.row-group-size'       = '6000000',      -- rows: DuckDB's own key
+    'write.parquet.row-group-size-bytes' = '1073741824',   -- 1 GiB: without it a 128 MB cap closes the group first
+    'write.target-file-size-bytes'       = '1073741824'    -- the row group is clamped to the file size
+) AS
+SELECT * FROM staging_sales ORDER BY order_date;           -- the sort: ORDER BY in the CTAS</code></pre>
+<ul>
+  <li><b>The row count alone does nothing on a wide table.</b> The writer also flushes a row group at
+    128 MB <i>uncompressed</i>, which on our 17-column taxi mart is ~813K rows. Raise the byte budget
+    with it, as above.</li>
+  <li><b>Properties must be set at create time.</b> Setting them after the first write changes nothing already written.</li>
+  <li><b>Later inserts:</b> <code>ALTER TABLE … SET SORTED BY (order_date)</code> makes every insert honour the sort.</li>
+  <li><b>The dictionary is not reachable yet.</b> Neither <code>dictionary_size_limit</code> nor the parquet
+    version is mapped to a table property (<code>write.parquet.dict-size-bytes</code> is a different knob
+    and makes it worse). Measured here, a wide numeric column still fell to PLAIN on 10 of 53 chunks.</li>
+  <li><b>Use a recent DuckDB.</b> The footer declaration (<a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>)
+    is in the pre-release only; on this repo it halved cold load and cut read CU 2.5× on its own.</li>
+</ul>
+<p class="note">Today, Delta through duckrun gives the better layout: every rule is applied for you.
+  Iceberg is catching up, one upstream fix at a time.</p>
 </section>
 
 
