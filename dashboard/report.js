@@ -857,7 +857,7 @@ export function render(records, opts = {}, ledger = null) {
   const frame = `<p class="framelinks">${Object.entries(PAGES).map(([k, v]) =>
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
-  const intro = `<p class="lede">Power BI reads parquet and sees only the layout. So the question is <b>which layout properties matter, and by how much</b>. Each card is one property, measured on ${nds} datasets and stated as one number: the median across datasets, so each dataset weighs the same. Read CU, what the capacity pays, comes first.</p>`;
+  const intro = `<p class="about">Each card is one layout property: <b>which layout properties matter, and by how much</b>. One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const idx = found.findIndex((f) => f.id === opts.finding);
   const side = extra.find((f) => f.id === opts.finding);
   let body;
@@ -872,7 +872,7 @@ export function render(records, opts = {}, ledger = null) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
   } else {
-    body = `${intro}<div class="cards">${found.map((f, i) => card(f, i, opts)).join("")}</div>${frame}`;
+    body = `<div class="cards">${found.map((f, i) => card(f, i, opts)).join("")}</div>${frame}${intro}`;
   }
   return { html: body, ctx, found };
 }

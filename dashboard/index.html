@@ -66,6 +66,8 @@ ol.short li { margin:.55rem 0; }
 .evidence.controlled { border-style:solid; color:var(--good); }
 .evidence.confounded { color:var(--meh); }
 p.lede { font-size:1.08rem; max-width:52rem; margin:1rem 0 0; }
+p.about { color:var(--dim); font-size:.9rem; max-width:52rem; margin:1.5rem 0 0; }
+footer p { margin:.2rem 0; max-width:52rem; }
 .badge.parity { color:var(--c1); }
 
 .legend { display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; font-size:.85rem; color:var(--dim); margin:.8rem 0; }
@@ -154,14 +156,16 @@ footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px sol
 <main>
   <header>
     <h1>Writing parquet that Power BI likes</h1>
-    <p class="sub">The same data written by four engines, then read by Power BI in Direct Lake and DirectQuery. What in the files decides how fast the reports are, measured, and recomputed from every benchmark run each time this page loads.</p>
+  </header>
+  <div id="app"><p class="note">Loading…</p></div>
+  <footer>
+    <p>The same data written by four engines, then read by Power BI in Direct Lake and DirectQuery.
+      Every number on this page is computed in your browser from the run records under
+      <code>history/runs/</code>. Nothing is typed in by hand.</p>
     <p class="repo"><a href="https://github.com/djouallah/direct-lake-parquet-layout">djouallah/direct-lake-parquet-layout</a>
       · <a id="daglink" href="dag.html">the dbt DAG</a></p>
     <p class="status" id="status"></p>
-  </header>
-  <div id="app"><p class="note">Loading…</p></div>
-  <footer>Every number on this page is computed in your browser from the run records under
-    <code>history/runs/</code>. Nothing is typed in by hand.</footer>
+  </footer>
 </main>
 <script id="snapshot" type="application/json"></script>
 <script type="module" src="report.js"></script>
