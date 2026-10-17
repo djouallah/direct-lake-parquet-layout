@@ -109,14 +109,47 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 .tabs a:hover { border-color:var(--fg); }
 .tabs a[aria-current="page"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
 .tabs svg { width:17px; height:17px; min-width:0; flex:none; }
+
+/* how.html only: the page tabs plus a row of section tabs, pinned together; one section shows at a time. */
+.topbar { position:sticky; top:0; z-index:10; background:var(--bg); margin:-2rem 0 1.4rem;
+  border-bottom:1px solid var(--line); }
+.topbar .tabs { position:static; margin:0; border-bottom:0; padding-bottom:.4rem; }
+.subtabs { display:flex; gap:.2rem; overflow-x:auto; scrollbar-width:none; white-space:nowrap; }
+.subtabs::-webkit-scrollbar { display:none; }
+.subtabs a { padding:.5rem .8rem; font-size:.92rem; color:var(--dim); text-decoration:none;
+  border-bottom:3px solid transparent; }
+.subtabs a:hover { color:var(--fg); }
+.subtabs a[aria-selected="true"] { color:var(--fg); font-weight:600; border-bottom-color:var(--c2); }
+.js .pane { display:none; }
+.js .pane.on { display:block; }
+.pane > h2:first-child { margin-top:0; padding-top:0; border-top:0; }
+.pager { display:flex; justify-content:space-between; gap:1rem; margin:2.2rem 0 0; }
+.pager a { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem 1rem; border-radius:999px;
+  border:1px solid var(--line); background:var(--soft); color:var(--fg); text-decoration:none; font-weight:600; font-size:.95rem; }
+.pager a:hover { border-color:var(--fg); }
+.pager a.next { margin-left:auto; background:var(--fg); color:var(--bg); border-color:var(--fg); }
 </style>
 </head>
 <body>
 <main>
+<div class="topbar">
 <nav class="tabs" aria-label="pages">
   <a href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Results</a>
   <a href="how.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
 </nav>
+<nav class="subtabs" aria-label="sections" role="tablist">
+  <a href="#overview" role="tab" data-pane="overview">Overview</a>
+  <a href="#transcode" role="tab" data-pane="transcode">Transcode</a>
+  <a href="#parquet" role="tab" data-pane="parquet">Parquet file</a>
+  <a href="#rowgroups" role="tab" data-pane="rowgroups">Row groups</a>
+  <a href="#footer" role="tab" data-pane="footer">Footer</a>
+  <a href="#sorting" role="tab" data-pane="sorting">Sorting</a>
+  <a href="#global" role="tab" data-pane="global">Global vs per-file</a>
+  <a href="#ignore" role="tab" data-pane="ignore">What doesn't matter</a>
+</nav>
+</div>
+
+<section class="pane" data-name="overview" aria-label="Overview">
 <header>
   <h1>How Direct Lake reads your parquet</h1>
   <p class="sub">What a parquet file is made of, what Power BI does to it on the first click, and why
@@ -131,8 +164,9 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
   <li><b>One parquet row group becomes one VertiPaq segment.</b> The writer picks the segment count for you.</li>
   <li><b>Sorted values become runs.</b> VertiPaq stores a run as one (value, count) pair and scans it as one.</li>
 </ol>
+</section>
 
-<!-- 1 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="transcode" aria-label="Transcode">
 <h2>1. Direct Lake transcodes, it does not scan files</h2>
 <p class="claim">DuckDB and Spark read the files on every query. Direct Lake reads each column once,
   converts it into VertiPaq's in-memory format, and answers from memory after that.</p>
@@ -188,8 +222,9 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 </ul>
 <p>Cold is where layout costs most: across our datasets cold is 3–27× warm. But a live model is
   mostly warm and hot, so a layout that only helps cold helps less than it looks.</p>
+</section>
 
-<!-- 2 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="parquet" aria-label="Parquet file">
 <h2>2. What a parquet file looks like inside</h2>
 <p class="claim">A parquet file is cut horizontally into row groups, and each row group stores every
   column separately as a column chunk. The footer at the end describes all of it.</p>
@@ -254,8 +289,9 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 <p>Two choices made by whoever writes the file decide almost everything below: <b>how many rows go
   in a row group</b>, and <b>what order the rows are in</b>. The order decides whether the IDs come out
   as long runs or as noise.</p>
+</section>
 
-<!-- 3 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="rowgroups" aria-label="Row groups">
 <h2>3. One row group becomes one segment</h2>
 <p class="claim">On a cold load, every row group brings its own little dictionary. VertiPaq merges them
   into one dictionary for the whole column, then rewrites each row group's IDs into a segment.</p>
@@ -319,8 +355,9 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 <p class="note">Same DuckDB, same notebook, same SQL; only the row-group size differed. Healthy is
   millions of rows per group (Microsoft says 1–16M). Across our five datasets, more row groups made
   columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5.</p>
+</section>
 
-<!-- 4 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="footer" aria-label="Footer">
 <h2>4. The footer decides: swap IDs, or redo everything</h2>
 <p class="claim">If a chunk is dictionary-encoded, VertiPaq can keep the parquet's work and just swap
   IDs. It only trusts that when the footer says so.</p>
@@ -360,8 +397,9 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 <p>Two ways to land on the slow lane: a writer that never fills in <code>encoding_stats</code>, and a
   column whose dictionary grew too big so the writer fell back to PLAIN pages part way through. That
   second one is why a dictionary page size limit is a real setting, not a detail.</p>
+</section>
 
-<!-- 5 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="sorting" aria-label="Sorting">
 <h2>5. Sorting turns values into runs</h2>
 <p class="claim">In arrival order, equal values are scattered and every row costs bits. Sorted, they sit
   next to each other and a whole run costs one pair. VertiPaq keeps the parquet's row order, so it
@@ -398,8 +436,9 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
   of magnitude, the near-unique timestamp does not move. On the 5-column AEMO mart, which has almost
   nothing repetitive to group, the same switch moved no column. What sorting is worth depends on the
   table's columns and skew, not on its row count.</p>
+</section>
 
-<!-- 6 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="global" aria-label="Global vs per-file">
 <h2>6. Sort the table, or sort each file</h2>
 <p class="claim">A global sort keeps each value in one long run that crosses row groups. Sorting each file
   on its own restarts every value in every row group.</p>
@@ -421,12 +460,14 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 <p>V-Order is more than a sort. Microsoft describes it as four things: a sort within each file,
   row-group distribution, dictionary encoding and compression. In Fabric Spark only the
   <code>readHeavyForPBI</code> profile turns it on; it lowered cold load on 5 of 5 of our datasets.</p>
+</section>
 
-<!-- 7 ------------------------------------------------------------------------------------------ -->
+<section class="pane" data-name="ignore" aria-label="What doesn't matter">
 <h2>7. What does not matter</h2>
 <p><b>File count and file size.</b> Direct Lake loads whole columns and does no file or row-group
   skipping, so neither ever separated writers in the cost data. The one rule: never cap a file below
   one row group's bytes, or the writer has to cut the row group short.</p>
+</section>
 
 <footer>
   <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
@@ -504,6 +545,35 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
   }
   rgs("rg-global", global);
   rgs("rg-local", local);
+})();
+
+// ---- section tabs: one pane at a time, the hash names it so links and the back button work
+(() => {
+  document.documentElement.classList.add("js");
+  const panes = [...document.querySelectorAll(".pane")];
+  const tabs = [...document.querySelectorAll(".subtabs a")];
+  panes.forEach((pane, i) => {
+    const prev = panes[i - 1], next = panes[i + 1];
+    const nav = document.createElement("nav");
+    nav.className = "pager";
+    nav.innerHTML = (prev ? `<a href="#${prev.dataset.name}">← ${prev.getAttribute("aria-label")}</a>` : "")
+      + (next ? `<a class="next" href="#${next.dataset.name}">${next.getAttribute("aria-label")} →</a>` : "");
+    pane.append(nav);
+  });
+  function show() {
+    const id = location.hash.slice(1);
+    const pane = panes.find((p) => p.dataset.name === id) || panes[0];
+    panes.forEach((p) => p.classList.toggle("on", p === pane));
+    tabs.forEach((t) => {
+      const on = t.dataset.pane === pane.dataset.name;
+      t.setAttribute("aria-selected", String(on));
+      // Keep the chosen tab visible in the bar on a phone, without scrolling the page itself.
+      if (on) { const bar = t.parentElement; bar.scrollLeft = t.offsetLeft - (bar.clientWidth - t.offsetWidth) / 2; }
+    });
+    window.scrollTo(0, 0);
+  }
+  addEventListener("hashchange", show);
+  show();
 })();
 </script>
 </body>
