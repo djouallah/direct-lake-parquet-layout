@@ -191,7 +191,7 @@ table.left th, table.left td { text-align:left; }
   <tbody>
     <tr><td>Databricks</td><td><code>maxRecordsPerFile</code></td><td><code>parquet.dictionary.page.size</code></td><td><code>CLUSTER BY</code> one key</td><td><a href="#databricks">recipe →</a></td></tr>
     <tr><td>delta-rs / Python</td><td><code>max_row_group_size</code></td><td><code>dictionary_page_size_limit</code></td><td><code>ORDER BY</code> before writing</td><td><a href="#deltars">recipe →</a></td></tr>
-    <tr><td>DuckDB → Iceberg</td><td><code>write.parquet.row-group-size</code></td><td>not settable yet</td><td><code>ORDER BY</code> in the CTAS</td><td><a href="#duckdb">recipe →</a></td></tr>
+    <tr><td>DuckDB → Iceberg</td><td><code>write.parquet.row-group-size</code> + both byte limits at 1 GiB</td><td>not settable yet</td><td><code>ORDER BY</code> in the CTAS</td><td><a href="#duckdb">recipe →</a></td></tr>
     <tr><td>DuckDB → Delta</td><td colspan="3">no parquet settings exposed: use duckrun, which applies all three</td><td><a href="#duckdb">recipe →</a></td></tr>
   </tbody>
 </table></div>
@@ -322,16 +322,24 @@ write_deltalake(path, table, writer_properties=wp,
 <pre><code>ATTACH '&lt;warehouse&gt;' AS lake (TYPE iceberg, ENDPOINT '&lt;rest endpoint&gt;', TOKEN '&lt;token&gt;');
 
 CREATE TABLE lake.dbo.fct_sales WITH (
-    'write.parquet.row-group-size'       = '6000000',      -- rows: DuckDB's own key
-    'write.parquet.row-group-size-bytes' = '1073741824',   -- 1 GiB: without it a 128 MB cap closes the group first
-    'write.target-file-size-bytes'       = '1073741824',   -- the row group is clamped to the file size
+    'write.parquet.row-group-size'       = '4000000',      -- rows: DuckDB's own key
+    'write.parquet.row-group-size-bytes' = '1073741824',   -- 1 GiB: otherwise a 128 MB cap closes the group first
+    'write.target-file-size-bytes'       = '1073741824',   -- 1 GiB: must be at least the row-group budget, see below
     'write.parquet.page-size-bytes'      = '1048576'       -- 1 MB pages; the default is one ~100 MB page per column chunk
 ) AS
 SELECT * FROM staging_sales ORDER BY order_date;           -- the sort: ORDER BY in the CTAS</code></pre>
 <ul>
-  <li><b>The row count alone does nothing on a wide table.</b> The writer also flushes a row group at
-    128 MB <i>uncompressed</i>, which on our 17-column taxi mart is ~813K rows. Raise the byte budget
+  <li><b>The rule these settings give you, on any table:</b> a row group closes at 4M rows or 1 GiB of
+    uncompressed data, whichever comes first, and a file closes at the first row-group boundary past
+    1 GiB. Files land at about 1 GB; tables with wide rows get row groups under 4M rather than bigger files.</li>
+  <li><b>The row count alone does nothing on a wide table.</b> The writer also closes a row group at
+    128 MB <i>uncompressed</i> by default, which on a 17-column table is ~813K rows. Raise the byte budget
     with it, as above.</li>
+  <li><b>The file size caps the row group.</b> The writer never lets the row-group byte budget exceed the
+    file target, so a small file target (say 128 MB) quietly brings back small row groups. Keep the two equal.</li>
+  <li><b>One row group per file is not possible yet.</b> <code>write.parquet.row-groups-per-file</code> is
+    accepted but does nothing (<a href="https://github.com/duckdb/duckdb-iceberg/issues/1606">duckdb-iceberg#1606</a>),
+    so large row groups always come in files of several row groups.</li>
   <li><b>Properties must be set at create time.</b> Setting them after the first write changes nothing already written.</li>
   <li><b>Later inserts:</b> <code>ALTER TABLE … SET SORTED BY (order_date)</code> makes every insert honour the sort.</li>
   <li><b>The dictionary is not reachable yet.</b> Neither <code>dictionary_size_limit</code> nor the parquet
@@ -340,6 +348,8 @@ SELECT * FROM staging_sales ORDER BY order_date;           -- the sort: ORDER BY
   <li><b>Page size needs a recent extension.</b> <code>write.parquet.page-size-bytes</code> is mapped since
     <a href="https://github.com/duckdb/duckdb-iceberg/pull/1365">duckdb-iceberg#1365</a>; an older one stores
     the property and ignores it. Check the page count in the file footer.</li>
+  <li><b>Check what you got.</b> Read the row-group count and file count from the footer after the write;
+    settings that are accepted and ignored look exactly like settings that worked.</li>
   <li><b>Use a recent DuckDB.</b> The footer declaration (<a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>)
     is in the pre-release only; on this repo it halved cold load and cut read CU 2.5× on its own.</li>
 </ul>
