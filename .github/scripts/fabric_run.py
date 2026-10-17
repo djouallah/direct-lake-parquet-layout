@@ -220,7 +220,7 @@ def main() -> int:
     # duckrun injects it only into its OWN default spec or a bare `git+` URL (see `_requirement`
     # in fabric_remote.py); an explicit list like this one is passed through VERBATIM, so a bare
     # `duckrun` ships a notebook with no adapter and the leg dies at `dbt parse`.
-    pip = ["duckdb==2.0.0.dev2610161340","duckrun[dbt]>=0.4.50", "pytz"]
+    pip = ["duckdb==1.6.0.dev365","duckrun[dbt]>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
     # throttling). That item was created and did bill, so it is recorded before the failure
