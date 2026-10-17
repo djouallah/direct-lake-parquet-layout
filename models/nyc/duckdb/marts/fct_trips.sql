@@ -125,9 +125,20 @@ WITH trips AS (
   )
 )
 
+{# THE TWO DATETIMES ARE WRITTEN WITH A TIME ZONE, NOT AS `TIMESTAMP` (2026-10-18). A no-zone
+     timestamp lands as Iceberg `timestamp` / Delta `timestamp_ntz`, and the SQL analytics endpoint
+     does not expose ntz columns: the table syncs `Success` and the column is simply absent, so every
+     DirectQuery read of it fails with `Invalid column name`. `timezone('UTC', …)` reads the stored
+     wall-clock value AS UTC, so the digits Power BI shows are unchanged and the result does not
+     depend on the session's TimeZone setting. `pickup_date` below is cast from the SOURCE column,
+     which is still the no-zone value, so the date is unaffected. NYC only, to confirm the cause. #}
 SELECT
   {%- for name in cols %}
+  {%- if name in ['tpep_pickup_datetime', 'tpep_dropoff_datetime'] %}
+  timezone('UTC', CAST({{ name }} AS {{ nyc_trip_type(name, 'duckdb') }})) AS {{ name }},
+  {%- else %}
   CAST({{ name }} AS {{ nyc_trip_type(name, 'duckdb') }}) AS {{ name }},
+  {%- endif %}
   {%- endfor %}
   CAST(tpep_pickup_datetime AS DATE) AS pickup_date,
   {{ parse_filename('filename') }} AS file
