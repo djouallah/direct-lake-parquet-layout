@@ -7,7 +7,7 @@ name: Dashboard
 #                       -> dashboard.html    the artifact copy, with history/ inlined
 #
 # **PUBLISHING HAPPENS WHEN THE PAGE CHANGES, AND ONLY THEN.** `site/index.html` holds the stylesheet
-# and `dashboard/app.js` and NOTHING ELSE: it reads `history/runs/*.json` and `history/cu.json` from
+# and the report modules (`dashboard/data.js`, `report.js`) and NOTHING ELSE: it reads `history/runs/*.json` and `history/cu.json` from
 # `raw.githubusercontent.com` in the reader's browser on every load. So a `Benchmark` committing a
 # record, or `Capacity units` committing the ledger, reaches readers with **no deploy at all** — and
 # there is nothing left for this workflow to do about data. It used to hold the measurement too,
@@ -19,7 +19,7 @@ name: Dashboard
 #
 # **TWO DIRECTORIES, AND THE SPLIT IS THE JOB EACH DOES.** `cu/` EXPORTS: it reads the Capacity
 # Metrics model over DAX and writes `history/cu.json`, and that is all it does — Python, `requests`,
-# no rendering. `dashboard/` PRESENTS: `app.js`, the shell it lives in, and the build that emits both
+# no rendering. `dashboard/` PRESENTS: `report.js` + `data.js`, the shell they live in, and the build that emits both
 # copies of it — JavaScript, no network of its own beyond the two JSON documents it fetches. Neither
 # imports the other and they share no file; what passes between them is `history/`, on disk and in
 # git. Either can be deleted without touching the other.
@@ -69,7 +69,7 @@ permissions:
 
 jobs:
   # Free, offline, and it CANNOT fail for a Fabric reason — no token, no Azure login, no Python, no
-  # network beyond the checkout. It builds two HTML files out of the same `dashboard/app.js`:
+  # network beyond the checkout. It builds two HTML files out of the same report modules:
   #
   #   site/index.html   the LIVE page. No data in it; it fetches `history/` on load.
   #   dashboard.html    the artifact copy, with `history/` inlined, for opening off a disk with no
@@ -92,11 +92,12 @@ jobs:
       - uses: actions/setup-node@v4
         with: {node-version: "22"}
 
-      # The whole join, the labelling rules and both charts, offline, in about a second. This is the
-      # only gate on the page — there is no Python left in this job, which is what proves by running
-      # that the render path reaches no network of its own.
+      # The report's flattening, statistics, generated claims and charts, offline, in about a second.
+      # app.test.mjs still runs because profile_table.mjs (capacity.yml's README table) reuses the
+      # previous page's join from app.js. No Python in this job: the render path reaches no network
+      # of its own.
       - name: Test the page offline
-        run: node --test dashboard/app.test.mjs
+        run: node --test dashboard/data.test.mjs dashboard/app.test.mjs
 
       - name: Build the live page and the offline copy
         run: |

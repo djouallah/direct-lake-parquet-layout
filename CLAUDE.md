@@ -1836,6 +1836,23 @@ model by DAX over the Power BI `executeQueries` endpoint. Fabric exposes **no pe
 API** — that model is the only authoritative source, which is why this exists.
 [cu/README.md](cu/README.md) and [dashboard/README.md](dashboard/README.md) have the detail.
 
+⚠️ **THE PUBLISHED PAGE WAS REPLACED ON 2026-10-17.** It is now a live write-up of what in a parquet
+file decides Power BI speed (`dashboard/data.js` + `report.js`, tests `data.test.mjs`), modelled on
+the user's post *Writing parquet that VertiPaq likes*. It reads ONLY `history/runs/` (no CU ledger),
+compares cold against warm in Direct Lake and DirectQuery, and generates every claim sentence from
+the records with a strict `clear` / `inside the noise` / `too few runs` label. **Every bullet below
+that describes how the page PRESENTS** — `renderSummary`, the scorecard, the scatter, the layout
+tables, `LAYOUTS_SHOWN` / `PROFILES_HIDDEN` / `ENGINES_HIDDEN`, `layoutKey`, the generation switch,
+`?rows=`/`?table=`/`?record=` — **describes `dashboard/app.js`, which is no longer served.** It is
+kept, with `app.test.mjs`, only because `profile_table.mjs` reuses its join to regenerate the
+README's spark-profile table from `capacity.yml`. The bullets about the LEDGER (`cu/measure.py`, the
+GUID join, `max(old, new)`, the workflows and triggers) are unaffected. Findings measured
+2026-10-17 that the new page leads with: a column's compressed size predicts its cold load cost (ρ
+0.73–0.95 per dataset) and not its warm cost (ρ ≈ 0); cold is 3–27× warm in Direct Lake and only
+1.6–3.3× in DirectQuery; delta-rs row-group size from 1M to 29M rows shows no effect beyond noise;
+Spark V-Order lowers cold on 5 of 5 datasets but beats every run without it on none, and does not
+move warm.
+
 **Three workflows, one job each in spirit.** `Benchmark` builds, measures query time, deletes what it
 created and commits `history/runs/<ts>-<run id>.json`; `Capacity units` reads capacity for the GUIDs
 in those records and commits `history/cu.json`; `Dashboard` builds and deploys the page and touches

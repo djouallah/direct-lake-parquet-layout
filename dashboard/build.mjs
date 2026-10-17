@@ -1,22 +1,15 @@
 /**
- * One HTML file out of `index.html` + `app.js`, twice — the live page and the frozen copy.
+ * One HTML file out of `index.html` + the report modules, twice — the live page and the frozen copy.
  *
  *     node dashboard/build.mjs --out site/index.html               # live: fetches history/ at load time
  *     node dashboard/build.mjs --out dashboard.html --snapshot     # offline: history/ inlined
  *
- * **The live page is the ONLY thing Pages publishes, and it carries no data.** That is the point of
- * the whole arrangement: `Benchmark` commits a run record, `Dashboard`'s measure job commits the
- * ledger, and the published page picks both up on the next load. Publishing became what you do when
- * the VISUALISATION changes.
+ * The live page carries no data: it reads `history/runs/` from GitHub on every load, so a Benchmark
+ * run reaches readers with no redeploy. The snapshot copy inlines the records so it opens off a disk.
  *
- * **The snapshot copy exists because the artifact has to survive.** `dashboard.html` is uploaded per
- * run and has to open from a local disk with no network years later, which a page that fetches cannot
- * do. Same file, same render path, data from a different place — `app.js` prefers an inlined
- * `#snapshot` over the network when one is present, so there is exactly one implementation of the join
- * and no way for the two copies to disagree.
- *
- * No dependencies, and no bundler: `app.js` is a single ES module and this concatenates it into the
- * shell. Node's own `--test` runner covers the module; this file is 80 lines of string substitution.
+ * No bundler. `data.js`, `probe_columns.js` and `report.js` are concatenated into ONE module script,
+ * in dependency order, with their relative `import` lines removed — which is why those imports are
+ * each written on a single line.
  */
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -82,12 +75,16 @@ if (!out || out === true) {
 }
 
 let html = readFileSync(join(HERE, "index.html"), "utf8");
-const app = refuseScriptClose("app.js", readFileSync(join(HERE, "app.js"), "utf8"));
+const MODULES = ["data.js", "probe_columns.js", "report.js"];
+const LOCAL_IMPORT = /^import [^\n]* from "\.\/[\w.]+";\r?\n/gm;
+const app = refuseScriptClose("report modules", MODULES.map((m) =>
+  readFileSync(join(HERE, m), "utf8").replace(LOCAL_IMPORT, "")).join("\n"));
+if (/^import /m.test(app)) throw new Error("a module still carries an import the build cannot inline");
 
 const before = html;
-html = html.replace('<script type="module" src="app.js"></script>',
+html = html.replace('<script type="module" src="report.js"></script>',
   `<script type="module">\n${app}\n</script>`);
-if (html === before) throw new Error("index.html no longer carries the app.js script tag");
+if (html === before) throw new Error("index.html no longer carries the report.js script tag");
 
 if (flag("snapshot")) {
   const data = snapshot();

@@ -1,26 +1,34 @@
-# `dashboard/` — the page
+# `dashboard/` — the report
 
-**It runs in the reader's browser and reads `history/` live.** `app.js` fetches
-`history/runs/*.json` and `history/cu.json` from `raw.githubusercontent.com` on every load, joins
-them on the Fabric item GUID, and writes the whole page — tables, the chart, every note — into
-an empty shell.
+**A live write-up of what in a parquet file decides how fast Power BI reads it.** `report.js` fetches
+`history/runs/*.json` from `raw.githubusercontent.com` on every load and writes the whole page:
 
-**So publishing is what you do when the VISUALISATION changes, not when a number does.** A
-`Benchmark` run that commits a record, or a `Capacity units` run that commits the ledger, appears
-on the published page with no deploy at all. That is the point of the arrangement, and it replaced a
-Python renderer whose output had to be republished for every measurement — which meant a page nobody
-had looked at could be published by a workflow nobody had watched.
+- the short version;
+- the method;
+- how Direct Lake and DirectQuery read parquet;
+- nine findings, one variable each;
+- the takeaway;
+- the data itself.
+
+Every sentence that states a number is generated from the records, so the page rewrites itself after
+each Benchmark run. It cannot quote a number the records no longer support.
+
+The shape follows
+[Writing parquet that VertiPaq likes](https://datamonkeysite.com/2026/08/29/writing-parquet-that-vertipaq-likes/).
 
 ```
-index.html   the shell: one stylesheet, the title, three empty elements
-dag.html     the dbt DAG -- `dbt docs generate --static` output, one self-contained file
-app.js       the whole page — loader, join, layout grouping, render, charts
-build.mjs    index.html + app.js -> one file, twice (live, and offline with data inlined)
-app.test.mjs offline tests, no browser, no network (a count here goes stale silently)
+index.html         the shell: styles, a header, three empty elements
+data.js            records -> flat runs[] and columns[]; generation filter, query set, statistics
+report.js          the findings, the SVG charts, the page, boot
+probe_columns.js   GENERATED: which column each probe_<name> query touches (from benchmark/xmla_compare.py)
+probe_columns.mjs  regenerates it: node dashboard/probe_columns.mjs
+build.mjs          index.html + the three modules -> one file, twice (live, and offline with data inlined)
+data.test.mjs      offline tests, no browser, no network
+dag.html           the dbt DAG, `dbt docs generate --static` output
+app.js             the PREVIOUS page, no longer served; kept because profile_table.mjs reuses its
+app.test.mjs         join to regenerate the README's spark-profile table (capacity.yml)
+profile_table.mjs
 ```
-
-Where the data comes from is [`cu/`](../cu/README.md) (the CU ledger) and the `Benchmark` workflow
-(the run records). **Neither directory imports the other**; what passes between them is `history/`.
 
 ## When it publishes
 
@@ -38,7 +46,7 @@ is not reachable. Two things must stay true —
 - **`Benchmark` and `Capacity units` must never gain a `push:` trigger.** They commit, and one of
   them spends capacity.
 
-The filter is the whole directory even though only `app.js`, `index.html` and `build.mjs` reach the
+The filter is the whole directory even though only `report.js`, `index.html` and `build.mjs` reach the
 published bytes. A narrower one is tempting, but if someone later adds `dashboard/theme.css` and
 forgets to extend it, the page **silently** stops updating; the broad filter's worst case is a free
 no-op deploy for a README edit. `paths:` is also evaluated per PUSH, not per file, so a mixed commit
@@ -67,6 +75,7 @@ measured".
 shape the page wants; ~30 MB of wasm from a CDN to query it would be a cost with no matching
 benefit. If an ad-hoc SQL explorer over the records is ever wanted, that is a different page.
 
+
 ## Two builds, one implementation
 
 ```
@@ -74,725 +83,53 @@ node dashboard/build.mjs --out site/index.html              # live: fetches hist
 node dashboard/build.mjs --out dashboard.html --snapshot    # offline: history/ inlined
 ```
 
-The offline copy exists because the `dashboard` artifact has to open off a local disk, with no
-network, years later. It is the **same module and the same render path** — `app.js` prefers an
-inlined `#snapshot` over the network when one is present — so a frozen copy and the live page cannot
-disagree about a number. The build reads the snapshot back out of the finished document and parses
-it, because a truncated one renders as "no run records", which is indistinguishable from a repo that
-has never been measured.
+The build concatenates `data.js`, `probe_columns.js` and `report.js` into one module script, in that
+order, and strips their relative `import` lines. **Keep each of those imports on a single line**:
+the build refuses to emit a page that still carries one. The offline copy uses the same code with
+the records inlined in `#snapshot`, so it opens off a disk with no network. The charts are
+hand-written SVG with no CDN, so that copy still draws them.
 
-The live shell is checked in CI for the opposite property: it must NOT carry inlined data. A page
-that ships its own data is a page that goes stale silently.
-
-To work on it locally, serve the directory rather than opening the file — `index.html` loads
-`app.js` as a module, which `file://` refuses:
+To work on it, build the snapshot copy and open it in a browser:
 
 ```
-python -m http.server -d dashboard 8000   # then http://localhost:8000/
+node dashboard/build.mjs --out dashboard.html --snapshot
 ```
 
-It reads the real `history/` off GitHub from there, so a local edit is checked against real records
-without a build, a token or a dispatch.
+## How the numbers are made comparable
 
-## Query parameters, not workflow inputs
+- **One source generation per dataset.** Only runs at the biggest mart row count are kept. A run on
+  a smaller slice is a different workload, not a faster one. The data section names every run
+  left out.
+- **One query set per dataset.** A total sums the queries at least 60% of the dataset's runs carry
+  (`QUERY_SHARE`). A run missing one of them gets no total but keeps its layout row. DirectQuery
+  is voted on only by runs that measured DirectQuery.
+- **A column's cost is its probe minus `probe_rowcount` in the same pass.** This is the benchmark's
+  own decomposition, and it isolates loading that column from the fixed cost of any query.
+- **`clear` means every run of the winner beat every run of the loser, with at least 3 each.**
+  Anything weaker reads `inside the noise` or `too few runs`. Correlations are Spearman's ρ, and a
+  claim says "strong / moderate / only a weak / no link" rather than printing a bare coefficient.
+- **The writer is held fixed where it can be.** Row-group size uses delta-rs runs only, where it
+  is a dispatched setting. The sort finding compares delta-rs sorted against unsorted, and V-Order
+  compares the two Spark profiles. Everything across writers is labelled as a correlation.
 
-| | |
-|---|---|
-| *(none)* | the **Summary** — one scorecard, four writers × every dataset, warm query time; a writer is called fastest only when every one of its runs beat every run of the others |
-| `?dataset=nyc` | which dataset the page is about. Carries its mart with it. Any of `dataset`/`record`/`rows`/`table` opens the per-dataset page |
-| `?record=30776174056` | render one run alone — a substring of the record's filename, so a run id or a date both work |
-| `?ref=some-branch` | read `history/` from another branch |
-| `?repo=owner/name` | read another fork's records entirely |
-| `?table=fct_scada` | which table leads the layout section |
-| `?rows=43734157` | which source generation — one mart row count. Defaults to the biggest the dataset has |
+## Marks
 
-`?record=` used to be a workflow dispatch input. A link to one run's page is now a link.
-
-### One dataset per page, always
-
-`?dataset=` and `?rows=` are the two with a visible control — pill switches at the very top of the
-page, one link per dataset (or per generation) with its record count beside it. The `?rows=` switch renders **only
-where there is a choice**: aemo has one row count across all 79 of its runs, nyc has two. Plain anchors, no JavaScript: it works with
-scripts off, in print, and in the offline snapshot, which already inlines **both** datasets' records
-(`build.mjs` filters only `index.json`), so a query-param link re-renders the same file against the
-other dataset with no rebuild.
-
-**No block ever shows both datasets at once, and that is not a stylistic call.** The marts are
-different tables — `fct_summary` and `fct_trips` — so CU, ms, MB and row counts are not comparable
-across them. The page already refuses this on its own: `benchTotals` sums only the queries **every**
-column carries, and the two suites share no query name, so a merged page would silently produce no
-cold/warm/hot column anywhere. The switch navigates between two complete pages; the contrast between
-datasets is something a reader draws by flipping it.
-
-The **count** beside each name is deliberately taken BEFORE the completeness filter — it answers
-"how many records does this dataset have", not "how many survived". It is also the page's only
-sample-size signal: every other number renders as confidently at n=2 as at n=20.
-
-That count is also the ONLY place the other dataset's records are reported. `selectRuns` drops them
-without adding them to `skipped`, because that list is defects — it renders under *"a run has to be
-built and benchmarked to be comparable"* — and a record belonging to the other dataset is not
-defective, it is on the other page. Naming them there put **89 lines** of `dataset aemo, not nyc`
-under a heading giving a reason that was not the reason, which reads as 89 broken runs. The taxi
-page's note went from 89 entries to 4, and those four are real: `no output item`, `no benchmark
-timings`.
-
-Three sentences used to hardcode AEMO and were rendered unchanged on a taxi page — the lede's
-archive wording, the input fold's landing item, and the scope caveat under *Analysis*. They read
-from `DATASET_INFO` now. `renderEncodings` was worse: it read one global column list, so the taxi
-encodings table came out EMPTY and the "column names this page cannot resolve" caveat fired to
-explain it — a confident wrong answer about Fabric column mapping. It takes the dataset now.
-
-## The page
-
-- **The page says what it IS before what it measures.** It opened on `Capacity units` and went
-  straight into the numbers, so it named its measure and never its subject: a reader arriving on a
-  link met four columns of CU with no statement of the scale any of it describes. Now an `<h1>`
-  **Direct Lake parquet layout** with the repo link under it, then one sentence of scale, then
-  `Capacity units` — kept, and heading the section it always described rather than the page.
-  **The title is in the SHELL and the sentence is in `app.js`**, and the split is what each needs:
-  the title needs no data, so putting it in `index.html` means it is already there while the page
-  says `Loading…`, on the empty-records page and on the boot error page, with one copy to maintain
-  instead of four. The sentence needs the records, so it cannot live there.
-  **Every number in it is DERIVED** — engines from the columns, GB and files from `layout.landing`,
-  the table count and its `1 fact, 2 dimensions, 4 staging and a log` breakdown from
-  `layout.tables`, the row total summed over that same list. A hardcoded `170 GB`
-  goes stale the first dispatch that runs with `skip_download` off, and goes stale **silently**.
-  **The `fct_` prefix is NOT the classifier**, and reading it as one printed `4 facts … and a mart`
-  — wrong twice over. Four of the five `fct_*` tables (`fct_price`, `fct_scada` and their `_today`
-  siblings) are raw AEMO CSV landed in the **`landing`** schema; only `fct_summary` reaches
-  **`mart`**, and it is the one actual fact table, the `(date, time, DUID)` grain Power BI queries.
-  The split is the mart table against everything else, and the record's own `schema` field is what
-  says so.
-  It reads the archive through `landingBlocks`, the same call the *Input archive* table at the foot
-  of the page makes, so the top and the bottom cannot quote different archives — a test asserts they
-  agree rather than asserting which record wins, so it survives a change to that rule.
-  Three things it refuses to say. **An absent input is an absent clause, never a zero** — no landing
-  block, no size; the same rule as the `compute seconds` row. **A partial row total is dropped
-  entirely**: seven tables of eight labelled "in total" is a *wrong* number, not an incomplete one,
-  and it would sit there looking perfectly plausible. And a **breakdown that does not account for
-  every table** is dropped while the count stays, because a decomposition quietly short of the
-  number beside it contradicts it. With nothing measurable at all there is no lede rather than a
-  sentence of dashes.
-  On the unit: `stats.py` stores `bytes / 1048576`, so `size_mb` is really MiB and the archive is
-  178.8 GB decimal. The lede prints `size_mb / 1000` because that is the figure which agrees on
-  sight with the `170,491.5 MB` in the *Input archive* table on the same page; raw bytes are
-  discarded inside `landing_stats()` and never reach the record, so there is no exact byte figure to
-  print instead. A test pins the `/1000`, so a later "fix" to `/1024` is a visible change.
-- **The DAG is the real one, linked from the title.** `dag.html` is `dbt docs generate --static`
-  output — one self-contained file, manifest inlined, no sidecar JSON and no CDN, which is the only
-  form that fits a page with no third-party runtime. Regenerate it by hand when the models change:
-
-  ```
-  FILES_PATH=./landing ONELAKE_TABLES_PATH=./warehouse WAREHOUSE_PATH=./wh \
-  ONELAKE_ENDPOINT=http://localhost ONELAKE_TOKEN=x \
-  dbt docs generate --target iceberg --static --no-compile --empty-catalog
-  cp target/static_index.html dashboard/dag.html
-  ```
-
-  `--no-compile --empty-catalog` is what makes it free: no warehouse, no credentials, no capacity —
-  the lineage and the model descriptions all come from the parsed manifest. The placeholder env vars
-  are only there because parsing reads `profiles.yml`; nothing connects. The cost is that
-  column-level detail is empty. It lives under `dashboard/` so that regenerating it republishes the
-  page on its own, with no new trigger and no edit to a path filter this repo is careful about; the
-  workflow copies it into `site/` beside `index.html`.
-  The link is **relative** on the live page and rewritten by `build.mjs --snapshot` to the absolute
-  Pages URL, because the offline copy is one loose file with no sibling to point at — and a 404 off
-  a local disk looks like nothing happened at all. The build fails if that link ever stops matching.
-- **EVERY CHART AND TABLE COMES BEFORE EVERY PARAGRAPH, and the methodology is LAST.** The order is
-  *Cost and speed by parquet layout* (its scatter, then its table), *Cost by engine*,
-  *Table layout*, *Input archive*,
-  *Every run*, then *About these numbers* and the provenance line. `About these numbers` used to sit
-  between the layout tables and the run table, so the last table on the page was below a screen of
-  prose explaining the measure. A reader arrives for the numbers; the explanation is where they go
-  looking for it. Pinned by a test that asserts the section order outright.
-  *Every run* gained an `<h3>` of its own in the same move: it opened with a bare note, so it read as
-  a continuation of whatever sat above it.
-- **NOTHING BUT THE NAV LINE, THE STATUS AND THE SWITCHES SITS ABOVE THE CHART, so the whole of it
-  is on the first screen.** The scatter is drawn at a 920×610 viewBox and stretches to its card, so
-  at the flat 86rem cap it was ~886px tall under ~500px of chrome — a 1080p reader met an `<h1>`, the
-  status line, the switches, the lede, a ruled `<h3>` and a two-line caption, and then half a plot.
-  ~215px of chrome now. Five things, each the cheap half of a trade:
-  - **The `<h3>` is gone when there is a chart**, and so is the figure's caption title. A chart that
-    opens a page needs no sign over it saying it is the chart. `scatterSvg` draws nothing below two
-    plottable points, so a page with one measured layout opens with a bare TABLE instead — and a
-    table under no heading reads as a continuation of what precedes it, so `renderFit` emits the
-    heading in exactly that case. Named when there is no figure, unnamed when there is.
-  - **The caption is ONE LINE and carries the encoding only** — what a dot is, what each axis holds,
-    what the area and the hue mean, at 93 characters against 196. The labelling rule it used to
-    explain moved to the note under the table, where the rest of "how to read this section" lives.
-    `.chart-note` lost its `flex-basis:100%` so *what was queried* shares that line rather than
-    claiming a second one; it still gets its own line in the `save PNG` export, where height is free.
-  - **The `<h1>` is gone.** `<title>` names the tab, the bookmark and every link preview, and the
-    `<h1>` said the same thing to a reader already looking at it. Its two links — the repo and the
-    dbt DAG — survive as a standalone `.repo` line, because the DAG link exists nowhere else on the
-    page. `h1` keeps its CSS rule: `renderEmpty` and the boot error path still open with a heading.
-  - **The lede moved to the foot**, opening *About these numbers*. It is a statement about the
-    numbers rather than one of them, and it is still the first prose on the page — everything above
-    it is a chart or a table.
-  - **`figure.chart.wide` is capped by the viewport height**, not a flat 86rem:
-    `clamp(48rem, calc((100dvh - 15rem) * 1.508), 86rem)`, where 1.508 is the viewBox aspect that
-    turns the height left over back into a width. The figure shrinks as a whole on a short window and
-    is untouched on a tall one — sizing the width is what avoids letterboxing inside the card. The
-    48rem floor cannot overflow a narrow screen; `max-width` only caps a width, never forces one.
-    **The 15rem tracks what is above the chart** — it was 20rem while the `<h1>` and the two-line
-    caption were there. Shrinking it is what turns removing those into plot area rather than into
-    white space, so anything added back above the figure has to raise it again.
-- **Numbers are visible, methodology is opt-in.** The long how-to-read notes are folded behind a
-  one-line `<details>` each (`fold()` in `app.js`); every sentence stays in the DOM — the tests and
-  ctrl-F still see it all — but the page reads numbers-first. Two things are deliberately NEVER
-  folded, because they are the page's alarms: the excluded-runs block (a different source generation)
-  and a **still billing** drifter note. Both are pinned by tests.
-- **The layout tables are a tab strip, one table visible at a time.** Eight stacked tables buried
-  the mart under seven blocks that explain it. The tabs are CSS-only — radio inputs paired to panels
-  by enumerated `nth-of-type` rules, no JS — so the offline snapshot and a script-blocked browser
-  behave identically, every panel stays in the DOM, and print shows all of them. The pairing is
-  enumerated to 12 panels in the stylesheet; past that `renderLayouts` falls back to stacked blocks
-  rather than render tabs whose panels could never show. The `?table=` param still picks which table
-  leads, i.e. which tab is first and checked.
-- **Every ranked table is cheapest first**, because "lower is better" makes the ranking the
-  finding. A **zero sorts to the bottom**, never the top: zero means the engine did no such work,
-  and at the top under that heading it would read as the winner.
-- **`Column encoding` sits under `Table layout`, and is the half shape could not explain.** One row
-  per `fct_summary` column, one column per layout: what each column is ENCODED as in parquet, read
-  from the footers by `stats.py` and aggregated over every row group. Shape does not predict the
-  CU — duckrun writes the densest parquet here and does not win, dwh writes UNCOMPRESSED and beats
-  a SNAPPY spark build, and spark's two profiles sit in one row-group band 2.6x apart — while what
-  Direct Lake pays for on a cold pass is transcoding parquet into VertiPaq segments, which depends
-  on the encoding. A column whose writer gave up dictionary-encoding partway still LISTS
-  `PLAIN_DICTIONARY`, so `dict_pages < chunks` is flagged separately; no dictionary at all is
-  flagged loudest. **Absent, never empty**, when no record carries `encodings` — which is every
-  record written before `stats.py` learned to profile the mart.
-- **Cost and speed by layout is a CHART, then its TABLE — the scatter leads the section.** That
-  reverses an older "table, then its chart", which was written for the two bar charts it applied to:
-  their lengths WERE columns printed a block away, so they could only ever follow. This scatter is
-  not a restatement — three measures on three channels answer a question no column ordering can,
-  whether cost and speed move together, and here the answer runs AGAINST the table's ranking: the
-  cheapest duckrun layout is the slowest of its nine. A reader who meets the ranked table first has
-  been told cheapest-is-best before the chart gets to disagree.
-  The table follows immediately, unchanged and complete — one row per
-  layout, cheapest first: `cores`, `etl CUs`, then ONE BLOCK PER QUERY PHASE — its CUs, then its
-  three tiers: `directlake CUs`, `cold ms`, `warm ms`, `hot ms`, then `directquery CUs` and the
-  `dq *` tiers. Build before query, the order the work happens in; then Direct Lake COMPLETE
-  before DirectQuery starts, because Direct Lake is what the table ranks by and what the page
-  leads with, and a reader crossing from `directlake CUs` to `cold ms` should not have to step
-  over a DirectQuery number to do it. The two phases were interleaved — all three CUs columns,
-  then all six tiers — which put `directquery CUs` three columns from the tiers it belongs to.
-  **`cores` reports duckrun's vCores and dashes everyone else.** It is the only engine whose compute
-  this repo both SIZES and varies — `FABRIC_CORES` sets its notebook and the build cost moves 2.3x
-  across core counts, which is the entire reason `ETL_VCORES` pins the column to one size. spark's
-  compute is the workspace Livy pool and dwh's is the warehouse, neither dispatched from here, and
-  iceberg records a count but is not what the pinning exists for. The column also lets the header
-  drop its `(8 vCores)` parenthetical, which could only ever have been right for some rows.
-  **Column order is not sort order**: the table is still RANKED by `directlake CUs`, which no longer
-  leads the group. Most of these
-  were columns of the mart's layout block, which made one table answer two questions — what the
-  parquet looks like, and what querying it cost. *Table layout* is now physical layout alone and this
-  is the other half. It has a title and no commentary. Built from the same `martPoints` as the chart
-  and the layout rows, so all three quote the same median.
-  ⚠️ **A LAYOUT WITH NO RUN AT `ETL_VCORES` IS DROPPED FROM THE SECTION** — from the table and
-  from the chart, with the count named in a note under the table. **Today it drops nothing** — all
-  17 groups have an 8-core run, so the note is absent and every row is complete; it took seven
-  deliberate dispatches to get there ([TODO.md](../TODO.md) records them). The alternative was hiding
-  the column while most rows could not fill it, and a cost column that is mostly dashes reads as "the
-  build was free" rather than "nobody measured it at that size"; the `cores` column is what keeps the
-  filter visible. **The cost when it does drop one is the chart** — a layout's query timings leave a
-  section they had every right to be in, for a build-cost reason. They stay in *Every run*.
-  The filter is on MEMBERSHIP, not on the value: a layout built at 8 whose CU the ledger has not read
-  keeps its row and dashes that one cell, because "measured, not yet costed" is a different statement
-  from "never built at this size". Table and chart filter together on purpose — they are the same
-  `martPoints`, and a section whose two halves disagreed about which layouts exist would be worse
-  than either.
-  **THE THREE CU COLUMNS ARE NOT THE SAME KIND OF NUMBER, and only one of them ranks the
-  row.** `directlake CUs` is what QUERYING the layout through Direct Lake cost and is what the table
-  is ranked by — it
-  belongs to the parquet, which is why every run in the group can be summarised into it. `etl CUs` is
-  what BUILDING it cost, and that belongs to the engine and the machine it was given.
-  `directquery CUs` is the same suite as SQL-endpoint pushdown over the same tables — a property of
-  the endpoint far more than of the parquet, printed at the head of its own `dq *` tiers so that
-  difference is readable, never the ranking column, and those tiers rank only against each other.
-  **So `etl CUs` is filtered to ONE core count and the header prints which** — `etl CUs (8 vCores)`.
-  `layoutKey` does not carry `vcores` (it is about the parquet, and duckrun writes the same files at
-  every core count), so a layout group genuinely holds runs from several machines: measured on the
-  real records one duckrun layout reads **9,986 CU at 8 vCores against 22,547 blended** across
-  8/16/32/64. A median over all of them describes none of them. A filter a reader cannot see is the
-  one that lies, which is why it is in the header and not only here.
-  **A run that records NO core count is kept, not filtered out.** `FABRIC_CORES` sizes the notebook
-  the DuckDB legs run in, so only `duckrun` and `iceberg` record `vcores`; spark's compute is the
-  workspace Livy pool and dwh's is the warehouse, and neither reads the input. Filtering on the value
-  alone would have emptied the column for two of the four engines rather than narrowing it.
-  **A layout nobody has built at that size is a DASH, never a blend and never a zero** — none today,
-  and a NEW sort key or row-group band re-opens one the moment it is dispatched at 64 cores alone.
-  **The nightly does NOT fill them in**, and a first version of this note said it would: the nightly
-  writes ONE layout (`date,time,price` at 2M) whose group already has 8-core runs, while any new group
-  is a sort key or row-group size it never builds. Closing one is a deliberate dispatch at `cores=8` —
-  [TODO.md](../TODO.md) has the recipe and the serialisation rule. `ETL_VCORES` is a constant that has to be kept in step with the dispatch default by
-  hand.
-- **Under it, ONE SCATTER, and the mark is a DOT again.** Each layout is one dot: **cold ms across,
-  warm ms up, both axes log**, with **its AREA the directlake CU it cost** and **its colour the
-  writer**. Same `martPoints` and same `groupMid` as the table above, so the chart and the table
-  cannot disagree about a number.
-  **It replaced a LINE chart**, which drew each layout as a segment from its warm ms to its cold ms
-  at the height of its CU — all three numbers in one mark, and the cold/warm trade readable as the
-  segment's LENGTH. That read well at eleven layouts. At seventeen, nine of them one writer at
-  similar CU, it stopped: a line is a WIDE mark, it spans most of a decade on a log x, so nine of them
-  overlap into a hatch that no hover pulls apart. `opacity: .8` was already a mitigation for the
-  first two coincident pairs; it does not survive nine. A dot occupies one point, and points
-  separate.
-  **THE COST IS STATED RATHER THAN DISCOVERED LATER: the cold/warm trade is a distance from the
-  diagonal again, not a length.** That is a worse encoding of it, and it is the price of separating
-  seventeen marks. The ratio is still one line of every dot's hover, and `hot` with it.
-  **CU MOVED FROM THE Y AXIS TO THE AREA, which is a promotion.** It is the measure this project
-  optimises for, and area is the channel that survives crowding — a dot keeps its size wherever it
-  lands, while a y position is spent on separating marks. The size key names it (`CU`) and prints
-  three circles at the observed min, middle and max, area-scaled by the same function the dots use,
-  so the key cannot drift from the marks. Row-group size was the old size channel; it is a column of
-  the table directly above and a line of every hover, so nothing left the page.
-  **COLOUR STAYS THE WRITER, and recolouring by engine was considered and rejected**: the legend,
-  the layout rows and every table name writers, so hueing by engine would fold spark's three
-  profiles into one colour while the table beside it kept them apart.
-  **BOTH AXES ARE LOG.** Cold spans 22,823–45,010 against warm at 3,000–6,500, so a linear pair
-  pinned every dot into one corner; on log they spread. This is orthogonal to the mark — the line
-  chart had it too, and it is kept for the same reason.
-  **`logScale` does NOT snap the bound out to whole decades**, for the same reason `niceScale` snaps
-  the step and not the bound one function above it: half a decade of spread would otherwise sit in
-  the bottom half of the plot. Ticks come from mantissa sets, coarsest that still fills the axis —
-  `[1,2,5]` yields a single tick over half a decade, and an axis with no numbers reads as a
-  rendering failure rather than as a narrow range.
-- **`duckrun` LABELS TWO LAYOUTS — its CHEAPEST and its FASTEST. Everything else is labelled as
-  before.** Nine of the seventeen layouts are `delta_rs` — one hue, one writer name — so labelling them all
-  prints nine `date, time · rg …` strings into one cluster, which is the crowding the dots were
-  adopted to fix arriving back as text. `LABEL_BEST_ONLY` is a NAMED constant keyed on the ENGINE,
-  never a computed "any engine with more than N dots": the computed version would silently start
-  suppressing spark's labels the day a fourth profile landed.
-  **THERE ARE TWO BECAUSE CHEAP AND FAST ARE NOT THE SAME LAYOUT — measured, they are nearly
-  opposites.** The cheapest duckrun layout reads 1,569 CU and is the SLOWEST of the nine on both
-  tiers (28,518 cold / 5,380 warm); the fastest (21,050 / 3,652) costs 1,571 — two CU more. One label
-  would have shown whichever half of that a reader did not need.
-  **`cheapest` is lowest directlake CU**, which is the size channel, so that dot is also the smallest
-  of its hue. **`fastest` is the lowest `cold + warm`** — the sum of the two axes it is plotted
-  against, so it is the dot nearest the bottom-left corner and the pick is verifiable by looking at
-  it. Same unit, so the sum needs no weighting, and it is a number a reader can add up from the
-  table. Cold is ~6x warm so the sum is cold-dominated; checked against the alternatives, lowest-cold
-  and the log-space distance from the origin pick the SAME dot today, so the simplest rank buys no
-  different answer. Only *lowest warm alone* differs, and that is a third question needing a third
-  label.
-  **The label is the LAYOUT and nothing else** (`date, time · rg 2.0M`). It carried a
-  `(cheapest)` / `(fastest)` suffix naming which pick it was; that read as a verdict on the dot
-  rather than as the reason it carries text at all, and on a dot winning both it printed
-  `(cheapest, fastest)` — which claims to be the cheapest and fastest layout on the whole chart when
-  it is only the best of one writer's. The caption states the rule instead. The two labels are still
-  distinguishable, by the layouts they name, which is what a reader came for. A dot winning both is
-  labelled ONCE. Ties go to the table's own cheapest-first order, so a pick cannot move
-  between two renders of one document. The rest are a hue and a hover, and every one of them is
-  still a ranked row of the table above.
-- **EVERY LABELLED DOT CARRIES ITS LAYOUT, and its writer's name as well when that name identifies
-  it.** `spark readHeavyForPBI · V-Order · rg 13.1–16.0M`, `duckdb iceberg · rg 0.1M`. The writer
-  half is what `uniqueName` decides — the three spark profiles and iceberg have it, `dwh` (two
-  configs) and `delta_rs` (nine) do not. The layout half is unconditional, and that is a change: a
-  dot labelled with its writer alone told the reader the one thing the table's `parquet writer`
-  column already leads with and nothing about the parquet, which is the chart's whole subject.
-  **A writer that cannot express a sort simply has no sort half**, so spark and iceberg read `rg`
-  alone — and that absence is itself the comparison against duckrun's sorted layouts, not a gap.
-  **A LOST DICTIONARY is on the label; a present one is not** — `rg 10.3M · no dict (mw, price)`,
-  never `dict yes`. 13 of the 17 layouts read `yes`, so printing it everywhere would spend a third of
-  every label on the default; the four that lost one are the finding, and three of those are exactly
-  the writers whose labels have room. WHICH columns lost it is the half that matters — `mw` alone is
-  a different parquet from `mw, price` — and it comes from the same `dictCell` the table's own
-  `dictionary` column prints, so the two can never disagree. Same rule as `sorted` and `vorder`: a
-  flag is worth ink when it is not the default. A `—` (no run in the group recorded encodings) is
-  dropped, exactly as an unmeasured `ordering` or `rg` is.
-  Both halves come from `keyCells`, which is what *Cost and speed by parquet layout* prints in its
-  own cells, so a dot and the row beside it cannot describe one parquet two different ways and a
-  change to either follows the other.
-  **Size, not the count.** A count is a number you have to divide the table by before it means
-  anything; `2.0M` is a segment size a reader can hold against VertiPaq's own, it is what the
-  dispatch actually sets (`row_group_size`), and it does not move when the row count does.
-  Either half is DROPPED when unmeasured rather than dashed — an unsorted layout reads `rg 5.3–7.6M`,
-  not `— · rg 5.3–7.6M`. A label is not a column and has nothing to line up with.
-  **Placement is greedy over two rings of candidate offsets, and a name is never dropped.** `force()`
-  flips side rather than running off the plot, which the bounds-free version did once, 25 units past
-  the y axis and across an unrelated mark. An overlapping label is recoverable by hovering; an absent
-  one is the bug this was built to fix.
-  **The x axis reserves a LABEL GUTTER on its high side (`padHi` 1.55), and only when something goes
-  in it.** Names read rightward from their dot and the dots this labels sit toward the right; at the
-  symmetric pad the rightmost had 22 units of room for a name needing 139. Widening the axis moves
-  every dot left together — it cannot mislead, because the ticks come from the same scale. Reserving
-  it unconditionally is the part that had to be conditional: on a dense cluster, squeezing the x
-  span squeezes the gaps a label has to find, and eleven names that used to fit started colliding.
-  A gutter with nothing in it is pure loss.
-- **A LAYOUT WITH NO WARM PASS IS NOT PLOTTED, AND IS COUNTED IN THE SUBTITLE.** Both axes are query
-  times, so a run missing one has nothing to put on y. It is never plotted at zero — an unmeasured
-  tier is an absent thing, and a dot on the axis would read as "its second visit was instant" — and
-  it is never dropped quietly either, which is `cutNote`'s whole job. That note says nothing when
-  nothing was cut.
-  One `<title>` per layout, on the dot itself — the mark a reader is pointing at — carrying the
-  whole table row, `hot` and row-group size included.
-- **THE TWO CU BAR CHARTS ARE DELETED, and what they drew is not.** They were
-  `Capacity units per parquet layout` and `Capacity units per engine build`, stacked, query CU
-  first. Removing them is not a judgement on the build half — that is still where the sharpest
-  operational result on the page lives (duckrun costs 1.8x at 64 cores for the same wall time, which
-  the layout keying structurally cannot show, because both runs wrote identical parquet). It is
-  that **both drew a figure the page already prints as a figure one block away**: the query-cost bar
-  was the `CU` column of *Cost and speed by parquet layout*, the build bar was the `etl` row of
-  *Cost by engine*. A bar length is a worse way to read a number you can simply be told.
-  What went with them: `chartSvg`, `barPath`, `groupRows`, the `.bar`/`.bar-label` rules and four
-  unit tests about bar geometry. What did NOT: `spreadFor`, which the noise floor still uses, and
-  every grouping rule below, which now surfaces as table rows and as the scatter's dots.
-  **The no-loss claim is the thing to re-check before restoring one.** A test pins it — if either
-  number ever stops being printed, a chart brought back for it is a different argument from the one
-  that removed these.
-- **A LAYOUT GROUP IS ONE ROW, and the grouping is the same one the scatter plots.** Power BI
-  never sees the engine — it opens parquet through Direct Lake and transcodes row groups — so what a
-  query costs belongs to what was WRITTEN, and the writer is metadata. The row is named for its
-  writer; the `ordering` and `row group size` cells are what tell two rows of one writer apart.
-  **A ROW IS THE WRITE CONFIG THAT WAS DISPATCHED, not the parquet that came out.** The key is
-  `(engine, resource profile, sort as dispatched, row_group_size, file_size_mb, V-Order declared,
-  V-Order measured)` — every element off `layout.config.<engine>` but the last. `vcores` and the NEE
-  flag stay out because two runs each showed they never reach the parquet.
-  **This REVERSES "grouping is MEASURED, labelling is DECLARED"**, which the page followed while the
-  key was `(V-Order, band of files, band of row groups, resolved sort columns)` read off the parquet.
-  What broke it: `auto` leaves the sort columns to duckrun's picker, and the picker does not always
-  answer the same way. Six nyc runs dispatched with identical config rendered as **three rows** —
-  the picker chose `…payment_type` twice, `…, tip_amount` three times and `…, fare_amount` once,
-  landing at 68 / 63 / 58 row groups — with every printed cell on those rows identical. A split the
-  table could not explain, over a distinction nobody had dispatched.
-  **The sort comes off the RECORD, never a constant here**: the model declared `['date','time','DUID']`
-  for a while and `['date','time']` since. Two spellings are read, both legitimate:
-  `dbt.<engine>.sort_by` is what the run DECLARED (`stats.py`), `dbt.<engine>.sort_by_auto` what the
-  picker RESOLVED (`fabric_run.py`'s log scrape, the only witness for an `'auto'` run). An `auto` run
-  reads and keys as `auto`; a declared key wins over a resolved one, so the picker's runs still never
-  merge into a hand-dispatched row — on aemo both resolve to `date,time` and they are two rows,
-  because "what does auto choose, and what does it cost?" is answerable only while they stay apart.
-  **What the merge costs is paid in the open.** A row can hold parquet that genuinely differs, so the
-  `row group size`, `RG` and `MB` cells print as SPANS and its CU and times are the MEDIAN over its
-  runs. nyc reads `auto · 8.7–10.2M · 7,251–8,596 MB · 6 runs`, which states the picker's instability
-  and roughly its size; three rows reading `auto` stated nothing.
-  **It groups RUNS, not columns.** A column is `(engine, config)` where `config` is `variant()`'s — it
-  carries `vcores`, which does not reach the parquet, and drops the geometry, which does.
-  **There is no unmeasured case.** A record with no config recorded is a default-profile run, and an
-  absent `row_group_size` means the pinned `16000000` baseline (`stats.py` records it only when it
-  differs), so nothing keys to `null` and there is no fallback-to-column path.
-  **The old power-of-two banding is gone and nothing replaces it.** It absorbed incremental drift (78
-  files and 80) at the cost of a boundary — 15 row groups and 17 landed apart — and could not absorb
-  a picker answering three ways; a key that never reads the parquet absorbs both.
-  It surfaces two things a per-engine view hid: V-Order on and off differ 2.8x (1,332 against 3,769),
-  the sharpest experiment on the page; and NEE on and off produce the same layout, so the gap between
-  them was never an NEE effect.
-- **The layout tables show only duckrun's `auto` (`LAYOUTS_SHOWN`) — a DISPLAY rule that drops no
-  data.** duckrun is the only engine whose write layout can be dispatched, so it accumulates rows
-  nobody else can have: six sort keys across four row-group sizes, 13 of aemo's 18 rows, against five
-  that are the cross-engine comparison. `auto` is the one kept because it is what the NIGHTLY
-  dispatches, so it is the only duckrun layout still being measured — every other row is a frozen
-  sample of the week somebody ran it. The apparent cost is that the sweep holds duckrun's own
-  finding — aemo's cheapest layout is `date, time, price` at 2.0M, 1,557 CU against `auto`'s 1,738 —
-  and it does not survive its own spread: that layout's seven runs span 1,518–1,803, so its MAX is
-  above `auto`'s MEDIAN, and all fifteen duckrun medians fit in a 46% band while single rows swing
-  18–157% run to run. Those runs keep their rows in
-  *Every run*, `history/` has all of it, and the held count is NAMED under the table. Applied ONCE to
-  the groups the fit table, the scatter and the mart block share, so the three cannot disagree — and
-  **never to the point of erasing an engine**: the condition is per engine, so a dataset where
-  duckrun never dispatched `auto` keeps every duckrun row it has.
-- **`spark readHeavyForSpark` is hidden too, by a second rule (`PROFILES_HIDDEN`).** That profile
-  enables **no V-Order** — Microsoft's reference publishes its whole config set as `optimizeWrite`,
-  `optimizeWrite.partitioned` and `binSize: 128` — so it is neither side of the comparison the spark
-  rows make: `readHeavyForPBI` turns V-Order on, `writeHeavy` is the default it is measured against.
-  Its row sat between them named as though it were the read-optimised one, which is the misreading the
-  V-Order doc page itself invites. The two rules are kept apart because they differ in kind — one
-  names what to KEEP (crowding), the other what to DROP (relevance) — and the note under the table
-  states each reason separately.
-- **`ENGINES_HIDDEN` is EMPTY, and `duckdb iceberg` coming back is why.** It was held out because its
-  layout was not one anyone chose: dbt-duckdb can express neither a sort nor a row-group size, so what
-  it wrote was the Iceberg catalog path's default — 1,172 row groups at 0.1M rows, an order of
-  magnitude off every other writer. Pinning `duckdb==1.6.0.dev365` on that leg fixed the writer:
-  3 files / 53 row groups at 2.7M rows, in family with duckrun's 9–73 and spark's 10–11.
-  **The cost barely followed** — directlake CU 9,288 → 7,923 against duckrun's 1,618–3,903 — because
-  the difference was never geometry, it is the **encoding**. On the aemo mart's `mw`, iceberg is the
-  only writer emitting no RLE on the dictionary indices and the only one leaving chunks with no
-  dictionary page at all (43 of 53 have one; the rest fall to raw `PLAIN`). VertiPaq adopts a plain
-  dictionary and rebuilds anything else at load. That is a real difference between writers, so it
-  belongs in a table comparing writers. The six pre-pin iceberg runs moved to `history/runs/legacy/`
-  in the same change: row-group count is not part of `layoutKey`, so all seven would have collapsed
-  into one row and `groupMid` would have printed a `53–1,172 RG` span across two writers' parquet.
-  As of 2026-08-21 aemo holds 28 layout groups and shows 8; the count moves every week the grid runs.
-  The constant stays (empty) because `shownLayouts` and `heldNote` branch on it — an engine whose
-  defaults regress is one string away from being held out, with a note under the table saying so.
-- **The figure is the MEDIAN of the group's runs, never the mean** — `groupMid`, called by *Cost and
-  speed by parquet layout*, the mart rows and the scatter alike, so the three cannot disagree. One
-  dispatch is a sample of a shared capacity and a bad sample is not a property of the layout: run
-  30966983384 read 2,629.3 against 1,331.5/1,577.1/1,586.7 for byte-identical parquet, because its
-  XMLA read billed 49s against ~33s and its refresh took 28.4s against ~8s — Fabric being busy, not
-  the parquet being slow. A mean let it lift that figure 11% and dwh's 16%. **It is not a noise fix,
-  and the page should not be read as if it were**: at n=1 and n=2 the median IS the mean, and four of
-  nine groups are that thin. The min/max are still measured and still reachable, in `Every run`'s
-  per-run rows, so the outlier is findable rather than quietly averaged away.
-- **A column header is an engine plus the SHORTEST config that still tells it apart** (`variantTag`).
-  It appears in every table and in the chart, so width is a real cost. One rule keeps it short: a flag
-  that is **off is absent** rather than negated — `spark·readHeavyForPBI+NEE` against
-  `spark·readHeavyForPBI`, never `+noNEE`, which spends header width saying nothing happened when the
-  contrast with the run that did enable it is what a reader is looking for.
-  **The RESOURCE PROFILE is printed verbatim, and a second rule that shortened it is gone.** A
-  `PROFILE_LABEL` map renamed the two in use by their effect — `readHeavyForPBI` → `V-Order`,
-  `writeHeavy` → `default` — and it has been removed in both directions. Those strings are what the
-  dispatch input takes, what `profiles.yml` sets and what Microsoft's own profile reference publishes,
-  so the rename made a reader translate to match this page against a run's inputs, and the page and
-  the record called one setting two things. `default` was the worse half: it named the workspace's
-  *choice* rather than the profile, so it would silently become a lie the day that default changed,
-  and it hid which profile a bare dispatch actually got. The effect is still said — **where it is
-  measured rather than declared**: `layoutLabel` reads `vorder` off the parquet, so a label reads
-  `spark readHeavyForPBI` over `V-Order · 10–11 RG`. The label names the knob that was
-  turned, the caption states what came out — a split that also survives a profile whose name misleads,
-  which is not hypothetical, since `readHeavyForSpark` reads like it enables V-Order and sets no
-  vorder at all. One cost, worth knowing: column order is alphabetical, so renaming moved
-  `readHeavyForPBI` ahead of `writeHeavy` where `V-Order` had followed `default` — an order that
-  changed with a label rather than with anything measured, which is one more argument for the
-  verbatim spelling. `CONFIG_LABEL` is now the only relabelling left, and it exists because
-  `sorted=true` has no name of its own to print.
-  Absence-means-off is only unambiguous while every config of that engine RECORDS the flag, so
-  `columnsFor` checks it: where two configs would collapse to one header — a record predating the
-  dispatch input has no key at all and would collide with an explicit `false` — the whole engine falls
-  back to the explicit spelling. A page printing one column name twice is unreadable and silent about
-  why. The tag still never contains `COL_SEP`; `baseEngine` splits on it.
-  **`dwh`'s `vorder` is the ONE flag spelled on both values — `dwh·V-Order` against `dwh·noVOrder`.**
-  It is the exception the rule above cannot cover: dwh carries no other config key, so a default run's
-  signature would be **empty**, and an empty signature renders as the literal `unrecorded`. The
-  majority column would read `dwh·unrecorded` beside `dwh·noVOrder` — the page saying it does not know
-  the thing it just measured. So `stats.py` records `"true"` as well as `"false"` and the six records
-  predating the `dwh_vorder` input were backfilled to `"true"`, which is what keeps that history in one
-  column with every future default dispatch. Note the column and the BAR are split by different
-  witnesses: the column by this DECLARED key, the bar by `vorderOf`'s reading of the measured
-  `layout.ordering.dwh.vorder_enabled`. Neither is derived from the other, so an `ALTER` that was
-  accepted and did nothing shows up as a contradiction rather than being believed.
-  The **engine half** takes `ENGINE_LABEL` too, so a column reads `duckdb iceberg·64c` and the page
-  calls that engine one thing throughout — the layout rows had said `duckdb iceberg` while the columns
-  said `iceberg`, which read as two subjects. That is only safe because **`baseEngine` reverses the
-  label**: `STACK`, the adapter caption and the (engine, variant) join to a record are all keyed on
-  `iceberg`, and without the reversal each would silently miss — a blank caption, a chart row quietly
-  gone — rather than raise.
-- **Engine-major table**, engines across, **`compute` and `storage`** down, class subtotals in bold.
-  The split comes from the OPERATION, and it has to: compute and storage share an ITEM. Measured
-  against the live model — `dbt_spark` [Lakehouse] bills 188,636 CU of `High Concurrency Session Livy
-  Run` and 20,268 of `OneLake Write via Redirect` against one GUID; `dbt_dwh` [Warehouse] bills
-  129,177 of `Warehouse Query` beside its own OneLake writes. **Every `OneLake …` operation is
-  storage; everything else is compute.** A dash means no operation of that kind was billed there at
-  all — an iceberg lakehouse is 40,832 CU of pure OneLake, because its compute is the notebook, a
-  different item. A class is only decomposed when some column holds more than one bucket. The
-  classes are `etl`, `directlake` and `directquery` now — each query phase owns its semantic model,
-  the shortcut lakehouse it reads through, and that lakehouse's SQL endpoint (matched by name, the
-  same way the landing endpoint is), so the DQ phase's `SQL Endpoint Query` compute and its OneLake
-  reads land in `directquery` rather than in `etl`.
-- **Every lakehouse has a paired SQL analytics endpoint**, a separate billable `Warehouse` item with
-  the same display name: `dbt_spark` 306.3 CU, `dbt_iceberg` 245.7, `dbt_delta` 278.9, all of it
-  `SQL Endpoint Query`. It was invisible to the ledger until `provision.py` started recording it —
-  the GUID is not the lakehouse's. It is never deleted by the teardown: Fabric removes it with its
-  parent. **`dbt_landing` has one too, and it is the one door landing CU got onto the page through:**
-  its role is `sql_endpoint`, not `landing`, so the role filter never saw it, and the same item
-  appeared in every run record charging every engine 130.4 CU it did not spend. `landingGuids()`
-  catches it by NAME against the record's own `landing` items, leaving an engine's own endpoint
-  alone. It distorted more than a total: that endpoint bills 130.4 CU over 83.2 s, a rate of 1.6,
-  against a 64-vCore notebook's 32.0, so blending them made duckrun and iceberg — the same DuckDB in
-  the same notebook at the same vCores — read 28.5 and 26.4. Excluded, both read 32.0.
-- **Engine-major is what makes the width work**: item-major needs a column per Fabric item and every
-  run creates different ones. **No total column and no grand-total row** — both would sum ACROSS
-  engines, which is the one sum on this page that answers nothing, since the engines are alternatives
-  to each other.
-- **`landing` CU is not on the page at all.** The page compares ENGINES. `dbt_landing` is the
-  ingestion staging area — no run deletes it, every run reads it — so its CU is one cumulative figure
-  belonging to no engine, and it answers no question this page asks. It was briefly given a row of
-  its own; the same number repeated under every column read as "each of them spent this". The
-  archive's SIZE is still reported, because input volume is a different question from what ingesting
-  it cost.
-- **Input archive**: files and bytes in the landing archive, from `stats.py`'s listing. Every other number describes what came OUT, and this is the one copy of what went in —
-  shared by every engine, so it belongs with the provenance rather than among the columns it is not
-  one of. It used to sit between the engine table and the layout, where a table with no engine in it
-  read as a column that had gone missing.
-- **Table layout**, every shared table, mart first, **one row per WRITER, and no `writer` column** —
-  the row label IS the writer, so a `duckdb (iceberg)` cell beside a `duckdb iceberg` label was one
-  fact printed twice. `spark readHeavyForPBI`, `spark writeHeavy`, `duckrun`, not
-  `spark·readHeavyForPBI+NEE` and `duckrun·64c`. The resource profile is printed verbatim; the core
-  count and NEE flag are dropped because two runs each showed they never reach the parquet. duckrun's two core counts and spark's two NEE
-  settings therefore collapse to one row — they had written identical layouts, so the rows they
-  replaced were the same row printed twice.
-  **The MART block is the exception: its rows ARE the chart's bars**, same grouping and same members,
-  which is what keeps a writer that produced two different shapes on two rows — `duckrun sorted` wrote
-  3 files/26 RG and 4/25, which is two layouts and not one, and the `files`/`row groups` columns say
-  which is which. **The block is PHYSICAL LAYOUT ONLY**: the directlake CU and the query tiers
-  that used to sit beside the mart are now the *Cost and speed by layout* table above, so one table
-  no longer answers both what the parquet looks like and what querying it cost. Rows are FEWEST FILES
-  FIRST — it sorted by the CU column, and ordering by a column that is no longer printed is a ranking
-  a reader cannot check.
-  Every other block stays one row per writer: they are physical layout alone, describing a table the
-  mart's shape says nothing about, so splitting them the same way would print one row twice for a
-  difference that is not in it.
-  **The row count is in the heading, not a column**: it is identical on every row by design, which is
-  the parity statement the whole project rests on, and 143,980,961 repeated down a table is a wide
-  column carrying one fact. When the engines DISAGREE the heading says so and the column comes back —
-  though **for the mart that branch is now unreachable**, because the generation filter below has
-  already dropped anything that disagrees. It still fires for every other table. `rows per RG` is
-  abbreviated (`13.1M`, `122.9K`) — that number spans four orders of magnitude across these engines
-  and the ratio is the finding, not the twelve digits.
-- **THE PAGE SHOWS ONE SOURCE GENERATION, AND THE READER PICKS WHICH.** `sameGeneration()` keeps one
-  mart `total_rows` and drops every run that disagrees. The columns are
-  different dispatches days apart and nothing else made them comparable: change the AEMO archive and
-  an engine nobody has rebuilt keeps its column, with its numbers sitting beside engines built from
-  different data — in the tables, and inside the chart's own bars.
-  **The default is the BIGGEST generation, and `?rows=` overrides it.** It used to be the newest;
-  the newest-wins argument still holds and is not what changed — what changed is that the reader can
-  now choose, so the default stopped having to be the only answer. Biggest is the better landing
-  page: the archive only grows, so it has the most data behind it, and it does not move when someone
-  rebuilds an older slice to ask a question about it. Under newest-wins one small re-run flipped the
-  entire page.
-  **Never the most common value**, under either rule. Right after a genuine source change the old
-  count is still the majority; a mode would keep the stale generation and drop the new run.
-  It runs **before `columnsFor`**, which matters twice: `columnsFor` takes the latest run per
-  (engine, config), so filtering later would let a stale run hold a column, and `spreadFor` walks the
-  whole array for the chart's marks, so filtering the array is what stops a group blending two
-  generations.
-  **The exclusion is loud on purpose, and must stay that way.** It bought its silence from the
-  `row counts DISAGREE` heading, so it pays it back: every dropped run is named with its engine, run
-  id, own count and delta against current, plus the reference, plus `(+N excluded)` in the footer.
-  Named, it is sharper than the heading was — "duckrun wrote 143,980,960 against the current
-  143,980,961" beats "row counts DISAGREE".
-  A run recording **no** count is KEPT (unmeasured is a different claim from different), with no
-  reference anywhere **nothing** is filtered rather than everything vanishing, and `?record=` bypasses
-  it entirely because pinning a run means asking for that run.
-  **Its failure mode is stated on the page:** newest-wins cannot tell "the source changed" from "the
-  newest run is broken", so a bad newest run excludes all the good history. Survivable because it is
-  loud — the note says `N of M runs were excluded` and that the newest is then the likelier anomaly —
-  and because the next good run reverses it.
-- **`cold` / `warm` / `hot` appear TWICE, and the two answer different questions.** They are the one
-  thing on the page that is not capacity units, and they come from the run records rather than the
-  ledger: `benchmark.timings.<model>.<query>` is already on every record. `benchmark/render_report.py`
-  renders it per dispatch, but a dispatch builds ONE engine, so that report always has a single column
-  and a degenerate ranking — composed here, this is the only place the tiers can be read across
-  engines at all.
-  **Per LAYOUT** in *Cost and speed by layout*, beside the CU, which is a group's median over its runs
-  — and the cold and warm medians are also the two axes of the scatter directly below it, same
-  `martPoints`, same `groupMid`, so the chart and the table cannot disagree about a number.
-  **Per RUN** in the sources table, which is what actually measured them: one dispatch, against one
-  semantic model it had just deployed. They were columns of the mart's layout block and are not any
-  more — there they had to be a group mean sitting on a row about parquet, and no single run recorded
-  that number.
-  **cold** is the first visit to a freshly deployed semantic model, **warm** the second, **hot** the
-  median of the passes after that; the record's own `tier` field is something else entirely (the
-  query CATEGORY — `probe`/`composite`/`raw`/`hot_only`) and must not be confused with them. Each is
-  summed over the queries every run carries at that tier, and the note counts them, because it
-  genuinely differs — the selectivity-ladder queries have no `cold_ms` at all, the top DUID being
-  resolved only after pass 1, so cold is two queries short of warm and hot.
-  Deliberately **reimplemented rather than imported** — `render_report._totals`/`rank` take exactly
-  this shape, and importing `benchmark/` would end the isolation that makes this directory deletable.
-- **`compute seconds` is ONE ROW, ON THE `etl` HALF ONLY** — how long the build billed for, read
-  from `Duration (s)` in the same Capacity Metrics row as the CU, so it costs no extra query. It was
-  removed once and is back: billed operation seconds SUM across concurrent operations, which is a
-  real objection and unchanged, but "how long did the build take" deserves an answer and the hedge
-  now rides in the row's own label (`compute seconds` — *billed, not wall clock*) instead of in a
-  note four rows below where it is attached to nothing. A duckrun leg is one long notebook run so its
-  seconds land close to the clock; spark's five Livy REPLs under one session sum to more than the
-  wall time anyone waited. Compare it freely between two runs of the same engine, across engines only
-  knowing that.
-  **`directlake` and `directquery` get no such row on purpose:** the query half already reports latency as the
-  `cold`/`warm`/`hot` milliseconds beside the layout that produced them, and those are time a user
-  actually waited. A second, differently-defined duration next to them would invite a comparison.
-  **COMPUTE seconds, never total**, which also makes the column reconcile against itself: `compute`
-  CU ÷ `compute seconds` is exactly the rate underneath (duckrun·64c: 20,665.6 ÷ 646 = 32.0).
-- **`compute CUs per second` is a ROW OF THE ENGINE TABLE, not a section.** It comes off the SAME
-  Capacity Metrics row as the CU above it — same GUIDs, same roles, same compute/storage split — so a
-  table of its own restated the whole join to add two numbers per class. It is the sturdiest number
-  here: the concurrency that makes the seconds awkward is in the numerator and the denominator alike,
-  so it cancels. A high rate is a WIDE engine, not a slow one.
-  **It is COMPUTE ÷ COMPUTE, and that is not a refinement — a total-over-total rate is wrong.** A
-  storage operation bills real CU over a duration of essentially nothing (one `OneLake Write via
-  Redirect`: 383.25 CU in **0.049 s**), so including storage does not dilute the rate, it detonates
-  it, by an amount tracking only how much OneLake traffic the engine made. `CU (s)` is literally
-  capacity-units × seconds, so `CU ÷ duration` is capacity units DRAWN — for a single-node Python
-  notebook that is **`cores` ÷ 2**, fixed for a given core count and not a constant: 32.0 at the 64
-  vCores dispatched by default, 16.0 at 32. The check when this reads oddly is two DuckDB legs at the
-  **same** `cores` reading the **same** number, never that they read 32; `vcores` is part of
-  `variant()`, so two core counts are two columns and the caption names each. The row is **absent**
-  when the ledger has no seconds — a ledger written before the duration read, or a model that does
-  not expose the column — because absent says "not measured" and a zero would say "instant". Same
-  rule on a class subtotal: a column the ledger has not read yet is a **dash**, never `0.0`, which
-  would say the engine did that work for free.
-- **There is no chart of the seconds — which is exactly why they are a table row.**
-  The page carries two bars and both are capacity units, the measure it leads with and can defend. A
-  third in the same visual language, drawn from numbers that need a caveat, invites precisely the
-  cross-engine ranking the caveat withdraws. A number that needs a caveat belongs where the caveat
-  can sit beside it — in the row label — not in a mark, where length alone reads as a ranking.
-- **A record has to be built and benchmarked to reach the page.** `incomplete()` skips anything else
-  and names why — a run with no benchmark shows an empty directlake column, which reads as "querying
-  this engine was free" rather than "nobody measured it". The skipped records are **listed by file
-  and reason in the sources section**, visible and never folded — they used to be only a count in
-  the live status line, which the offline copy does not even have.
-- **NO ENGINE IS OMITTED, and two constants that used to omit one are GONE.** `SCATTER_OMIT` kept
-  `iceberg` off the chart alone — absent from one figure, present in every table, with the chart's
-  caption the only place the page admitted it, which is the worst of the three states. `PAGE_OMIT`
-  made that consistent by dropping it page-wide. Both are deleted: `duckdb iceberg` is a column, a
-  layout row and a dot again.
-  **What they were buying was SCALE, and the MARK is what changed.** Its cold pass is 100,394 ms
-  against 22,823–45,010 for everything else; against the old LINE mark that meant a segment four
-  times the next longest, squashing every other layout into a fraction of the plot. A dot occupies
-  one point and both axes are log, so a 4x outlier costs a little under a decade of axis and moves
-  nothing else — the reason to exclude it was a property of the segment, not of the engine. A test
-  pins that the other dots still spread with it in.
-  **It plots as the biggest dot as well** (8,641 CU, 7,923 since the DuckDB pin), which is the honest
-  picture: it is genuinely the dearest and slowest layout here, and a page comparing four adapters
-  should say so rather than quietly drop the one that loses. The pin is also what makes that dot
-  worth reading — its row groups are now in family with everyone else's, so what the dot shows is an
-  encoding difference rather than a segment-count one.
-- **A run that was never TORN DOWN still renders, with a caveat.** Its items are alive and Fabric
-  keeps billing them, so its total creeps upward and is an upper bound on that run rather than a
-  measurement of it. It was briefly rejected outright; the creep is small and a column that
-  disappears costs more than one carrying a caveat, so `drifting()` marks it **still billing** in the
-  sources table instead — the loudest of the three states, because it is the only one that does not
-  resolve by waiting. Deleting the items settles it.
-- **Columns are each engine's latest run, once per config.** One dispatch builds one engine, so
-  rendering the newest record alone would give a comparison page with one column. spark under
-  `readHeavyForPBI` and spark under `writeHeavy` are two columns, because one number cannot answer
-  for both. The cost — columns are different dispatches, days apart — is stated in the sources table
-  rather than smoothed over.
-
-## The CU columns are comparable, and that is the point of the unit
-
-The engines are handed different compute — a 64-vCore notebook, a Livy pool, a warehouse — and it
-does not qualify the comparison. **A capacity unit already prices that in.** 64 vCores for ten
-minutes costs more CU than 8 vCores for ten minutes, which is exactly why CU leads: it is the bill.
-
-**The two time measures do not have that property, and the page says which is which.** Billed
-operation seconds SUM across concurrent operations, so a spark leg totals more than the clock it ran
-on; query milliseconds are one sample of a shared capacity rather than a bill. They are on the page
-because they answer a question CU cannot — how long a person waits, and how hard the engine drew
-while they did — and each states where its own number bends. Do not flatten the three into one
-ranking.
-
-The core count still reaches the chart because a run at a different size is a different data point —
-but through the column tag (`duckrun·64c`), not a caption. An ETL caption states only what the
-column name does not already say, which in practice is the vCores of a single-config engine whose
-bare column carries no tag: `dbt-fabricspark · writeHeavy · NEE off` under a column already labelled
-`spark·writeHeavy` was three facts the label carries (the profile named by its effect, an off flag
-absent, the adapter implied by the engine name).
+Colour is the writer family. Three hues are validated all-pairs in both modes with the dataviz
+palette validator; a fourth family would fail that check, so Iceberg is grey with a square marker.
+A filled mark means the writer reordered the rows (V-Order or a global sort); a hollow one means it
+did not. A triangle in the column chart marks a column with row groups that have no dictionary.
 
 ## Things that will bite
 
-- **`app.js` must not touch `document` at import time.** It exports pure functions that return
-  STRINGS and boots only under `DOMContentLoaded`; that is what lets the whole page — join, layout
-  grouping, the chart — be tested under `node --test` with no browser and no jsdom.
-- **The render layer escapes before it interprets markdown.** A Fabric display name containing `<`
-  is text, and link hrefs are restricted to `http(s)://`. Pinned by a test.
-- **A tag must never contain `COL_SEP`** (`·`). `baseEngine` splits a column id on it to recover the
-  engine, so a tag carrying one would make `STACK` and the (engine, variant) join silently miss.
-- **The page build checks out `ref: <branch>`, not the triggering SHA.** The measure job commits the
-  ledger; a default checkout would freeze the OFFLINE copy from the version before that commit. The
-  live page is immune — it reads the branch head at view time — which is exactly the class of
-  one-dispatch-stale bug this whole arrangement removes.
-- **Rounding ties differ from the old Python page by one in the last digit.** Python rounds
-  half-to-even, JavaScript half-up, so a value of exactly 1,378.5 printed `1,378` before and prints
-  `1,379` now. Display only; the underlying numbers are identical, verified row-for-row against the
-  last Python render.
-- **`node --test dashboard/app.test.mjs` is the gate**, and the page job runs it. There is no Python
-  in that job at all, which is what proves by running that the render path reaches no network of its
-  own beyond the two documents it fetches.
+- **`probe_columns.js` is generated.** Change a probe in `benchmark/xmla_compare.py`, then rerun
+  `node dashboard/probe_columns.mjs`. `data.test.mjs` fails until you do.
+- **`report.js` boots only when a `#app` element exists**, so `node --test` can import it. Every
+  renderer returns a string.
+- **Adding a writer** means a case in `writerOf` (`data.js`) and, if it is a new family, an entry
+  in `FAMILIES` (`report.js`). A fourth hue fails the all-pairs palette check, so fold it into grey
+  or use a shape.
 
 ## Isolation
 
-No imports from `benchmark/`, none from `cu/`, and no third-party package of any kind — no bundler,
-no framework, no CDN. `build.mjs` is string substitution over `index.html`. It is built to be deleted
-by removing one directory; the exporter in `cu/` keeps working and the ledger keeps being committed.
+No imports from `benchmark/` or `cu/` at run time, and no third-party package: no bundler, no
+framework, no CDN. It is built to be deleted by removing one directory.

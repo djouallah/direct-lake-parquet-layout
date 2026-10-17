@@ -3,401 +3,124 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Direct Lake parquet layout</title>
+<title>Parquet for Power BI</title>
 <!--
-  The shell. It holds the stylesheet and three empty elements; `app.js` fills them at load time from
-  `history/` on GitHub.
-
-  **Publishing this file is the only thing that needs a Pages deploy.** New run records and a topped-up
-  CU ledger arrive as commits to `history/` and the page reads them live, so a measurement no longer
-  republishes anything. That is the whole reason this stopped being a Python-rendered static document.
-
-  `#snapshot` is empty here and stays empty on the published page. `build.mjs --snapshot` fills it for
-  the offline artifact copy, which has to open from a local disk with no network years later — same
-  JavaScript, same render path, data from a different place. `app.js` prefers it when it is present.
+  The shell: styles and three empty elements. `report.js` fills them at load time from
+  `history/runs/` on GitHub, so a new Benchmark run reaches this page with no redeploy.
+  `#snapshot` stays empty on the published page; `build.mjs --snapshot` fills it for the offline copy.
 -->
 <style>
-/* One stylesheet, both themes. `prefers-color-scheme` is the default signal; `data-theme` on the root
-   wins in both directions if a host stamps one. */
+/* Chart palette: three hues validated all-pairs (a scatter puts every colour beside every other) in
+   both modes with the dataviz validator, plus a neutral grey for the fourth family, which also
+   carries its own square marker. Text never wears a series colour. */
 :root { color-scheme: light dark;
-  --bg:#fff; --fg:#1a1a1a; --dim:#5b6472; --line:#e3e6ea; --head:#f6f7f9; --sub:#eef1f5;
-  --code:#f2f3f5;
-  /* ONE series hue: categorical slot 1 (blue, the page's accent), validated against both surfaces
-     with the dataviz palette validator — lightness band, chroma floor, CVD separation and contrast
-     all pass. Slot 2 (orange) went with the ETL chart; there is one chart now and one measure on it,
-     so a second hue would be a distinction with nothing to distinguish. The dark value is a SELECTED
-     step for the dark surface, not an automatic flip of the light one. */
-  --series:#2a78d6;
-  /* CATEGORICAL, one hue per parquet writer — Okabe-Ito, which is designed for colour-vision
-     deficiency. Validated with the dataviz validator over ALL pairs, not just adjacent ones,
-     because a scatter intermixes its colours freely: on light every check passes; on dark it
-     passes chroma, normal-vision separation and contrast, and only the categorical lightness
-     BAND is out. Every re-stepped dark variant that fixed the band broke separation instead —
-     #CC79A7 against #009E73 sits at deutan dE 7.6, in the 6-8 floor band that is legal only
-     with secondary encoding, so slot 1 is pinned to the ONE writer that carries no direct
-     label and every other slot belongs to a labelled point. FIVE IS THE CEILING: a sixth hue
-     collapsed against slot 1 at protan dE 3.1. */
-  --cat1:#0072B2; --cat2:#E69F00; --cat3:#009E73; --cat4:#CC79A7; --cat5:#D55E00; }
+  --bg:#fcfcfb; --fg:#0b0b0b; --dim:#52514e; --line:#e4e3df; --soft:#f3f2ef; --code:#efeeea;
+  --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a; --c4:#8a8984;
+  --good:#0f7b4a; --meh:#8a6100; --few:#6b6a66; }
 @media (prefers-color-scheme: dark) {
-  :root { --bg:#14171a; --fg:#e8eaed; --dim:#9aa4b2; --line:#2a2f36; --head:#1c2025; --sub:#20252b;
-    --code:#22262c; --series:#3987e5;
-  /* CATEGORICAL, one hue per parquet writer — Okabe-Ito, which is designed for colour-vision
-     deficiency. Validated with the dataviz validator over ALL pairs, not just adjacent ones,
-     because a scatter intermixes its colours freely: on light every check passes; on dark it
-     passes chroma, normal-vision separation and contrast, and only the categorical lightness
-     BAND is out. Every re-stepped dark variant that fixed the band broke separation instead —
-     #CC79A7 against #009E73 sits at deutan dE 7.6, in the 6-8 floor band that is legal only
-     with secondary encoding, so slot 1 is pinned to the ONE writer that carries no direct
-     label and every other slot belongs to a labelled point. FIVE IS THE CEILING: a sixth hue
-     collapsed against slot 1 at protan dE 3.1. */
-  --cat1:#0072B2; --cat2:#E69F00; --cat3:#009E73; --cat4:#CC79A7; --cat5:#D55E00; } }
-:root[data-theme="dark"] { --bg:#14171a; --fg:#e8eaed; --dim:#9aa4b2; --line:#2a2f36;
-  --head:#1c2025; --sub:#20252b; --code:#22262c; --series:#3987e5;
-  /* CATEGORICAL, one hue per parquet writer — Okabe-Ito, which is designed for colour-vision
-     deficiency. Validated with the dataviz validator over ALL pairs, not just adjacent ones,
-     because a scatter intermixes its colours freely: on light every check passes; on dark it
-     passes chroma, normal-vision separation and contrast, and only the categorical lightness
-     BAND is out. Every re-stepped dark variant that fixed the band broke separation instead —
-     #CC79A7 against #009E73 sits at deutan dE 7.6, in the 6-8 floor band that is legal only
-     with secondary encoding, so slot 1 is pinned to the ONE writer that carries no direct
-     label and every other slot belongs to a labelled point. FIVE IS THE CEILING: a sixth hue
-     collapsed against slot 1 at protan dE 3.1. */
-  --cat1:#0072B2; --cat2:#E69F00; --cat3:#009E73; --cat4:#CC79A7; --cat5:#D55E00; }
-:root[data-theme="light"] { --bg:#fff; --fg:#1a1a1a; --dim:#5b6472; --line:#e3e6ea; --head:#f6f7f9;
-  --sub:#eef1f5; --code:#f2f3f5; --series:#2a78d6;
-  /* CATEGORICAL, one hue per parquet writer — Okabe-Ito, which is designed for colour-vision
-     deficiency. Validated with the dataviz validator over ALL pairs, not just adjacent ones,
-     because a scatter intermixes its colours freely: on light every check passes; on dark it
-     passes chroma, normal-vision separation and contrast, and only the categorical lightness
-     BAND is out. Every re-stepped dark variant that fixed the band broke separation instead —
-     #CC79A7 against #009E73 sits at deutan dE 7.6, in the 6-8 floor band that is legal only
-     with secondary encoding, so slot 1 is pinned to the ONE writer that carries no direct
-     label and every other slot belongs to a labelled point. FIVE IS THE CEILING: a sixth hue
-     collapsed against slot 1 at protan dE 3.1. */
-  --cat1:#0072B2; --cat2:#E69F00; --cat3:#009E73; --cat4:#CC79A7; --cat5:#D55E00; }
-* { box-sizing: border-box; }
-body { margin:0; padding:2.25rem 1.25rem 4rem; background:var(--bg); color:var(--fg);
-  font:15px/1.6 ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-/* PROSE AND DATA GET DIFFERENT WIDTHS, and that split is the whole layout.
-   A readable line of text is ~62rem; a table here carries ONE COLUMN PER ENGINE-AND-CONFIG and grows
-   every time a config is added — eleven of them now. Holding both to the prose measure put the
-   numbers, which are the entire point of the page, behind a horizontal scrollbar while the notes
-   ABOUT them sat in full view. So `main` is wide, and only the things that are read as sentences are
-   capped. No `vw` anywhere: on Windows `100vw` includes the classic scrollbar and a full-bleed trick
-   built on it makes the whole page scroll sideways — which is the bug being fixed, one level up. */
-main { max-width: 110rem; margin: 0 auto; }
-h1, h2, h3, h4, p, footer { max-width: 62rem; }
-/* THE CHART KEEPS THE PROSE MEASURE, and that IS its full width here. It is DRAWN at a 660-unit
-   viewBox and scales to its box, so letting it fill a wide `main` would inflate every label and
-   value ~2.7x — wider would be less legible, not more. It had a second chart beside it in a flex
-   row capped at 53rem each; alone it gets the whole 62rem. */
-figure.chart { max-width: 62rem; }
-/* THE SCATTER IS THE EXCEPTION, and the reason is what each chart's text is attached to. A bar chart's
-   labels are ROW labels — one per bar — so a wider panel scales them up with it and the cap above is
-   what keeps them legible. A scatter carries only axis ticks and three point labels, and it is drawn
-   at a proportionally wider viewBox (920 against 660), so the scale factor into its box is the SAME
-   1.5x: the text renders identically and every extra rem goes to plot area. Twelve dots in a dense
-   cluster is the one figure on this page that gains from it.
+  :root:not([data-theme="light"]) { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
+    --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#8f8e88;
+    --good:#4cc38a; --meh:#e0b048; --few:#9a9992; } }
+:root[data-theme="dark"] { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
+  --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70; --c4:#8f8e88;
+  --good:#4cc38a; --meh:#e0b048; --few:#9a9992; }
 
-   THE CAP IS ALSO A HEIGHT BUDGET, because this figure LEADS the page and the whole of it should be
-   on the first screen. The svg is `width:100%; height:auto` over a 920x610 viewBox, so its height is
-   the card's width divided by 1.508 — at a flat 86rem that is ~886px, and no amount of trimming the
-   prose above fits ~886 plus its chrome into a 1080p viewport. Sizing the WIDTH by the height left
-   over is what makes the figure shrink as a whole instead of overflowing or letterboxing: 15rem is
-   the chrome above the plot (the nav line, the status, the switches, the one-line figcaption and
-   this card's own padding, ~215px measured, plus slack), and 1.508 is the viewBox aspect that turns
-   the remaining height back into a width. IT TRACKS WHAT IS ABOVE THE CHART — it was 20rem while an
-   `h1` and a two-line caption were, and shrinking it is what turns removing those into plot area
-   rather than into white space.
-   On a tall window the 86rem cap binds and nothing has changed. Below the 48rem floor shrinking
-   stops buying legibility, so the page simply scrolls; the floor cannot overflow a narrow screen,
-   `max-width` only caps a width and never forces one. `dvh` second so it wins where supported —
-   on mobile the address bar moves the viewport and `vh` does not notice. */
-figure.chart.wide { max-width: clamp(48rem, calc((100vh - 15rem) * 1.508), 86rem); }
-figure.chart.wide { max-width: clamp(48rem, calc((100dvh - 15rem) * 1.508), 86rem); }
-/* A bounded card, so the chart reads as a designed panel and its trailing whitespace ends at its own
-   border instead of mid-page. */
-figure.chart { border:1px solid var(--line); border-radius:12px; padding:1rem 1.15rem .65rem; }
-/* `h1` KEEPS ITS RULE THOUGH THE PAGE HAS NONE — `renderEmpty` and the boot error path still open
-   with a heading, and this is what sizes them. */
-h1 { font-size:2rem; line-height:1.15; margin:0 0 .6rem; letter-spacing:-0.02em; }
-h2 { font-size:1.65rem; line-height:1.2; margin:0 0 1.5rem; letter-spacing:-0.015em; }
-/* The dateline rides inside the h2 so the title stays one element, but it reads as a sub-line. */
-h2 .asof { display:block; font-size:.82rem; font-weight:400; color:var(--dim);
-  letter-spacing:0; margin-top:.4rem; }
-/* The navigation line. Same metrics it had as a sub-line of the `h1` that used to sit above it, and
-   it KEEPS the link colour rather than going dim like a caption: these are the only way to the
-   source and to the DAG, so they have to look clickable. One block holding both, so they read as
-   one line instead of stacking. Selector unqualified now that no `h1` wraps it. */
-.repo { display:block; font-size:.82rem; font-weight:400; letter-spacing:0; margin:0 0 .5rem; }
-/* The summary sentence: body prose, not a `.note`. It is the one line stating the SCALE of what
-   every number on the page describes, so it is the last thing that should read as an aside — which
-   is why it keeps this size after moving from the head of the page to the head of
-   `About these numbers`. The zero top margin still holds: it follows an `h3` there, whose own
-   bottom margin sets the gap. */
-p.lede { font-size:1.02rem; margin:0 0 1.6rem; }
-/* A ruled heading per section is what gives the page its rhythm — the sections used to run into
-   each other and the only cue was font size. */
-h3 { font-size:1.12rem; margin:3rem 0 .9rem; padding-top:1.4rem; border-top:1px solid var(--line);
-  letter-spacing:-0.01em; }
-h4 { font-size:.95rem; margin:1.9rem 0 .55rem; color:var(--dim); }
-p { margin:.75rem 0; }
-a { color:var(--series); text-decoration:none; border-bottom:1px solid var(--line); }
-a:hover { border-bottom-color:var(--series); }
-p.note { color:var(--dim); font-size:.82rem; line-height:1.5; margin:.7rem 0 0; }
-code { background:var(--code); border-radius:4px; padding:.08em .32em; font-size:.88em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.scroll { overflow-x:auto; -webkit-overflow-scrolling:touch; margin:.6rem 0 .35rem;
-  border:1px solid var(--line); border-radius:10px; }
-table { border-collapse:collapse; width:100%; font-variant-numeric: tabular-nums; font-size:.9rem; }
-th, td { padding:.45rem .7rem; border-bottom:1px solid var(--line); white-space:nowrap; }
-/* The label column is the only one holding a sentence, and `nowrap` on it made the widest row —
-   `compute seconds  billed, not wall clock` — set the width of the whole first column. Numbers must
-   never wrap; a label happily can. */
-th:first-child, td:first-child { white-space:normal; min-width:9rem; }
-/* NO `text-transform:lowercase`. It was there to even out headings written in mixed case, and it
-   destroyed the one kind of header that carries meaning in its case: a camelCase resource profile
-   read `spark·readheavyforpbi`, which is not the string anything else in this project uses. The
-   headers are authored in the case they should print. */
-thead th { background:var(--head); font-weight:600; font-size:.82rem; letter-spacing:.02em;
-  color:var(--dim); position:sticky; top:0; }
-tbody tr.sub td { background:var(--sub); font-weight:600; }
-/* Hover follows the row a reader is tracing across eleven columns; subtotal rows keep their own
-   shade so the class structure never flickers. */
-tbody tr:not(.sub):hover td { background:var(--head); }
-tbody tr:last-child td { border-bottom:none; }
-.left { text-align:left; } .right { text-align:right; }
-/* THE RUN TABLE IS AN AUTOFILTER — search box, a dropdown per repeating column, sortable headers.
-   `wireTables` builds the bar in the browser from the rows already in the DOM, so with scripts off
-   the whole table is simply there and nothing is ever removed, only hidden. */
-.filterbar { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center; margin:.9rem 0 0;
-  max-width:62rem; }
-.filterbar input, .filterbar select { font:inherit; font-size:.82rem; padding:.32rem .55rem;
-  border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--fg); }
-.filterbar input { flex:1 1 15rem; min-width:11rem; max-width:24rem; }
-.filterbar input:focus, .filterbar select:focus { outline:2px solid var(--series);
-  outline-offset:1px; border-color:var(--series); }
-.fcount { color:var(--dim); font-size:.78rem; margin-left:auto; white-space:nowrap; }
-/* COPY THE TABLE AS TSV — the destination is a spreadsheet, so tabs, and the button reports back
-   ("copied" / "select and copy") because `navigator.clipboard` can be refused and a control that
-   silently does nothing is worse than none. `.barecopy` is the bar a sort-only table gets: no
-   search box, no count, just this. */
-.copybtn { font:inherit; font-size:.78rem; padding:.3rem .6rem; cursor:pointer;
-  border:1px solid var(--line); border-radius:8px; background:var(--bg); color:var(--dim); }
-.copybtn:hover { color:var(--fg); border-color:var(--series); }
-.copybtn:focus-visible { outline:2px solid var(--series); outline-offset:1px; }
-.filterbar.barecopy { margin:.9rem 0 -.2rem; }
-/* The header is the sort control, so it has to look like one — and the caret marks the sorted
-   column in place rather than needing a legend. */
-.filtered thead th, .sortable thead th { cursor:pointer; user-select:none; }
-.filtered thead th:hover, .sortable thead th:hover { color:var(--fg); }
-.filtered thead th.asc::after, .sortable thead th.asc::after {
-  content:" \25B2"; font-size:.65em; color:var(--series); }
-.filtered thead th.desc::after, .sortable thead th.desc::after {
-  content:" \25BC"; font-size:.65em; color:var(--series); }
-/* METHODOLOGY IS OPT-IN. The long notes are all still on the page — every sentence a test pins is
-   in the DOM — but folded behind one line each, so the numbers read first and the reasoning is
-   there when a number looks wrong. The exclusion notice is deliberately NOT one of these. */
-details.note { max-width:62rem; margin:.7rem 0 0; font-size:.82rem; line-height:1.5;
-  color:var(--dim); }
-details.note summary { cursor:pointer; user-select:none; width:fit-content; color:var(--dim); }
-details.note summary:hover { color:var(--fg); }
-details.note[open] { padding:.65rem .9rem .75rem; background:var(--head);
-  border:1px solid var(--line); border-radius:8px; }
-details.note p, details.note p.note { margin:.5rem 0 0; max-width:none; }
-/* THE LAYOUT TABLES ARE TABS — CSS only, radio inputs, no JS, so the offline snapshot and a
-   browser with scripts disabled behave identically. Every panel stays in the DOM (tests and
-   ctrl-F see everything); only display toggles. The nth-of-type rules below pair input k with
-   panel k and label k, enumerated to 12 — `renderLayouts` falls back to stacked blocks past that. */
-/* The dataset switch. Pills, matching `.tab-nav` exactly, because it IS the same kind of control —
-   pick one of N — and the only reason it is links rather than the CSS-only tab strip is that the two
-   datasets are separate PAGES: nothing on this page may show both at once, and a tab strip would
-   have to render both bodies into one DOM. Anchors also survive scripts-off, print and the offline
-   snapshot without a line of JS. */
-.datasets { display:flex; flex-wrap:wrap; gap:.4rem; align-items:center;
-  margin:0 0 1.1rem; max-width:62rem; font-size:.8rem; }
-.datasets a, .datasets strong { padding:.26rem .8rem; border:1px solid var(--line);
-  border-radius:999px; font-size:.8rem; text-decoration:none; color:var(--dim); font-weight:400;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.datasets a:hover { color:var(--fg); border-color:var(--dim); }
-.datasets strong.on { background:var(--head); color:var(--fg); border-color:var(--series);
-  box-shadow: inset 0 0 0 1px var(--series); }
-.datasets .muted { color:var(--dim); }
-/* Two switches stacked (dataset, then source rows) read as one control block rather than as two
-   paragraphs — the 1.1rem gap below them separated a switch from the lede, and now separates the
-   control block from the chart card, which is the whole of what follows it. */
-.datasets + .datasets { margin-top:-.75rem; }
-.tabs { margin:.9rem 0 .5rem; }
-.tabs > input { position:absolute; opacity:0; pointer-events:none; }
-.tab-nav { display:flex; flex-wrap:wrap; gap:.4rem; margin:0 0 .4rem; max-width:62rem; }
-.tab-nav label { cursor:pointer; padding:.26rem .8rem; border:1px solid var(--line);
-  border-radius:999px; font-size:.8rem; color:var(--dim);
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-.tab-nav label:hover { color:var(--fg); border-color:var(--dim); }
-.tabs > section { display:none; }
-.tabs > section > h4 { margin-top:.9rem; }
-.tabs > input:nth-of-type(1):checked ~ section:nth-of-type(1),
-.tabs > input:nth-of-type(2):checked ~ section:nth-of-type(2),
-.tabs > input:nth-of-type(3):checked ~ section:nth-of-type(3),
-.tabs > input:nth-of-type(4):checked ~ section:nth-of-type(4),
-.tabs > input:nth-of-type(5):checked ~ section:nth-of-type(5),
-.tabs > input:nth-of-type(6):checked ~ section:nth-of-type(6),
-.tabs > input:nth-of-type(7):checked ~ section:nth-of-type(7),
-.tabs > input:nth-of-type(8):checked ~ section:nth-of-type(8),
-.tabs > input:nth-of-type(9):checked ~ section:nth-of-type(9),
-.tabs > input:nth-of-type(10):checked ~ section:nth-of-type(10),
-.tabs > input:nth-of-type(11):checked ~ section:nth-of-type(11),
-.tabs > input:nth-of-type(12):checked ~ section:nth-of-type(12) { display:block; }
-.tabs > input:nth-of-type(1):checked ~ .tab-nav label:nth-of-type(1),
-.tabs > input:nth-of-type(2):checked ~ .tab-nav label:nth-of-type(2),
-.tabs > input:nth-of-type(3):checked ~ .tab-nav label:nth-of-type(3),
-.tabs > input:nth-of-type(4):checked ~ .tab-nav label:nth-of-type(4),
-.tabs > input:nth-of-type(5):checked ~ .tab-nav label:nth-of-type(5),
-.tabs > input:nth-of-type(6):checked ~ .tab-nav label:nth-of-type(6),
-.tabs > input:nth-of-type(7):checked ~ .tab-nav label:nth-of-type(7),
-.tabs > input:nth-of-type(8):checked ~ .tab-nav label:nth-of-type(8),
-.tabs > input:nth-of-type(9):checked ~ .tab-nav label:nth-of-type(9),
-.tabs > input:nth-of-type(10):checked ~ .tab-nav label:nth-of-type(10),
-.tabs > input:nth-of-type(11):checked ~ .tab-nav label:nth-of-type(11),
-.tabs > input:nth-of-type(12):checked ~ .tab-nav label:nth-of-type(12) {
-  background:var(--head); color:var(--fg); border-color:var(--series);
-  box-shadow: inset 0 0 0 1px var(--series); }
-.tabs > input:nth-of-type(1):focus-visible ~ .tab-nav label:nth-of-type(1),
-.tabs > input:nth-of-type(2):focus-visible ~ .tab-nav label:nth-of-type(2),
-.tabs > input:nth-of-type(3):focus-visible ~ .tab-nav label:nth-of-type(3),
-.tabs > input:nth-of-type(4):focus-visible ~ .tab-nav label:nth-of-type(4),
-.tabs > input:nth-of-type(5):focus-visible ~ .tab-nav label:nth-of-type(5),
-.tabs > input:nth-of-type(6):focus-visible ~ .tab-nav label:nth-of-type(6),
-.tabs > input:nth-of-type(7):focus-visible ~ .tab-nav label:nth-of-type(7),
-.tabs > input:nth-of-type(8):focus-visible ~ .tab-nav label:nth-of-type(8),
-.tabs > input:nth-of-type(9):focus-visible ~ .tab-nav label:nth-of-type(9),
-.tabs > input:nth-of-type(10):focus-visible ~ .tab-nav label:nth-of-type(10),
-.tabs > input:nth-of-type(11):focus-visible ~ .tab-nav label:nth-of-type(11),
-.tabs > input:nth-of-type(12):focus-visible ~ .tab-nav label:nth-of-type(12) {
-  outline:2px solid var(--series); outline-offset:2px; }
-@media print {
-  .tabs > section { display:block !important; }
-  .tabs > input, .tab-nav { display:none; }
-}
-/* A dim annotation, NOT a subscript — `baseline` is what makes it read as a caveat attached to the
-   label rather than as notation. It is how "billed, not wall clock" sits on the row it qualifies
-   instead of in a note the reader meets four rows later. */
-sub { font-size:.78em; color:var(--dim); vertical-align:baseline; margin-left:.45em;
-  font-weight:400; }
-/* THE SUMMARY SCORECARD. ONE shade: a clear winner. Everything inside the noise is plain grey, because
-   a graded colour on noise is a ranking the data does not support. */
-:root { --h0:#c7e9c0; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --h0:#2e6b3f; } }
-:root[data-theme="dark"] { --h0:#2e6b3f; }
-table.scorecard { width:auto; min-width:100%; }
-table.scorecard sub { display:block; margin-left:0; }
-table.scorecard th.band { text-align:center; border-left:2px solid var(--line); }
-table.scorecard td.h0 { color:var(--fg); }
-.scorecard .h0, .legend .h0 { background:var(--h0); }
-.scorecard td.dim, .scorecard td.noise { color:var(--dim); }
-.scorecard td.total { font-weight:600; }
-.legend { display:flex; flex-wrap:wrap; gap:.4rem 1rem; font-size:.8rem; color:var(--dim);
-  margin:.4rem 0 0; }
-.legend i { display:inline-block; width:.9rem; height:.9rem; border-radius:3px; margin-right:.35rem;
-  vertical-align:-.12rem; border:1px solid var(--line); }
-/* Where the data came from and when — the one thing a live page owes a reader that a rendered
-   document did not, since the numbers can now change without the page changing. */
-.status { color:var(--dim); font-size:.78rem; margin:0 0 1.5rem; min-height:1.2em; }
-.status p { margin:0; }
-footer { color:var(--dim); font-size:.78rem; margin-top:3rem; padding-top:1rem;
-  border-top:1px solid var(--line); }
-/* Charts. The bar is the only thing wearing the series colour — labels and values stay in text ink,
-   so identity never depends on being able to see the hue. */
-figure.chart { margin:1.25rem 0 1.75rem; }
-figure.chart figcaption { display:flex; flex-wrap:wrap; align-items:baseline; gap:.6rem;
-  margin-bottom:.35rem; }
-.chart-title { font-weight:600; font-size:.95rem; }
-.chart-sub { color:var(--dim); font-size:.78rem; }
-/* WHAT WAS QUERIED. Its own span rather than more `.chart-sub` text, so `figureSvg` can put it on a
-   line of its own in the saved image — where vertical room is free and the page's is not.
-   ON THE CAPTION'S FIRST LINE, though, because that caption is now ONE line: it had
-   `flex-basis:100%`, which claimed a whole row for 52 characters and put a second line of prose
-   above the plot. `order:0` rather than `2` so it follows the subtitle instead of the save button,
-   which keeps `margin-left:auto` pushing that control hard right with both texts to its left. */
-.chart-note { color:var(--dim); font-size:.78rem; }
-/* SAVE THE CHART AS AN IMAGE. Hard right on the caption's only line, the same place the row count
-   sits on a filter bar — a control, not part of the title. `margin-left:auto` is what puts it there;
-   `order:1` keeps it last now that the note no longer claims a row of its own. It wears the `copy`
-   button's chrome because it is the same kind of thing: take this away with you. */
-.savebtn { margin-left:auto; order:1; }
-figure.chart svg { max-width:100%; height:auto; display:block; overflow:visible; }
-/* A 2px ring in the SURFACE colour, so two dots that overlap still read as two. */
-.dot { fill:var(--cat1); stroke:var(--bg); stroke-width:2; }
-.dot.c1 { fill:var(--cat1); } .dot.c2 { fill:var(--cat2); } .dot.c3 { fill:var(--cat3); }
-.dot.c4 { fill:var(--cat4); } .dot.c5 { fill:var(--cat5); }
-/* SLOT 6 IS NOT A SIXTH HUE — it is the neutral "Other" the palette ceiling forces. Five is the
-   real ceiling on BOTH surfaces: every candidate sixth either collapsed against slot 1 (protan
-   dE 3.1) or, once lightened enough to clear 3:1 on the dark surface, against slot 4 (normal dE
-   9-13). Gray is exempt from the chroma floor precisely because it is reserved for non-series
-   roles, and it is safe here for a reason specific to this chart: the one writer in slot 6 has a
-   unique name, so it carries a DIRECT LABEL and its identity never rested on colour. */
-.dot.c6 { fill:var(--dim); }
-/* THE PAIR: a layout whose point carries two times is drawn as the SEGMENT BETWEEN THEM and nothing
-   else — no end markers. The length is the whole reading, and two circles on it were a second
-   grammar (fill for the tier, area for row group size) to learn before the length could be read at
-   all. `butt` caps, not `round`: a round cap overshoots the value by half the stroke, and these
-   endpoints ARE the two measurements. No new colour — the same `--catN` the dots fill with. */
-/* SLIGHTLY TRANSPARENT, and it is the one concession the dots used to make for free. A dot marked
-   one x; a line spans most of the plot, so two layouts at nearly the same CU now overlap along their
-   whole length instead of sitting at two different x. On the real records four pairs land within 3
-   units of each other, all of them `delta_rs`, i.e. the same hue — drawn opaque they read as one
-   line and the chart silently undercounts. At .8 the overlap composites darker, so a coincidence
-   looks like what it is. */
-.pair { stroke-width:3; fill:none; opacity:.8; }
-.pair.c1 { stroke:var(--cat1); } .pair.c2 { stroke:var(--cat2); } .pair.c3 { stroke:var(--cat3); }
-.pair.c4 { stroke:var(--cat4); } .pair.c5 { stroke:var(--cat5); }
-.pair.c6 { stroke:var(--dim); }
-/* The size key's circles carry no hue — they encode the size channel alone, so giving them a
-   writer colour would say a size belongs to a writer. */
-.swatch.c0 { fill:var(--dim); opacity:.55; stroke:none; }
-/* `bar-*` NAMES SURVIVE THE BAR CHARTS, which are gone: these are the chart type scale for text in
-   an SVG, and renaming them would churn every axis label, tick and legend line for nothing.
-   `.bar-label` has no marks left to name — the bar rows were its only user — so it goes. */
-.bar-caption { fill:var(--dim); font-size:10px; }
-.bar-value { fill:var(--dim); font-size:12px; font-variant-numeric:tabular-nums; }
-.axis { stroke:var(--line); stroke-width:1; }
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width:1100px; margin:0 auto; padding:2rem 16px 4rem; }
+header h1 { font-size:2rem; line-height:1.2; margin:0 0 .4rem; }
+header .sub { color:var(--dim); margin:0 0 1rem; max-width:52rem; }
+.repo, .status { color:var(--dim); font-size:.85rem; margin:.2rem 0; }
+a { color:var(--c1); }
+h2 { font-size:1.45rem; margin:3rem 0 .8rem; padding-top:1rem; border-top:1px solid var(--line);
+  display:flex; align-items:center; gap:.6rem; flex-wrap:wrap; }
+h2 .num { display:inline-grid; place-items:center; width:1.8rem; height:1.8rem; border-radius:50%;
+  background:var(--soft); font-size:1rem; color:var(--dim); }
+h4 { margin:2rem 0 .4rem; font-size:1.05rem; }
+p, li { max-width:52rem; }
+.claim { font-size:1.15rem; line-height:1.5; border-left:3px solid var(--c1); padding:.2rem 0 .2rem 1rem; }
+code { background:var(--code); padding:.05rem .3rem; border-radius:4px; font-size:.88em; }
+.dim, .note { color:var(--dim); }
+.note { font-size:.9rem; }
+.empty { color:var(--dim); font-style:italic; }
+.warn { color:var(--meh); font-size:.8em; white-space:nowrap; }
+
+.switch { font-size:.95rem; margin:1rem 0 0; padding:.6rem .8rem; background:var(--soft); border-radius:8px; }
+.switch b { color:var(--fg); }
+
+ol.short { padding-left:1.4rem; }
+ol.short li { margin:.55rem 0; }
+
+.badge { font-size:.72rem; font-weight:600; padding:.1rem .45rem; border-radius:999px; white-space:nowrap;
+  border:1px solid currentColor; vertical-align:middle; }
+.badge.clear { color:var(--good); }
+.badge.noise { color:var(--meh); }
+.badge.few { color:var(--few); }
+
+.legend { display:flex; flex-wrap:wrap; gap:.4rem 1.2rem; font-size:.85rem; color:var(--dim); margin:.8rem 0; }
+.key { display:inline-flex; align-items:center; gap:.4rem; }
+
+.facets { display:grid; grid-template-columns:repeat(auto-fill, minmax(460px, 1fr)); gap:1rem; margin:1rem 0; }
+.facets.one { grid-template-columns:minmax(0, 720px); }
+@media (max-width:560px) { .facets { grid-template-columns:minmax(0, 1fr); } }
+.facet { margin:0; padding:.6rem .6rem .2rem; background:var(--soft); border-radius:10px; min-width:0; }
+.facet figcaption { font-size:.85rem; font-weight:600; margin:0 0 .2rem .2rem; }
+svg.chart { width:100%; height:auto; display:block; overflow:visible; }
+svg.chart.strip { max-width:820px; margin:1rem 0; }
+svg.chart .grid { stroke:var(--line); stroke-width:1; }
+svg.chart .tick { fill:var(--dim); font-size:10.5px; font-variant-numeric:tabular-nums; }
+svg.chart .axis { fill:var(--dim); font-size:11px; }
+svg.chart .guide { stroke:var(--dim); stroke-width:1; stroke-dasharray:3 4; opacity:.7; }
+svg.chart .guide-label { fill:var(--dim); font-size:10px; }
+svg.chart .row-label { fill:var(--fg); font-size:11px; }
+svg.chart .range { stroke-width:2; stroke-linecap:round; opacity:.55; }
+svg.chart .median { stroke:var(--fg); stroke-width:2; stroke-linecap:round; }
+svg.chart .sep { stroke:var(--line); stroke-width:1; }
+svg.chart .pt { cursor:default; }
+svg.chart .pt:hover > :first-child { stroke:var(--fg); stroke-width:2; }
+
+svg.diagram { width:100%; max-width:760px; height:auto; display:block; margin:1rem 0; }
+svg.diagram .box { fill:var(--soft); stroke:var(--line); }
+svg.diagram .box.hl { stroke:var(--c1); stroke-width:2; }
+svg.diagram .dt { fill:var(--fg); font-size:13px; font-weight:600; }
+svg.diagram .ds { fill:var(--dim); font-size:11.5px; }
+svg.diagram .dh { fill:var(--dim); font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+svg.diagram .flow { fill:none; stroke:var(--dim); stroke-width:1.5; }
+
+.tablewrap { overflow-x:auto; margin:1rem 0; }
+table { border-collapse:collapse; font-size:.88rem; min-width:100%; }
+th, td { padding:.4rem .6rem; border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+th { font-weight:600; color:var(--dim); background:var(--soft); position:sticky; top:0; }
+table.num td { font-variant-numeric:tabular-nums; }
+table.sortable th { cursor:pointer; user-select:none; white-space:nowrap; }
+table.sortable th[data-dir="asc"]::after { content:" ▲"; font-size:.7em; }
+table.sortable th[data-dir="desc"]::after { content:" ▼"; font-size:.7em; }
+details { margin:.6rem 0; }
+summary { cursor:pointer; font-weight:600; }
+button { font:inherit; font-size:.9rem; padding:.35rem .8rem; border-radius:6px; border:1px solid var(--line);
+  background:var(--soft); color:var(--fg); cursor:pointer; }
+
+.tooltip { position:fixed; display:none; pointer-events:none; z-index:10; max-width:360px;
+  background:var(--fg); color:var(--bg); font-size:.8rem; line-height:1.4; padding:.4rem .6rem; border-radius:6px; }
+footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
+@media (max-width:600px) { body { font-size:16px; } header h1 { font-size:1.6rem; } .claim { font-size:1.05rem; } }
 </style>
 </head>
 <body>
 <main>
-  <!-- NO `<h1>`, AND THE PAGE STILL HAS A TITLE — it is the `<title>` in the head, which names the
-       browser tab, the bookmark and every link preview. There was an `<h1>Direct Lake parquet
-       layout` here and it cost ~46px at the top of a page whose first block is a chart nobody could
-       see the bottom of. It said what the `<title>` says, to a reader already looking at it.
-       WHAT SURVIVES IS THE NAVIGATION, because nothing else on the page carries it: the repo link
-       is also in the footer, but the DAG link exists nowhere else. Same two links, same metrics,
-       now a standalone line instead of a sub-line of a heading.
-       It lives in the shell rather than in `app.js` because it needs no data: it is then already
-       there while the page says Loading…, on the empty-records page and on the boot error page,
-       and there is only one copy of it to keep in step.
-       The repo link is hardcoded exactly as the footer's is. `?repo=` redirects where the DATA is
-       read from, not what this page is; the `[source]` line `app.js` renders is the one that
-       follows it.
-       The DAG is the real `dbt docs generate --static` output committed as `dashboard/dag.html` and
-       copied into `site/` by the workflow — not a drawing of one, so it cannot drift from the
-       models. The href is RELATIVE, which works on Pages and under a local `http.server` alike;
-       `build.mjs --snapshot` rewrites it to the absolute Pages URL, because the offline copy has no
-       sibling file to point at. -->
-  <p class="repo">
-    <a href="https://github.com/djouallah/direct-lake-parquet-layout">djouallah/direct-lake-parquet-layout</a>
-    · <a id="daglink" href="dag.html">the dbt DAG</a>
-  </p>
-  <div class="status" id="status"></div>
+  <header>
+    <h1>Writing parquet that Power BI likes</h1>
+    <p class="sub">The same data written by four engines, then read by Power BI in Direct Lake and DirectQuery. What in the files decides how fast the reports are, measured, and recomputed from every benchmark run each time this page loads.</p>
+    <p class="repo"><a href="https://github.com/djouallah/direct-lake-parquet-layout">djouallah/direct-lake-parquet-layout</a>
+      · <a id="daglink" href="dag.html">the dbt DAG</a></p>
+    <p class="status" id="status"></p>
+  </header>
   <div id="app"><p class="note">Loading…</p></div>
-  <footer id="foot">
-    Rendered in your browser from the run records and the CUs ledger under
-    <code>history/</code>, read at load time — so this page shows the newest measurement without
-    being republished. Source and the two workflows that write those files:
-    <a href="https://github.com/djouallah/direct-lake-parquet-layout">djouallah/direct-lake-parquet-layout</a>.
-  </footer>
+  <footer>Every number on this page is computed in your browser from the run records under
+    <code>history/runs/</code>. Nothing is typed in by hand.</footer>
 </main>
 <script id="snapshot" type="application/json"></script>
-<script type="module" src="app.js"></script>
+<script type="module" src="report.js"></script>
 </body>
 </html>
