@@ -43,7 +43,7 @@ import record
 # it would build the AEMO models into the NYC lakehouse and log a clean run. Every other silent
 # failure in this file costs one un-attributed CU row; that one costs the wrong table.
 _FORWARD = ("DATASET", "FILES_PATH", "ONELAKE_TABLES_PATH", "WAREHOUSE_PATH", "ONELAKE_ENDPOINT",
-            "DBT_SCHEMA", "DUCKDB_SORTED", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
+            "DBT_SCHEMA", "DUCKDB_SORTED", "DUCKDB_SORT_BY", "DUCKDB_ROW_GROUP_SIZE", "DUCKDB_FILE_SIZE_MB",
             "DBT_THREADS",
             "download_limit", "daily_download_limit")
 
@@ -118,6 +118,12 @@ def _record_sort_keys(log, engine):
     REPLACE the build's own exception and lose the real cause.
     """
     try:
+        # An EXPLICIT key (the `sort_by` dispatch input) is the declaration: `dbt.<engine>.sort_by`,
+        # the spelling the dashboard's `sortLabelOf` already reads off the older records.
+        declared = [c.strip() for c in os.environ.get("DUCKDB_SORT_BY", "").split(",") if c.strip()]
+        if declared:
+            record.merge({"dbt": {engine: {"sort_by": {datasets.spec(datasets.selected())["mart"]: declared}}}})
+            print(f"[fabric_run] sort_by declared {declared}", flush=True)
         keys = _sort_keys(log)
         if not keys:
             return

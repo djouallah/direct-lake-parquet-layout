@@ -98,7 +98,9 @@ AND file_stem NOT IN (SELECT DISTINCT file FROM {{ this }})
 {{ config(
     materialized='incremental',
     incremental_strategy='append',
-    sort_by=('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none),
+    sort_by=((env_var('DUCKDB_SORT_BY', '').split(',') | map('trim') | reject('equalto', '') | list)
+             if env_var('DUCKDB_SORT_BY', '') | trim
+             else ('auto' if env_var('DUCKDB_SORTED', 'false') == 'true' else none)),
     max_row_group_size=(none if env_var('DUCKDB_ROW_GROUP_SIZE', 'auto').lower() == 'auto'
                         else env_var('DUCKDB_ROW_GROUP_SIZE', 'auto') | int),
     target_file_size_mb=(none if env_var('DUCKDB_FILE_SIZE_MB', 'auto').lower() == 'auto'

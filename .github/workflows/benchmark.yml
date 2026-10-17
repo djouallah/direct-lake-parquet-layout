@@ -244,6 +244,16 @@ on:
         description: "duckrun auto — off means UNSORTED at the row group / file size below (also sets iceberg's)"
         type: boolean
         default: true
+      # AN EXPLICIT KEY, FOR A CONTROLLED GEOMETRY RUN. duckrun takes a literal `sort_by` list AND
+      # `max_row_group_size` together; `duckrun_auto` couples them (ON = picker + estimator, OFF =
+      # unsorted at the pinned geometry), so neither branch can hold the sort fixed while the row
+      # group moves. Blank (the default) leaves `duckrun_auto` in charge exactly as before. Set, it
+      # wins over `duckrun_auto` for the sort AND applies `row_group_size` / `file_size_mb` above.
+      # `plan` refuses a column the selected mart does not have. Recorded as `dbt.duckrun.sort_by`.
+      sort_by:
+        description: "duckrun: explicit sort columns, comma-separated — overrides auto, uses the row group / file size above (blank = off)"
+        type: string
+        default: ""
 
       # ---- rarely touched ----------------------------------------------------------------------
       # THIS DIVIDER IS INVISIBLE ON THE DISPATCH FORM, and there is no fixing that. GitHub renders
@@ -401,11 +411,12 @@ env:
   #
   # `duckrun_auto` defaults true, so on a `schedule` — where the inputs context is EMPTY and
   # dispatch defaults do NOT apply — the scheduled literal is the auto branch.
-  DUCKDB_SORTED: ${{ inputs.duckrun_auto && 'true'
+  DUCKDB_SORT_BY: ${{ inputs.sort_by }}
+  DUCKDB_SORTED: ${{ (inputs.duckrun_auto || inputs.sort_by != '') && 'true'
     || 'false' }}
-  DUCKDB_ROW_GROUP_SIZE: ${{ inputs.duckrun_auto && 'auto'
+  DUCKDB_ROW_GROUP_SIZE: ${{ (inputs.duckrun_auto && inputs.sort_by == '') && 'auto'
     || inputs.row_group_size }}
-  DUCKDB_FILE_SIZE_MB: ${{ inputs.duckrun_auto && 'auto'
+  DUCKDB_FILE_SIZE_MB: ${{ (inputs.duckrun_auto && inputs.sort_by == '') && 'auto'
     || inputs.file_size_mb }}
   # Read straight off the form, and never `inputs.x || '4'`: that form cannot tell an absent input
   # from a deliberate one. It carried an explicit schedule branch until the grid was removed.
@@ -474,6 +485,7 @@ jobs:
           # than fixed: it claimed the aemo key on every nyc/bts/green/cms night.
           RUNIN_DUCKRUN_AUTO: ${{ inputs.duckrun_auto
             && 'true' || 'false' }}
+          RUNIN_SORT_BY: ${{ env.DUCKDB_SORT_BY }}
           RUNIN_ROW_GROUP_SIZE: ${{ env.DUCKDB_ROW_GROUP_SIZE }}
           RUNIN_FILE_SIZE_MB: ${{ env.DUCKDB_FILE_SIZE_MB }}
           RUNIN_SKIP_DOWNLOAD: ${{ inputs.skip_download }}
@@ -583,8 +595,8 @@ jobs:
       - id: p
         env:
           ENGINES: ${{ env.BENCH_ENGINES }}
-          ROW_GROUP_SIZE: ${{ inputs.duckrun_auto && 'auto'
-            || inputs.row_group_size }}
+          ROW_GROUP_SIZE: ${{ env.DUCKDB_ROW_GROUP_SIZE }}
+          SORT_BY: ${{ env.DUCKDB_SORT_BY }}
           # Both of these exist for ONE dataset's check below, and both are spelled the long way for
           # the reason every value in this file is: on a `schedule` the `inputs` context is EMPTY, so
           # `inputs.skip_download || 'true'` cannot tell an absent input from a deliberate one.
@@ -622,8 +634,16 @@ jobs:
           # is to catch bad input for free. Guarded once, into a variable, so the branch that
           # validates and the branch that PRINTS cannot drift apart again.
           rg_says = "auto (duckrun sizes it)" if rg.lower() == "auto" else f"{int(rg):,} rows"
-          sys.stderr.write(f"dataset={ds} mart={spec['mart']} row_group_size={rg_says}, "
-                           f"sort={'auto (duckrun picks)' if os.environ.get('SORTED') == 'true' else 'none (unsorted)'}\n")
+          # An explicit key must name columns of THIS dataset's mart: a stray one reaches duckrun
+          # and dies mid-write with the capacity already spent.
+          cols = [c.strip() for c in (os.environ.get("SORT_BY") or "").split(",") if c.strip()]
+          strays = [c for c in cols if c not in spec["mart_columns"]]
+          if strays:
+              sys.exit(f"sort_by names {strays}, not columns of {ds}'s {spec['mart']}: "
+                       f"{sorted(spec['mart_columns'])}")
+          sort_says = (", ".join(cols) if cols
+                       else "auto (duckrun picks)" if os.environ.get("SORTED") == "true" else "none (unsorted)")
+          sys.stderr.write(f"dataset={ds} mart={spec['mart']} row_group_size={rg_says}, sort={sort_says}\n")
           # `download_limit` MEANS DIFFERENT THINGS PER DATASET, and on tpcds a wrong value is
           # expensive rather than merely wrong: it is the dsdgen SCALE FACTOR, the form's default is
           # 200, and the generator runs on a Fabric notebook -- so an unchecked value would ask for a
