@@ -313,7 +313,8 @@ def test_iceberg_records_the_geometry_now_that_the_geometry_reaches_its_writer(s
     monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "128")
     cfg = stats.build_doc({}, ["iceberg"], {}, None, {})["config"]["iceberg"]
     assert cfg["row_group_size"] == "5000000"
-    assert cfg["file_size_mb"] == "128"
+    # file_size_mb no longer reaches this leg (2026-10-18), so it is not recorded for it either.
+    assert "file_size_mb" not in cfg
     assert "sorted" not in cfg, "no sort reaches this writer — see the module comment"
 
 
@@ -330,26 +331,28 @@ def test_only_auto_keys_an_iceberg_run_to_the_history_column(stats, monkeypatch)
     emits nothing and the writer defaults to 512 MB."""
     monkeypatch.setenv("FABRIC_CORES", "8")
 
+    # SINCE 2026-10-18 `auto` SENDS 4M ROWS (`iceberg_geometry()`'s `default_rows`), so it records
+    # 4000000 rather than absence; file_size_mb no longer reaches the leg and is not recorded.
     monkeypatch.setenv("DUCKDB_ROW_GROUP_SIZE", "auto")
     monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "auto")
     cfg = stats.build_doc({}, ["iceberg"], {}, None, {})["config"]["iceberg"]
-    assert cfg["row_group_size"] is None
-    assert cfg["file_size_mb"] is None
+    assert cfg["row_group_size"] == "4000000"
+    assert "file_size_mb" not in cfg
 
     # duckrun's baselines, dispatched explicitly. duckrun folds these to None; iceberg must not.
     monkeypatch.setenv("DUCKDB_ROW_GROUP_SIZE", "16000000")
     monkeypatch.setenv("DUCKDB_FILE_SIZE_MB", "1024")
     cfg = stats.build_doc({}, ["iceberg"], {}, None, {})["config"]["iceberg"]
     assert cfg["row_group_size"] == "16000000", "a pinned row count is a real iceberg layout"
-    assert cfg["file_size_mb"] == "1024", "1024 emits a file target; auto emits none. Not the same."
 
-    # AND THE CALL SITE, because the behaviour above is one word away from wrong: iceberg must use
-    # `_iceberg_geometry` with NO baseline (only `auto` is absence) while duckrun keeps
-    # `_nonbaseline` WITH its baselines (auto is the estimator, a layout of its own, and 16M/1024 is
-    # the geometry `history/` was written at). Swapping either way passes every other test here.
+    # The recorded default must be the macro's default, or the record names a row count nobody sent.
+    macro = (pathlib.Path(stats.__file__).parents[2] / "macros" / "iceberg_geometry.sql").read_text(encoding="utf-8")
+    assert f"set default_rows = {stats.ICEBERG_DEFAULT_ROWS}" in macro
+
+    # AND THE CALL SITE: duckrun keeps `_nonbaseline` WITH its baselines (auto is the estimator, a
+    # layout of its own, and 16M/1024 is the geometry `history/` was written at).
     src = pathlib.Path(stats.__file__).read_text(encoding="utf-8")
-    assert '_iceberg_geometry("DUCKDB_ROW_GROUP_SIZE")' in src
-    assert '_iceberg_geometry("DUCKDB_FILE_SIZE_MB")' in src
+    assert '"row_group_size": _iceberg_rows()' in src
     assert '_nonbaseline("DUCKDB_ROW_GROUP_SIZE", "16000000")' in src, "duckrun keeps its baseline"
     assert '_nonbaseline("DUCKDB_FILE_SIZE_MB", "1024")' in src, "duckrun keeps its baseline"
 

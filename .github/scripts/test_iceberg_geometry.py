@@ -84,103 +84,56 @@ def create_sql(props, temporary=False):
 
 # ------------------------------------------------------------------ iceberg_geometry()
 
-# duckrun's page size, which iceberg is given on EVERY run (see the macro's block comment).
-PAGE = {"write.parquet.page-size-bytes": 1048576}
+CEILING = 2 * 1073741824
+ROWS, BYTES, FILE, PAGE, PER_FILE = (
+    "write.parquet.row-group-size", "write.parquet.row-group-size-bytes",
+    "write.target-file-size-bytes", "write.parquet.page-size-bytes", "write.parquet.row-groups-per-file")
 
 
-@pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("AUTO", "Auto"), ("auto", "AUTO")])
-def test_auto_emits_no_geometry_only_the_page_size(rg, mb):
-    """`auto` leaves row groups and files to the writer — the common case, since `duckrun_auto` is
-    on by default. It USED to emit nothing at all; since 2026-10-18 it carries the page size, which
-    is not geometry and has no input. Case-insensitive because the models' own `.lower()` gate is."""
-    assert geometry(rg, mb) == PAGE
+@pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("AUTO", "Auto"), ("auto", "64")])
+def test_a_default_dispatch_gets_4M_rows_not_the_writers_128MB(rg, mb):
+    """`auto` is what `duckrun_auto` (on by default) forces, so this is the common case. It used to
+    emit nothing, and the writer's 128 MB UNCOMPRESSED default then decided the row groups: run
+    39040729276 wrote nyc as 729 groups of ~812K rows. A default run now gets 4M rows."""
+    assert geometry(rg, mb)[ROWS] == 4000000
 
 
-@pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("5000000", "auto"), ("auto", "64"), ("2000000", "1024")])
-def test_the_page_size_is_duckruns_1_MiB_on_every_dispatch(rg, mb):
-    """duckrun writes 1 MiB data pages on every run; DuckDB's own default is one page per ~100 MB
-    uncompressed. `write.parquet.page-size-bytes` -> `data_page_size_limit` is duckdb-iceberg#1365.
-    In BYTES: the writer measures uncompressed bytes, and a human '1MB' would land in the metadata
-    as a string other readers may not parse (duckdb-iceberg#1150)."""
-    assert geometry(rg, mb)["write.parquet.page-size-bytes"] == 1048576
+def test_a_pinned_row_count_is_passed_as_rows_with_no_conversion():
+    """DuckDB's `write.parquet.row-group-size` counts ROWS. Spelling it `-bytes`, or multiplying,
+    would hand the writer a 5-million BYTE row group and ~1,000x too many of them."""
+    assert geometry("5000000", "auto")[ROWS] == 5000000
 
 
-def test_the_row_group_size_is_passed_as_rows_with_no_conversion():
-    """THE WHOLE REASON ONE DISPATCH INPUT CAN DRIVE BOTH WRITERS. duckrun's `max_row_group_size`
-    counts rows; DuckDB's `write.parquet.row-group-size` counts rows too — it is duckdb-iceberg's
-    own extension, NOT the Iceberg spec's `write.parquet.row-group-size-bytes`, which is a byte
-    budget. Multiplying or renaming this to the `-bytes` spelling would hand the writer a 5-million
-    BYTE row group and quietly produce ~1,000x too many of them."""
-    assert geometry("5000000", "auto")["write.parquet.row-group-size"] == 5000000
+@pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("5000000", "auto"), ("auto", "64"), ("16000000", "1024")])
+def test_only_the_row_count_can_close_a_row_group(rg, mb):
+    """The writer closes a row group at the row count OR the byte budget, whichever comes first, and
+    clamps the byte budget DOWN to the file target. So both byte limits sit at one ceiling far above
+    any row group this project writes, and `file_size_mb` — whose form default is 64 MB, which
+    would cap every row group at 64 MB — does not reach this leg at all."""
+    g = geometry(rg, mb)
+    assert g[BYTES] == g[FILE] == CEILING
 
 
-def test_a_pinned_row_count_also_raises_the_byte_budget():
-    """WITHOUT THIS THE ROW COUNT IS INERT, and run 33733500776 is the proof: nyc dispatched at
-    `row_group_size=5000000` wrote 729 row groups at 811,700 rows, against the baseline's 728 at
-    812,815 — no change whatever. Both thresholds are live in duckdb-iceberg and the FIRST to hit
-    wins; `iceberg_insert.hpp:69` hardcodes the byte one to 128 MB, which over nyc's 20 columns is
-    ~812K rows and over aemo's 5 narrow ones ~2.7M. Both datasets had always been byte-bound there.
-
-    The 128 MB is UNCOMPRESSED, which is what makes this easy to misdiagnose: nyc's mart is 8,961 MB
-    over 728 row groups, i.e. 12.3 MB per row group on disk. Read that as "nothing near 128 MB" and
-    the conclusion inverts.
-    """
-    assert geometry("5000000", "auto") == {**PAGE, "write.parquet.row-group-size": 5000000,
-                                           "write.parquet.row-group-size-bytes": 1024 * 1048576}
+def test_file_size_mb_never_changes_what_iceberg_is_sent():
+    for mb in ("auto", "32", "64", "128", "512", "1024"):
+        assert geometry("auto", mb) == geometry("auto", "auto"), mb
 
 
-def test_the_byte_budget_is_a_CONSTANT_and_does_not_follow_the_file_size():
-    """IT WAS THE FILE TARGET, AND ONE NUMBER IN ONE PLACE IS WHY THAT CHANGED. Deriving the
-    row-group budget from `file_size_mb` coupled two settings that answer different questions, so a
-    dispatch about FILES silently moved row-group sizing. The values happen to coincide today at
-    `file_size_mb=1024`; the coupling is what is gone.
-
-    ⚠️ NOT because a big buffer is slow — that was suspected of run 33739194650's 90-minute timeout
-    and is RETRACTED. Measured, plain COPY, 20 BIGINT columns: the 128 MB / 1 GiB duration ratio is
-    0.75x at 20M rows and 1.14x at 60M, i.e. inside run-to-run variance, one run faster. The timeout
-    is unexplained and the geometry is not the suspect.
-
-    So it is one fixed 1 GiB, whatever the file size, and 1 GiB rather than a cautious 512 MB because
-    it is the value at which a dispatched 5M rows actually BINDS on a 20-column table — the same
-    20M-row measurement read 25 groups at 827,392 rows under 128 MB, 7 at 3,305,472 under 512 MB and
-    4 at 5,001,216 under 1 GiB. 512 MB would leave the dispatch input advisory.
-
-    The writer clamps it DOWN where the file target is smaller (`GetCopyOptions`: batch_size_bytes >
-    file_size_bytes -> file_size_bytes), so no special case is needed here — but a dispatch CAN be
-    given less than it asked for, including on `file_size_mb=auto`, whose 512 MB writer default
-    halves this. Read `num_row_groups` back."""
-    for file_mb in ("auto", "64", "128", "512", "1024"):
-        got = geometry("5000000", file_mb)
-        assert got["write.parquet.row-group-size-bytes"] == 1024 * 1048576, file_mb
-    # The file target still tracks the dispatch — only the row-group budget is fixed.
-    assert geometry("5000000", "128")["write.target-file-size-bytes"] == 128 * 1048576
-    assert geometry("5000000", "1024")["write.target-file-size-bytes"] == 1024 * 1048576
+@pytest.mark.parametrize("rg", ["auto", "5000000"])
+def test_the_page_size_is_duckruns_1_MiB_on_every_dispatch(rg):
+    """duckrun writes 1 MiB data pages; DuckDB's default is one ~100 MB page per chunk.
+    `write.parquet.page-size-bytes` -> `data_page_size_limit` is duckdb-iceberg#1365."""
+    assert geometry(rg, "auto")[PAGE] == 1048576
 
 
-def test_a_file_size_alone_does_not_touch_the_row_group_budget():
-    """`file_size_mb` on its own is a file-rotation setting and nothing else. Raising the row-group
-    byte budget there would silently change row-group sizing on a dispatch that only asked about
-    files — and it is the ROW COUNT this budget exists to make binding."""
-    assert geometry("auto", "1024") == {**PAGE, "write.target-file-size-bytes": 1024 * 1048576}
+@pytest.mark.parametrize("rg", ["auto", "5000000"])
+def test_one_row_group_per_file(rg):
+    """Without it only the 2 GiB file ceiling rotates files, and a mart lands as one multi-GB file."""
+    assert geometry(rg, "auto")[PER_FILE] == 1
 
 
-def test_the_file_size_is_converted_from_MiB_to_bytes():
-    """`file_size_mb` is megabytes and `write.target-file-size-bytes` is bytes. Passing the number
-    through unconverted asks for 128-BYTE files."""
-    assert geometry("auto", "128") == {**PAGE, "write.target-file-size-bytes": 128 * 1048576}
-    assert geometry("auto", "1024") == {**PAGE, "write.target-file-size-bytes": 1073741824}
-
-
-def test_the_two_knobs_are_independent():
-    """`auto` on one and a value on the other is a legal dispatch — `row_group_size` is free text
-    while `file_size_mb` is a choice — so neither may gate the other. Note the row count brings its
-    own byte budget along (see above); the file size does not."""
-    assert set(geometry("2000000", "auto")) == {*PAGE, "write.parquet.row-group-size",
-                                               "write.parquet.row-group-size-bytes"}
-    assert set(geometry("auto", "64")) == {*PAGE, "write.target-file-size-bytes"}
-    assert set(geometry("2000000", "64")) == {*PAGE, "write.parquet.row-group-size",
-                                              "write.parquet.row-group-size-bytes",
-                                              "write.target-file-size-bytes"}
+def test_exactly_these_five_properties():
+    assert set(geometry("auto", "auto")) == {ROWS, PER_FILE, BYTES, FILE, PAGE}
 
 
 def test_the_values_are_integers_not_human_units():

@@ -909,8 +909,24 @@ def _nonbaseline(var, baseline):
     return v if v and v != baseline else None
 
 
+ICEBERG_DEFAULT_ROWS = "4000000"     # `iceberg_geometry()`'s `default_rows`; pinned by a test
+
+
+def _iceberg_rows():
+    """The iceberg leg's row-group size as SENT, recorded on EVERY run since 2026-10-18.
+
+    `iceberg_geometry()` now emits a row count whether or not one was dispatched — `auto` sends
+    `ICEBERG_DEFAULT_ROWS` — so `auto` is no longer absence. Recording the number the writer was
+    actually given keeps the 4M-row runs out of the column the 128 MB-default runs sit in.
+    `file_size_mb` is not recorded for iceberg at all: that input no longer reaches the leg.
+    """
+    v = (os.environ.get("DUCKDB_ROW_GROUP_SIZE") or "").strip()
+    return ICEBERG_DEFAULT_ROWS if (not v or v.lower() == "auto") else v
+
+
 def _iceberg_geometry(var):
-    """The iceberg leg's geometry, recorded whenever it is PINNED. `auto` is the only absence.
+    """SUPERSEDED by `_iceberg_rows` for the iceberg leg (2026-10-18); kept for the reasoning below.
+    The iceberg leg's geometry, recorded whenever it is PINNED. `auto` is the only absence.
 
     NO BASELINE, and that divergence from `_nonbaseline` is the point — it is not a softening of the
     rule, it is the rule applied to a different writer. duckrun's baselines exist because
@@ -1103,8 +1119,7 @@ def build_doc(per_engine, engines, guids=None, landing=None, encodings=None, ord
             # `file_size_mb=1024` as `None` on run 33739194650 — the same cell as `auto`, for a
             # different file target.
             ("iceberg", {"vcores": os.environ.get("FABRIC_CORES") or None,
-                         "row_group_size": _iceberg_geometry("DUCKDB_ROW_GROUP_SIZE"),
-                         "file_size_mb": _iceberg_geometry("DUCKDB_FILE_SIZE_MB")}),
+                         "row_group_size": _iceberg_rows()}),
             ("spark", {"resource_profile": os.environ.get("SPARK_RESOURCE_PROFILE") or None,
                        "native_execution_engine": os.environ.get("SPARK_NATIVE_ENABLED") or None}),
             # dwh USED TO BE ABSENT HERE, on the grounds that Fabric Warehouse exposes no per-run
