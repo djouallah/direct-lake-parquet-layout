@@ -411,7 +411,14 @@ export function findDictionary(ctx) {
     <p>${gap !== null ? `Columns whose every chunk was declared fully dictionary-encoded loaded at a median <b>${fmtX(median(remapRel))}</b> of that column's typical cold cost; columns on the hashing path at <b>${fmtX(median(hashRel))}</b>, ${gap >= 1 ? `${fmtX(gap)} slower` : `${fmtX(1 / gap)} faster`}, over ${fmtInt(remapRel.length)} and ${fmtInt(hashRel.length)} column-runs.` : `${fmtInt(measured.length)} column-runs carry the footer declaration, all on the ${remapRel.length ? "remap" : "hashing"} path, so there is nothing to compare yet.`}</p>
     ${table(["writer", "chunks that declare encoding_stats", "chunks declared fully dictionary-encoded"], declRows, "num")}` : ""}
     <h4>What the run records can and cannot say</h4>
-    <p>Every run records, per column chunk, whether it has a dictionary page; a chunk with none is certainly on the hashing path. Runs from 2026-10-17 on also record the footer's <code>encoding_stats</code> (the table above); older runs do not, so for them a chunk with a dictionary page could be on either path. The first DuckDB → Iceberg run on the DuckDB build carrying #24957 (2026-10-17) declares every dictionary chunk, and its cold time and read CU did <b>not</b> move against the earlier, undeclared iceberg runs on the same table (37 s against 36 and 41 s; about 3.0k CU against 3.0 and 3.1k). One run against two rules out a large effect here, not a small one.</p>
+    <p>Every run records, per column chunk, whether it has a dictionary page; a chunk with none is certainly on the hashing path. Runs from 2026-10-17 on also record the footer's <code>encoding_stats</code> (the table above); older runs do not, so for them a chunk with a dictionary page could be on either path. On DuckDB's own writer the declaration is measured directly: the iceberg leg's DuckDB wheel moved from <code>1.6.0.dev365</code> (before #24957) to <code>1.6.0.dev379</code> (after it) between two aemo runs that wrote the same 3 files, 53 row groups, 1,130 MB and the same dictionary pages on every column. Only the footer list changed.</p>
+    ${table(["aemo, DuckDB → Iceberg", "dev365, undeclared", "dev379, declared", "change"], [
+      ["cold, whole suite", "80.5 s", "40.7 s", "<b>2.0×</b>"],
+      ["Direct Lake read CU", "7,923", "3,132", "<b>2.5×</b>"],
+      ["warm, whole suite", "4.1 s", "3.0 s", "1.4×"],
+      ["<code>DUID</code> cold, string, fully dictionary", "11,377 ms", "543 ms", "<b>21×</b>"],
+      ["<code>mw</code> cold, 10 of 53 chunks <code>PLAIN</code>", "6,266 ms", "4,387 ms", "1.4×"]], "num")}
+    <p>The fully dictionary-encoded columns collapse; <code>mw</code>, whose <code>PLAIN</code> chunks cannot be remapped whatever the footer says, barely moves. One run per arm (32444969823, 33700004854), with geometry and dictionary pages identical. This page used to say the declaration did not move the cost: it compared the 2026-10-17 run with 2026-09-03 runs that were already on <code>dev379</code>, i.e. the fix against itself.</p>
     ${table(["writer", "encodings it writes (most common)", "chunks with a dictionary page"], rows)}
     ${gaps.length ? `<h4>Column-runs with chunks that have no dictionary page: certain hashing</h4>
     ${table(["column-run", "chunks with a dictionary page", "size", "extra cold time"],
@@ -645,7 +652,7 @@ export function propDictionary(ctx) {
   return propertyCard({ id: "dictionary", title: "Dictionary encoding", evidence: "observational", status: base.status === "clear" ? "clear" : "partial",
     head: [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
     card: "Keep every column dictionary-encoded, and have the file declare it so Power BI can reuse the dictionary instead of rebuilding it.",
-    claim: `A column with chunks missing a dictionary page cost <b>${pct(s)}</b> cold against the same column fully encoded (${agree(s)}). Whether the footer DECLARES the dictionary decides the cheap path; the runs record that only from 2026-10-17.`,
+    claim: `A column with chunks missing a dictionary page cost <b>${pct(s)}</b> cold against the same column fully encoded (${agree(s)}). Whether the footer DECLARES the dictionary decides the cheap path: on the same DuckDB-written table, adding the declaration alone halved the cold load and cut Direct Lake read CU 2.5×.`,
     body: `${effectTable([["column cold, dictionary gaps ÷ full", s]])}${base.html}` });
 }
 

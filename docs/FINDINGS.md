@@ -296,16 +296,35 @@ what the one footer list is worth: cold first-touch of a 142M-row dictionary str
 **10,857.5 → 689.3 ms**. It is in no release — stable is 1.5.5 — but the pre-release wheel both
 DuckDB legs pin carries it.
 
-⚠️ **ON THIS TABLE IT DID NOT MOVE THE COST, and this section used to predict that it would.** Run
-39014779361 (2026-10-17, pin `2.0.0.dev2610161340`) is the first iceberg benchmark on a declaring
-writer: all 53 row groups of `fct_summary` declare `encoding_stats`, and every chunk with a
-dictionary is declared fully dictionary-encoded (`mw` still has 11 chunks that fell back to
-`PLAIN`). Against the two undeclared iceberg runs of 2026-09-03 on the same table and the same 53
-row groups: cold **37 s** against 36 and 41 s, Direct Lake read CU about **3.0k** against 3.0k and
-3.1k, `price` cold 1.2 s against 1.1–1.2 s. So the declaration was not what kept this leg ~1.7×
-delta-rs's read cost; what still separates it is the index encoding (`PLAIN_DICTIONARY`, no RLE)
-and the `PLAIN` fallback on `mw`. One run against two rules out a large effect here, not a small
-one.
+**ON THIS TABLE IT HALVED THE COLD LOAD AND CUT READ CU 2.5×, with nothing else changing.** The
+leg moved from `1.6.0.dev365` (before the PR, the PR's own "before" binary) to `1.6.0.dev379`
+(after it) between run 32444969823 and run 33700004854. Same writer, same 143,980,961 rows, same 3
+files and 53 row groups, 1,130 MB against 1,129, the same dictionary pages on every column (`mw` 43
+of 53, the rest 53 of 53). The only thing that changed is the footer list:
+
+| | `dev365`, undeclared | `dev379`, declared | |
+|---|---:|---:|---:|
+| cold, whole suite | 80.5 s | 40.7 s | 2.0× |
+| warm, whole suite | 4.1 s | 3.0 s | 1.4× |
+| Direct Lake read CU | 7,923 | 3,132 | 2.5× |
+| `DUID` cold (string) | 11,377 ms | 543 ms | 21× |
+| `date` cold | 2,183 ms | 227 ms | 9.6× |
+| `time` cold | 2,908 ms | 541 ms | 5.4× |
+| `price` cold | 3,289 ms | 1,297 ms | 2.5× |
+| `mw` cold | 6,266 ms | 4,387 ms | 1.4× |
+
+The per-column pattern is the mechanism. The fully dictionary-encoded string key, `DUID`, drops 21×,
+the same order as the PR's 15.7× on a 142M-row string column. `mw`, whose 10 `PLAIN` chunks cannot
+be remapped however the footer reads, barely moves. One run per arm, but the geometry and dictionary
+pages are identical, so there is no other candidate for the difference.
+
+⚠️ **This section used to say the opposite.** It compared run 39014779361 (2026-10-17, pin
+`2.0.0.dev2610161340`) against the 2026-09-03 runs, called those undeclared, and concluded the
+declaration did not move the cost. Those runs were on `dev379`, which already carries the PR, so
+that was the fix compared with itself. It still shows something: the declaration holds across the
+later wheel (37 s cold and about 3.0k CU, against 36–41 s and 3.0–3.1k). What still separates this
+leg from delta-rs's read cost is the index encoding (`PLAIN_DICTIONARY`, no RLE) and the `PLAIN`
+fallback on `mw`.
 
 ```sql
 COPY (SELECT * FROM fct_summary ORDER BY date, time, price)  -- #2: sort is yours to do
