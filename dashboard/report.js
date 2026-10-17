@@ -811,6 +811,10 @@ function methodSection(ctx) {
 
 export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
 
+// Writers left off this tab by the user's call (2026-10-18): unsorted delta-rs is not a layout anyone
+// would ship. Its runs stay in the data and on every other page.
+export const PERF_HIDDEN = ["deltars_unsorted"];
+
 /** One entry per (dataset, writer) measured in `phase`, datasets in page order, writers in `WRITERS` order. */
 export function perfGroups(ctx, phase = "dl") {
   const order = WRITERS.map((w) => w.key);
@@ -818,7 +822,7 @@ export function perfGroups(ctx, phase = "dl") {
   return dsList(ctx).flatMap((ds) => {
     const by = new Map();
     for (const r of ctx.runs) {
-      if (r.ds !== ds || !r[phase] || !r[phase].cold || !r[phase].warm) continue;
+      if (r.ds !== ds || PERF_HIDDEN.includes(r.writer) || !r[phase] || !r[phase].cold || !r[phase].warm) continue;
       (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
     }
     return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, runs]) => ({
