@@ -199,7 +199,7 @@ test("V-Order: the read-CU saving is measured, labelled and on the card", () => 
   const { recs, ledger } = withCu(vorderFixture());
   const f = r.findVOrder(r.context(recs, {}, ledger));
   assert.match(f.short, /Direct Lake read CU lower on 4 of 4 datasets \(4 clearly\)/);
-  assert.match(f.head[0], /^2\.0×/);
+  assert.match(f.head[0], /2\.0×/);
 });
 
 test("V-Order: a separated cold and an overlapping warm are reported as exactly that", () => {
@@ -315,6 +315,42 @@ test("strips draw one dot per run and one median tick per row", () => {
 test("log ticks fill a narrow decade instead of leaving only its ends", () => {
   assert.ok(r.logTicks(57000, 157000).length >= 3);
   assert.deepEqual(r.logTicks(1, 1000), [1, 10, 100, 1000]);
+});
+
+test("writer-blind: cold explained by size and row groups leaves no writer residual, unless one exists", () => {
+  // Cold cost is a pure function of the layout for delta-rs and Spark; the warehouse pays 1.5x extra.
+  const recs = [];
+  let id = 0;
+  for (const [engine, cfg, extraCost] of [["duckrun", { sorted: "true" }, 1], ["spark", { resource_profile: "writeHeavy" }, 1], ["dwh", {}, 1.5]]) {
+    for (const [mb, rgs] of [[40, 10], [80, 10], [40, 40], [160, 20], [80, 80], [120, 30], [60, 15]]) {
+      const cold = Math.round(5 * mb * Math.sqrt(rgs) * extraCost);
+      recs.push(rec({ id: ++id, engine, cfg, rgs, mb: mb * 2, cold }));
+    }
+  }
+  const m = r.layoutModel(r.context(recs), ["aemo"]);
+  const by = Object.fromEntries(m.fams.map((f) => [f.family, f.resid]));
+  assert.ok(Math.abs(by["delta-rs"] - by.spark) < 0.05);
+  assert.ok(by.warehouse / by["delta-rs"] > 1.4);
+});
+
+test("cards speak plainly: no correlation coefficients on the home page", () => {
+  const { html } = r.render(vorderFixture(), {});
+  assert.doesNotMatch(html, /ρ/);
+});
+
+test("writer-blind: cold explained by size and row groups leaves no writer residual, unless one exists", () => {
+  // Cold cost is a pure function of the layout for delta-rs and Spark; the warehouse pays 1.5x extra.
+  const recs = [];
+  let id = 0;
+  for (const [engine, cfg, extraCost] of [["duckrun", { sorted: "true" }, 1], ["spark", { resource_profile: "writeHeavy" }, 1], ["dwh", {}, 1.5]]) {
+    for (const [mb, rgs] of [[40, 10], [80, 10], [40, 40], [160, 20], [80, 80], [120, 30], [60, 15]]) {
+      recs.push(rec({ id: ++id, engine, cfg, rgs, mb: mb * 2, cold: Math.round(5 * mb * Math.sqrt(rgs) * extraCost) }));
+    }
+  }
+  const m = r.layoutModel(r.context(recs), ["aemo"]);
+  const by = Object.fromEntries(m.fams.map((f) => [f.family, f.resid]));
+  assert.ok(Math.abs(by["delta-rs"] - by.spark) < 0.05);
+  assert.ok(by.warehouse / by["delta-rs"] > 1.4);
 });
 
 test("csv quotes what needs quoting and reads nested keys", () => {

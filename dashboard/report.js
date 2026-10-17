@@ -210,7 +210,7 @@ export function table(head, rows, cls = "") {
     `<tr>${r.map((c) => `<td>${c ?? "—"}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
-const STATUS = { clear: "clear", noise: "inside the noise", few: "too few runs" };
+const STATUS = { clear: "clear", noise: "inside the noise", few: "too few runs", partial: "partly measured" };
 const badge = (s) => `<span class="badge ${s}">${STATUS[s]}</span>`;
 const rhoText = (r) => (r === null ? "—" : `${r >= 0 ? "" : "−"}${Math.abs(r).toFixed(2)}`);
 const range = (xs, f) => {
@@ -284,8 +284,9 @@ export function findColdWarm(ctx) {
     ${legend(familiesIn(per.flatMap((p) => p.R)))}
     ${chart}
     ${table(["dataset", "runs", "cold ÷ warm (Direct Lake)", "ρ cold vs warm", "cold ÷ warm (DirectQuery)"], rows, "num")}`;
-  return { id: "cold-warm", title: "Cold and warm are different questions", short, status: per.length ? "clear" : "few", html,
-    head: [range(ratios, fmtX), "the first visit costs, against the second (Direct Lake)"] };
+  return { id: "cold-warm", title: "First load against every query after", short, status: per.length ? "clear" : "few", html,
+    head: [range(ratios, fmtX), "slower: the first query after a refresh, against the second"],
+    card: "Layout matters most for the first query after a refresh, when Power BI loads the data from the files. After that the data is in memory." };
 }
 
 export function findColumnSize(ctx) {
@@ -320,64 +321,81 @@ export function findColumnSize(ctx) {
       per.map((p) => [label(p.ds), fmtInt(p.C.length), `${rhoText(p.rho)} <span class="dim">${strength(p.rho)}</span>`,
         `${rhoText(p.rhoWarm)} <span class="dim">${strength(p.rhoWarm)}</span>`]), "num")}
     ${dropped ? `<p class="note">${fmtInt(dropped)} column-runs read faster than the row-count probe itself, so they have no positive extra cost to plot on a log axis. They count in ρ.</p>` : ""}`;
-  return { id: "column-size", title: "What makes a column cheap to load: its size", short, status: rc.length ? "clear" : "few", html,
-    head: [rc.length ? `ρ ${range(rc, rhoText)}` : "—", "column compressed size against its cold load time"] };
+  return { id: "column-size", title: "Small columns load fast", short, status: rc.length ? "clear" : "few", html,
+    head: [rc.length ? `${rc.filter((x) => x >= 0.4).length} of ${rc.length}` : "—", "datasets where bigger columns loaded slower"],
+    card: "Small columns load fast. The less space a column takes on disk, the quicker Power BI loads it the first time." };
 }
 
-/** Per (dataset, column): every writer's median MB and cold, plus how far apart they land. */
-export function columnSpread(ctx, ds) {
-  const C = ctx.columns.filter((c) => c.ds === ds && c.mb > 0);
-  const byCol = {};
-  for (const c of C) ((byCol[c.column] = byCol[c.column] || {})[c.writer] = byCol[c.column][c.writer] || []).push(c);
-  return Object.entries(byCol).map(([column, ws]) => {
-    const cells = Object.fromEntries(Object.entries(ws).map(([w, cs]) => [w, {
-      mb: median(cs.map((c) => c.mb)), cold: median(cs.map((c) => c.cold)), n: cs.length,
-      label: cs[0].writerLabel, family: cs[0].family, reorders: cs[0].reorders,
-      enc: cs[cs.length - 1].encodings, dictFull: cs.every((c) => c.dictFull !== false) }]));
-    const mbs = Object.values(cells).map((c) => c.mb);
-    return { column, cells, mbSpread: Math.max(...mbs) / Math.min(...mbs) };
-  }).sort((a, b) => b.mbSpread - a.mbSpread);
-}
-
-export function findSameColumn(ctx) {
-  const blocks = [];
-  let best = null;
-  for (const ds of dsList(ctx)) {
-    const spread = columnSpread(ctx, ds);
-    if (!spread.length) continue;
-    const writers = [...new Set(spread.flatMap((s) => Object.keys(s.cells)))];
-    const labels = Object.fromEntries(spread.flatMap((s) => Object.entries(s.cells).map(([w, c]) => [w, c.label])));
-    // The example the claim quotes: the biggest COLD gap between two writers on one column, among
-    // columns timed under at least two of them. A size gap with no timing behind it proves nothing
-    // about speed.
-    for (const s of spread) {
-      const cs = Object.values(s.cells).filter((c) => c.cold > 0 && c.mb >= 0.1);
-      if (cs.length < 2) continue;
-      const fast = cs.reduce((a, b) => (b.cold < a.cold ? b : a)), slow = cs.reduce((a, b) => (b.cold > a.cold ? b : a));
-      const gap = slow.cold / fast.cold;
-      if (!best || gap > best.gap) best = { ds, column: s.column, small: fast, big: slow, gap };
-    }
-    const rows = spread.map((s) => {
-      const minCold = Math.min(...Object.values(s.cells).map((c) => c.cold).filter((v) => v !== null));
-      return [`<code>${esc(s.column)}</code>`, ...writers.map((w) => {
-        const c = s.cells[w];
-        if (!c) return "—";
-        const isBest = c.cold === minCold;
-        return `${fmtMb(c.mb)} · ${isBest ? "<b>" : ""}${fmtMs(c.cold)}${isBest ? "</b>" : ""}${c.dictFull ? "" : ' <span class="warn" title="some row groups have no dictionary">no dict</span>'}`;
-      }), fmtX(s.mbSpread)];
-    });
-    blocks.push(`<details${blocks.length ? "" : " open"}><summary>${esc(label(ds))}</summary>
-      ${table(["column", ...writers.map((w) => esc(labels[w])), "biggest ÷ smallest"], rows, "num")}</details>`);
+/**
+ * How much of a column's cold cost the LAYOUT explains, and what is left for the writer's name.
+ *
+ * Per (dataset, column), over every run that probed it: least squares of log(cold) on log(column MB)
+ * and log(row groups in the table). Each column-run's residual is what the layout did not predict;
+ * the median residual per writer family is how much more (or less) Power BI charged that writer than
+ * its layout alone says. Near 1.0× means the engine could not tell who wrote the file.
+ */
+export function layoutModel(ctx, dss) {
+  const rg = Object.fromEntries(ctx.runs.map((r) => [r.id, r.rgs]));
+  const groups = {};
+  for (const c of ctx.columns) {
+    if (!dss.includes(c.ds) || !(c.cold > 0) || !(c.mb > 0) || !rg[c.runId]) continue;
+    (groups[`${c.ds}|${c.column}`] = groups[`${c.ds}|${c.column}`] || []).push(c);
   }
-  const short = best
-    ? `The writer alone changes how long one column takes to load cold by up to ${fmtX(best.gap)}: \`${best.column}\` on ${label(best.ds)} is ${fmtMb(best.small.mb)} and ${fmtMs(best.small.cold)} from ${best.small.label}, ${fmtMb(best.big.mb)} and ${fmtMs(best.big.cold)} from ${best.big.label}.`
-    : "No column measured under two writers yet.";
+  const points = [], r2 = [];
+  for (const cs of Object.values(groups)) {
+    if (cs.length < 8 || new Set(cs.map((c) => c.family)).size < 2) continue;
+    const y = cs.map((c) => Math.log(c.cold)), a = cs.map((c) => Math.log(c.mb)), b = cs.map((c) => Math.log(rg[c.runId]));
+    const mean = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+    const my = mean(y), ma = mean(a), mb = mean(b);
+    const sab = a.reduce((s, x, i) => s + (x - ma) * (b[i] - mb), 0);
+    const saa = a.reduce((s, x) => s + (x - ma) ** 2, 0), sbb = b.reduce((s, x) => s + (x - mb) ** 2, 0);
+    const say = a.reduce((s, x, i) => s + (x - ma) * (y[i] - my), 0), sby = b.reduce((s, x, i) => s + (x - mb) * (y[i] - my), 0);
+    const det = saa * sbb - sab * sab;
+    // A column whose size or row-group count never varied cannot be modelled on it.
+    if (!(det > 1e-9)) continue;
+    const ka = (sbb * say - sab * sby) / det, kb = (saa * sby - sab * say) / det;
+    const sst = y.reduce((s, v) => s + (v - my) ** 2, 0);
+    let sse = 0;
+    cs.forEach((c, i) => {
+      const pred = my + ka * (a[i] - ma) + kb * (b[i] - mb);
+      sse += (y[i] - pred) ** 2;
+      points.push({ ...c, predicted: Math.exp(pred), raw: Math.exp(y[i] - my), resid: Math.exp(y[i] - pred) });
+    });
+    if (sst > 0) r2.push(1 - sse / sst);
+  }
+  const fams = Object.keys(FAMILIES).filter((f) => points.some((p) => p.family === f)).map((f) => {
+    const mine = points.filter((p) => p.family === f);
+    return { family: f, n: mine.length, raw: Math.exp(median(mine.map((p) => Math.log(p.raw)))),
+      resid: Math.exp(median(mine.map((p) => Math.log(p.resid)))) };
+  });
+  return { points, fams, r2: median(r2), columns: r2.length };
+}
+
+const pctOff = (x) => `${x >= 1 ? "+" : "−"}${Math.abs((x - 1) * 100).toFixed(0)}%`;
+
+export function findWriterBlind(ctx) {
+  const m = layoutModel(ctx, dsList(ctx));
+  const enough = m.fams.filter((f) => f.n >= 20);
+  const blind = enough.filter((f) => Math.abs(f.resid - 1) <= 0.1);
+  const left = enough.filter((f) => Math.abs(f.resid - 1) > 0.1);
+  const short = enough.length >= 2
+    ? `Power BI never sees who wrote the file. Once a column's size and the table's row-group count are known, ${blind.map((f) => fam(f.family).label).join(", ")} ${blind.length === 1 ? "lands" : "land"} within 10% of what the layout predicts${left.length ? `; ${left.map((f) => `${fam(f.family).label} keeps ${pctOff(f.resid)}`).join(", ")}` : ""}.`
+    : "Not enough columns probed under two writers yet.";
+  const byDs = dsList(ctx).map((ds) => ({ ds, pts: m.points.filter((p) => p.ds === ds) })).filter((x) => x.pts.length >= 5);
   const html = `
-    <p class="claim">${best ? `Same data, same column, a different writer: <code>${esc(best.column)}</code> on ${esc(label(best.ds))} is <b>${fmtMb(best.small.mb)}</b> written by ${esc(best.small.label)} and <b>${fmtMb(best.big.mb)}</b> by ${esc(best.big.label)}, and its cold load is ${fmtMs(best.small.cold)} against ${fmtMs(best.big.cold)}.` : short}</p>
-    <p>Each cell is the median compressed size and the median extra cold time for that column under that writer. The fastest cold load in each row is bold. Columns are ordered by how much the writer changed their size.</p>
-    ${blocks.join("")}`;
-  return { id: "same-column", title: "Same column, different writers", short, status: best ? "clear" : "few", html,
-    head: [best ? fmtX(best.gap) : "—", "one column's cold load, best writer against worst"] };
+    <p class="claim">${enough.length >= 2 ? `The writer's name is not something Power BI can see; only the file is. Predict each column's cold load from two layout facts alone, its compressed size and the table's row-group count, and ${blind.map((f) => `<b>${esc(fam(f.family).label)}</b> (${pctOff(f.resid)})`).join(", ")} ${blind.length === 1 ? "sits" : "sit"} on the prediction.${left.length ? ` ${left.map((f) => `<b>${esc(fam(f.family).label)}</b> keeps ${pctOff(f.resid)}`).join(", ")}, which means its files carry a layout property these two do not capture.` : ""}` : short}</p>
+    <p>Each point is one column in one run. Across: what size and row-group count predict for that column, fitted per column over every writer at once. Up: what it actually cost. Points from different writers falling on the same diagonal is the claim. Before the layout is accounted for the writers look different (the "raw" column below). After, the differences shrink to what the layout explains. The two facts explain a median ${(m.r2 * 100).toFixed(0)}% of the run-to-run variation in a column's cold cost, over ${m.columns} columns. The rest is capacity load and what the records do not measure (dictionary declaration, below).</p>
+    ${legend(familiesIn(m.points))}
+    ${facets(byDs.map((x) => ({ title: label(x.ds), html: scatter({
+      points: x.pts.map((p) => ({ x: p.predicted, y: p.cold, family: p.family, filled: p.reorders,
+        tip: `${p.column} · ${p.writerLabel} · predicted ${fmtMs(p.predicted)} · actual ${fmtMs(p.cold)}` })),
+      x: { label: "cold cost the layout predicts", log: true, fmt: fmtMs },
+      y: { label: "actual cold cost", log: true, fmt: fmtMs }, guides: [1], w: 420, h: 290 }) })))}
+    ${table(["writer", "column-runs", "raw: against the column's median", "after column size and row groups"],
+      m.fams.map((f) => [esc(fam(f.family).label), fmtInt(f.n), pctOff(f.raw), `<b>${pctOff(f.resid)}</b>`]), "num")}`;
+  return { id: "writer-blind", title: "Power BI never sees the writer, only the layout", short, status: enough.length >= 2 ? "clear" : "few", html,
+    head: [enough.length >= 2 ? `${blind.length} of ${enough.length}` : "—", "engines cost exactly what their layout predicts"],
+    card: "Power BI does not know which engine wrote a file. The same layout costs the same, whoever produced it." };
 }
 
 export function findDictionary(ctx) {
@@ -389,37 +407,25 @@ export function findDictionary(ctx) {
     for (const c of mine) if (c.encodings) encs[c.encodings] = (encs[c.encodings] || 0) + 1;
     const top = Object.entries(encs).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([e]) => `<code>${esc(e)}</code>`).join("<br>");
     const pages = mine.reduce((s, c) => s + (c.dictPages || 0), 0), chunks = mine.reduce((s, c) => s + (c.chunks || 0), 0);
-    const comp = {};
-    for (const r of ctx.runs.filter((r) => r.family === f && dsList(ctx).includes(r.ds))) if (r.compression) comp[r.compression] = (comp[r.compression] || 0) + 1;
-    return [esc(fam(f).label), top || "—", chunks ? `${((pages / chunks) * 100).toFixed(chunks - pages ? 1 : 0)}%` : "—",
-      esc(Object.keys(comp).sort((a, b) => comp[b] - comp[a])[0] || "—")];
+    return [esc(fam(f).label), top || "—", chunks ? `${((pages / chunks) * 100).toFixed(chunks - pages ? 1 : 0)}%` : "—"];
   });
-  // The effect of a gap: the same (dataset, column) with and without full dictionary coverage.
   const gaps = C.filter((c) => c.dictFull === false);
-  const ratios = [], mbRatios = [];
-  for (const g of gaps) {
-    const full = C.filter((c) => c.ds === g.ds && c.column === g.column && c.dictFull === true);
-    if (!full.length) continue;
-    const fc = median(full.map((c) => c.cold)), fm = median(full.map((c) => c.mb));
-    if (g.cold > 0 && fc > 0) ratios.push(g.cold / fc);
-    if (g.mb > 0 && fm > 0) mbRatios.push(g.mb / fm);
-  }
-  const gapFams = [...new Set(gaps.map((g) => fam(g.family).label))];
-  const short = gaps.length
-    ? `${fmtInt(gaps.length)} column-runs (${gapFams.join(", ")}) had row groups without a dictionary${ratios.length ? `; they cost a median ${fmtX(median(ratios))} the cold time of the same column fully encoded` : ""}.`
-    : "Every writer here put a dictionary in every row group of every probed column.";
+  const m = layoutModel(ctx, dsList(ctx));
+  const ice = m.fams.find((f) => f.family === "duckdb-iceberg");
+  const short = `Direct Lake loads a column chunk two ways: a cheap remap when the chunk is entirely dictionary-encoded AND its footer's encoding_stats say so, or hashing every value when not. ${gaps.length ? `${fmtInt(gaps.length)} column-runs had chunks with no dictionary page at all.` : ""} The records do not yet capture the footer declaration.`;
   const html = `
-    <p class="claim">${gaps.length ? `${fmtInt(gaps.length)} column-runs, all from ${esc(gapFams.join(" and "))}, had row groups with no dictionary page. ${ratios.length ? `Against the same column fully dictionary-encoded by another writer they were a median <b>${fmtX(median(mbRatios))}</b> the size and cost <b>${fmtX(median(ratios))}</b> the cold time.` : ""}` : short}</p>
-    <p>VertiPaq stores every column as a dictionary plus indexes into it. A parquet column that already carries a dictionary can be remapped instead of re-encoded value by value. When a writer's dictionary outgrows its limit it falls back to <code>PLAIN</code> for the rest of that row group, usually on the high-cardinality columns, and that is where the gaps sit.</p>
-    ${table(["writer", "encodings it writes (most common)", "row groups with a dictionary", "compression"], rows)}
-    ${table(["column-run with a gap", "dictionary pages", "size", "extra cold time"],
-      gaps.slice(0, 12).map((g) => [`<code>${esc(g.column)}</code> · ${esc(label(g.ds))} · ${esc(g.writerLabel)}`, `${g.dictPages} of ${g.chunks}`, fmtMb(g.mb), fmtMs(g.cold)]), "num")}`;
-  // No run-against-run verdict exists for a gap (each is one column in one run), so the label is
-  // earned by size: a median penalty under 1.5× on a capacity whose runs swing more than that is
-  // not something to call.
-  const st = ratios.length < MIN_RUNS ? "few" : median(ratios) >= 1.5 ? "clear" : "noise";
-  return { id: "dictionary", title: "Dictionary encoding", short, status: st, html,
-    head: [ratios.length ? fmtX(median(ratios)) : "—", "cold cost of a column with dictionary gaps"] };
+    <p class="claim">Direct Lake transcodes a parquet column chunk one of <b>two ways</b>. If every page of the chunk is dictionary-encoded and the footer's <code>encoding_stats</code> prove it, it <b>remaps</b> the parquet dictionary IDs straight onto VertiPaq's: a cheap ID swap. Otherwise it <b>hashes every value</b> into a new dictionary. That includes a chunk that does have a dictionary but whose footer does not declare it.</p>
+    <p>The footer's <code>encodings</code> list cannot settle it. A dictionary-encoded chunk lists <code>PLAIN</code> for its dictionary page, and so does one whose pages fell back to <code>PLAIN</code> midway. Only <code>encoding_stats</code> (<code>PageEncodingStats</code>) says which pages are which, without decoding them. How much the declaration is worth: <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> added it to DuckDB's writer and measured a 142M-row dictionary string column's cold first-touch falling from <b>10,857.5 ms to 689.3 ms</b>. Same pages, one footer list.</p>
+    <h4>What the run records can and cannot say</h4>
+    <p>They record, per column chunk, whether it has a dictionary page. A chunk with none is certainly on the hashing path. They do <b>not</b> record <code>encoding_stats</code>, so a chunk with a dictionary page could be on either path, and this page cannot classify it. Every DuckDB → Iceberg run in the history was written before the DuckDB build carrying #24957 was pinned, so its dictionaries were undeclared${ice ? `. That is the likely reason it is the one writer still <b>${pctOff(ice.resid)}</b> off the layout's prediction in finding "Power BI never sees the writer"` : ""}.</p>
+    ${table(["writer", "encodings it writes (most common)", "chunks with a dictionary page"], rows)}
+    ${gaps.length ? `<h4>Column-runs with chunks that have no dictionary page: certain hashing</h4>
+    ${table(["column-run", "chunks with a dictionary page", "size", "extra cold time"],
+      gaps.slice(0, 12).map((g) => [`<code>${esc(g.column)}</code> · ${esc(label(g.ds))} · ${esc(g.writerLabel)}`, `${g.dictPages} of ${g.chunks}`, fmtMb(g.mb), fmtMs(g.cold)]), "num")}` : ""}
+    <p class="note">To measure this directly, <code>stats.py</code> would need to read each chunk's <code>encoding_stats</code> and record, per column, how many chunks are declared fully dictionary-encoded. The page would then split columns into remap and hashing, and compare their cold cost.</p>`;
+  return { id: "dictionary", title: "Dictionary encoding, declared", short, status: "partial", html,
+    head: ["2 ways", "to load a column: reuse its dictionary, or rebuild it"],
+    card: "A column stored fully as a dictionary, with the file saying so, loads fast. Otherwise Power BI rebuilds the dictionary value by value." };
 }
 
 export function findSort(ctx) {
@@ -474,8 +480,9 @@ export function findSort(ctx) {
       <p>The one comparison where a sort is the only thing that changes.</p>
       ${strips({ rows: pairRows, x: { label: "query suite total", fmt: fmtMs } })}
       ${table(["dataset", "runs sorted / unsorted", "cold", "warm", "table size", "Direct Lake read CU"], pairTable, "num")}` : ""}`;
-  return { id: "sort", title: "Global sort: fewer runs, smaller columns", short, status: within.length ? "clear" : "few", html,
-    head: [within.length ? `${pos} of ${within.length}` : "—", "columns smaller when equal values sit together"] };
+  return { id: "sort", title: "Sorting shrinks columns", short, status: within.length ? "clear" : "few", html,
+    head: [within.length ? `${pos} of ${within.length}` : "—", "columns got smaller when equal values sat together"],
+    card: "Sorting puts equal values next to each other, so columns shrink, and smaller columns load faster." };
 }
 
 /**
@@ -574,8 +581,9 @@ export function findRowGroups(ctx) {
     <p>Across writers, row-group count travels with everything else a writer does: Fabric Warehouse writes many small, uncompressed row groups, delta-rs a few big ones. Within delta-rs, row-group size is a setting someone chose and nothing else about the writer moves. It is the cleaner test, on fewer runs.</p>
     ${fixed.length ? table(head, rowsOf(fixed), "num") : `<p class="empty">No dataset has delta-rs runs at three or more row-group counts yet.</p>`}`;
   const status = !all.length ? "few" : nCold.length * 2 > all.length && nWarm.length * 2 > all.length ? "clear" : "noise";
-  return { id: "row-groups", title: "Row groups: fewer for cold and CU, more for warm", short, status, html,
-    head: [all.length ? `${nCold.length} / ${all.length}` : "—", "datasets: more row groups, slower cold load"] };
+  return { id: "row-groups", title: "Row groups: fewer for the first load, more for later", short, status, html,
+    head: [all.length ? `${nCold.length} of ${all.length}` : "—", "datasets where more row groups meant a slower first load"],
+    card: "Fewer, bigger row groups: a faster first load and a smaller bill. More, smaller ones: faster queries once the data is in memory." };
 }
 
 export function findVOrder(ctx) {
@@ -632,7 +640,8 @@ export function findVOrder(ctx) {
         `${fmtMb(median(x.v.map((r) => r.mb)))} vs ${fmtMb(median(x.p.map((r) => r.mb)))}`]), "num")}
       <p class="note">Turning Warehouse V-Order off is irreversible on a warehouse, so it has been measured rarely.</p>` : ""}`;
   return { id: "vorder", title: "V-Order", short, status: coldWins || cuClear ? "clear" : pairs.length ? "noise" : "few", html,
-    head: [cuRatios.length ? range(cuRatios, fmtX) : "—", "less Direct Lake read CU with Spark V-Order on"] };
+    head: [cuRatios.length ? `up to ${fmtX(Math.max(...cuRatios))}` : "—", "less capacity to read Spark tables written with V-Order"],
+    card: "In Spark, turning V-Order on made the tables cheaper to read and faster to load the first time." };
 }
 
 export function findTableSize(ctx) {
@@ -668,7 +677,8 @@ export function findTableSize(ctx) {
       per.map((p) => [label(p.ds), rhoText(p.rc), rhoText(p.rw), rhoText(p.rcu)]), "num")}`;
   const st = rc.length ? (["strong", "moderate"].includes(strength(median(rc))) ? "clear" : "noise") : "few";
   return { id: "table-size", title: "Table size and compression", short, status: st, html,
-    head: [rc.length ? strength(median(rc)) : "—", "link between whole-table size and cold time"] };
+    head: [rc.length ? strength(median(rc)) : "—", "link between whole-table size and speed"],
+    card: "The size of the whole table says less than the size of the columns your queries actually touch." };
 }
 
 export function findDirectQuery(ctx) {
@@ -710,7 +720,8 @@ export function findDirectQuery(ctx) {
     <h4>Which queries suffer most</h4>
     ${table(["dataset", "largest DirectQuery penalty", "smallest"], qRows)}`;
   return { id: "directquery", title: "Direct Lake against DirectQuery", short, status: per.length ? "clear" : "few", html,
-    head: [per.length ? range(warm, fmtX) : "—", "DirectQuery slower than Direct Lake, same warm queries"] };
+    head: [per.length ? range(warm, fmtX) : "—", "slower in DirectQuery than in Direct Lake"],
+    card: "DirectQuery reads the files again on every query, so it is much slower than Direct Lake, whichever engine wrote them." };
 }
 
 export function findReadCu(ctx) {
@@ -757,8 +768,9 @@ export function findReadCu(ctx) {
         return dl ? `${fmtCu(median(dl))}${dq ? ` <span class="dim">· DQ ${fmtCu(median(dq))}</span>` : ""}` : "—";
       }), p.vDl.best ? `${esc(wl(p, p.vDl.best))} ${badge(p.vDl.status)}` : "—",
       p.vDq.best ? `${esc(wl(p, p.vDq.best))} ${badge(p.vDq.status)}` : "—", fmtX(p.ratio)]), "num")}`;
-  return { id: "read-cu", title: "What reading costs: capacity units", short, status: per.length ? "clear" : "few", html,
-    head: [ratios.length ? range(ratios, fmtX) : "—", "DirectQuery read CU against Direct Lake"] };
+  return { id: "read-cu", title: "What reading costs", short, status: per.length ? "clear" : "few", html,
+    head: [ratios.length ? range(ratios, fmtX) : "—", "more capacity to answer the same queries in DirectQuery"],
+    card: "Reading costs capacity units. DirectQuery costs far more than Direct Lake, and in Direct Lake most of the bill is the first load." };
 }
 
 // --------------------------------------------------------------------------------- frame sections
@@ -821,7 +833,7 @@ function methodSection(ctx) {
 // Card order on the home page: the frame first (cold vs warm, what reading costs), then the layout
 // knobs from strongest evidence to weakest, then the DirectQuery comparison.
 export const FINDINGS = [findColdWarm, findReadCu, findColumnSize, findRowGroups, findVOrder, findSort,
-  findSameColumn, findDictionary, findDirectQuery];
+  findWriterBlind, findDictionary, findDirectQuery];
 // Reachable by link (`?finding=table-size`) but not a card: whole-table size is the column-size
 // finding with less detail, and its link to speed is weak.
 export const EXTRA_FINDINGS = [findTableSize];
@@ -878,7 +890,7 @@ function card(f, i, opts) {
   return `<a class="card" href="${href({ finding: f.id, dataset: opts.dataset })}">
     <div class="ctop"><span class="cnum">${i + 1}</span>${badge(f.status)}</div>
     <div class="big">${esc(big)}</div><div class="bigsub">${esc(sub)}</div>
-    <h3>${esc(f.title)}</h3><p>${esc(f.short).replace(/`([^`]+)`/g, "<code>$1</code>")}</p>
+    <h3>${esc(f.title)}</h3><p>${esc(f.card || f.short)}</p>
     <span class="more">See the evidence →</span></a>`;
 }
 
