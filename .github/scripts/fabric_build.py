@@ -141,12 +141,13 @@ def _log_node_facts(engine: str) -> None:
     #
     # Its own connection, closed immediately: dbt has not opened one yet at this point, and a
     # settings read belongs to `log_duckdb_settings()` on the session dbt actually uses. Best-effort
-    # — an unreadable version is a missing log line, never a dead leg.
+    # — an unreadable version is a missing log line, never a dead leg. `fetchall()`, not `fetchone()`:
+    # the 2.0.0.dev2610161340 wheel removed `Relation.fetchone()` and run 39003122936 lost this line.
     try:
         import duckdb as _duckdb
         with _duckdb.connect() as _c:
             core = _c.sql("SELECT library_version || ' / ' || source_id "
-                          "FROM pragma_version()").fetchone()[0]
+                          "FROM pragma_version()").fetchall()[0][0]
         print(f"[fabric_build] duckdb core: {core}", flush=True)
     except Exception as ex:
         print(f"[fabric_build] duckdb core: unreadable ({ex})", flush=True)
