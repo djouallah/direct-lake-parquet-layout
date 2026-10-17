@@ -385,10 +385,9 @@ test("performance tab: one labelled dot per writer, filtered by dataset, one sto
   // The default dataset is the first one with timed runs; ?dataset= switches it.
   assert.match(page, /class="pill on"[^>]*>AEMO/);
   assert.match(r.render(recs, { page: "perf", dataset: "nyc" }).html, /class="pill on"[^>]*>NYC taxi/);
-  // V-Order is faster cold on every run here (100-102 against 200-202): a clear call, not a guess.
-  assert.match(page, /<b>Spark, V-Order<\/b> is the fastest cold/);
-  // Warm overlaps (50/70/90 against 55/75/95): no winner is called.
-  assert.match(page, /No clear fastest warm/);
+  // Plain: one dot per writer and a table, no spread marks and no verdict badges.
+  assert.doesNotMatch(page, /inside the noise|class="pt run"|xrange/);
+  assert.match(page, /<th>cold<\/th><th>warm<\/th><th>read CU<\/th>/);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
   const ctx = d.build(recs, PROBE_COLUMNS);
   const dl = r.perfGroups(ctx, "aemo", "dl"), dq = r.perfGroups(ctx, "aemo", "dq");
