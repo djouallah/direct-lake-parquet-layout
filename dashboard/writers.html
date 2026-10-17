@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Third-party writers</title>
+<!--
+  Hand-written and static, no data fetched. Published beside index.html by dashboard.yml
+  (`cp dashboard/writers.html site/writers.html`). Numbers are quoted from docs/FINDINGS.md and from
+  github.com/djouallah/parquet_layout_vertipaq_spark, named in place.
+-->
+<style>
+:root { color-scheme: light dark;
+  --bg:#fcfcfb; --fg:#0b0b0b; --dim:#52514e; --line:#e4e3df; --soft:#f3f2ef; --code:#efeeea;
+  --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a;
+  --d1:#2a78d6; --d2:#eb6834; --d3:#1baf7a; --d4:#eda100; --d5:#e87ba4; --d6:#4a3aa7;
+  --good:#0f7b4a; --bad:#b4441c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
+    --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70;
+    --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
+    --good:#4cc38a; --bad:#f08a5d; } }
+:root[data-theme="dark"] { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
+  --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70;
+  --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
+  --good:#4cc38a; --bad:#f08a5d; }
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width:1000px; margin:0 auto; padding:2rem 16px 4rem; }
+h1 { font-size:2rem; line-height:1.2; margin:0 0 .4rem; }
+.sub { color:var(--dim); margin:0 0 .6rem; max-width:52rem; }
+nav { font-size:.9rem; color:var(--dim); }
+a { color:var(--c1); }
+h2 { font-size:1.4rem; margin:3rem 0 .6rem; padding-top:1rem; border-top:1px solid var(--line); }
+p, li { max-width:52rem; }
+.claim { font-size:1.12rem; line-height:1.5; border-left:3px solid var(--c1); padding:.2rem 0 .2rem 1rem; }
+code, .mono { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; }
+code { background:var(--code); padding:.05rem .3rem; border-radius:4px; font-size:.88em; }
+.dim, .note { color:var(--dim); }
+.note { font-size:.9rem; }
+ol.rules { padding-left:1.4rem; }
+ol.rules li { margin:.45rem 0; }
+
+figure { margin:1.4rem 0; }
+.scroll { overflow-x:auto; }
+figure svg { display:block; width:100%; min-width:640px; height:auto; color:var(--fg); }
+figcaption { color:var(--dim); font-size:.9rem; margin-top:.5rem; max-width:52rem; }
+
+/* SVG classes: the page stylesheet themes the drawings, so nothing inside an <svg> carries a hue. */
+.bx  { fill:var(--soft); stroke:var(--line); stroke-width:1.5; }
+.bx2 { fill:var(--bg);   stroke:var(--line); stroke-width:1.2; }
+.ck  { fill:var(--code); stroke:var(--line); }
+.acc { fill:var(--soft); stroke:var(--c2); stroke-width:2; }
+.accf { fill:var(--c2); }
+.ln  { stroke:var(--fg); stroke-width:1.5; fill:none; }
+.lna { stroke:var(--c2); stroke-width:2; fill:none; }
+.lnd { stroke:var(--dim); stroke-width:1.2; fill:none; stroke-dasharray:4 4; }
+.good { fill:var(--soft); stroke:var(--good); stroke-width:2; }
+.bad  { fill:var(--soft); stroke:var(--bad); stroke-width:2; }
+.goodf { fill:var(--good); } .badf { fill:var(--bad); }
+svg text { fill:var(--fg); font-size:13px; }
+svg text.b { font-weight:600; }
+svg text.d { fill:var(--dim); font-size:12px; }
+svg text.m { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:12.5px; }
+svg text.a { fill:var(--c2); font-weight:600; }
+
+/* bar pairs */
+.bars { display:grid; grid-template-columns:minmax(9rem, 16rem) 1fr; gap:.35rem .8rem; align-items:center;
+  font-size:.92rem; margin:1rem 0; max-width:52rem; }
+.bars .track { background:var(--soft); border-radius:4px; height:22px; position:relative; }
+.bars .fill { height:100%; border-radius:4px; background:var(--c1); }
+.bars .fill.hot { background:var(--c2); }
+.bars .val { position:absolute; left:.5rem; top:0; line-height:22px; font-size:.82rem; color:var(--fg);
+  font-variant-numeric:tabular-nums; }
+
+/* strip demos */
+.demo { background:var(--soft); border-radius:10px; padding:1rem; margin:1.2rem 0; }
+.btns { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:.9rem; }
+.btns button { font:inherit; font-size:.88rem; padding:.3rem .7rem; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+.btns button[aria-pressed="true"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.col { margin:.2rem 0 .9rem; }
+.col .head { display:flex; justify-content:space-between; gap:1rem; font-size:.9rem; }
+.col .head b { font-variant-numeric:tabular-nums; }
+.strip { display:grid; height:30px; border-radius:4px; overflow:hidden; margin:.25rem 0; }
+.cell.rs { box-shadow:inset 2px 0 0 var(--bg); }
+.rle { font-size:.8rem; color:var(--dim); line-height:1.45; word-break:break-word; }
+.legend { display:flex; flex-wrap:wrap; gap:.3rem 1rem; font-size:.82rem; color:var(--dim); margin:.2rem 0 .6rem; }
+.legend i { display:inline-block; width:.8rem; height:.8rem; border-radius:2px; vertical-align:-1px; margin-right:.3rem; }
+.rgs { display:grid; grid-template-columns:repeat(4, 1fr); gap:.6rem; }
+.rgs .strip { height:26px; }
+.rgs .cap { font-size:.78rem; color:var(--dim); }
+.pair { display:grid; gap:1rem; }
+
+table { border-collapse:collapse; font-size:.9rem; margin:1rem 0; }
+th, td { text-align:right; padding:.3rem .7rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+th:first-child, td:first-child { text-align:left; }
+th { color:var(--dim); font-weight:600; }
+footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--dim); font-size:.9rem; }
+
+/* Top tabs, identical on index.html and how.html: the one way between the two pages. */
+.tabs { position:sticky; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:.5rem; padding:.7rem 0;
+  margin:-2rem 0 1.4rem; background:var(--bg); border-bottom:1px solid var(--line); }
+.tabs a { display:inline-flex; align-items:center; gap:.45rem; padding:.45rem 1rem; border-radius:999px;
+  text-decoration:none; color:var(--fg); border:1px solid var(--line); font-size:.95rem; font-weight:600;
+  background:var(--soft); }
+.tabs a:hover { border-color:var(--fg); }
+.tabs a[aria-current="page"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.tabs svg { width:17px; height:17px; min-width:0; flex:none; }
+
+/* how.html only: the page tabs plus a row of section tabs, pinned together; one section shows at a time. */
+.topbar { position:sticky; top:0; z-index:10; background:var(--bg); margin:-2rem 0 1.4rem;
+  border-bottom:1px solid var(--line); }
+.topbar .tabs { position:static; margin:0; border-bottom:0; padding-bottom:.4rem; }
+.subtabs { display:flex; gap:.2rem; overflow-x:auto; scrollbar-width:none; white-space:nowrap; }
+.subtabs::-webkit-scrollbar { display:none; }
+.subtabs a { padding:.5rem .8rem; font-size:.92rem; color:var(--dim); text-decoration:none;
+  border-bottom:3px solid transparent; }
+.subtabs a:hover { color:var(--fg); }
+.subtabs a[aria-selected="true"] { color:var(--fg); font-weight:600; border-bottom-color:var(--c2); }
+.js .pane { display:none; }
+.js .pane.on { display:block; }
+.pane > h2:first-child { margin-top:0; padding-top:0; border-top:0; }
+.pager { display:flex; justify-content:space-between; gap:1rem; margin:2.2rem 0 0; }
+.pager a { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem 1rem; border-radius:999px;
+  border:1px solid var(--line); background:var(--soft); color:var(--fg); text-decoration:none; font-weight:600; font-size:.95rem; }
+.pager a:hover { border-color:var(--fg); }
+.pager a.next { margin-left:auto; background:var(--fg); color:var(--bg); border-color:var(--fg); }
+
+h1 { margin-top:0; }
+h3 { font-size:1.05rem; margin:1.8rem 0 .5rem; }
+pre { position:relative; background:var(--code); border-radius:8px; padding:.9rem 1rem; overflow-x:auto;
+  font-size:.8rem; line-height:1.5; margin:.8rem 0 1rem; }
+pre code { background:none; padding:0; font-size:inherit; }
+.copy { position:absolute; top:.45rem; right:.45rem; font:inherit; font-size:.75rem; padding:.15rem .55rem;
+  border-radius:999px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; }
+.cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(14rem, 1fr)); gap:.8rem; margin:1.4rem 0; }
+.card { background:var(--soft); border-radius:10px; padding:.9rem 1rem; display:flex; flex-direction:column; gap:.3rem; }
+.card span { color:var(--dim); font-size:.92rem; }
+td code { white-space:nowrap; }
+table.left th, table.left td { text-align:left; }
+</style>
+</head>
+<body>
+<main>
+<div class="topbar">
+<nav class="tabs" aria-label="pages">
+  <a href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Results</a>
+  <a href="how.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
+  <a href="writers.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>Third-party writers</a>
+</nav>
+<nav class="subtabs" aria-label="sections" role="tablist">
+  <a href="#overview" role="tab" data-pane="overview">Overview</a>
+  <a href="#databricks" role="tab" data-pane="databricks">Databricks</a>
+  <a href="#deltars" role="tab" data-pane="deltars">delta-rs</a>
+  <a href="#duckdb" role="tab" data-pane="duckdb">DuckDB</a>
+  <a href="#fabric" role="tab" data-pane="fabric">Fabric</a>
+</nav>
+</div>
+
+<section class="pane" data-name="overview" aria-label="Overview">
+<h1>Third-party writers</h1>
+<p class="sub">Not writing with Fabric? You do not need V-Order. VertiPaq reads parquet from any writer;
+  it just loads some layouts much faster than others. Here is what to set, per writer, and what it was
+  measured to buy.</p>
+
+<div class="cards">
+  <div class="card"><b>1. Row groups of millions of rows</b><span>Every library default is far too small.
+    Each row group becomes one VertiPaq segment.</span></div>
+  <div class="card"><b>2. Dictionary on every column, declared in the footer</b><span>So the first load is
+    an ID swap instead of a rebuild.</span></div>
+  <div class="card"><b>3. Sort by the column your reports filter</b><span>Usually the date. The row order
+    survives into memory, so it pays on every query.</span></div>
+</div>
+
+<div class="scroll"><table class="left">
+  <thead><tr><th>you write with</th><th>row groups</th><th>dictionary</th><th>sort</th><th></th></tr></thead>
+  <tbody>
+    <tr><td>Databricks</td><td><code>maxRecordsPerFile</code></td><td><code>parquet.dictionary.page.size</code></td><td><code>CLUSTER BY</code> one key</td><td><a href="#databricks">recipe →</a></td></tr>
+    <tr><td>delta-rs / Python</td><td><code>max_row_group_size</code></td><td><code>dictionary_page_size_limit</code></td><td><code>ORDER BY</code> before writing</td><td><a href="#deltars">recipe →</a></td></tr>
+    <tr><td>DuckDB <code>COPY</code></td><td><code>ROW_GROUP_SIZE</code></td><td><code>DICTIONARY_SIZE_LIMIT</code></td><td><code>ORDER BY</code> in the query</td><td><a href="#duckdb">recipe →</a></td></tr>
+    <tr><td>Fabric Spark / Warehouse</td><td colspan="3">V-Order does all three: just turn it on</td><td><a href="#fabric">recipe →</a></td></tr>
+  </tbody>
+</table></div>
+<p class="note">Whatever you write with, check what you actually got by reading the parquet footer.
+  Writers drop dictionaries and ignore settings without telling you; twice in this project a declared
+  setting never reached the file and only the footer showed it.</p>
+</section>
+
+<section class="pane" data-name="databricks" aria-label="Databricks">
+<h2>Databricks</h2>
+<p class="claim">Eleven lines of cluster config plus one <code>CLUSTER BY</code> per fact table, and a
+  Databricks-written table queries in Direct Lake within 4% of Fabric's own V-Ordered layout.</p>
+<p>Measured on TPC-DS SF100 and SF1000 with Microsoft's own Direct Lake benchmark protocol: the DAX
+  from the paper <a href="https://raw.githubusercontent.com/microsoft/FabricCAT/main/Direct%20Lake_DirectQuery/Modern%20Power%20BI%20Architecture%20Choices.pdf">Modern
+  Power BI Architecture Choices for Reporting on Azure Databricks</a>, 20 concurrent readers. Full
+  repo: <a href="https://github.com/djouallah/parquet_layout_vertipaq_spark">djouallah/parquet_layout_vertipaq_spark</a>.</p>
+
+<h3>The result, SF100, 20 users, warm</h3>
+<div class="bars" role="img" aria-label="Suite time: config only 7.9 s, config plus CLUSTER BY 2.5 s, Fabric V-Order 2.4 s.">
+  <span>Databricks, config only</span>
+  <div class="track"><div class="fill hot" style="width:100%"></div><span class="val">7.9 s</span></div>
+  <span>Databricks, config + <code>CLUSTER BY</code> date</span>
+  <div class="track"><div class="fill" style="width:31.6%"></div><span class="val">2.5 s</span></div>
+  <span>Fabric Spark, V-Order + partition by date</span>
+  <div class="track"><div class="fill" style="width:30.4%"></div><span class="val">2.4 s</span></div>
+</div>
+<div class="scroll"><table>
+  <thead><tr><th>SF100, 20 users</th><th>rows per row group</th><th>suite</th><th>p50</th><th>p95</th><th>worst query</th></tr></thead>
+  <tbody>
+    <tr><td>config, nothing else</td><td>5.6–5.9M</td><td>7.9 s</td><td>207 ms</td><td>2.8 s</td><td>8.3 s</td></tr>
+    <tr><td>config + <code>CLUSTER BY</code> date</td><td>1.1–2.0M</td><td><b>2.5 s</b></td><td>124 ms</td><td>0.35 s</td><td>0.71 s</td></tr>
+    <tr><td>Fabric Spark, V-Order (the paper's layout)</td><td>78k–144k</td><td>2.4 s</td><td>119 ms</td><td>0.37 s</td><td>0.80 s</td></tr>
+  </tbody>
+</table></div>
+<p class="note">At SF1000 the config alone stops warming up at all (814 → 875 → 1,045 s over three
+  runs, slower each time) while every sorted layout settles. That is the case for the one
+  <code>CLUSTER BY</code>.</p>
+
+<h3>Step 1: the cluster config, the same on every cluster that writes these tables</h3>
+<pre><code>spark.sql.files.maxRecordsPerFile                                      6000000     # default 0 = no limit
+spark.hadoop.parquet.block.size                                        2147483648  # default 128 MB
+spark.databricks.delta.optimizeWrite.enabled                           true        # default false
+spark.databricks.delta.optimizeWrite.binSize                           4096        # default 512
+
+spark.hadoop.parquet.page.row.count.limit                              16000000    # default 20000
+spark.hadoop.parquet.page.size                                         67108864    # default 1 MB
+spark.hadoop.parquet.dictionary.page.size                              67108864    # default 1 MB
+spark.hadoop.parquet.enable.dictionary                                 true        # default true
+
+spark.databricks.delta.properties.defaults.checkpointPolicy            classic     # default v2 with CLUSTER BY
+spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite  true
+spark.databricks.delta.properties.defaults.autoOptimize.autoCompact    false</code></pre>
+<p><code>maxRecordsPerFile</code> is the segment: one file, one row group, 6M rows, whatever the table's
+  width. The page and dictionary sizes keep wide columns dictionary-encoded. And three cluster settings
+  that are not optional:</p>
+<ul>
+  <li><b>Photon off</b> (<code>runtime_engine: STANDARD</code>). Photon's writer ignores every <code>parquet.*</code> key.</li>
+  <li><b>Latest runtime</b> (measured on DBR 19). Older runtimes accept parquet keys they do not implement, silently.</li>
+  <li><b>Predictive optimization off</b>: <code>ALTER SCHEMA … DISABLE PREDICTIVE OPTIMIZATION</code>. Anything that rewrites the files without this config undoes the layout.</li>
+</ul>
+
+<h3>Step 2: per fact table, <code>CLUSTER BY</code> the column the reports filter</h3>
+<pre><code>fq  = "catalog.schema.store_sales"
+key = "ss_sold_date_sk"          # the ONE column the reports filter on
+
+df.limit(0).write.format("delta").saveAsTable(fq)                                    # empty table, schema only
+spark.sql(f"ALTER TABLE {fq} SET TBLPROPERTIES ('delta.checkpointPolicy' = 'classic')")
+spark.sql(f"ALTER TABLE {fq} CLUSTER BY ({key})")
+df.write.format("delta").mode("append").saveAsTable(fq)                              # the write, unchanged</code></pre>
+<p>Dimensions get a plain <code>saveAsTable</code>. What breaks it, each one measured:</p>
+<ul>
+  <li><b>One key only.</b> Two keys become a Hilbert curve, which orders no single column.</li>
+  <li><b><code>checkpointPolicy = classic</code> before the key exists.</b> Direct Lake cannot read a v2 checkpoint.</li>
+  <li><b>No <code>df.orderBy(key)</code>.</b> Optimized Writes throws the sort away; <code>CLUSTER BY</code> is how an order reaches the file.</li>
+  <li><b>No <code>OPTIMIZE</code> from compute without the config</b>, and SQL warehouses are that compute.</li>
+  <li><b>Verify per file.</b> Clustering on write is size-gated and silent when it skips: check min and max of the key in each file.</li>
+</ul>
+<p class="note">Using Claude Code? The recipe ships as a skill, so an assistant applies it as measured instead
+  of reaching for <code>orderBy</code> or <code>repartition</code>:
+  <code>/plugin marketplace add djouallah/parquet_layout_vertipaq_spark</code>.</p>
+</section>
+
+<section class="pane" data-name="deltars" aria-label="delta-rs">
+<h2>delta-rs (Python, Rust, duckrun)</h2>
+<p class="claim">delta-rs keeps dictionaries everywhere once you raise one limit. The row-group size and
+  the sort are yours to set.</p>
+<p>This is the profile <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun</a> ships
+  as its default, each value tuned against a Spark V-Order reference with DAX timings as the signal.</p>
+<pre><code>from deltalake import write_deltalake, WriterProperties, ColumnProperties
+
+# ~8 row groups per table, clamped into the 1M-16M segment band
+rg = max(1_000_000, min(16_000_000, -(-table.num_rows // 8)))
+
+wp = WriterProperties(
+    compression="SNAPPY",                     # transcoding is decode-bound
+    max_row_group_size=rg,                    # rule 1, in ROWS
+    dictionary_page_size_limit=32 * 1024**2,  # rule 2: THE knob; the ~1 MB default drops wide columns to PLAIN
+    data_page_size_limit=1024**2,
+    data_page_row_count_limit=1_000_000,      # stops a very compressible column becoming one giant page
+    statistics_truncate_length=64,
+    default_column_properties=ColumnProperties(
+        dictionary_enabled=True, statistics_enabled="CHUNK"),
+)
+
+# rule 3: `table` must already be sorted by the filter column; no writer setting sorts for you
+write_deltalake(path, table, writer_properties=wp,
+                target_file_size=1024**3)     # keep files well above one row group's bytes</code></pre>
+<ul>
+  <li><b>The dictionary limit is the one to remember.</b> One 144M-row <code>DECIMAL(18,4)</code> column
+    measured 618.6 MB as PLAIN against 423.1 MB dictionary-encoded.</li>
+  <li><b>Raising it costs the writer memory</b>, not the reader: an 18M-row merge at a 128 MB limit hit
+    ~25 GB, at 8 MB ~4 GB.</li>
+  <li><b>delta-rs already writes <code>encoding_stats</code></b>, so its dictionaries take the fast remap path.</li>
+</ul>
+</section>
+
+<section class="pane" data-name="duckdb" aria-label="DuckDB">
+<h2>DuckDB <code>COPY</code></h2>
+<p class="claim">DuckDB's defaults were the worst layout in this project. Three options fix most of it.</p>
+<pre><code>COPY (SELECT * FROM fct_summary ORDER BY date, time)     -- rule 3: the sort is yours to do
+  TO 'fct_summary.parquet' (
+    FORMAT parquet,
+    COMPRESSION snappy,
+    ROW_GROUP_SIZE 6_000_000,                  -- rule 1: the 122,880 default cost 3.5x cold
+    DICTIONARY_SIZE_LIMIT 2_000_000,           -- rule 2: DISTINCT VALUES, not bytes. Never 0: that disables it
+    STRING_DICTIONARY_PAGE_SIZE_LIMIT 32_000_000  -- the byte cap; both must clear (default 1 MB)
+);</code></pre>
+<ul>
+  <li><b>The dictionary limit hides inside the row-group size.</b> It defaults to
+    <code>ROW_GROUP_SIZE / 5</code>, so at the default geometry any column with more than 24,576 distinct
+    values per row group silently falls back to PLAIN. On our AEMO table that was <code>mw</code>: 0
+    dictionary pages across 1,172 chunks.</li>
+  <li><b>Do not raise it blindly.</b> A near-unique column's dictionary is as big as its data and makes
+    the file larger. Aim at the mid-cardinality columns the default is losing.</li>
+  <li><b>The footer declaration needs a newer DuckDB.</b> <code>encoding_stats</code> arrived in
+    <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>, not yet in a stable release:
+    10,857 → 689 ms cold first touch on a 142M-row string column.</li>
+</ul>
+<p>Check what you got, before and after:</p>
+<pre><code>SELECT path_in_schema, any_value(encodings)
+FROM parquet_metadata('fct_summary.parquet') GROUP BY 1;</code></pre>
+</section>
+
+<section class="pane" data-name="fabric" aria-label="Fabric">
+<h2>Fabric Spark and Fabric Warehouse</h2>
+<p class="claim">Writing inside Fabric, you get V-Order, which does all three rules for you. Just make
+  sure it is on.</p>
+<ul>
+  <li><b>Fabric Spark: only the <code>readHeavyForPBI</code> resource profile turns it on.</b> The
+    default <code>writeHeavy</code> turns it off, and <code>readHeavyForSpark</code> does not set it at all
+    despite the name. Measured: up to 2.8× less Direct Lake CU for about 8% more build CU.</li>
+  <li><b>Fabric Warehouse: on by default, leave it.</b> <code>ALTER DATABASE … SET VORDER = OFF</code> is
+    irreversible.</li>
+</ul>
+<pre><code>spark.fabric.resourceProfile  readHeavyForPBI     # session conf, environment or workspace setting</code></pre>
+<p class="note">A per-table sort written by delta-rs measured at 0.90× V-Ordered Spark's Direct Lake CU,
+  the same within noise. V-Order is not magic, it is these three rules applied for you.</p>
+</section>
+
+<footer>
+  <p>The measurements behind every rule, with run ids and caveats:
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    and <a href="https://github.com/djouallah/parquet_layout_vertipaq_spark">parquet_layout_vertipaq_spark</a>.
+    Why the rules work: <a href="how.html">how it works</a>.</p>
+</footer>
+</main>
+<script>
+// Copy buttons on the code blocks.
+document.querySelectorAll("pre").forEach((pre) => {
+  const b = document.createElement("button");
+  b.className = "copy"; b.type = "button"; b.textContent = "copy";
+  b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(pre.querySelector("code").innerText); b.textContent = "copied"; }
+    catch { b.textContent = "select + copy"; }
+    setTimeout(() => (b.textContent = "copy"), 1500);
+  });
+  pre.append(b);
+});
+// ---- section tabs: one pane at a time, the hash names it so links and the back button work
+(() => {
+  document.documentElement.classList.add("js");
+  const panes = [...document.querySelectorAll(".pane")];
+  const tabs = [...document.querySelectorAll(".subtabs a")];
+  panes.forEach((pane, i) => {
+    const prev = panes[i - 1], next = panes[i + 1];
+    const nav = document.createElement("nav");
+    nav.className = "pager";
+    nav.innerHTML = (prev ? `<a href="#${prev.dataset.name}">← ${prev.getAttribute("aria-label")}</a>` : "")
+      + (next ? `<a class="next" href="#${next.dataset.name}">${next.getAttribute("aria-label")} →</a>` : "");
+    pane.append(nav);
+  });
+  function show() {
+    const id = location.hash.slice(1);
+    const pane = panes.find((p) => p.dataset.name === id) || panes[0];
+    panes.forEach((p) => p.classList.toggle("on", p === pane));
+    tabs.forEach((t) => {
+      const on = t.dataset.pane === pane.dataset.name;
+      t.setAttribute("aria-selected", String(on));
+      // Keep the chosen tab visible in the bar on a phone, without scrolling the page itself.
+      if (on) { const bar = t.parentElement; bar.scrollLeft = t.offsetLeft - (bar.clientWidth - t.offsetWidth) / 2; }
+    });
+    window.scrollTo(0, 0);
+  }
+  addEventListener("hashchange", show);
+  show();
+})();
+</script>
+</body>
+</html>
