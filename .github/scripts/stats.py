@@ -678,7 +678,12 @@ class _Compact:
 
 def footer_encoding_stats(footer):
     """`{column path: [chunk, ...]}` from a parquet FileMetaData blob, each chunk
-    `{"declared": bool, "dict_only": bool}`.
+    `{"declared": bool, "dict_only": bool, "data_pages": int | None}`.
+
+    `data_pages` — how many DATA pages the chunk holds, summed from `encoding_stats`' own counts
+    (PageEncodingStats.3); None when the chunk declares nothing. It is the one reading that says
+    whether a page-size setting bound: DuckDB's default is one page per ~100 MB uncompressed, so a
+    chunk of a single page means `data_page_size_limit` never reached the writer.
 
     `declared` — the chunk's metadata carries `encoding_stats` at all. `dict_only` — it does, it lists
     a dictionary page, and every DATA page it counts is dictionary-encoded: the chunk the engine can
@@ -694,12 +699,16 @@ def footer_encoding_stats(footer):
             es = md.get(13)
             dict_only = bool(es) and any(e.get(1) == _PAGE_DICT for e in es) and all(
                 e.get(2) in _ENC_DICT for e in es if e.get(1) in _PAGE_DATA)
-            out.setdefault(path, []).append({"declared": es is not None, "dict_only": dict_only})
+            pages = sum(e.get(3) or 0 for e in es if e.get(1) in _PAGE_DATA) if es is not None else None
+            out.setdefault(path, []).append({"declared": es is not None, "dict_only": dict_only,
+                                             "data_pages": pages})
     return out
 
 
 def declared_dictionaries(con, guid, schema, table, live_files):
-    """`{column: {"declared": n, "dict_declared": n}}` over the mart's live files' footers.
+    """`{column: {"declared": n, "dict_declared": n, "data_pages": n}}` over the mart's live files'
+    footers. `data_pages` sums the DECLARED chunks only — an undeclared chunk's page count is unknown,
+    so compare it against `declared`, never against `chunks`.
 
     Read with obstore range requests: per file one HEAD for the size, the last 8 bytes for the footer
     length, then the footer itself — a few KB to a few MB a file, never the data. Same store-building
@@ -722,9 +731,10 @@ def declared_dictionaries(con, guid, schema, table, live_files):
             n = int.from_bytes(tail[:4], "little")
             footer = bytes(obstore.get_range(store, key, start=size - 8 - n, end=size - 8))
             for path, chunks in footer_encoding_stats(footer).items():
-                c = cols.setdefault(path, {"declared": 0, "dict_declared": 0})
+                c = cols.setdefault(path, {"declared": 0, "dict_declared": 0, "data_pages": 0})
                 c["declared"] += sum(ch["declared"] for ch in chunks)
                 c["dict_declared"] += sum(ch["dict_only"] for ch in chunks)
+                c["data_pages"] += sum(ch["data_pages"] or 0 for ch in chunks)
         return cols
     except Exception as e:                              # noqa: BLE001 — never fail the layout job
         sys.stderr.write(f"  encoding_stats unavailable for {schema}.{table} "

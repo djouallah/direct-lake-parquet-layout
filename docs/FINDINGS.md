@@ -398,6 +398,7 @@ is not in it is written to the table metadata and changes no parquet:
 | `write.parquet.row-group-size-bytes` | `row_group_size_bytes` |
 | `write.parquet.row-groups-per-file` | `row_groups_per_file` |
 | `write.parquet.dict-size-bytes` | `string_dictionary_page_size_limit` |
+| `write.parquet.page-size-bytes` | `data_page_size_limit` — [duckdb-iceberg#1365](https://github.com/duckdb/duckdb-iceberg/pull/1365), merged 2026-09-03; the leg sets 1 MiB on every run, duckrun's value |
 | `write.parquet.compression-codec` / `-level` | `codec` / `compression_level` |
 | `write.target-file-size-bytes` | the writer's file rotation |
 

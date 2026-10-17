@@ -100,28 +100,35 @@ V1_DICT = [(2, 2, 1), (0, 2, 4)]            # parquet-mr v1: PLAIN_DICTIONARY on
 
 def test_a_declared_fully_dictionary_chunk_is_remap_eligible(stats):
     out = stats.footer_encoding_stats(_footer([[_chunk("price", DICT_ONLY)]]))
-    assert out == {"price": [{"declared": True, "dict_only": True}]}
+    assert out == {"price": [{"declared": True, "dict_only": True, "data_pages": 5}]}
 
 
 def test_a_chunk_whose_pages_fell_back_to_plain_is_not(stats):
     out = stats.footer_encoding_stats(_footer([[_chunk("mw", FELL_BACK)]]))
-    assert out["mw"] == [{"declared": True, "dict_only": False}]
+    assert out["mw"] == [{"declared": True, "dict_only": False, "data_pages": 5}]
 
 
 def test_no_dictionary_page_is_not_dictionary_even_if_declared(stats):
     out = stats.footer_encoding_stats(_footer([[_chunk("mw", NO_DICT)]]))
-    assert out["mw"] == [{"declared": True, "dict_only": False}]
+    assert out["mw"] == [{"declared": True, "dict_only": False, "data_pages": 4}]
 
 
 def test_legacy_plain_dictionary_counts_as_dictionary(stats):
     out = stats.footer_encoding_stats(_footer([[_chunk("DUID", V1_DICT)]]))
-    assert out["DUID"] == [{"declared": True, "dict_only": True}]
+    assert out["DUID"] == [{"declared": True, "dict_only": True, "data_pages": 4}]
 
 
 def test_a_footer_without_encoding_stats_is_undeclared_not_plain(stats):
     """What DuckDB wrote before duckdb#24957: a dictionary page may exist, nothing says so."""
     out = stats.footer_encoding_stats(_footer([[_chunk("date", None)]]))
-    assert out["date"] == [{"declared": False, "dict_only": False}]
+    assert out["date"] == [{"declared": False, "dict_only": False, "data_pages": None}]
+
+
+def test_data_pages_counts_only_data_pages_not_the_dictionary_page(stats):
+    """A single data page per chunk is DuckDB's ~100 MB default, i.e. a page-size setting that did
+    not bind; the dictionary page must not be counted, or that chunk would read as two pages."""
+    out = stats.footer_encoding_stats(_footer([[_chunk("mw", [(2, 0, 1), (0, 8, 1)])]]))
+    assert out["mw"][0]["data_pages"] == 1
 
 
 def test_chunks_aggregate_across_row_groups_and_columns(stats):

@@ -38,7 +38,8 @@
    pin runs (v2.0.0-alpha): `write.parquet.row-group-size` (ROWS — DuckDB's own extension, not in
    the Iceberg spec), `write.parquet.row-group-size-bytes`, `write.parquet.row-groups-per-file`,
    `write.target-file-size-bytes`, `write.parquet.dict-size-bytes` and
-   `write.parquet.compression-codec` / `-level`. The mapping is one static table,
+   `write.parquet.compression-codec` / `-level`; and since duckdb-iceberg#1365 (merged 2026-09-03)
+   `write.parquet.page-size-bytes` -> `data_page_size_limit`, which `iceberg_geometry()` sets. The mapping is one static table,
    `ICEBERG_TABLE_PROPERTY_MAPPING` in duckdb-iceberg's `src/execution/operator/iceberg_insert.cpp`
    — read it before adding a key here; a property NOT in it is written to the table metadata and
    changes no parquet.

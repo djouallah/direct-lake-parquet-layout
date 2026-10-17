@@ -75,10 +75,20 @@
    metadata, where another engine reading the table may not parse it. The property is metadata
    other readers see, so it is spelled in bytes.
 
-   `auto` on both inputs yields no property at all, so a default dispatch emits an EMPTY dict and
-   `duckdb__create_table_as` falls back to the adapter's own SQL byte for byte. Absence is the
-   writer's default (128 MB row groups / 512 MB files since duckdb-iceberg#1202, merged 2026-07-23),
-   not zero.
+   `auto` on both inputs yields no GEOMETRY property, so the row groups and files are the writer's
+   default (128 MB row groups / 512 MB files since duckdb-iceberg#1202, merged 2026-07-23), not zero.
+
+   ⚠️ **THE PAGE SIZE IS EMITTED ON EVERY RUN, auto or not — so a default dispatch is NO LONGER an
+   empty dict, and that is deliberate (2026-10-18).** DuckDB splits a column chunk into data pages
+   only at a hardcoded 100 MB UNCOMPRESSED, i.e. usually one huge page per chunk; duckdb#24645 made
+   that `data_page_size_limit`, and duckdb-iceberg#1365 (merged 2026-09-03) maps the Iceberg
+   property `write.parquet.page-size-bytes` onto it. duckrun writes 1 MiB pages on every run
+   (`data_page_size_limit=1024**2`, docs/FINDINGS.md), so the pair only differs by the writer when
+   iceberg gets the same 1 MiB — which makes it a fairness fix, not a dispatch knob, and why it has
+   no input. Whether the pinned wheel's extension carries the mapping is CHECKED, not assumed: a
+   property the extension does not know is written to the table metadata and changes no parquet,
+   so read `layout.encodings.iceberg.<col>.data_pages` in the record — one page per chunk means it
+   did not bind.
 
    ⚠️ MART ONLY, matching where duckrun's geometry keys sit. Putting it on the facts would give
    iceberg a knob on tables duckrun writes at its default, which is the asymmetry this macro
@@ -92,7 +102,8 @@
       never derived from `mb`. The writer clamps it down to the file target, so a dispatch on
       `file_size_mb=auto` effectively gets 512 MB. -#}
   {%- set row_group_budget_mb = 1024 -%}
-  {%- set out = {} -%}
+  {#- duckrun's page size, on every run -- see the block comment. Bytes, never '1MB'. -#}
+  {%- set out = {'write.parquet.page-size-bytes': 1048576} -%}
   {%- if mb | lower != 'auto' -%}
     {%- do out.update({'write.target-file-size-bytes': (mb | int) * 1048576}) -%}
   {%- endif -%}

@@ -84,13 +84,25 @@ def create_sql(props, temporary=False):
 
 # ------------------------------------------------------------------ iceberg_geometry()
 
+# duckrun's page size, which iceberg is given on EVERY run (see the macro's block comment).
+PAGE = {"write.parquet.page-size-bytes": 1048576}
+
+
 @pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("AUTO", "Auto"), ("auto", "AUTO")])
-def test_auto_emits_no_property_at_all(rg, mb):
-    """A DEFAULT DISPATCH MUST BE BYTE-IDENTICAL TO BEFORE THIS EXISTED, which is what lets every
-    iceberg run in `history/` stay in one dashboard column with the ones after it. `auto` is what
-    `duckrun_auto` (on by default, and on for every scheduled run) forces, so this is the common
-    case, not an edge. Case-insensitive because the models' own `.lower()` gate is."""
-    assert geometry(rg, mb) == {}
+def test_auto_emits_no_geometry_only_the_page_size(rg, mb):
+    """`auto` leaves row groups and files to the writer — the common case, since `duckrun_auto` is
+    on by default. It USED to emit nothing at all; since 2026-10-18 it carries the page size, which
+    is not geometry and has no input. Case-insensitive because the models' own `.lower()` gate is."""
+    assert geometry(rg, mb) == PAGE
+
+
+@pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("5000000", "auto"), ("auto", "64"), ("2000000", "1024")])
+def test_the_page_size_is_duckruns_1_MiB_on_every_dispatch(rg, mb):
+    """duckrun writes 1 MiB data pages on every run; DuckDB's own default is one page per ~100 MB
+    uncompressed. `write.parquet.page-size-bytes` -> `data_page_size_limit` is duckdb-iceberg#1365.
+    In BYTES: the writer measures uncompressed bytes, and a human '1MB' would land in the metadata
+    as a string other readers may not parse (duckdb-iceberg#1150)."""
+    assert geometry(rg, mb)["write.parquet.page-size-bytes"] == 1048576
 
 
 def test_the_row_group_size_is_passed_as_rows_with_no_conversion():
@@ -113,7 +125,7 @@ def test_a_pinned_row_count_also_raises_the_byte_budget():
     over 728 row groups, i.e. 12.3 MB per row group on disk. Read that as "nothing near 128 MB" and
     the conclusion inverts.
     """
-    assert geometry("5000000", "auto") == {"write.parquet.row-group-size": 5000000,
+    assert geometry("5000000", "auto") == {**PAGE, "write.parquet.row-group-size": 5000000,
                                            "write.parquet.row-group-size-bytes": 1024 * 1048576}
 
 
@@ -149,24 +161,24 @@ def test_a_file_size_alone_does_not_touch_the_row_group_budget():
     """`file_size_mb` on its own is a file-rotation setting and nothing else. Raising the row-group
     byte budget there would silently change row-group sizing on a dispatch that only asked about
     files — and it is the ROW COUNT this budget exists to make binding."""
-    assert geometry("auto", "1024") == {"write.target-file-size-bytes": 1024 * 1048576}
+    assert geometry("auto", "1024") == {**PAGE, "write.target-file-size-bytes": 1024 * 1048576}
 
 
 def test_the_file_size_is_converted_from_MiB_to_bytes():
     """`file_size_mb` is megabytes and `write.target-file-size-bytes` is bytes. Passing the number
     through unconverted asks for 128-BYTE files."""
-    assert geometry("auto", "128") == {"write.target-file-size-bytes": 128 * 1048576}
-    assert geometry("auto", "1024") == {"write.target-file-size-bytes": 1073741824}
+    assert geometry("auto", "128") == {**PAGE, "write.target-file-size-bytes": 128 * 1048576}
+    assert geometry("auto", "1024") == {**PAGE, "write.target-file-size-bytes": 1073741824}
 
 
 def test_the_two_knobs_are_independent():
     """`auto` on one and a value on the other is a legal dispatch — `row_group_size` is free text
     while `file_size_mb` is a choice — so neither may gate the other. Note the row count brings its
     own byte budget along (see above); the file size does not."""
-    assert set(geometry("2000000", "auto")) == {"write.parquet.row-group-size",
+    assert set(geometry("2000000", "auto")) == {*PAGE, "write.parquet.row-group-size",
                                                "write.parquet.row-group-size-bytes"}
-    assert set(geometry("auto", "64")) == {"write.target-file-size-bytes"}
-    assert set(geometry("2000000", "64")) == {"write.parquet.row-group-size",
+    assert set(geometry("auto", "64")) == {*PAGE, "write.target-file-size-bytes"}
+    assert set(geometry("2000000", "64")) == {*PAGE, "write.parquet.row-group-size",
                                               "write.parquet.row-group-size-bytes",
                                               "write.target-file-size-bytes"}
 
