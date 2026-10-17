@@ -184,12 +184,30 @@ function vorderFixture() {
   return out;
 }
 
+// The same fixture with a ledger: V-Order reads at 1,000 CU, without at 2,000.
+function withCu(recs) {
+  const items = {};
+  for (const x of recs) {
+    const g = `sm-${x.run.id}`;
+    x.items = { [g]: { role: "semantic_model" } };
+    items[g] = { Query: x.layout.config.spark.resource_profile === "readHeavyForPBI" ? 1000 + Number(x.run.id) : 2000 + Number(x.run.id) };
+  }
+  return { recs, ledger: { items } };
+}
+
+test("V-Order: the read-CU saving is measured, labelled and on the card", () => {
+  const { recs, ledger } = withCu(vorderFixture());
+  const f = r.findVOrder(r.context(recs, {}, ledger));
+  assert.match(f.short, /Direct Lake read CU lower on 4 of 4 datasets \(4 clearly\)/);
+  assert.match(f.head[0], /^2\.0×/);
+});
+
 test("V-Order: a separated cold and an overlapping warm are reported as exactly that", () => {
   const ctx = r.context(vorderFixture());
   const f = r.findVOrder(ctx);
   assert.equal(f.status, "clear");
-  assert.match(f.short, /cold was faster on 4 of 4 datasets \(4 clearly\)/);
-  assert.match(f.short, /table smaller on 4/);
+  assert.match(f.short, /cold faster on 4 of 4, warm faster on only/);
+  assert.doesNotMatch(f.short, /read CU/);   // no ledger, so no CU claim at all
   assert.match(f.html, /1 time in 8/);
 });
 
@@ -199,31 +217,79 @@ test("a finding the data cannot support says so instead of vanishing", () => {
   assert.equal(f.status, "few");
   assert.match(f.short, /No dataset has Spark runs with and without V-Order yet/);
   assert.equal(r.findRowGroups(ctx).status, "few");
+  assert.match(r.findRowGroups(ctx).short, /Not enough runs at different row-group counts/);
 });
 
-test("row groups are judged with the writer held fixed", () => {
+// More probed columns, so each dataset clears the three-column floor. `dir` 1: faster warm with more
+// row groups; -1: slower.
+const probes = (rgs, dir) => Object.fromEntries(["probe_duid", "probe_date", "probe_time", "probe_fare",
+  "probe_distance", "probe_depdelay", "probe_dow", "probe_origin", "probe_pulocation", "probe_paytype"].map((q) => [q,
+  { cold_ms: 300 + rgs * 5, warm_ms: 300 - dir * rgs, hot_median_ms: 250 - dir * rgs }]));
+
+test("row groups: measured per column cold and per query warm, so a trade is not averaged away", () => {
+  // Cold column cost rises with the row-group count while warm falls; the suite TOTAL barely moves,
+  // which is exactly the shape the old total-based finding read as "no effect".
   const recs = [];
   let id = 0;
-  for (const [setting, rgs] of [["2000000", 50], ["6000000", 20], ["16000000", 8]]) {
-    for (let i = 0; i < 3; i++) recs.push(rec({ id: ++id, rgs, cfg: { sorted: "true", row_group_size: setting }, cold: 1000 + i * 300, warm: 100 + i }));
+  for (const ds of ["aemo", "nyc", "bts"]) {
+    for (const rgs of [8, 16, 32, 64, 128]) {
+      recs.push(rec({ id: ++id, ds, rgs, cfg: { sorted: "true" }, cold: 500 + rgs * 10, warm: 400 - rgs * 2, extra: probes(rgs, 1) }));
+    }
   }
-  // A spark run at a wildly different row-group count must not enter the delta-rs comparison.
-  recs.push(rec({ id: 99, engine: "spark", cfg: { resource_profile: "writeHeavy" }, rgs: 500, cold: 99999 }));
+  const t = r.rowGroupTrade(r.context(recs), "aemo");
+  assert.equal(t.cold.up, 5);      // every probed column slower to load cold with more row groups
+  assert.ok(t.warm.down >= 2);     // and both probes faster warm
   const f = r.findRowGroups(r.context(recs));
-  assert.equal(f.status, "noise");
-  assert.match(f.html, /written at 3 different row-group counts/);
-  assert.doesNotMatch(f.html.split("Across every writer")[0], /99,999|100 s/);
+  assert.equal(f.status, "clear");
+  assert.match(f.short, /slower to load cold on 3 of 3 datasets, but made warm queries faster on 3/);
 });
 
-test("the page renders every section and the dataset filter narrows it", () => {
-  const recs = vorderFixture();
-  const all = r.render(recs, {});
-  for (const id of ["short", "method", "how", "cold-warm", "column-size", "vorder", "directquery", "takeaway", "data"]) {
-    assert.match(all.html, new RegExp(`id="${id}"`), id);
+test("row groups: a dataset where warm also gets slower is named, not hidden", () => {
+  const recs = [];
+  let id = 0;
+  for (const ds of ["aemo", "nyc", "bts"]) {
+    for (const rgs of [8, 16, 32, 64, 128]) {
+      const warm = ds === "bts" ? 100 + rgs * 2 : 400 - rgs * 2;
+      recs.push(rec({ id: ++id, ds, rgs, cfg: { sorted: "true" }, cold: 500 + rgs * 10, warm, extra: probes(rgs, ds === "bts" ? -1 : 1) }));
+    }
   }
-  const one = r.render(recs, { dataset: "nyc" });
-  assert.deepEqual(one.ctx.datasets, ["nyc"]);
-  assert.doesNotMatch(one.html.split('id="data"')[1], /AEMO/);
+  const f = r.findRowGroups(r.context(recs));
+  assert.match(f.short, /warm queries faster on 2 \(slower on BTS flights\)/);
+});
+
+test("home is one card per finding, and a card opens that finding alone", () => {
+  const recs = vorderFixture();
+  const home = r.render(recs, {});
+  assert.equal((home.html.match(/class="card"/g) || []).length, r.FINDINGS.length);
+  assert.match(home.html, /href="\?finding=vorder"/);
+  assert.match(home.html, /href="\?page=method"/);
+  const one = r.render(recs, { finding: "vorder", dataset: "nyc" });
+  assert.match(one.html, /id="vorder"/);
+  assert.doesNotMatch(one.html, /class="card"/);
+  assert.match(one.html, /href="\?dataset=nyc">← All findings/);
+  // The dataset switch keeps you on the finding.
+  assert.match(one.html, /href="\?finding=vorder&dataset=aemo"/);
+  for (const page of ["method", "how", "data"]) assert.match(r.render(recs, { page }).html, new RegExp(`id="${page}"`));
+  assert.deepEqual(r.render(recs, { dataset: "nyc" }).ctx.datasets, ["nyc"]);
+});
+
+test("every card carries a headline number and the finding's own sentence", () => {
+  const { found, html } = r.render(vorderFixture(), {});
+  for (const f of found) {
+    assert.ok(Array.isArray(f.head) && f.head.length === 2, f.id);
+    assert.ok(html.includes(r.esc(f.head[1])), f.id);
+  }
+});
+
+test("read CU: a phase's model, shortcut lakehouse and that lakehouse's endpoint, nothing else", () => {
+  const x = rec({ id: 1 });
+  x.items = { a: { role: "semantic_model", name: "aemo_duckrun" }, b: { role: "bench_dl", name: "dbt_delta_dl" },
+    c: { role: "sql_endpoint", name: "dbt_delta_dl" }, e: { role: "sql_endpoint", name: "dbt_delta" },
+    f: { role: "semantic_model_dq" }, g: { role: "output", name: "dbt_delta" } };
+  const ledger = { items: { a: { "Query": 100 }, b: { "OneLake Read": 10 }, c: { "SQL Endpoint Query": 5 },
+    e: { "SQL Endpoint Query": 999 }, g: { "Notebook": 5000 }, f: { "Query": 7 } } };
+  assert.deepEqual(d.readCu(x, ledger), { dl: 115, dq: 7 });
+  assert.deepEqual(d.readCu(x, null), { dl: null, dq: null });
 });
 
 test("no records is a sentence, not an empty page", () => {

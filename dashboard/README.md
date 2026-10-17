@@ -1,7 +1,16 @@
 # `dashboard/` — the report
 
-**A live write-up of what in a parquet file decides how fast Power BI reads it.** `report.js` fetches
-`history/runs/*.json` from `raw.githubusercontent.com` on every load and writes the whole page:
+**A live write-up of what in a parquet file decides how fast, and how cheaply, Power BI reads it.**
+`report.js` fetches `history/runs/*.json` and `history/cu.json` from `raw.githubusercontent.com` on
+every load.
+
+The home page is one card per finding: a headline number, the claim and a status. A card opens that
+finding's evidence (`?finding=<id>`, which keeps `?dataset=`). Method, how Power BI reads parquet and
+the raw data are pages of their own (`?page=method|how|data`). Every finding reports query time and
+**read CU**: the capacity units each benchmark session's own Direct Lake or DirectQuery items billed.
+Build CU is deliberately left out.
+
+The findings themselves are made of:
 
 - the short version;
 - the method;
@@ -100,6 +109,9 @@ node dashboard/build.mjs --out dashboard.html --snapshot
 - **One source generation per dataset.** Only runs at the biggest mart row count are kept. A run on
   a smaller slice is a different workload, not a faster one. The data section names every run
   left out.
+- **Read CU is per session, per phase.** It is the semantic model, its shortcut lakehouse and that
+  lakehouse's SQL endpoint, matched by role and endpoint name (`readCu` in `data.js`). It covers all
+  six passes together, so it has no cold/warm split of its own.
 - **One query set per dataset.** A total sums the queries at least 60% of the dataset's runs carry
   (`QUERY_SHARE`). A run missing one of them gets no total but keeps its layout row. DirectQuery
   is voted on only by runs that measured DirectQuery.

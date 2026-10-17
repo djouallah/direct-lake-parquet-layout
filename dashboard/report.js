@@ -2,9 +2,10 @@
 // number is generated from `history/runs/*.json` at view time, so the page rewrites itself after
 // every Benchmark run and can never quote a number the records no longer support.
 //
-// Shape follows the write-up it was modelled on: the short version, the method, how Direct Lake
-// reads parquet, one finding per variable, the takeaway, then the data itself.
-import { DATASETS, MIN_RUNS, build, median, spearman, strength, verdict, fmtInt, fmtMs, fmtMb, fmtX, fmtRows, loadRemote, DEFAULTS } from "./data.js";
+// The home page is one card per finding — a headline number, the claim, a status — and a card opens
+// that finding's evidence (`?finding=<id>`). Method, how Power BI reads parquet and the raw data are
+// pages of their own (`?page=`). Speed AND read CU: what the layout costs to query is half the answer.
+import { DATASETS, MIN_RUNS, build, median, spearman, strength, verdict, fmtInt, fmtMs, fmtMb, fmtX, fmtRows, fmtCu, loadRemote, DEFAULTS } from "./data.js";
 import { PROBE_COLUMNS } from "./probe_columns.js";
 
 // --------------------------------------------------------------------------------------- marks
@@ -97,7 +98,7 @@ function scale(values, log, lo, hi) {
  * are dropped on a log axis (the caller says how many in its note). `guides` are `y = k·x` lines,
  * which only mean something when both axes share a unit.
  */
-export function scatter({ points, x, y, w = 520, h = 320, guides = [] }) {
+export function scatter({ points, x, y, w = 520, h = 320, guides = [], trend = false }) {
   const pts = points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)
     && (!x.log || p.x > 0) && (!y.log || p.y > 0));
   if (pts.length < 2) return `<p class="empty">Not enough measured points yet.</p>`;
@@ -126,6 +127,20 @@ export function scatter({ points, x, y, w = 520, h = 320, guides = [] }) {
   }
   parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 6}" class="axis" text-anchor="middle">${esc(x.label)}</text>`,
     `<text transform="translate(13,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">${esc(y.label)}</text>`);
+  // A median line through the cloud: points binned by x (octave bins on a log axis), the median
+  // y of each bin with at least two points. It is what makes a noisy trend readable at a glance.
+  if (trend) {
+    const bins = new Map();
+    for (const p of pts) {
+      const k = x.log ? Math.round(Math.log2(p.x)) : Math.round(p.x);
+      (bins.get(k) || bins.set(k, []).get(k)).push(p);
+    }
+    const line = [...bins.values()].filter((b) => b.length >= 2)
+      .map((b) => [median(b.map((p) => p.x)), median(b.map((p) => p.y))]).sort((a, b) => a[0] - b[0]);
+    if (line.length >= 2) {
+      parts.push(`<polyline points="${line.map(([a, b]) => `${sx.f(a).toFixed(1)},${sy.f(b).toFixed(1)}`).join(" ")}" class="trend"/>`);
+    }
+  }
   // Hollow marks first, so a filled mark sitting on one is never hidden behind it.
   const ordered = [...pts].sort((a, b) => Number(!!a.filled) - Number(!!b.filled));
   for (const p of ordered) parts.push(mark(sx.f(p.x), sy.f(p.y), p));
@@ -182,10 +197,10 @@ export function legend(families, { reorder = true, extra = "" } = {}) {
 
 const familiesIn = (rows) => Object.keys(FAMILIES).filter((f) => rows.some((r) => r.family === f));
 
-function facets(items) {
+function facets(items, cls = "") {
   const live = items.filter((i) => i.html);
   if (!live.length) return `<p class="empty">Not enough measured points yet.</p>`;
-  return `<div class="facets${live.length === 1 ? " one" : ""}">${live.map((i) =>
+  return `<div class="facets${live.length === 1 ? " one" : ""}${cls ? ` ${cls}` : ""}">${live.map((i) =>
     `<figure class="facet"><figcaption>${esc(i.title)}</figcaption>${i.html}</figure>`).join("")}</div>`;
 }
 
@@ -228,8 +243,16 @@ function runTip(r, extra = "") {
 
 // ------------------------------------------------------------------------------------- findings
 //
-// Each finding returns `{id, title, short, status, html}`. `short` is the one line the short version
-// and the takeaway print; it is generated, so a rule the data stops supporting says so there too.
+// Each finding returns `{id, title, short, status, html, head}`. `head` is the card's big number and
+// its caption, `short` the card's sentence; both are generated, so a rule the data stops supporting
+// says so on the card too.
+
+/** "1.6k CU vs 3.8k CU" plus its verdict — the read-cost cell every paired comparison carries. */
+function cuPair(a, b, phase) {
+  const x = a.map((r) => r.cu[phase]).filter(Boolean), y = b.map((r) => r.cu[phase]).filter(Boolean);
+  if (!x.length || !y.length) return "—";
+  return `${fmtCu(median(x))} vs ${fmtCu(median(y))} ${badge(verdict({ a: x, b: y }).status)}`;
+}
 
 export function findColdWarm(ctx) {
   const per = dsList(ctx).map((ds) => {
@@ -261,7 +284,8 @@ export function findColdWarm(ctx) {
     ${legend(familiesIn(per.flatMap((p) => p.R)))}
     ${chart}
     ${table(["dataset", "runs", "cold ÷ warm (Direct Lake)", "ρ cold vs warm", "cold ÷ warm (DirectQuery)"], rows, "num")}`;
-  return { id: "cold-warm", title: "Cold and warm are different questions", short, status: per.length ? "clear" : "few", html };
+  return { id: "cold-warm", title: "Cold and warm are different questions", short, status: per.length ? "clear" : "few", html,
+    head: [range(ratios, fmtX), "the first visit costs, against the second (Direct Lake)"] };
 }
 
 export function findColumnSize(ctx) {
@@ -285,7 +309,7 @@ export function findColumnSize(ctx) {
         tip: `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)} · warm ${fmtMs(c.warm)}${c.dictFull === false ? ` · dictionary in ${c.dictPages}/${c.chunks} row groups` : ""}` })),
       x: { label: "column compressed size", log: true, fmt: fmtMb },
       y: { label: "extra cold time to load it", log: true, fmt: fmtMs },
-      w: 420, h: 290 }) })));
+      w: 420, h: 290, trend: true }) })));
   const dropped = per.reduce((s, p) => s + p.dropped, 0);
   const html = `
     <p class="claim">${rc.length ? `On every dataset, a bigger column cost more to load cold (<b>ρ ${range(rc, rhoText)}</b>). Once loaded, its size made no measurable difference (ρ ${range(rw, rhoText)}).` : short}</p>
@@ -296,7 +320,8 @@ export function findColumnSize(ctx) {
       per.map((p) => [label(p.ds), fmtInt(p.C.length), `${rhoText(p.rho)} <span class="dim">${strength(p.rho)}</span>`,
         `${rhoText(p.rhoWarm)} <span class="dim">${strength(p.rhoWarm)}</span>`]), "num")}
     ${dropped ? `<p class="note">${fmtInt(dropped)} column-runs read faster than the row-count probe itself, so they have no positive extra cost to plot on a log axis. They count in ρ.</p>` : ""}`;
-  return { id: "column-size", title: "What makes a column cheap to load: its size", short, status: rc.length ? "clear" : "few", html };
+  return { id: "column-size", title: "What makes a column cheap to load: its size", short, status: rc.length ? "clear" : "few", html,
+    head: [rc.length ? `ρ ${range(rc, rhoText)}` : "—", "column compressed size against its cold load time"] };
 }
 
 /** Per (dataset, column): every writer's median MB and cold, plus how far apart they land. */
@@ -351,7 +376,8 @@ export function findSameColumn(ctx) {
     <p class="claim">${best ? `Same data, same column, a different writer: <code>${esc(best.column)}</code> on ${esc(label(best.ds))} is <b>${fmtMb(best.small.mb)}</b> written by ${esc(best.small.label)} and <b>${fmtMb(best.big.mb)}</b> by ${esc(best.big.label)}, and its cold load is ${fmtMs(best.small.cold)} against ${fmtMs(best.big.cold)}.` : short}</p>
     <p>Each cell is the median compressed size and the median extra cold time for that column under that writer. The fastest cold load in each row is bold. Columns are ordered by how much the writer changed their size.</p>
     ${blocks.join("")}`;
-  return { id: "same-column", title: "Same column, different writers", short, status: best ? "clear" : "few", html };
+  return { id: "same-column", title: "Same column, different writers", short, status: best ? "clear" : "few", html,
+    head: [best ? fmtX(best.gap) : "—", "one column's cold load, best writer against worst"] };
 }
 
 export function findDictionary(ctx) {
@@ -392,7 +418,8 @@ export function findDictionary(ctx) {
   // earned by size: a median penalty under 1.5× on a capacity whose runs swing more than that is
   // not something to call.
   const st = ratios.length < MIN_RUNS ? "few" : median(ratios) >= 1.5 ? "clear" : "noise";
-  return { id: "dictionary", title: "Dictionary encoding", short, status: st, html };
+  return { id: "dictionary", title: "Dictionary encoding", short, status: st, html,
+    head: [ratios.length ? fmtX(median(ratios)) : "—", "cold cost of a column with dictionary gaps"] };
 }
 
 export function findSort(ctx) {
@@ -415,7 +442,7 @@ export function findSort(ctx) {
     return { ds, s, u };
   }).filter((p) => p.s.length && p.u.length);
   const short = within.length
-    ? `Sort the rows: within the same column, fewer runs of repeated values meant a smaller column on ${pos} of ${within.length} columns, and smaller columns load faster cold.`
+    ? `Within the same column, fewer runs of repeated values meant a smaller column on ${pos} of ${within.length} columns, and smaller columns load faster cold.`
     : "No sort-run measurements yet.";
   const pairRows = pairs.flatMap((p) => {
     const out = [];
@@ -431,7 +458,8 @@ export function findSort(ctx) {
     return [label(p.ds), `${p.s.length} / ${p.u.length}`,
       `${fmtMs(median(p.s.map((r) => r.dl.cold)))} vs ${fmtMs(median(p.u.map((r) => r.dl.cold)))} ${badge(vc.status)}`,
       `${fmtMs(median(p.s.map((r) => r.dl.warm)))} vs ${fmtMs(median(p.u.map((r) => r.dl.warm)))} ${badge(vw.status)}`,
-      `${fmtMb(median(p.s.map((r) => r.mb)))} vs ${fmtMb(median(p.u.map((r) => r.mb)))}`];
+      `${fmtMb(median(p.s.map((r) => r.mb)))} vs ${fmtMb(median(p.u.map((r) => r.mb)))}`,
+      cuPair(p.s, p.u, "dl")];
   });
   const html = `
     <p class="claim">${within.length ? `Within the same column, the writer that left fewer runs of repeated values produced a smaller column on <b>${pos} of ${within.length}</b> columns (median within-column ρ ${rhoText(median(within))}).` : short}</p>
@@ -445,57 +473,109 @@ export function findSort(ctx) {
     ${pairs.length ? `<h4>delta-rs with the sort switched on and off</h4>
       <p>The one comparison where a sort is the only thing that changes.</p>
       ${strips({ rows: pairRows, x: { label: "query suite total", fmt: fmtMs } })}
-      ${table(["dataset", "runs sorted / unsorted", "cold", "warm", "table size"], pairTable, "num")}` : ""}`;
-  return { id: "sort", title: "Global sort: fewer runs, smaller columns", short, status: within.length ? "clear" : "few", html };
+      ${table(["dataset", "runs sorted / unsorted", "cold", "warm", "table size", "Direct Lake read CU"], pairTable, "num")}` : ""}`;
+  return { id: "sort", title: "Global sort: fewer runs, smaller columns", short, status: within.length ? "clear" : "few", html,
+    head: [within.length ? `${pos} of ${within.length}` : "—", "columns smaller when equal values sit together"] };
 }
 
+/**
+ * For one dataset: how each probed column's cold cost, and each query's warm and hot time, move with
+ * the row-group count. Measured PER COLUMN and PER QUERY, never on suite totals: a total adds up
+ * columns and queries that move in opposite directions and fixed costs that do not move at all, which
+ * is how a real trade-off reads as "no effect".
+ */
+export function rowGroupTrade(ctx, ds, keep = () => true) {
+  const R = ctx.runs.filter((r) => r.ds === ds && r.rgs && keep(r));
+  const rg = Object.fromEntries(R.map((r) => [r.id, r.rgs]));
+  const byCol = {};
+  for (const c of ctx.columns) if (c.ds === ds && rg[c.runId] && c.cold !== null) (byCol[c.column] = byCol[c.column] || []).push(c);
+  const cols = Object.entries(byCol).map(([column, cs]) => ({ column,
+    rho: spearman(cs.map((c) => rg[c.runId]), cs.map((c) => c.cold)) })).filter((x) => x.rho !== null);
+  const timed = R.filter((r) => r.dl.warm);
+  const qs = (ctx.perDataset[ds] || {}).queriesDl || [];
+  const perQuery = (tier) => qs.map((q) => spearman(timed.map((r) => r.rgs),
+    timed.map((r) => ((r.timings.dl[q] || {})[tier]) ?? NaN))).filter((x) => x !== null);
+  const warm = perQuery("warm_ms"), hot = perQuery("hot_median_ms");
+  const withCu = R.filter((r) => r.cu.dl);
+  const cuRho = spearman(withCu.map((r) => r.rgs), withCu.map((r) => r.cu.dl));
+  const tally = (xs) => ({ up: xs.filter((x) => x > 0.2).length, down: xs.filter((x) => x < -0.2).length,
+    n: xs.length, med: median(xs) });
+  return { ds, R, timed, distinct: new Set(R.map((r) => r.rgs)).size,
+    lo: R.length ? Math.min(...R.map((r) => r.rgs)) : null, hi: R.length ? Math.max(...R.map((r) => r.rgs)) : null,
+    cols, cold: tally(cols.map((c) => c.rho)), warm: tally(warm), hot: tally(hot), withCu, cuRho };
+}
+
+// Which way a dataset leans: more row groups SLOWER to load cold, and FASTER warm.
+const coldSlower = (t) => t.cold.n >= 3 && t.cold.med > 0.2 && t.cold.up > t.cold.down;
+const warmFaster = (t) => t.warm.n >= 3 && t.warm.med < -0.1 && t.warm.down > t.warm.up;
+const warmSlower = (t) => t.warm.n >= 3 && t.warm.med > 0.1 && t.warm.up > t.warm.down;
+
 export function findRowGroups(ctx) {
-  // delta-rs only, where the row-group size is a dispatched setting and nothing else about the writer
-  // moves. Across writers the row-group count travels with encoding, sort and compression.
-  const per = dsList(ctx).map((ds) => {
-    const R = ctx.runs.filter((r) => r.ds === ds && r.family === "delta-rs" && r.rowsPerRg && r.dl.cold && r.dl.warm);
-    const distinct = new Set(R.map((r) => r.rgs)).size;
-    const groups = {};
-    for (const r of R) (groups[r.rgSetting || "?"] = groups[r.rgSetting || "?"] || []).push(r);
-    const big = Object.fromEntries(Object.entries(groups).filter(([, v]) => v.length >= MIN_RUNS));
-    const vc = verdict(Object.fromEntries(Object.entries(big).map(([k, v]) => [k, v.map((r) => r.dl.cold)])));
-    const vw = verdict(Object.fromEntries(Object.entries(big).map(([k, v]) => [k, v.map((r) => r.dl.warm)])));
-    return { ds, R, distinct, groups, vc, vw,
-      rhoCold: spearman(R.map((r) => r.rowsPerRg), R.map((r) => r.dl.cold)),
-      rhoWarm: spearman(R.map((r) => r.rowsPerRg), R.map((r) => r.dl.warm)),
-      rhoHot: spearman(R.map((r) => r.rowsPerRg), R.map((r) => r.dl.hot)) };
-  }).filter((p) => p.distinct >= 3);
-  const all = dsList(ctx).map((ds) => {
-    const R = ctx.runs.filter((r) => r.ds === ds && r.rowsPerRg && r.dl.cold);
-    return [label(ds), fmtInt(R.length), range(R.map((r) => r.rowsPerRg), fmtRows),
-      rhoText(spearman(R.map((r) => r.rowsPerRg), R.map((r) => r.dl.cold))),
-      rhoText(spearman(R.map((r) => r.rowsPerRg), R.map((r) => r.dl.warm)))];
+  const all = dsList(ctx).map((ds) => rowGroupTrade(ctx, ds)).filter((t) => t.distinct >= 3 && t.timed.length >= 5);
+  const fixed = dsList(ctx).map((ds) => rowGroupTrade(ctx, ds, (r) => r.family === "delta-rs"))
+    .filter((t) => t.distinct >= 3 && t.timed.length >= 5);
+  const nCold = all.filter(coldSlower), nWarm = all.filter(warmFaster), against = all.filter(warmSlower);
+  const nCu = all.filter((t) => t.cuRho !== null && t.cuRho > 0.2), cuKnown = all.filter((t) => t.cuRho !== null);
+  const short = all.length
+    ? `Row groups are a trade. More of them made columns slower to load cold on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and cost more Direct Lake CU on ${nCu.length} of ${cuKnown.length}` : ""}, but made warm queries faster on ${nWarm.length}${against.length ? ` (slower on ${against.map((t) => label(t.ds)).join(", ")})` : ""}.`
+    : "Not enough runs at different row-group counts yet.";
+  const tallyCell = (t, kind) => {
+    const x = t[kind];
+    if (!x.n) return "—";
+    return `${kind === "cold" ? `${x.up} slower · ${x.down} faster` : `${x.down} faster · ${x.up} slower`} <span class="dim">of ${x.n}, median ρ ${rhoText(x.med)}</span>`;
+  };
+  const rowsOf = (ts) => ts.map((t) => [label(t.ds), fmtInt(t.timed.length), `${fmtInt(t.lo)}–${fmtInt(t.hi)}`,
+    tallyCell(t, "cold"), tallyCell(t, "warm"), tallyCell(t, "hot"),
+    t.cuRho === null ? "—" : `ρ ${rhoText(t.cuRho)} <span class="dim">${t.cuRho > 0.2 ? "more CU" : t.cuRho < -0.2 ? "less CU" : "no link"}</span>`]);
+  const head = ["dataset", "runs", "row groups", "columns, cold load (with more row groups)",
+    "queries, warm (with more row groups)", "queries, hot (with more row groups)", "Direct Lake read CU"];
+  // Cold per column, relative to that column's own median so every column shares an axis, beside the
+  // warm suite total. Same x, two panels, per dataset.
+  const charts = all.flatMap((t) => {
+    const byId = Object.fromEntries(t.R.map((r) => [r.id, r]));
+    const cs = ctx.columns.filter((c) => c.ds === t.ds && byId[c.runId] && c.cold > 0);
+    const med = {};
+    for (const c of cs) (med[c.column] = med[c.column] || []).push(c.cold);
+    for (const k of Object.keys(med)) med[k] = median(med[k]);
+    return [{
+      title: `${label(t.ds)} · cold, per column · median ρ ${rhoText(t.cold.med)}`,
+      html: scatter({
+        points: cs.map((c) => ({ x: byId[c.runId].rgs, y: c.cold / med[c.column], family: c.family, filled: c.reorders,
+          tip: `${c.column} · ${c.writerLabel} · ${byId[c.runId].rgs} row groups · cold +${fmtMs(c.cold)} (${fmtX(c.cold / med[c.column])} its median)` })),
+        x: { label: "row groups in the table", log: true, fmt: fmtInt },
+        y: { label: "column cold cost ÷ that column's median", log: true, fmt: (v) => fmtX(v) },
+        w: 420, h: 270, trend: true }),
+    }, {
+      title: `${label(t.ds)} · warm · ${t.warm.down} of ${t.warm.n} queries faster with more`,
+      html: scatter({
+        points: t.timed.map((r) => ({ x: r.rgs, y: r.dl.warm, family: r.family, filled: r.reorders,
+          tip: runTip(r, ` · ${r.rgs} row groups · warm ${fmtMs(r.dl.warm)} · hot ${fmtMs(r.dl.hot)}`) })),
+        x: { label: "row groups in the table", log: true, fmt: fmtInt },
+        y: { label: "warm query suite total", log: true, fmt: fmtMs },
+        w: 420, h: 270, trend: true }),
+    }, {
+      title: `${label(t.ds)} · Direct Lake read CU · ρ ${rhoText(t.cuRho)}`,
+      html: scatter({
+        points: t.withCu.map((r) => ({ x: r.rgs, y: r.cu.dl, family: r.family, filled: r.reorders,
+          tip: runTip(r, ` · ${r.rgs} row groups · ${fmtCu(r.cu.dl)}`) })),
+        x: { label: "row groups in the table", log: true, fmt: fmtInt },
+        y: { label: "Direct Lake read CU, whole session", log: true, fmt: fmtCu },
+        w: 420, h: 270, trend: true }),
+    }];
   });
-  const lead = per[0];
-  const short = lead
-    ? `Row-group size: from ${range(lead.R.map((r) => r.rowsPerRg), fmtRows)} rows per group, delta-rs on ${label(lead.ds)} showed ${linkWord(lead.rhoCold)} to cold (ρ ${rhoText(lead.rhoCold)}) or warm (ρ ${rhoText(lead.rhoWarm)}); the settings were ${STATUS[lead.vc.status]} on cold.`
-    : "No dataset has delta-rs runs at three or more row-group sizes yet.";
-  const charts = per.flatMap((p) => ["cold", "warm"].map((tier) => ({
-    title: `${label(p.ds)} · ${tier} · ρ ${rhoText(tier === "cold" ? p.rhoCold : p.rhoWarm)}`,
-    html: scatter({
-      points: p.R.map((r) => ({ x: r.rowsPerRg, y: r.dl[tier], family: r.family, filled: r.reorders,
-        tip: runTip(r, ` · ${r.rgs} row groups · ${fmtRows(r.rowsPerRg)} rows each · ${tier} ${fmtMs(r.dl[tier])}`) })),
-      x: { label: "rows per row group", log: true, fmt: fmtRows },
-      y: { label: `${tier} query suite total`, log: false, fmt: fmtMs }, w: 420, h: 270 }) })));
-  const settingRows = per.flatMap((p) => Object.entries(p.groups)
-    .sort((a, b) => median(a[1].map((r) => r.rowsPerRg)) - median(b[1].map((r) => r.rowsPerRg)))
-    .map(([k, v]) => [label(p.ds), k === "16000000" ? "16M (old default)" : k === "auto" ? "auto" : fmtRows(Number(k)),
-      fmtInt(v.length), range(v.map((r) => r.rgs), fmtInt), fmtMs(median(v.map((r) => r.dl.cold))),
-      fmtMs(median(v.map((r) => r.dl.warm))), fmtMs(median(v.map((r) => r.dl.hot)))]));
   const html = `
-    <p class="claim">${lead ? `delta-rs on ${esc(label(lead.ds))} was written at ${lead.distinct} different row-group counts (${range(lead.R.map((r) => r.rowsPerRg), fmtRows)} rows per group). Cold time shows ${linkWord(lead.rhoCold)} to it (ρ ${rhoText(lead.rhoCold)}), warm ${linkWord(lead.rhoWarm)} (ρ ${rhoText(lead.rhoWarm)}). Comparing the dispatched settings directly, cold is ${badge(lead.vc.status)} and warm is ${badge(lead.vw.status)}.` : short}</p>
-    <p>A row group becomes one VertiPaq segment, so its size sets how many segments a column is split into. Fewer, bigger segments mean less per-segment overhead; more, smaller ones mean more parallelism and finer skipping. This chart holds the writer fixed: only delta-rs, where the row-group size is a setting someone chose.</p>
-    ${facets(charts)}
-    ${table(["dataset", "row_group_size setting", "runs", "row groups", "cold", "warm", "hot"], settingRows, "num")}
-    <h4>Across every writer</h4>
-    <p>Here the row-group count moves together with encoding, sort and compression, so a correlation cannot be read as an effect of row groups alone.</p>
-    ${table(["dataset", "runs", "rows per row group", "ρ vs cold", "ρ vs warm"], all, "num")}`;
-  return { id: "row-groups", title: "Row-group size", short, status: lead ? lead.vc.status : "few", html };
+    <p class="claim">${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour the first visit and the bill; more, smaller ones favour the visits after.` : short}</p>
+    <p>A row group becomes one VertiPaq segment. Cold, every segment of a column is transcoded separately, so each extra segment adds its own fixed cost. Warm, the storage engine scans a column's segments in parallel, one thread per segment. A column held in nine segments can keep at most nine cores busy, however many the capacity has, so more segments let a scan use more of the machine.</p>
+    <p>This is measured per column for cold (that column's probe minus the row-count probe) and per query for warm and hot. A suite total adds up columns and queries that move in opposite directions, plus fixed costs that do not move at all, and that is how a real trade-off can read as no effect. A count is a column or query whose ρ against the row-group count is beyond ±0.2.</p>
+    ${legend(familiesIn(all.flatMap((t) => t.R)))}
+    ${facets(charts, "three")}
+    ${table(head, rowsOf(all), "num")}
+    <h4>With the writer held fixed: delta-rs only</h4>
+    <p>Across writers, row-group count travels with everything else a writer does: Fabric Warehouse writes many small, uncompressed row groups, delta-rs a few big ones. Within delta-rs, row-group size is a setting someone chose and nothing else about the writer moves. It is the cleaner test, on fewer runs.</p>
+    ${fixed.length ? table(head, rowsOf(fixed), "num") : `<p class="empty">No dataset has delta-rs runs at three or more row-group counts yet.</p>`}`;
+  const status = !all.length ? "few" : nCold.length * 2 > all.length && nWarm.length * 2 > all.length ? "clear" : "noise";
+  return { id: "row-groups", title: "Row groups: fewer for cold and CU, more for warm", short, status, html,
+    head: [all.length ? `${nCold.length} / ${all.length}` : "—", "datasets: more row groups, slower cold load"] };
 }
 
 export function findVOrder(ctx) {
@@ -512,8 +592,15 @@ export function findVOrder(ctx) {
   const coldFaster = pairs.filter((x) => median(x.v.map((r) => r.dl.cold)) < median(x.p.map((r) => r.dl.cold))).length;
   const warmFaster = pairs.filter((x) => median(x.v.map((r) => r.dl.warm)) < median(x.p.map((r) => r.dl.warm))).length;
   const smaller = pairs.filter((x) => median(x.v.map((r) => r.mb)) < median(x.p.map((r) => r.mb))).length;
+  const cuRatios = pairs.map((x) => median(x.p.map((r) => r.cu.dl)) / median(x.v.map((r) => r.cu.dl)))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const cheaper = cuRatios.filter((v) => v > 1).length;
+  const cuClear = pairs.filter((x) => {
+    const v = verdict({ v: x.v.map((r) => r.cu.dl).filter(Boolean), p: x.p.map((r) => r.cu.dl).filter(Boolean) });
+    return v.status === "clear" && v.best === "v";
+  }).length;
   const short = pairs.length
-    ? `Spark with V-Order (readHeavyForPBI) against without: cold was faster on ${coldFaster} of ${pairs.length} datasets (${coldWins ? `${coldWins} clearly` : "none clearly on its own"}), the table smaller on ${smaller}, and warm faster on only ${warmFaster}.`
+    ? `Spark with V-Order (readHeavyForPBI) against without: ${cuRatios.length ? `Direct Lake read CU lower on ${cheaper} of ${cuRatios.length} datasets (${cuClear} clearly), ` : ""}cold faster on ${coldFaster} of ${pairs.length}, warm faster on only ${warmFaster}.`
     : "No dataset has Spark runs with and without V-Order yet.";
   const rows = pairs.flatMap((x, i) => tiers.slice(0, 2).flatMap(([t, f], j) => [
     { label: `${label(x.ds)} · V-Order · ${t}`, values: x.v.map(f), family: "spark", filled: true, gap: i > 0 && j === 0 },
@@ -528,24 +615,33 @@ export function findVOrder(ctx) {
     v: ctx.runs.filter((r) => r.ds === ds && r.writer === "dwh" && r.dl.cold),
     p: ctx.runs.filter((r) => r.ds === ds && r.writer === "dwh_novorder" && r.dl.cold) })).filter((x) => x.v.length && x.p.length);
   const html = `
-    <p class="claim">${pairs.length ? `With V-Order on, Spark's cold time was lower on <b>${coldFaster} of ${pairs.length}</b> datasets, ${coldWins ? `${coldWins} of them clearly (every V-Order run beat every run without it)` : "none of them clearly on its own (some runs overlap)"}, and its table was smaller on ${smaller}. ${signNote(coldFaster, pairs.length)}Warm was lower on ${warmFaster} of ${pairs.length}: once the columns are in memory, V-Order made no consistent difference.` : short}</p>
+    <p class="claim">${pairs.length ? `With V-Order on, Spark's cold time was lower on <b>${coldFaster} of ${pairs.length}</b> datasets, ${coldWins ? `${coldWins} of them clearly (every V-Order run beat every run without it)` : "none of them clearly on its own (some runs overlap)"}, and its table was smaller on ${smaller}. ${signNote(coldFaster, pairs.length)}${cuRatios.length ? `Reading it in Direct Lake cost <b>${range(cuRatios, fmtX)} less CU</b> on ${cheaper} of ${cuRatios.length} datasets, ${cuClear} of them clearly. ` : ""}Warm was lower on ${warmFaster} of ${pairs.length}: once the columns are in memory, V-Order made no consistent difference.` : short}</p>
     <p>V-Order is a Fabric write-time pass: it sorts rows within each row group, sets the row-group geometry and dictionary-encodes, all aimed at VertiPaq. In Spark it comes with the <code>readHeavyForPBI</code> resource profile. The workspace default, <code>writeHeavy</code>, leaves it off. Fabric Warehouse has it on by default.</p>
     ${strips({ rows, x: { label: "Direct Lake query suite total", fmt: fmtMs } })}
-    ${table(["dataset", "runs on / off", "cold (on vs off)", "warm (on vs off)", "DirectQuery warm", "table size"], tbl, "num")}
+    <h4>Direct Lake read CU, with and without V-Order</h4>
+    ${strips({ rows: pairs.flatMap((x, i) => [
+      { label: `${label(x.ds)} · V-Order`, values: x.v.map((r) => r.cu.dl).filter(Boolean), family: "spark", filled: true, gap: i > 0 },
+      { label: `${label(x.ds)} · no V-Order`, values: x.p.map((r) => r.cu.dl).filter(Boolean), family: "spark", filled: false }]),
+      x: { label: "Direct Lake read CU, whole session", fmt: fmtCu } })}
+    ${table(["dataset", "runs on / off", "cold (on vs off)", "warm (on vs off)", "DirectQuery warm", "table size", "Direct Lake CU", "DirectQuery CU"],
+      tbl.map((row, i) => [...row, cuPair(pairs[i].v, pairs[i].p, "dl"), cuPair(pairs[i].v, pairs[i].p, "dq")]), "num")}
     ${dwh.length ? `<h4>Fabric Warehouse with V-Order turned off</h4>${table(["dataset", "runs on / off", "cold (on vs off)", "warm (on vs off)", "table size"],
       dwh.map((x) => [label(x.ds), `${x.v.length} / ${x.p.length}`,
         `${fmtMs(median(x.v.map((r) => r.dl.cold)))} vs ${fmtMs(median(x.p.map((r) => r.dl.cold)))} ${badge(verdict({ a: x.v.map((r) => r.dl.cold), b: x.p.map((r) => r.dl.cold) }).status)}`,
         `${fmtMs(median(x.v.map((r) => r.dl.warm)))} vs ${fmtMs(median(x.p.map((r) => r.dl.warm)))} ${badge(verdict({ a: x.v.map((r) => r.dl.warm), b: x.p.map((r) => r.dl.warm) }).status)}`,
         `${fmtMb(median(x.v.map((r) => r.mb)))} vs ${fmtMb(median(x.p.map((r) => r.mb)))}`]), "num")}
       <p class="note">Turning Warehouse V-Order off is irreversible on a warehouse, so it has been measured rarely.</p>` : ""}`;
-  return { id: "vorder", title: "V-Order", short, status: coldWins ? "clear" : pairs.length ? "noise" : "few", html };
+  return { id: "vorder", title: "V-Order", short, status: coldWins || cuClear ? "clear" : pairs.length ? "noise" : "few", html,
+    head: [cuRatios.length ? range(cuRatios, fmtX) : "—", "less Direct Lake read CU with Spark V-Order on"] };
 }
 
 export function findTableSize(ctx) {
   const per = dsList(ctx).map((ds) => {
     const R = ctx.runs.filter((r) => r.ds === ds && r.mb && r.dl.cold && r.dl.warm);
+    const C = R.filter((r) => r.cu.dl);
     return { ds, R, rc: spearman(R.map((r) => r.mb), R.map((r) => r.dl.cold)),
-      rw: spearman(R.map((r) => r.mb), R.map((r) => r.dl.warm)) };
+      rw: spearman(R.map((r) => r.mb), R.map((r) => r.dl.warm)),
+      rcu: spearman(C.map((r) => r.mb), C.map((r) => r.cu.dl)) };
   }).filter((p) => p.R.length >= 5);
   const rc = per.map((p) => p.rc).filter((r) => r !== null), rw = per.map((p) => p.rw).filter((r) => r !== null);
   const fams = familiesIn(per.flatMap((p) => p.R));
@@ -566,10 +662,13 @@ export function findTableSize(ctx) {
       points: p.R.map((r) => ({ x: r.mb, y: r.dl.cold, family: r.family, filled: r.reorders,
         tip: runTip(r, ` · ${fmtMb(r.mb)} · ${r.compression || "?"} · cold ${fmtMs(r.dl.cold)}`) })),
       x: { label: "table size on disk", log: true, fmt: fmtMb },
-      y: { label: "cold query suite total", log: false, fmt: fmtMs }, w: 420, h: 270 }) })))}
-    ${table(["median table size", ...fams.map((f) => esc(fam(f).label))], sizeRows, "num")}`;
+      y: { label: "cold query suite total", log: false, fmt: fmtMs }, w: 420, h: 270, trend: true }) })))}
+    ${table(["median table size", ...fams.map((f) => esc(fam(f).label))], sizeRows, "num")}
+    ${table(["dataset", "ρ size vs cold", "ρ size vs warm", "ρ size vs Direct Lake read CU"],
+      per.map((p) => [label(p.ds), rhoText(p.rc), rhoText(p.rw), rhoText(p.rcu)]), "num")}`;
   const st = rc.length ? (["strong", "moderate"].includes(strength(median(rc))) ? "clear" : "noise") : "few";
-  return { id: "table-size", title: "Table size and compression", short, status: st, html };
+  return { id: "table-size", title: "Table size and compression", short, status: st, html,
+    head: [rc.length ? strength(median(rc)) : "—", "link between whole-table size and cold time"] };
 }
 
 export function findDirectQuery(ctx) {
@@ -610,7 +709,56 @@ export function findDirectQuery(ctx) {
         p.vDl.best ? `${esc(wlabel(p, p.vDl.best))} ${badge(p.vDl.status)}` : badge("few")]), "num")}
     <h4>Which queries suffer most</h4>
     ${table(["dataset", "largest DirectQuery penalty", "smallest"], qRows)}`;
-  return { id: "directquery", title: "Direct Lake against DirectQuery", short, status: per.length ? "clear" : "few", html };
+  return { id: "directquery", title: "Direct Lake against DirectQuery", short, status: per.length ? "clear" : "few", html,
+    head: [per.length ? range(warm, fmtX) : "—", "DirectQuery slower than Direct Lake, same warm queries"] };
+}
+
+export function findReadCu(ctx) {
+  const per = dsList(ctx).map((ds) => {
+    const R = ctx.runs.filter((r) => r.ds === ds);
+    const byW = {};
+    for (const r of R) (byW[r.writer] = byW[r.writer] || []).push(r);
+    const groups = (phase) => Object.fromEntries(Object.entries(byW)
+      .map(([w, rs]) => [w, rs.map((r) => r.cu[phase]).filter(Boolean)]).filter(([, v]) => v.length));
+    const both = R.filter((r) => r.cu.dl && r.cu.dq);
+    const C = R.filter((r) => r.cu.dl && r.dl.cold && r.dl.warm);
+    return { ds, R, byW, vDl: verdict(groups("dl")), vDq: verdict(groups("dq")), gDl: groups("dl"), gDq: groups("dq"),
+      ratio: median(both.map((r) => r.cu.dq / r.cu.dl)),
+      rCold: spearman(C.map((r) => r.dl.cold), C.map((r) => r.cu.dl)),
+      rWarm: spearman(C.map((r) => r.dl.warm), C.map((r) => r.cu.dl)) };
+  }).filter((p) => Object.keys(p.gDl).length);
+  const ratios = per.map((p) => p.ratio).filter(Boolean);
+  const rc = per.map((p) => p.rCold).filter((x) => x !== null), rw = per.map((p) => p.rWarm).filter((x) => x !== null);
+  const wl = (p, id) => ((p.byW[id] || [{}])[0]).writerLabel || id;
+  const dlWins = per.filter((p) => p.vDl.status === "clear");
+  const short = per.length
+    ? `Reading through DirectQuery cost ${range(ratios, fmtX)} the CU of Direct Lake. In Direct Lake the bill shows ${linkWord(median(rc))} to the cold load (ρ ${range(rc, rhoText)}) and ${linkWord(median(rw))} to the warm queries (ρ ${range(rw, rhoText)}).`
+    : "The CU ledger has not read any benchmark session yet.";
+  const writers = [...new Set(per.flatMap((p) => Object.keys(p.gDl)))];
+  const wlabel = Object.fromEntries(per.flatMap((p) => Object.entries(p.byW).map(([w, rs]) => [w, rs[0].writerLabel])));
+  const stripRows = per.flatMap((p, i) => Object.entries(p.gDl)
+    .sort((a, b) => median(a[1]) - median(b[1]))
+    .map(([w, v], j) => ({ label: `${label(p.ds)} · ${wlabel[w]}`, values: v, family: p.byW[w][0].family,
+      filled: p.byW[w][0].reorders, gap: i > 0 && j === 0 })));
+  const html = `
+    <p class="claim">${per.length ? `The same queries cost <b>${range(ratios, fmtX)} the capacity units</b> through DirectQuery as through Direct Lake. In Direct Lake, a run's CU shows ${linkWord(median(rc))} to its cold load (ρ ${range(rc, rhoText)} per dataset) and ${linkWord(median(rw))} to its warm queries (ρ ${range(rw, rhoText)}): where the link holds, the transcode is what you pay for, and the layout that loads fast is also the one that bills less. ${dlWins.length ? `Cheapest writer in Direct Lake, clearly: ${dlWins.map((p) => `<b>${esc(wl(p, p.vDl.best))}</b> on ${esc(label(p.ds))}`).join(", ")}.` : "No writer was clearly cheapest in Direct Lake on its own."}` : short}</p>
+    <p>A capacity unit is what a Fabric capacity bills. These are the CU spent by each benchmark session's own items: the semantic model, the shortcut lakehouse it reads through, and that lakehouse's SQL endpoint. They are read from the Capacity Metrics app after the run. The figure covers the whole session (cold, warm and hot passes together), so it has no cold/warm split of its own. Building the tables is not included.</p>
+    ${legend(familiesIn(per.flatMap((p) => p.R)))}
+    <h4>Direct Lake read CU per writer</h4>
+    ${strips({ rows: stripRows, x: { label: "Direct Lake read CU, whole session", fmt: fmtCu } })}
+    ${facets(per.map((p) => ({ title: `${label(p.ds)} · CU against cold · ρ ${rhoText(p.rCold)}`, html: scatter({
+      points: p.R.filter((r) => r.cu.dl && r.dl.cold).map((r) => ({ x: r.dl.cold, y: r.cu.dl, family: r.family, filled: r.reorders,
+        tip: runTip(r, ` · cold ${fmtMs(r.dl.cold)} · ${fmtCu(r.cu.dl)}`) })),
+      x: { label: "cold query suite total", log: true, fmt: fmtMs },
+      y: { label: "Direct Lake read CU", log: true, fmt: fmtCu }, w: 420, h: 270, trend: true }) })))}
+    ${table(["dataset", ...writers.map((w) => esc(wlabel[w])), "cheapest, Direct Lake", "cheapest, DirectQuery", "DirectQuery ÷ Direct Lake CU"],
+      per.map((p) => [label(p.ds), ...writers.map((w) => {
+        const dl = p.gDl[w], dq = p.gDq[w];
+        return dl ? `${fmtCu(median(dl))}${dq ? ` <span class="dim">· DQ ${fmtCu(median(dq))}</span>` : ""}` : "—";
+      }), p.vDl.best ? `${esc(wl(p, p.vDl.best))} ${badge(p.vDl.status)}` : "—",
+      p.vDq.best ? `${esc(wl(p, p.vDq.best))} ${badge(p.vDq.status)}` : "—", fmtX(p.ratio)]), "num")}`;
+  return { id: "read-cu", title: "What reading costs: capacity units", short, status: per.length ? "clear" : "few", html,
+    head: [ratios.length ? range(ratios, fmtX) : "—", "DirectQuery read CU against Direct Lake"] };
 }
 
 // --------------------------------------------------------------------------------- frame sections
@@ -662,6 +810,7 @@ function methodSection(ctx) {
       <li><b>warm</b>: pass 2, with the columns that pass 1 touched now in memory;</li>
       <li><b>hot</b>: passes 3 to 6, median.</li>
     </ul>
+    <p><b>Read CU</b> is the capacity units each session's own items billed: the semantic model, the shortcut lakehouse it reads through, and that lakehouse's SQL endpoint, read from the Capacity Metrics app. It covers the whole session (all six passes), in Direct Lake and in DirectQuery separately. The CU spent building the tables is not part of this report.</p>
     <p>A total is the sum over the queries a dataset's runs have in common. Runs are compared only within a dataset and only at the same source row count. A difference is called <b>clear</b> only when every run of the winner beat every run of the loser, with at least ${MIN_RUNS} runs each. Otherwise it is <b>inside the noise</b> or <b>too few runs</b>, because one Fabric capacity runs everything and its load varies from run to run.</p>
     <p>A writer changes several things at once: encoding, sort, row-group size, compression. Two findings hold the writer fixed (row-group size, and sorted against unsorted delta-rs) and one holds it to a single switch (Spark with V-Order on and off). Everything else is a correlation across writers, labelled as one.</p>
     ${table(["dataset", "rows", "runs", "timed runs", "queries", "writers"], rows)}`;
@@ -669,11 +818,16 @@ function methodSection(ctx) {
 
 // ------------------------------------------------------------------------------------- the page
 
-export const FINDINGS = [findColdWarm, findColumnSize, findSameColumn, findDictionary, findSort,
-  findRowGroups, findVOrder, findTableSize, findDirectQuery];
+// Card order on the home page: the frame first (cold vs warm, what reading costs), then the layout
+// knobs from strongest evidence to weakest, then the DirectQuery comparison.
+export const FINDINGS = [findColdWarm, findReadCu, findColumnSize, findRowGroups, findVOrder, findSort,
+  findSameColumn, findDictionary, findDirectQuery];
+// Reachable by link (`?finding=table-size`) but not a card: whole-table size is the column-size
+// finding with less detail, and its link to speed is weak.
+export const EXTRA_FINDINGS = [findTableSize];
 
-export function context(records, opts = {}) {
-  const b = build(records, PROBE_COLUMNS);
+export function context(records, opts = {}, ledger = null) {
+  const b = build(records, PROBE_COLUMNS, ledger);
   const datasets = Object.keys(b.perDataset).filter((ds) => !opts.dataset || ds === opts.dataset);
   return { ...b, datasets };
 }
@@ -681,11 +835,11 @@ export function context(records, opts = {}) {
 function dataSection(ctx) {
   const R = ctx.runs.filter((r) => ctx.datasets.includes(r.ds));
   const head = ["dataset", "writer", "run", "date", "files", "row groups", "rows / RG", "size", "compression",
-    "DL cold", "DL warm", "DL hot", "DQ cold", "DQ warm"];
+    "DL cold", "DL warm", "DL hot", "DQ cold", "DQ warm", "DL read CU", "DQ read CU"];
   const rows = R.map((r) => [label(r.ds), esc(r.writerLabel),
     r.url ? `<a href="${esc(r.url)}">${esc(r.id)}</a>` : esc(r.id), esc(r.when), fmtInt(r.files), fmtInt(r.rgs),
     fmtRows(r.rowsPerRg), fmtMb(r.mb), esc(r.compression || "—"),
-    fmtMs(r.dl.cold), fmtMs(r.dl.warm), fmtMs(r.dl.hot), fmtMs(r.dq.cold), fmtMs(r.dq.warm)]);
+    fmtMs(r.dl.cold), fmtMs(r.dl.warm), fmtMs(r.dl.hot), fmtMs(r.dq.cold), fmtMs(r.dq.warm), fmtCu(r.cu.dl), fmtCu(r.cu.dq)]);
   const ex = ctx.excluded.filter((r) => ctx.datasets.includes(r.ds));
   return `
     <p>Every run behind the charts. Click a column heading to sort, or download the flat tables.</p>
@@ -702,32 +856,66 @@ export function csvOf(rows, keys) {
   return [keys.join(","), ...rows.map((r) => keys.map((k) => cell(k.split(".").reduce((o, p) => (o || {})[p], r))).join(","))].join("\n");
 }
 export const RUN_KEYS = ["ds", "writerLabel", "id", "when", "engine", "vorder", "sorted", "rgSetting", "rows",
-  "files", "rgs", "rowsPerRg", "mb", "compression", "dl.cold", "dl.warm", "dl.hot", "dq.cold", "dq.warm", "dq.hot"];
+  "files", "rgs", "rowsPerRg", "mb", "compression", "dl.cold", "dl.warm", "dl.hot", "dq.cold", "dq.warm", "dq.hot",
+  "cu.dl", "cu.dq"];
 export const COLUMN_KEYS = ["ds", "writerLabel", "runId", "column", "type", "mb", "encodings", "dictPages",
   "chunks", "runsPer1k", "cold", "warm", "coldRaw", "warmRaw"];
 
-export function render(records, opts = {}) {
-  const ctx = context(records, opts);
+const HOW = `
+  <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy. DirectQuery keeps nothing and goes back to the parquet through the SQL endpoint for every query.</p>
+  ${DIAGRAM}`;
+
+const PAGES = { method: "Method", how: "How Power BI reads parquet", data: "The data" };
+
+/** `?a=b&c=d` from the params that are set, so a link keeps the dataset it was clicked under. */
+function href(params) {
+  const q = Object.entries(params).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`);
+  return q.length ? `?${q.join("&")}` : "?";
+}
+
+function card(f, i, opts) {
+  const [big, sub] = f.head || ["—", ""];
+  return `<a class="card" href="${href({ finding: f.id, dataset: opts.dataset })}">
+    <div class="ctop"><span class="cnum">${i + 1}</span>${badge(f.status)}</div>
+    <div class="big">${esc(big)}</div><div class="bigsub">${esc(sub)}</div>
+    <h3>${esc(f.title)}</h3><p>${esc(f.short).replace(/`([^`]+)`/g, "<code>$1</code>")}</p>
+    <span class="more">See the evidence →</span></a>`;
+}
+
+/**
+ * The page: the home grid of finding cards, one finding (`?finding=<id>`), or one of the frame pages
+ * (`?page=method|how|data`). Every view is computed from the same context, so a card's headline and
+ * the detail behind it can never disagree.
+ */
+export function render(records, opts = {}, ledger = null) {
+  const ctx = context(records, opts, ledger);
   if (!ctx.runs.length) return { html: `<p class="empty">No run records found.</p>`, ctx };
   const found = FINDINGS.map((f) => f(ctx));
-  const live = found.filter((f) => f.status !== "few" || f.id === "row-groups");
+  const extra = EXTRA_FINDINGS.map((f) => f(ctx));
+  const here = { finding: opts.finding, page: opts.page };
   const switcher = `<nav class="switch">Dataset: ${[["", "all"], ...Object.keys(ctx.perDataset).map((d) => [d, label(d)])]
-    .map(([d, l]) => (d === (opts.dataset || "") ? `<b>${esc(l)}</b>` : `<a href="?${d ? `dataset=${d}` : ""}">${esc(l)}</a>`)).join(" · ")}</nav>`;
-  const shortList = `<ol class="short">${live.map((f) => `<li><a href="#${f.id}">${esc(f.title)}</a>: ${esc(f.short).replace(/`([^`]+)`/g, "<code>$1</code>")} ${badge(f.status)}</li>`).join("")}</ol>`;
-  const html = `
-    ${switcher}
-    <section id="short"><h2>The short version</h2>${shortList}</section>
-    <section id="method"><h2>Method</h2>${methodSection(ctx)}</section>
-    <section id="how"><h2>How Power BI reads parquet</h2>
-      <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values) pays off at that moment. After it, queries run against VertiPaq's copy. DirectQuery keeps nothing and goes back to the parquet through the SQL endpoint for every query.</p>
-      ${DIAGRAM}</section>
-    ${found.map((f, i) => `<section id="${f.id}" class="finding"><h2><span class="num">${i + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>`).join("")}
-    <section id="takeaway"><h2>Takeaway</h2>
-      <p>What the measurements say, each with its live evidence:</p>
-      ${shortList}
-      <p>What moved, moved the <b>cold</b> query: the first one after a refresh or a model reload. Small columns, full dictionaries and sorted rows all make that transcode cheaper, and V-Order is Fabric's way of doing all three at write time. None of it measurably moved the warm query once the columns were in memory.</p></section>
-    <section id="data"><h2>The data</h2>${dataSection(ctx)}</section>`;
-  return { html, ctx };
+    .map(([d, l]) => (d === (opts.dataset || "") ? `<b>${esc(l)}</b>` : `<a href="${href({ ...here, dataset: d })}">${esc(l)}</a>`)).join(" · ")}</nav>`;
+  const back = `<a class="back" href="${href({ dataset: opts.dataset })}">← All findings</a>`;
+  const frame = `<p class="framelinks">${Object.entries(PAGES).map(([k, v]) =>
+    `<a href="${href({ page: k, dataset: opts.dataset })}">${esc(v)}</a>`).join(" · ")}</p>`;
+  const idx = found.findIndex((f) => f.id === opts.finding);
+  const side = extra.find((f) => f.id === opts.finding);
+  let body;
+  if (side) {
+    body = `${back}${switcher}<section id="${side.id}" class="finding"><h2>${esc(side.title)} ${badge(side.status)}</h2>${side.html}</section>`;
+  } else if (idx >= 0) {
+    const f = found[idx];
+    const prev = found[idx - 1], next = found[idx + 1];
+    const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id, dataset: opts.dataset })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id, dataset: opts.dataset })}">${esc(next.title)} →</a>` : ""}</nav>`;
+    body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>${pager}`;
+  } else if (PAGES[opts.page]) {
+    const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
+    body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
+  } else {
+    body = `${switcher}<div class="cards">${found.map((f, i) => card(f, i, opts)).join("")}</div>${frame}
+      <p class="note">Also measured: <a href="${href({ finding: "table-size", dataset: opts.dataset })}">whole-table size and compression</a>, a weaker version of the column-size finding.</p>`;
+  }
+  return { html: body, ctx, found };
 }
 
 // ----------------------------------------------------------------------------------------- boot
@@ -788,20 +976,22 @@ export async function boot(doc = document, loc = location) {
   const app = doc.getElementById("app"), status = doc.getElementById("status");
   const q = new URLSearchParams(loc.search);
   const opts = { dataset: DATASETS[q.get("dataset")] ? q.get("dataset") : "",
+    finding: q.get("finding") || "", page: q.get("page") || "",
     repo: q.get("repo") || DEFAULTS.repo, ref: q.get("ref") || DEFAULTS.ref };
   try {
-    let records, note;
+    let records, ledger, note;
     const snap = doc.getElementById("snapshot");
     if (snap && snap.textContent.trim()) {
       const s = JSON.parse(snap.textContent);
       records = s.records;
+      ledger = s.ledger;
       note = `Offline copy, frozen at ${s.built || "?"}.`;
     } else {
       if (status) status.textContent = "Reading the run records from GitHub…";
-      records = await loadRemote(opts);
+      ({ records, ledger } = await loadRemote(opts));
       note = `Live: ${records.length} run records read from ${opts.repo}@${opts.ref}. Reload for new runs.`;
     }
-    const { html, ctx } = render(records, opts);
+    const { html, ctx } = render(records, opts, ledger);
     app.innerHTML = html;
     if (status) status.textContent = note;
     wire(app, doc, ctx);

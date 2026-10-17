@@ -248,6 +248,40 @@ export function flattenColumns(run, probeMap) {
   return out;
 }
 
+// ------------------------------------------------------------------------------------- capacity
+//
+// What READING the table cost, in Fabric capacity units, from `history/cu.json` (written by
+// `cu/measure.py`). Each query phase owns its own items, created and deleted inside one run: the
+// semantic model, the shortcut lakehouse it reads through (OneLake bills a read against the item
+// hosting the shortcut), and that lakehouse's SQL analytics endpoint, which carries the role
+// `sql_endpoint` and is matched to its phase by NAME. For DirectQuery that endpoint's
+// `SQL Endpoint Query` CU is most of the bill. The figure covers the whole session — the cold pass,
+// the warm pass and the hot passes together — so it has no cold/warm split.
+
+export const PHASE_ROLES = { dl: ["semantic_model", "bench_dl"], dq: ["semantic_model_dq", "bench_dq"] };
+
+/** `{dl, dq}` capacity units for one record; null for a phase the ledger has not read. */
+export function readCu(rec, ledger) {
+  const items = (rec && rec.items) || {};
+  const led = ((ledger || {}).items) || {};
+  const out = {};
+  for (const [phase, roles] of Object.entries(PHASE_ROLES)) {
+    const lakehouses = new Set(Object.values(items).filter((it) => it && roles.slice(1).includes(it.role) && it.name)
+      .map((it) => it.name));
+    const guids = Object.entries(items).filter(([, it]) => it && (roles.includes(it.role)
+      || (it.role === "sql_endpoint" && lakehouses.has(it.name)))).map(([g]) => g);
+    let sum = 0, seen = false;
+    for (const g of guids) {
+      const v = led[g];
+      if (v === undefined || v === null) continue;
+      seen = true;
+      sum += typeof v === "object" ? Object.values(v).reduce((a, b) => a + Number(b || 0), 0) : Number(v);
+    }
+    out[phase] = seen && sum > 0 ? sum : null;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------- build
 
 /**
@@ -257,8 +291,8 @@ export function flattenColumns(run, probeMap) {
  * totals (Direct Lake and DirectQuery × cold / warm / hot). A run missing a query in the set keeps
  * its layout row and gets null totals, so it still feeds the layout-only findings.
  */
-export function build(records, probeMap) {
-  const all = records.filter((r) => r && r.engine).map(flattenRun);
+export function build(records, probeMap, ledger = null) {
+  const all = records.filter((r) => r && r.engine).map((rec) => ({ ...flattenRun(rec), cu: readCu(rec, ledger) }));
   const runs = [], excluded = [], perDataset = {};
   for (const ds of Object.keys(DATASETS)) {
     const mine = all.filter((r) => r.ds === ds);
@@ -342,6 +376,10 @@ export function verdict(groups) {
 
 // ---------------------------------------------------------------------------------------- format
 
+export function fmtCu(cu) {
+  if (typeof cu !== "number") return "—";
+  return `${cu >= 10000 ? (cu / 1000).toFixed(0) + "k" : cu >= 1000 ? (cu / 1000).toFixed(1) + "k" : Math.round(cu)} CU`;
+}
 export const fmtInt = (n) => (typeof n === "number" ? Math.round(n).toLocaleString("en-US") : "—");
 export function fmtMs(ms) {
   if (typeof ms !== "number") return "—";
@@ -373,7 +411,7 @@ async function jsonOf(url, fetchImpl) {
   return r.json();
 }
 
-/** Every committed run record, read at view time from raw.githubusercontent.com. */
+/** Every committed run record and the CU ledger, read at view time from raw.githubusercontent.com. */
 export async function loadRemote(opts = {}) {
   const repo = opts.repo || DEFAULTS.repo, ref = opts.ref || DEFAULTS.ref;
   const fetchImpl = opts.fetch || fetch;
@@ -387,7 +425,9 @@ export async function loadRemote(opts = {}) {
     names = (Array.isArray(listing) ? listing : []).filter((e) => e.type === "file" && keep(e.name))
       .map((e) => e.name).sort();
   }
-  const records = await Promise.all(names.map((n) => jsonOf(raw + "history/runs/" + n, fetchImpl)
-    .then((r) => Object.assign(r, { _file: n })).catch(() => null)));
-  return records.filter(Boolean);
+  const [ledger, ...records] = await Promise.all([
+    jsonOf(raw + "history/cu.json", fetchImpl).catch(() => null),
+    ...names.map((n) => jsonOf(raw + "history/runs/" + n, fetchImpl)
+      .then((r) => Object.assign(r, { _file: n })).catch(() => null))]);
+  return { records: records.filter(Boolean), ledger };
 }

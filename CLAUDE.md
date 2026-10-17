@@ -1838,9 +1838,13 @@ API** — that model is the only authoritative source, which is why this exists.
 
 ⚠️ **THE PUBLISHED PAGE WAS REPLACED ON 2026-10-17.** It is now a live write-up of what in a parquet
 file decides Power BI speed (`dashboard/data.js` + `report.js`, tests `data.test.mjs`), modelled on
-the user's post *Writing parquet that VertiPaq likes*. It reads ONLY `history/runs/` (no CU ledger),
-compares cold against warm in Direct Lake and DirectQuery, and generates every claim sentence from
-the records with a strict `clear` / `inside the noise` / `too few runs` label. **Every bullet below
+the user's post *Writing parquet that VertiPaq likes*. The home page is one CARD per finding
+(headline number, claim, status); a card opens that finding's evidence (`?finding=<id>`). It reads
+`history/runs/` AND `history/cu.json`, but uses only READ CU — the Direct Lake and DirectQuery
+sessions' own items (`readCu` in `data.js`) — and deliberately NOT build CU, by the user's call
+(2026-10-17: "duckdb kills everyone" on write cost, which is not the question). It compares cold
+against warm and generates every claim sentence from the records with a strict `clear` /
+`inside the noise` / `too few runs` label. **Every bullet below
 that describes how the page PRESENTS** — `renderSummary`, the scorecard, the scatter, the layout
 tables, `LAYOUTS_SHOWN` / `PROFILES_HIDDEN` / `ENGINES_HIDDEN`, `layoutKey`, the generation switch,
 `?rows=`/`?table=`/`?record=` — **describes `dashboard/app.js`, which is no longer served.** It is
@@ -1849,7 +1853,11 @@ README's spark-profile table from `capacity.yml`. The bullets about the LEDGER (
 GUID join, `max(old, new)`, the workflows and triggers) are unaffected. Findings measured
 2026-10-17 that the new page leads with: a column's compressed size predicts its cold load cost (ρ
 0.73–0.95 per dataset) and not its warm cost (ρ ≈ 0); cold is 3–27× warm in Direct Lake and only
-1.6–3.3× in DirectQuery; delta-rs row-group size from 1M to 29M rows shows no effect beyond noise;
+1.6–3.3× in DirectQuery; row groups are a TRADE, measured per column (cold) and per query (warm/hot): more
+row groups made columns slower to load cold on 5 of 5 datasets and warm queries faster on 4 of 5, BTS
+the exception. A first version compared whole-suite TOTALS against rows per row group and called it
+"no effect": totals add columns and queries moving in opposite directions plus fixed costs, so never
+judge a layout knob on suite totals alone;
 Spark V-Order lowers cold on 5 of 5 datasets but beats every run without it on none, and does not
 move warm.
 

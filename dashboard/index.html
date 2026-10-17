@@ -63,6 +63,8 @@ ol.short li { margin:.55rem 0; }
 
 .facets { display:grid; grid-template-columns:repeat(auto-fill, minmax(460px, 1fr)); gap:1rem; margin:1rem 0; }
 .facets.one { grid-template-columns:minmax(0, 720px); }
+.facets.three { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+@media (max-width:900px) { .facets.three { grid-template-columns:minmax(0, 1fr); } }
 @media (max-width:560px) { .facets { grid-template-columns:minmax(0, 1fr); } }
 .facet { margin:0; padding:.6rem .6rem .2rem; background:var(--soft); border-radius:10px; min-width:0; }
 .facet figcaption { font-size:.85rem; font-weight:600; margin:0 0 .2rem .2rem; }
@@ -103,6 +105,21 @@ button { font:inherit; font-size:.9rem; padding:.35rem .8rem; border-radius:6px;
 
 .tooltip { position:fixed; display:none; pointer-events:none; z-index:10; max-width:360px;
   background:var(--fg); color:var(--bg); font-size:.8rem; line-height:1.4; padding:.4rem .6rem; border-radius:6px; }
+.cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(310px, 1fr)); gap:1rem; margin:1.5rem 0; }
+.card { display:flex; flex-direction:column; text-decoration:none; color:var(--fg); background:var(--soft);
+  border:1px solid var(--line); border-radius:12px; padding:1.1rem 1.2rem; transition:border-color .15s; }
+.card:hover, .card:focus-visible { border-color:var(--c1); outline:none; }
+.ctop { display:flex; justify-content:space-between; align-items:center; }
+.cnum { color:var(--dim); font-size:.85rem; font-weight:600; }
+.big { font-size:2.2rem; font-weight:700; line-height:1.1; margin:.7rem 0 .15rem; font-variant-numeric:tabular-nums; }
+.bigsub { color:var(--dim); font-size:.85rem; }
+.card h3 { font-size:1.05rem; margin:.9rem 0 .3rem; }
+.card p { font-size:.88rem; color:var(--dim); margin:0 0 .8rem; flex:1; }
+.more { font-size:.85rem; color:var(--c1); font-weight:600; }
+.back { display:inline-block; margin:.5rem 0 .2rem; }
+.framelinks { color:var(--dim); font-size:.95rem; }
+.pager { display:flex; justify-content:space-between; gap:1rem; margin:3rem 0 0; padding-top:1rem; border-top:1px solid var(--line); }
+svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
 footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
 @media (max-width:600px) { body { font-size:16px; } header h1 { font-size:1.6rem; } .claim { font-size:1.05rem; } }
 </style>
