@@ -61,7 +61,7 @@ def test_no_fact_row_survives_with_a_null_in_any_column(con, fact):
     the reconstruction credible is the row counts it reproduces (see the generator's docstring); what
     this asserts is that the SQL actually implements the rule it claims."""
     checks = " OR ".join('"' + c + '" IS NULL' for c in G.COLUMNS[fact])
-    n = con.sql("SELECT count(*) FROM " + fact + "_landed WHERE " + checks).fetchone()[0]
+    n = con.sql("SELECT count(*) FROM " + fact + "_landed WHERE " + checks).fetchall()[0][0]
     assert n == 0
 
 
@@ -72,21 +72,21 @@ def test_the_fact_primary_key_is_unique_after_the_drop(con, fact):
     facts append; do not carry that decision over here without re-running this."""
     key = ", ".join(G.FACT_KEYS[fact])
     dupes = con.sql("SELECT count(*) FROM (SELECT " + key + " FROM " + fact
-                    + "_landed GROUP BY " + key + " HAVING count(*) > 1)").fetchone()[0]
+                    + "_landed GROUP BY " + key + " HAVING count(*) > 1)").fetchall()[0][0]
     assert dupes == 0
 
 
 @pytest.mark.parametrize("fact", sorted(G.FACTS))
 def test_cache_buster_is_the_constant_one(con, fact):
-    n = con.sql("SELECT count(*) FROM " + fact + "_landed WHERE cache_buster <> 1").fetchone()[0]
+    n = con.sql("SELECT count(*) FROM " + fact + "_landed WHERE cache_buster <> 1").fetchall()[0][0]
     assert n == 0
 
 
 def test_date_dim_is_the_papers_2191_rows(con):
     """Table 4.3.1 reports 2,191 rows at every scale factor, and 2021-01-01..2026-12-31 is 2,191
     days. A different number means the trim moved."""
-    assert con.sql("SELECT count(*) FROM date_dim_landed").fetchone()[0] == 2191
-    lo, hi = con.sql("SELECT min(d_date), max(d_date) FROM date_dim_landed").fetchone()
+    assert con.sql("SELECT count(*) FROM date_dim_landed").fetchall()[0][0] == 2191
+    lo, hi = con.sql("SELECT min(d_date), max(d_date) FROM date_dim_landed").fetchall()[0]
     assert (str(lo), str(hi)) == (G.DATE_LO, G.DATE_HI)
 
 
@@ -107,7 +107,7 @@ def test_every_modelled_relationship_has_no_orphans(con, rel):
     fact, col, dim, key = rel
     n = con.sql("SELECT count(*) FROM " + fact + "_landed f WHERE f." + col
                 + " IS NOT NULL AND NOT EXISTS (SELECT 1 FROM " + dim + "_landed d WHERE d."
-                + key + " = f." + col + ")").fetchone()[0]
+                + key + " = f." + col + ")").fetchall()[0][0]
     assert n == 0
 
 
@@ -116,8 +116,8 @@ def test_a_dimension_passes_through_untouched(con):
     count would stop matching the TPC-DS spec and the paper comparison would quietly shift."""
     for t in ("item", "store", "promotion", "ship_mode", "catalog_page", "customer_address",
               "customer_demographics"):
-        raw = con.sql("SELECT count(*) FROM " + t).fetchone()[0]
-        landed = con.sql("SELECT count(*) FROM " + t + "_landed").fetchone()[0]
+        raw = con.sql("SELECT count(*) FROM " + t).fetchall()[0][0]
+        landed = con.sql("SELECT count(*) FROM " + t + "_landed").fetchall()[0][0]
         assert raw == landed, t
 
 

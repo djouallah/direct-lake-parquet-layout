@@ -143,7 +143,7 @@ def test_an_unparseable_date_lands_as_month_00_rather_than_refusing_the_year(lan
     program year over one bad row — after the GBs have been downloaded."""
     con, part_dir, _cols, _tmp = landed
     glob = os.path.join(part_dir, "_ym=2019-00", "*.parquet").replace("\\", "/")
-    n = con.sql(f"SELECT count(*) FROM read_parquet('{glob}')").fetchone()[0]
+    n = con.sql(f"SELECT count(*) FROM read_parquet('{glob}')").fetchall()[0][0]
     assert n == 1
     assert "__HIVE_DEFAULT_PARTITION__" not in os.listdir(part_dir)
 
@@ -153,7 +153,7 @@ def test_nothing_is_lost_in_the_split(landed):
     writes both sides, so no dbt test can do it. Assert the property it depends on."""
     con, part_dir, _cols, _tmp = landed
     glob = os.path.join(part_dir, "**", "*.parquet").replace("\\", "/")
-    total = con.sql(f"SELECT count(*) FROM read_parquet('{glob}')").fetchone()[0]
+    total = con.sql(f"SELECT count(*) FROM read_parquet('{glob}')").fetchall()[0][0]
     assert total == len(ROWS)
 
 
@@ -190,7 +190,7 @@ def test_dates_are_PARSED_as_month_day_year_and_not_merely_cast(landed):
     # The publication date is the other DATE column and takes the same parse.
     jan = os.path.join(part_dir, "_ym=2019-01", "*.parquet").replace("\\", "/")
     d = con.sql(f'SELECT min("Date_of_Payment"), max("Date_of_Payment") '
-                f"FROM read_parquet('{jan}')").fetchone()
+                f"FROM read_parquet('{jan}')").fetchall()[0]
     assert [str(x) for x in d] == ["2019-01-15", "2019-01-20"]
 
 

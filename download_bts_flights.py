@@ -217,7 +217,7 @@ LOG_COLUMNS = ("source_type VARCHAR, source_filename VARCHAR, archive_path VARCH
 
 
 def load_log():
-    exists = con.sql(f"SELECT count(*) FROM glob('{LOG_PATH}')").fetchone()[0]
+    exists = con.sql(f"SELECT count(*) FROM glob('{LOG_PATH}')").fetchall()[0][0]
     if exists:
         con.sql(f"""
             CREATE OR REPLACE TEMP TABLE _pq_archive_log AS
@@ -287,7 +287,7 @@ def fetch(url, path):
 def footer(path):
     """(row_count, column names) from a parquet FOOTER — no scan, no decompression."""
     p = path.replace("\\", "/")
-    rows = con.sql(f"SELECT sum(num_rows) FROM parquet_file_metadata('{p}')").fetchone()[0]
+    rows = con.sql(f"SELECT sum(num_rows) FROM parquet_file_metadata('{p}')").fetchall()[0][0]
     cols = [r[0] for r in con.sql(
         f"SELECT name FROM parquet_schema('{p}') WHERE num_children IS NULL").fetchall()]
     return int(rows or 0), cols
@@ -407,7 +407,7 @@ def land_carriers():
     renamed to `code` / `name` at land time: `Description` says nothing, and a lower-case pair
     keeps the dimension's SQL identical across dialects with no quoting."""
     last = con.sql("SELECT max(archived_at) FROM _pq_archive_log "
-                   "WHERE source_type = 'carrier'").fetchone()[0]
+                   "WHERE source_type = 'carrier'").fetchall()[0][0]
     if last is not None and (datetime.now(last.tzinfo) - last).total_seconds() < 86400:
         print(f"  carrier lookup fresh ({last}), skipping")
         return
@@ -426,7 +426,7 @@ def land_carriers():
             WHERE "Code" IS NOT NULL
         ) TO '{dst.replace(chr(92), '/')}' (FORMAT PARQUET)""")
         rows = con.sql(f"SELECT count(*) FROM read_parquet('{dst.replace(chr(92), '/')}')"
-                       ).fetchone()[0]
+                       ).fetchall()[0][0]
         push_replace(out, "parquet_raw/carrier")
     con.sql("DELETE FROM _pq_archive_log WHERE source_type = 'carrier'")
     now = datetime.now(timezone.utc).isoformat()

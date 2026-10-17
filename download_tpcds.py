@@ -372,7 +372,7 @@ def generate(con, sf, work):
     raw_counts, spec = {}, EXPECTED.get(sf, {})
     problems = []
     for t in TABLES:
-        raw_counts[t] = con.sql("SELECT count(*) FROM " + t).fetchone()[0]
+        raw_counts[t] = con.sql("SELECT count(*) FROM " + t).fetchall()[0][0]
         want = spec.get(t)
         if want is None:
             continue
@@ -387,7 +387,7 @@ def generate(con, sf, work):
     for t in TABLES:
         con.sql("CREATE OR REPLACE TABLE " + t + "_landed AS " + customise_sql(t))
         con.sql("DROP TABLE " + t)
-        landed[t] = con.sql("SELECT count(*) FROM " + t + "_landed").fetchone()[0]
+        landed[t] = con.sql("SELECT count(*) FROM " + t + "_landed").fetchall()[0][0]
 
     matches = None
     if paper:
@@ -406,7 +406,7 @@ def generate(con, sf, work):
     for fact, col, dim, key in RELATIONSHIPS:
         n = con.sql("SELECT count(*) FROM " + fact + "_landed f WHERE f." + col
                     + " IS NOT NULL AND NOT EXISTS (SELECT 1 FROM " + dim + "_landed d WHERE d."
-                    + key + " = f." + col + ")").fetchone()[0]
+                    + key + " = f." + col + ")").fetchall()[0][0]
         orphans[fact + "." + col] = n
     broken = {k: v for k, v in orphans.items() if v}
     _log("referential integrity over " + str(len(RELATIONSHIPS)) + " relationships: "
@@ -476,7 +476,7 @@ def land(dr, con, sf, work, verdict):
         _retry_onelake("clear " + rel, _delete)
 
     log_path = FILES_PATH + "/parquet_raw_archive_log.parquet"
-    if con.sql("SELECT count(*) FROM glob('" + log_path + "')").fetchone()[0]:
+    if con.sql("SELECT count(*) FROM glob('" + log_path + "')").fetchall()[0][0]:
         con.sql("CREATE OR REPLACE TEMP TABLE _pq_archive_log AS SELECT source_type, "
                 "source_filename, archive_path, archived_at, row_count, source_url, etag, "
                 "file_stem, columns FROM read_parquet('" + log_path + "') WHERE file_stem IS NOT NULL")
@@ -521,7 +521,7 @@ def land(dr, con, sf, work, verdict):
         for f in verdict["files"][t]:
             stem = f[:-len(".parquet")]
             rows = con.sql("SELECT count(*) FROM read_parquet('"
-                           + os.path.join(work, t, f).replace("\\", "/") + "')").fetchone()[0]
+                           + os.path.join(work, t, f).replace("\\", "/") + "')").fetchall()[0][0]
             con.sql(
                 "INSERT INTO _pq_archive_log VALUES ('" + t + "', '" + f + "', '/" + t + "/" + f
                 + "', now(), " + str(rows) + ", '" + url + "', 'sf" + str(sf) + "', '" + stem
@@ -540,7 +540,7 @@ def land(dr, con, sf, work, verdict):
         # the size limit that rules that path out for a 400 MB fact file does not reach it.
         _retry_onelake("archive log", lambda: dr.copy(ltmp, "", overwrite=True))
     _log("archive log rewritten: " + str(con.sql(
-        "SELECT count(*) FROM _pq_archive_log").fetchone()[0]) + " row(s)")
+        "SELECT count(*) FROM _pq_archive_log").fetchall()[0][0]) + " row(s)")
 
 
 def run_in_notebook():
@@ -581,7 +581,7 @@ def run_in_notebook():
         con.sql("SET memory_limit = '" + str(int(limit * 0.8 / 1024 ** 2)) + "MB'")
     _log("duckdb " + duckdb.__version__ + "  threads=" + str(os.cpu_count())
          + "  cgroup=" + (format(limit / 1024 ** 3, ",.0f") + " GiB" if limit else "unset")
-         + "  memory_limit=" + str(con.sql("SELECT current_setting('memory_limit')").fetchone()[0]))
+         + "  memory_limit=" + str(con.sql("SELECT current_setting('memory_limit')").fetchall()[0][0]))
 
     verdict = generate(con, sf, work)
     dr = duckrun.connect(FILES_PATH, read_only=False)
@@ -602,7 +602,7 @@ def already_landed(sf):
     import duckrun
     dr = duckrun.connect(FILES_PATH, read_only=True)
     log_path = FILES_PATH + "/parquet_raw_archive_log.parquet"
-    if not dr.con.sql("SELECT count(*) FROM glob('" + log_path + "')").fetchone()[0]:
+    if not dr.con.sql("SELECT count(*) FROM glob('" + log_path + "')").fetchall()[0][0]:
         return False
     got = {r[0] for r in dr.con.sql(
         "SELECT DISTINCT source_type FROM read_parquet('" + log_path + "') WHERE etag = 'sf"
@@ -757,7 +757,7 @@ def status():
     import duckrun
     dr = duckrun.connect(FILES_PATH, read_only=True)
     log_path = FILES_PATH + "/parquet_raw_archive_log.parquet"
-    if not dr.con.sql("SELECT count(*) FROM glob('" + log_path + "')").fetchone()[0]:
+    if not dr.con.sql("SELECT count(*) FROM glob('" + log_path + "')").fetchall()[0][0]:
         _log("no archive log at " + log_path + " -- nothing landed here yet")
         return 0
     rows = dr.con.sql(

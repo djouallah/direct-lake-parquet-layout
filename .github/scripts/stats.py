@@ -509,7 +509,7 @@ def run_lengths(con, at, rows):
                f"file_row_number=true)\n"
                f"    WHERE file_row_number < {int(span)}\n"
                f"    WINDOW w AS (ORDER BY file_row_number)\n) t")
-        res = con.con.sql(sql).fetchone()
+        res = con.con.sql(sql).fetchall()[0]
         if not res or not res[0]:
             return {}
         return {"file": path.rsplit("/", 1)[-1], "rows": int(res[0]),

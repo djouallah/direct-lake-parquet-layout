@@ -129,7 +129,7 @@ LOG_COLUMNS = ("source_type VARCHAR, source_filename VARCHAR, archive_path VARCH
 
 
 def load_log():
-    exists = con.sql(f"SELECT count(*) FROM glob('{LOG_PATH}')").fetchone()[0]
+    exists = con.sql(f"SELECT count(*) FROM glob('{LOG_PATH}')").fetchall()[0][0]
     if exists:
         con.sql(f"""
             CREATE OR REPLACE TEMP TABLE _pq_archive_log AS
@@ -193,7 +193,7 @@ def footer(path):
     This is both the cheap row count for the log and the schema guard: `parquet_schema` lists the
     file's own columns, so a month whose schema drifted is caught before it is uploaded."""
     p = path.replace("\\", "/")
-    rows = con.sql(f"SELECT sum(num_rows) FROM parquet_file_metadata('{p}')").fetchone()[0]
+    rows = con.sql(f"SELECT sum(num_rows) FROM parquet_file_metadata('{p}')").fetchall()[0][0]
     cols = [r[0] for r in con.sql(
         f"SELECT name FROM parquet_schema('{p}') WHERE num_children IS NULL").fetchall()]
     return int(rows or 0), cols
@@ -284,7 +284,7 @@ def land_zones():
     use costs an explicit schema plus a header-row filter for a 265-row dimension. Converting once,
     here, makes the read one plain statement in all three dialects."""
     last = con.sql("SELECT max(archived_at) FROM _pq_archive_log "
-                   "WHERE source_type = 'zone'").fetchone()[0]
+                   "WHERE source_type = 'zone'").fetchall()[0][0]
     if last is not None and (datetime.now(last.tzinfo) - last).total_seconds() < 86400:
         print(f"  zone lookup fresh ({last}), skipping")
         return
@@ -304,7 +304,7 @@ def land_zones():
             FROM read_csv_auto('{src.replace(chr(92), '/')}', header = true)
         ) TO '{dst.replace(chr(92), '/')}' (FORMAT PARQUET)""")
         rows = con.sql(f"SELECT count(*) FROM read_parquet('{dst.replace(chr(92), '/')}')"
-                       ).fetchone()[0]
+                       ).fetchall()[0][0]
         push_replace(out, "parquet_raw/zone")
     con.sql("DELETE FROM _pq_archive_log WHERE source_type = 'zone'")
     now = datetime.now(timezone.utc).isoformat()

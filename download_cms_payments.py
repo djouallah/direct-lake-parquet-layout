@@ -299,7 +299,7 @@ LOG_COLUMNS = ("source_type VARCHAR, source_filename VARCHAR, archive_path VARCH
 
 
 def load_log():
-    exists = con.sql(f"SELECT count(*) FROM glob('{LOG_PATH}')").fetchone()[0]
+    exists = con.sql(f"SELECT count(*) FROM glob('{LOG_PATH}')").fetchall()[0][0]
     if exists:
         con.sql(f"""
             CREATE OR REPLACE TEMP TABLE _pq_archive_log AS
@@ -467,7 +467,7 @@ def land_year(year, source_filename, url):
         """)
         source_rows = con.sql(
             f"SELECT count(*) FROM read_csv('{q}', header = true, all_varchar = true, "
-            f"strict_mode = false)").fetchone()[0]
+            f"strict_mode = false)").fetchall()[0][0]
         os.remove(csv_path)
 
         landed, total = [], 0
@@ -493,7 +493,7 @@ def land_year(year, source_filename, url):
             con.sql(f"COPY (SELECT * EXCLUDE (_ym) FROM read_parquet('{src_glob}')) "
                     f"TO '{dst.replace(chr(92), '/')}' (FORMAT PARQUET, COMPRESSION ZSTD)")
             rows = con.sql(f"SELECT count(*) FROM read_parquet('{dst.replace(chr(92), '/')}')"
-                           ).fetchone()[0]
+                           ).fetchall()[0][0]
             landed.append((stem, dst, int(rows), etag))
             total += int(rows)
         shutil.rmtree(part_dir, ignore_errors=True)
@@ -512,7 +512,7 @@ def land_year(year, source_filename, url):
         dup = con.sql(
             "SELECT count(*) FROM (SELECT \"Record_ID\" FROM read_parquet('"
             + os.path.join(out_dir, "*.parquet").replace("\\", "/")
-            + "') GROUP BY 1 HAVING count(*) > 1)").fetchone()[0]
+            + "') GROUP BY 1 HAVING count(*) > 1)").fetchall()[0][0]
         if dup:
             print(f"  REFUSED {year}: Record_ID is not unique ({dup:,} repeated values) — "
                   f"not archived", flush=True)
@@ -567,7 +567,7 @@ def land_payers():
     the key, and manufacturers are renamed between program years, so a plain DISTINCT over the four
     columns yields the same id twice with two names. The newest program year wins."""
     root = f"{FILES_PATH}/parquet_raw/cms/*.parquet"
-    have = con.sql(f"SELECT count(*) FROM glob('{root}')").fetchone()[0]
+    have = con.sql(f"SELECT count(*) FROM glob('{root}')").fetchall()[0][0]
     if not have:
         print("  payer lookup: nothing landed yet, skipping")
         return
@@ -590,7 +590,7 @@ def land_payers():
               ORDER BY 1
             ) TO '{dst}' (FORMAT PARQUET)
         """)
-        rows = con.sql(f"SELECT count(*) FROM read_parquet('{dst}')").fetchone()[0]
+        rows = con.sql(f"SELECT count(*) FROM read_parquet('{dst}')").fetchall()[0][0]
         push_replace(out, "parquet_raw/payer")
     con.sql("DELETE FROM _pq_archive_log WHERE source_type = 'payer'")
     now = datetime.now(timezone.utc).isoformat()

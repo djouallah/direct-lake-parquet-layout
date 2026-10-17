@@ -41,7 +41,7 @@ def download_aemo(session, files_path, download_limit, daily_download_limit):
     batch_size, max_workers = 7, 8
 
     # --- Load existing log (or start an empty one) ---
-    log_exists = session.sql(f"SELECT count(*) FROM glob('{csv_log_path}')").fetchone()[0]
+    log_exists = session.sql(f"SELECT count(*) FROM glob('{csv_log_path}')").fetchall()[0][0]
     if log_exists > 0:
         session.sql(f"""
             CREATE OR REPLACE TEMP TABLE _csv_archive_log AS
@@ -132,7 +132,7 @@ def download_aemo(session, files_path, download_limit, daily_download_limit):
                split_part(regexp_extract(line, 'HREF="[^"]+/([^"]+\\.zip)"', 1), '.', 1) AS filename
         FROM l WHERE line LIKE '%PUBLIC_DAILY%.zip%'""")
     aemo_new = session.sql("""SELECT count(*) FROM daily_files_web
-        WHERE 'daily::' || filename NOT IN (SELECT source_type || '::' || source_filename FROM _csv_archive_log)""").fetchone()[0]
+        WHERE 'daily::' || filename NOT IN (SELECT source_type || '::' || source_filename FROM _csv_archive_log)""").fetchall()[0][0]
     if aemo_new < daily_download_limit:
         # backfill history from a GitHub mirror
         sql_retry("""INSERT INTO daily_files_web
@@ -184,7 +184,7 @@ def download_aemo(session, files_path, download_limit, daily_download_limit):
         ("duid_wa_energy", "WA_ENERGY", "https://raw.githubusercontent.com/djouallah/aemo_data/refs/heads/main/WA_ENERGY.csv", "WA_ENERGY.csv"),
         ("duid_geo_data", "geo_data", "https://raw.githubusercontent.com/djouallah/aemo_data/refs/heads/main/geo_data.csv", "geo_data.csv"),
     ]
-    last = session.sql("SELECT max(archived_at) FROM _csv_archive_log WHERE source_type LIKE 'duid_%'").fetchone()[0]
+    last = session.sql("SELECT max(archived_at) FROM _csv_archive_log WHERE source_type LIKE 'duid_%'").fetchall()[0][0]
     fresh = last is not None and (datetime.now(last.tzinfo) - last).total_seconds() < 86400
     if fresh:
         print(f"  DUID data fresh ({last}), skipping")
