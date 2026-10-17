@@ -635,6 +635,9 @@ export function propRowGroups(ctx) {
       <p class="note">The lines weigh every dataset equally: each dataset's own value per octave of rows per group, then the median across datasets.</p>` });
 }
 
+/** Run ids of the controlled declaration pair: iceberg on aemo, DuckDB dev365 then dev379. */
+const DECLARE_PAIR = { before: "32444969823", after: "33700004854" };
+
 export function propDictionary(ctx) {
   const base = findDictionary(ctx);
   // Within the same column: chunks missing a dictionary page against fully dictionary-encoded.
@@ -649,10 +652,21 @@ export function propDictionary(ctx) {
     per[ds] = rs.length ? median(rs) : null;
   }
   const s = acrossDatasets(per);
-  return propertyCard({ id: "dictionary", title: "Dictionary encoding", evidence: "observational", status: base.status === "clear" ? "clear" : "partial",
-    head: [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
+  // THE HEADLINE IS THE CONTROLLED PAIR. The DuckDB wheel on the iceberg leg moved from 1.6.0.dev365
+  // (no footer encoding_stats) to 1.6.0.dev379 (duckdb#24957) between these two aemo runs, which
+  // wrote the same files, row groups, bytes and dictionary pages: only the declaration differs.
+  const run = (id) => ctx.runs.find((r) => r.id === id);
+  const before = run(DECLARE_PAIR.before), after = run(DECLARE_PAIR.after);
+  const ratio = (m) => (before && after && m(before) > 0 && m(after) > 0 ? m(after) / m(before) : null);
+  const cu = ratio((r) => r.cu && r.cu.dl), cold = ratio((r) => r.dl && r.dl.cold);
+  const drop = (x) => `−${Math.round((1 - x) * 100)}%`;
+  const paired = cu !== null && cold !== null;
+  return propertyCard({ id: "dictionary", title: "Dictionary encoding", evidence: paired ? "controlled" : "observational",
+    status: paired ? "clear" : base.status === "clear" ? "clear" : "partial",
+    head: paired ? [`${drop(cu)} CU`, "Direct Lake read CU once the file declares its dictionary: same table, same pages, one footer list"]
+      : [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
     card: "Keep every column dictionary-encoded, and have the file declare it so Power BI can reuse the dictionary instead of rebuilding it.",
-    claim: `A column with chunks missing a dictionary page cost <b>${pct(s)}</b> cold against the same column fully encoded (${agree(s)}). Whether the footer DECLARES the dictionary decides the cheap path: on the same DuckDB-written table, adding the declaration alone halved the cold load and cut Direct Lake read CU 2.5×.`,
+    claim: `${paired ? `Same DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${drop(cu)}</b>, cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
     body: `${effectTable([["column cold, dictionary gaps ÷ full", s]])}${base.html}` });
 }
 
