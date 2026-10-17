@@ -802,10 +802,10 @@ function methodSection(ctx) {
 
 // ------------------------------------------------------------------------------- performance tab
 //
-// `?page=perf`: which writer's output is cheapest and fastest to READ, every dataset at once. It leads
-// with read CU, because that is where writers differ most. One writer x dataset grid per measure; each
-// cell is the writer's median run as a multiple of the BEST writer on that dataset (1.0x = best,
-// green), with the actual value under it. Absolute numbers cannot share a chart across datasets — a
+// `?page=perf`: which writer's output is cheapest to READ, every dataset at once. ONE measure, read CU:
+// it is billed per session, not per pass, so it is never split into cold and warm. One writer x
+// dataset grid; each cell is the writer's median session as a multiple of the CHEAPEST writer on that
+// dataset (1.0x = cheapest, green), with the CU under it. Absolute numbers cannot share a chart across datasets — a
 // bigger table costs more whoever wrote it — so each dataset is read against itself. One storage mode
 // at a time: Direct Lake and DirectQuery are never in the same table. Deliberately plain.
 
@@ -879,16 +879,12 @@ export function perfSection(ctx, opts = {}) {
   const groups = perfGroups(ctx, phase);
   if (!groups.length) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No timed runs yet.</p>`;
   const mode = esc(PERF_PHASES[phase]);
-  const hasCu = groups.some((g) => g.cu);
+  if (!groups.some((g) => g.cu)) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No read CU measured yet.</p>`;
   return `
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
-    ${hasCu ? perfHeadline(groups, "cu", "cheapest to read") : ""}
-    <p class="dim">${mode} only. Each cell is a writer's median run on that dataset, as a multiple of the best writer on the same dataset: <b>1.0×</b> is the best (green), 2.0× is twice as much. The actual number is under it.</p>
-    ${hasCu ? `<h3>Read CU: what the ${mode} session billed</h3>${perfGrid(groups, "cu", fmtCu)}` : ""}
-    <h3>Warm: second visit</h3>
-    ${perfGrid(groups, "warm", fmtMs)}
-    <h3>Cold: first visit, every column loaded from parquet</h3>
-    ${perfGrid(groups, "cold", fmtMs)}`;
+    ${perfHeadline(groups, "cu", "cheapest to read")}
+    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is a writer's median session on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
+    ${perfGrid(groups, "cu", fmtCu)}`;
 }
 
 // ------------------------------------------------------------------------------------- the page

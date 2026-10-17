@@ -371,7 +371,7 @@ test("the build inlines every module and leaves no relative import behind", asyn
 
 // --------------------------------------------------------------------------------- performance tab
 
-test("performance tab: writer x dataset grids, 1.0x is the best writer on that dataset, one storage mode at a time", () => {
+test("performance tab: read CU only, writer x dataset, 1.0x is the cheapest writer on that dataset", () => {
   const { recs, ledger } = withCu(vorderFixture());
   for (const x of recs) {
     const t = x.benchmark.timings, k = Object.keys(t)[0];
@@ -379,22 +379,18 @@ test("performance tab: writer x dataset grids, 1.0x is the best writer on that d
   }
   const page = r.render(recs, { page: "perf" }, ledger).html;
   assert.match(page, /id="perf"/);
-  assert.equal((page.match(/<table class="grid">/g) || []).length, 3);  // read CU, warm, cold
+  assert.equal((page.match(/<table class="grid">/g) || []).length, 1);  // read CU only
+  assert.doesNotMatch(page, /Warm|Cold/);
   for (const ds of ["AEMO", "NYC taxi", "BTS flights", "Green taxi"]) assert.match(page, new RegExp(`<th>${ds}</th>`));
   // The ledger bills V-Order ~1,000 CU against ~2,000 without, on every dataset: named in plain words.
   assert.match(page, /Cheapest to read: <b>Spark, V-Order<\/b> on 4 of 4 datasets/);
-  // Read CU leads the page.
-  assert.ok(page.indexOf("Read CU") < page.indexOf("Warm: second visit"));
-  // Cold: V-Order (~101) is best, no V-Order (~201) is ~2x on every dataset.
+  assert.equal((page.match(/class="best"/g) || []).length, 4);
+  assert.match(page, /<th scope="row">Spark, no V-Order<\/th><td class="[^"]*"[^>]*><b>2\.0×/);
   const ctx = r.context(recs, {}, ledger);
-  const cold = r.perfGrid(r.perfGroups(ctx, "dl"), "cold", d.fmtMs);
-  assert.equal((cold.match(/class="best"/g) || []).length, 4);
-  assert.match(cold, /<th scope="row">Spark, V-Order<\/th><td class="best"[^>]*><b>1\.0×/);
-  assert.match(cold, /<th scope="row">Spark, no V-Order<\/th><td class="[^"]*"[^>]*><b>1.9×/);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
   const dl = r.perfGroups(ctx, "dl"), dq = r.perfGroups(ctx, "dq");
   assert.equal(dq[0].cold, dl[0].cold * 7);
-  assert.match(r.render(recs, { page: "perf", phase: "dq" }, ledger).html, /DirectQuery only/);
+  assert.match(r.render(recs, { page: "perf", phase: "dq" }, ledger).html, /class="pill on"[^>]*>DirectQuery/);
 });
 
 test("performance tab: no timed runs is a sentence, not an empty grid", () => {
