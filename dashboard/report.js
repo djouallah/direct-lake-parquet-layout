@@ -251,29 +251,44 @@ function octaves(pts) {
     datasets: new Set(v.map((p) => p.ds)).size, cold: median(v.map((p) => p.cold)), warm: median(v.map((p) => p.warm)) }));
 }
 
-export function bandTrend(pts) {
-  const rows = octaves(pts).filter((x) => x.datasets >= 2);
+export function bandTrend(pts, minDatasets = 2) {
+  // One dataset alone has a fraction of the runs, so an octave counts there from `MIN_RUNS` runs.
+  const minRuns = minDatasets > 1 ? BAND_MIN_RUNS : MIN_RUNS;
+  const lines = datasetLines(pts);
+  const ks = [...new Set(Object.values(lines).flatMap((rows) => rows.map((x) => x.k)))].sort((a, b) => a - b);
+  const rows = ks.map((k) => {
+    const per = Object.values(lines).map((rs) => rs.find((x) => x.k === k)).filter(Boolean);
+    return { k, x: octaveRows(k), n: per.reduce((t, x) => t + x.n, 0), datasets: per.length,
+      cold: median(per.map((x) => x.cold)), warm: median(per.map((x) => x.warm)) };
+  }).filter((x) => x.datasets >= minDatasets);
   if (rows.length < 2) return null;
-  for (const x of rows) x.thin = x.n < BAND_MIN_RUNS;
-  let best = [], cur = [];
-  for (const x of rows.filter((r) => !r.thin)) {
-    const ok = Math.max(x.cold, x.warm) <= BAND_WITHIN && (!cur.length || x.k === cur[cur.length - 1].k + 1);
-    if (Math.max(x.cold, x.warm) <= BAND_WITHIN) cur = ok ? [...cur, x] : [x];
-    else cur = [];
-    if (cur.length > best.length) best = [...cur];
+  for (const x of rows) x.thin = x.n < minRuns;
+  const trusted = rows.filter((x) => !x.thin);
+  // Runs of consecutive trusted octaves where both tiers are within `BAND_WITHIN` of the median.
+  const runs = [];
+  for (const x of trusted) {
+    const pass = Math.max(x.cold, x.warm) <= BAND_WITHIN;
+    const last = runs[runs.length - 1];
+    if (pass && last && last.open && x.k === last.to.k + 1) last.to = x;
+    else if (pass) runs.push({ from: x, to: x, open: true });
+    else if (last) last.open = false;
   }
-  const band = best.length ? { from: best[0], to: best[best.length - 1] } : null;
-  return { rows, band };
+  // A band is claimed only when it is ONE stretch and something outside it is worse. Two separate
+  // stretches, or every octave passing, means the data cannot place a band yet, and the page says so.
+  const band = runs.length === 1 && runs[0].to.k - runs[0].from.k + 1 < trusted.length ? runs[0] : null;
+  const worst = trusted.length ? Math.max(...trusted.map((x) => Math.max(x.cold, x.warm))) : null;
+  return { rows, band, trusted, worst };
 }
 
 const octaveText = (x) => fmtRows(x).replace(/\.0(?=[KMB])/, "");
-export const bandText = (t) => (t && t.band ? `${octaveText(t.band.from.x)} to ${octaveText(t.band.to.x)}` : null);
+export const bandText = (t) => (!t || !t.band ? null : t.band.from.k === t.band.to.k ? `around ${octaveText(t.band.from.x)}`
+  : `${octaveText(t.band.from.x)} to ${octaveText(t.band.to.x)}`);
 
 /** Per dataset: its own octaves (at least two runs each), cold and warm against its median run. */
 export function datasetLines(pts) {
   const out = {};
   for (const ds of DS_ORDER) {
-    const rows = octaves(pts.filter((p) => p.ds === ds)).filter((x) => x.n >= 2);
+    const rows = octaves(pts.filter((p) => p.ds === ds)).filter((x) => x.n >= 2);  // k, x, n, cold, warm
     if (rows.length >= 2) out[ds] = rows;
   }
   return out;
@@ -330,7 +345,7 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
 }
 
 export function bandPanels(pts, t) {
-  if (!t) return `<p class="empty">Not enough datasets measured at different row-group sizes yet.</p>`;
+  if (!t) return `<p class="empty">Not enough runs at different row-group sizes yet.</p>`;
   const lines = datasetLines(pts);
   const xs = [...Object.values(lines).flatMap((rows) => rows.map((x) => x.x)), ...t.rows.map((x) => x.x)];
   const xr = [Math.min(...xs) / 1.6, Math.max(...xs) * 1.6];
@@ -744,7 +759,10 @@ export function findRowGroups(ctx) {
     .filter((t) => t.distinct >= 3 && t.timed.length >= 5);
   const nCold = all.filter(coldSlower), nWarm = all.filter(warmFaster), against = all.filter(warmSlower);
   const nCu = all.filter((t) => t.cuRho !== null && t.cuRho > 0.2), cuKnown = all.filter((t) => t.cuRho !== null);
-  const bandPts = bandPoints(ctx), bandT = bandTrend(bandPts);
+  // One dataset selected: its own octaves are the whole story, so one dataset is enough per octave.
+  const bandPts = bandPoints(ctx), bandT = bandTrend(bandPts, ctx.datasets.length > 1 ? 2 : 1);
+  const spreadText = bandT && bandT.trusted.length
+    ? `from ${octaveText(bandT.trusted[0].x)} to ${octaveText(bandT.trusted[bandT.trusted.length - 1].x)} every octave is within ${Math.round((bandT.worst - 1) * 100)}% of the median` : null;
   const short = all.length
     ? `Row groups are a trade. More of them made columns slower to load cold on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and cost more Direct Lake CU on ${nCu.length} of ${cuKnown.length}` : ""}, but made warm queries faster on ${nWarm.length}${against.length ? ` (slower on ${against.map((t) => label(t.ds)).join(", ")})` : ""}.`
     : "Not enough runs at different row-group counts yet.";
@@ -793,10 +811,16 @@ export function findRowGroups(ctx) {
     }];
   });
   const html = `
-    <p class="claim">${bandT && bandT.band ? `Across every dataset, <b>${esc(bandText(bandT))} rows per row group</b> keeps both cold and warm within ${Math.round((BAND_WITHIN - 1) * 100)}% of the median. ` : ""}${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
-    <h4>A band that works cold and warm</h4>
+    <p class="claim">${bandT && bandT.band ? `${ctx.datasets.length > 1 ? "Weighing every dataset equally, " : ""}<b>${esc(bandText(bandT))} rows per row group</b> keeps both cold and warm within ${Math.round((BAND_WITHIN - 1) * 100)}% of the median. ` : ""}${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
+    <h4>Is there a band that works cold and warm?</h4>
     ${bandPanels(bandPts, bandT)}
-    <p>Each thin line is one dataset: its runs grouped by octave of rows per row group, cold or warm divided by that dataset's median run so the datasets share the axis. The bold line is every dataset's runs together, and the band is computed from it: the octaves with at least ${BAND_MIN_RUNS} runs from two or more datasets where cold and warm are both within ${Math.round((BAND_WITHIN - 1) * 100)}% of the median. A hollow point is an octave with too few runs to count.${bandT && bandT.band ? ` Below the band cold gets slower; above it warm does.` : ""}</p>
+    <p>Each thin line is one dataset: its runs grouped by octave of rows per row group, cold or warm divided by that dataset's median run so the datasets share the axis. The bold line weighs every dataset EQUALLY: each dataset's own value per octave, then the median across the datasets measured there, so the dataset with the most runs does not decide it. A band is the one stretch of octaves (at least ${BAND_MIN_RUNS} runs in total) where cold and warm are both within ${Math.round((BAND_WITHIN - 1) * 100)}% of the median while something outside it is worse. A hollow point is an octave with too few runs to count.</p>
+    ${ctx.datasets.length > 1 ? table(["dataset", "its own band, from its runs alone", "octaves with enough runs"],
+      dsList(ctx).map((ds) => {
+        const tt = bandTrend(bandPts.filter((p) => p.ds === ds), 1);
+        return [label(ds), tt && tt.band ? `${esc(bandText(tt))} rows per row group` : "no clear band", tt ? fmtInt(tt.trusted.length) : "—"];
+      })) : ""}
+    <p class="claim">${bandT && bandT.band ? `Band: <b>${esc(bandText(bandT))} rows per row group</b>. Outside it, cold or warm is more than ${Math.round((BAND_WITHIN - 1) * 100)}% off the median.` : spreadText ? `No clear band yet: ${esc(spreadText)}, so the datasets cannot place one. The direction is clear (below, finding by finding); where to stop needs runs at controlled row-group sizes on more than one dataset.` : "Not enough runs at different row-group sizes yet."}</p>
     <h4>Why, and measured column by column</h4>
     <p>A row group becomes one VertiPaq segment. Cold, every segment of a column is transcoded separately, so each extra segment adds its own fixed cost. Warm, the storage engine scans a column's segments in parallel, one thread per segment. A column held in nine segments can keep at most nine cores busy, however many the capacity has, so more segments let a scan use more of the machine.</p>
     <p>This is measured per column for cold (that column's probe minus the row-count probe) and per query for warm and hot. A suite total adds up columns and queries that move in opposite directions, plus fixed costs that do not move at all, and that is how a real trade-off can read as no effect. A count is a column or query whose ρ against the row-group count is beyond ±0.2.</p>
@@ -807,8 +831,9 @@ export function findRowGroups(ctx) {
     <p>Across writers, row-group count travels with everything else a writer does: Fabric Warehouse writes many small, uncompressed row groups, delta-rs a few big ones. Within delta-rs, row-group size is a setting someone chose and nothing else about the writer moves. It is the cleaner test, on fewer runs.</p>
     ${fixed.length ? table(head, rowsOf(fixed), "num") : `<p class="empty">No dataset has delta-rs runs at three or more row-group counts yet.</p>`}`;
   const status = !all.length ? "few" : nCold.length * 2 > all.length && nWarm.length * 2 > all.length ? "clear" : "noise";
-  return { id: "row-groups", title: "Row groups: a band that works cold and warm", short, status, html,
-    head: [bandText(bandT) || "—", "rows per row group: works cold and warm"],
+  return { id: "row-groups", title: "Row groups: cold and warm pull opposite ways", short, status, html,
+    head: bandT && bandT.band ? [bandText(bandT), "rows per row group: works cold and warm"]
+      : [all.length ? `${nCold.length} of ${all.length}` : "—", "datasets: more row groups, slower cold"],
     card: "Smaller row groups slow cold down, bigger ones slow warm down. In between is a band that works for both." };
 }
 
