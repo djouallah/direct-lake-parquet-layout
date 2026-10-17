@@ -607,25 +607,6 @@ export function propSparkVOrder(ctx) {
       <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Build cost is not on this page; the repository README measured about +8% build CU.</p>` });
 }
 
-export function propVOrder(ctx) {
-  const vo = (r) => r.writer === "spark_vorder", plain = (r) => r.writer === "spark_plain", drs = (r) => r.writer === "deltars_sorted";
-  const s = { on: ratioEffect(ctx, vo, plain, M.cu.get), cold: ratioEffect(ctx, vo, plain, M.cold.get),
-    warm: ratioEffect(ctx, vo, plain, M.warm.get), mb: ratioEffect(ctx, vo, plain, M.mb.get),
-    drs: ratioEffect(ctx, drs, vo, M.cu.get), drsCold: ratioEffect(ctx, drs, vo, M.cold.get), drsPlain: ratioEffect(ctx, drs, plain, M.cu.get) };
-  return propertyCard({ id: "vorder", title: "V-Order is reproducible", evidence: "observational",
-    status: s.drs.med === null || s.drs.n < 2 ? "few" : Math.abs(s.drs.med - 1) <= EFFECT_MIN ? "parity" : verdictOf(s.drs),
-    head: [s.drs.med !== null ? `${eff(s.drs)} CU` : "—", "a per-table sort in delta-rs, against V-Ordered Spark"],
-    card: "V-Order is a sort within each file, dictionary encoding, row-group sizing and compression, applied the same way to every table. A sort chosen for each table reproduces its read cost here.",
-    claim: s.drs.med !== null ? `V-Order is four write-time levers on ordinary parquet: a sort <b>within each file</b> (not a global sort), row-group distribution, dictionary encoding and compression. A delta-rs table whose global sort was <b>chosen for that table</b> (duckrun's picker profiles each table and picks the key that makes its columns smallest), with dictionaries kept on and row groups in the millions, read at <b>${eff(s.drs)}</b> the CU of V-Ordered Spark (${agree(s.drs)}) and ${eff(s.drsCold)} its cold time: the same, within the noise. Against Spark without V-Order it read at ${eff(s.drsPlain)}. The result is reproducible, with one difference worth stating: the delta-rs sort was chosen per table, while V-Order applies one generic rule to every table without being told anything about it.` : "Not measurable yet.",
-    body: `${effectTable([["V-Order on ÷ off, Direct Lake read CU", s.on], ["V-Order on ÷ off, cold", s.cold], ["V-Order on ÷ off, warm", s.warm], ["V-Order on ÷ off, table size", s.mb],
-      ["delta-rs sorted ÷ V-Order, Direct Lake read CU", s.drs], ["delta-rs sorted ÷ V-Order, cold", s.drsCold], ["delta-rs sorted ÷ Spark without V-Order, read CU", s.drsPlain]])}
-      ${groupStrips(ctx, [
-        { label: "Spark, V-Order", keep: vo, family: "spark", filled: true },
-        { label: "delta-rs, sorted", keep: drs, family: "delta-rs", filled: true },
-        { label: "Spark, no V-Order", keep: plain, family: "spark", filled: false }], M.cu.get, "Direct Lake read CU")}
-      <p>The V-Order comparison is controlled: same engine, same data, one resource profile switched (<code>readHeavyForPBI</code> against <code>writeHeavy</code>, which also changes optimizeWrite's bin size, so geometry moves with it). The delta-rs comparison is across engines: it shows the same levers get there without V-Order, not that the files are identical. Each lever has its own card: sort order, row-group size, dictionary encoding, compression. Source for what V-Order does: <a href="https://learn.microsoft.com/en-us/fabric/data-engineering/delta-optimization-and-v-order">Microsoft Learn</a>.</p>` });
-}
-
 export function propColumnSize(ctx) {
   const s = { cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold), warm: columnSlope(ctx, (c) => c.mb, (c) => c.warmRaw) };
   return propertyCard({ id: "column-size", title: "Column size", evidence: "observational", status: verdictOf(s.cold),
@@ -638,18 +619,6 @@ export function propColumnSize(ctx) {
         tip: `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)}` })),
         x: { label: "column compressed size", log: true, fmt: fmtMb }, y: { label: "extra cold time to load it", log: true, fmt: fmtMs }, w: 640, h: 360, trend: true })}
       <p class="note">A column's cost is its probe query minus the row-count probe in the same pass. Read CU is billed per session, not per column, so this card is measured on cold time.</p>` });
-}
-
-export function propCompression(ctx) {
-  const unc = (r) => r.compression === "UNCOMPRESSED", snap = (r) => r.compression === "SNAPPY";
-  const s = { cu: ratioEffect(ctx, unc, snap, M.cu.get), cold: ratioEffect(ctx, unc, snap, M.cold.get), warm: ratioEffect(ctx, unc, snap, M.warm.get) };
-  return propertyCard({ id: "compression", title: "Compression", evidence: "confounded", status: verdictOf(s.cu),
-    head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU, uncompressed against Snappy"],
-    card: "Uncompressed parquet cost more to read than Snappy. Only one engine writes it, so this is not separated from the engine.",
-    claim: s.cu.med !== null ? `Uncompressed files read at <b>${pct(s.cu)} Direct Lake CU</b> against Snappy (${agree(s.cu)}), cold ${pct(s.cold)}.` : "Not measurable yet.",
-    body: `${effectTable([["uncompressed ÷ Snappy, Direct Lake read CU", s.cu], ["uncompressed ÷ Snappy, cold", s.cold], ["uncompressed ÷ Snappy, warm", s.warm]])}
-      ${groupStrips(ctx, [{ label: "Snappy", keep: snap, family: "delta-rs", filled: true }, { label: "uncompressed", keep: unc, family: "warehouse", filled: false }], M.cu.get, "Direct Lake read CU")}
-      <p>Fabric Warehouse is the only engine here that writes uncompressed parquet, so this effect cannot be told apart from everything else the Warehouse does.</p>` });
 }
 
 export function propRowGroups(ctx) {
@@ -719,9 +688,9 @@ export function propDirectQuery(ctx) {
 }
 
 // The presentation's order: the three levers any writer controls (sort, dictionary encoding, row-group
-// size), then V-Order (Spark's bundle of them, and its reproduction), then DirectQuery, then the rest.
-export const PROPERTIES = [propSort, propDictionary, propRowGroups, propSparkVOrder, propVOrder, propDirectQuery,
-  propTableSize, propColumnSize, propCompression, propFileCount];
+// size), then Spark V-Order, then DirectQuery, then the rest.
+export const PROPERTIES = [propSort, propDictionary, propRowGroups, propSparkVOrder, propDirectQuery,
+  propTableSize, propColumnSize, propFileCount];
 
 // --------------------------------------------------------------------------------- frame sections
 

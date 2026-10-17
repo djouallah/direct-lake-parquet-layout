@@ -240,25 +240,6 @@ test("row-group card: a column's cold cost per doubling of rows per row group, w
   assert.equal(f.status, "clear");
 });
 
-test("the reproducibility card reads 'same within noise' when delta-rs and V-Order land together", () => {
-  const recs = [];
-  const items = {};
-  let id = 0;
-  for (const ds of ["aemo", "nyc", "bts"]) {
-    for (let i = 0; i < 3; i++) {
-      for (const [engine, cfg, cu] of [["spark", { resource_profile: "readHeavyForPBI" }, 1000], ["duckrun", { sorted: "true" }, 1020], ["spark", { resource_profile: "writeHeavy" }, 2000]]) {
-        const x = rec({ id: ++id, ds, engine, cfg });
-        x.items = { [`m${id}`]: { role: "semantic_model" } };
-        items[`m${id}`] = { Query: cu + i };
-        recs.push(x);
-      }
-    }
-  }
-  const f = r.propVOrder(r.context(recs, {}, { items }));
-  assert.equal(f.status, "parity");
-  assert.match(f.head[0], /^×1\.0\d CU$/);
-});
-
 test("home is one card per layout property; a card opens that property alone; no dataset switcher", () => {
   const recs = vorderFixture();
   const home = r.render(recs, {});
