@@ -134,8 +134,8 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
 <main>
 <div class="topbar">
 <nav class="tabs" aria-label="pages">
-  <a href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Results</a>
   <a href="how.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
+  <a href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Experiments</a>
   <a href="writers.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>Third-party writers</a>
 </nav>
 <nav class="subtabs" aria-label="sections" role="tablist">
@@ -146,7 +146,6 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
   <a href="#footer" role="tab" data-pane="footer">Footer</a>
   <a href="#sorting" role="tab" data-pane="sorting">Sorting</a>
   <a href="#global" role="tab" data-pane="global">Global vs per-file</a>
-  <a href="#ignore" role="tab" data-pane="ignore">What doesn't matter</a>
 </nav>
 </div>
 
@@ -463,17 +462,11 @@ footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); co
   <code>readHeavyForPBI</code> profile turns it on; it lowered cold load on 5 of 5 of our datasets.</p>
 </section>
 
-<section class="pane" data-name="ignore" aria-label="What doesn't matter">
-<h2>7. What does not matter</h2>
-<p><b>File count and file size.</b> Direct Lake loads whole columns and does no file or row-group
-  skipping, so neither ever separated writers in the cost data. The one rule: never cap a file below
-  one row group's bytes, or the writer has to cut the row group short.</p>
-</section>
 
 <footer>
   <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
     <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
-    the live numbers are on <a href="./">the results page</a>. Further reading:
+    the live numbers are on <a href="./">the experiments page</a>. Further reading:
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">how Direct Lake uses storage</a> (Microsoft),
     <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun's parquet layout</a>.</p>
 </footer>
