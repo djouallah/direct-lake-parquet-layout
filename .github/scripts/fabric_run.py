@@ -161,18 +161,22 @@ def main() -> int:
     #
     # **THE WHEEL'S VERSION SCHEME CHANGED ON 2026-09-03 (duckdb-python `77f2551d40`, "New
     # versioning scheme"), so the pin jumps 1.6.0.dev379 → 2.0.0.dev<YYMMDDHHMM>** — a BUILD
-    # TIMESTAMP, not a 379th iteration. `2.0.0.dev2609121639` is the newest `pip install --pre`
-    # resolves (2026-09-12), and it vendors core `81bc275dd6` (2026-09-10).
+    # TIMESTAMP, not a 379th iteration. The pin was `2.0.0.dev2609121639` (core `81bc275dd6`) from
+    # 2026-09-13 and is `2.0.0.dev2610161340` since 2026-10-17 — the newest `pip install --pre`
+    # resolves (uploaded 2026-10-16). Every aemo duckrun build on the old pin was OOM-killed on its
+    # first attempt (rss ~60 GiB of 62.8, no spill, retry green); read the sampler on the next one.
+    # The new wheel's core hash is NOT recorded here yet — the leg's `duckdb core:` line names it.
     #
     # **THE WHEEL AND `main` TRACK DIFFERENT BRANCHES — DO NOT READ THE TWO VERSION STRINGS AS ONE
-    # NUMBER LINE.** This wheel reports core **`v2.0.0-alpha41344 / 81bc275dd6`**, the v2.0 RELEASE
+    # NUMBER LINE.** The old wheel reported core **`v2.0.0-alpha41344 / 81bc275dd6`**, the v2.0 RELEASE
     # branch, which is what duckdb-python pins ("pin submodule to latest cyanoptera hash"); a CLI
     # built from `main` reported `v2.1.0-alpha41532` on the same day. An Iceberg-CTAS assertion
     # failure (`INTERNAL Error: Transformer for rule 'Statement' … IcebergTransaction::Commit`) seen
     # on the v2.1.0 line was read here as a blocker for this pin and was nothing of the kind.
     #
-    # **VERIFIED AGAINST THE REAL CATALOG: run 34739218189, 2026-09-13, every step green.** On THIS
-    # PIN: attach + 1,000,000-row round-trip through the OneLake Iceberg REST catalog;
+    # **VERIFIED AGAINST THE REAL CATALOG: run 34739218189, 2026-09-13, every step green — on the
+    # PREVIOUS pin, `2.0.0.dev2609121639`; the current one is unverified until an iceberg leg runs.**
+    # On that pin: attach + 1,000,000-row round-trip through the OneLake Iceberg REST catalog;
     # `encoding_stats` present in a local `COPY` (17 dictionary-encoded chunks) AND in the parquet
     # the ICEBERG WRITER produced (1) — duckdb#24957 is in the core writer and the iceberg writer
     # does not lose it; and the geometry pair honoured, rows + 1 GiB giving exactly 4 row groups
@@ -205,7 +209,8 @@ def main() -> int:
     #
     # **A DuckDB BUMP IS A SMALL EXPOSURE ON THE DUCKRUN LEG, AND THIS IS WHY.** DuckDB's whole job
     # there is to read Delta and hand out Arrow over the C Data Interface — a stable ABI — and the
-    # WRITING is delta-rs, pinned independently as duckrun's own `deltalake==1.5.0`. So the pin
+    # WRITING is delta-rs, which duckrun brings in itself (`deltalake==1.5.0` through 0.5.0, 1.6.6 under
+    # 0.5.2 — it moves with duckrun, which this list does not pin). So the pin
     # cannot move the bytes duckrun writes; what it can touch is duckrun's Python calls into the
     # duckdb module, which fail loudly at leg start rather than quietly in the output. On the
     # iceberg leg the same bump IS the writer, so that is the half a pin move can actually surprise.
@@ -214,7 +219,7 @@ def main() -> int:
     # duckrun injects it only into its OWN default spec or a bare `git+` URL (see `_requirement`
     # in fabric_remote.py); an explicit list like this one is passed through VERBATIM, so a bare
     # `duckrun` ships a notebook with no adapter and the leg dies at `dbt parse`.
-    pip = ["duckdb==2.0.0.dev2609121639", "duckrun[dbt]>=0.4.50", "pytz"]
+    pip = ["duckdb==2.0.0.dev2610161340","duckrun[dbt]>=0.4.50", "pytz"]
 
     # `run_python` RAISES when no attempt produced a result (a session-level failure, e.g. capacity
     # throttling). That item was created and did bill, so it is recorded before the failure
