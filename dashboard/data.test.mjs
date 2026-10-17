@@ -375,6 +375,19 @@ test("dictionary: without the declaration it says so and is only partly measured
   assert.match(f.short, /do not yet capture the footer declaration/);
 });
 
+test("row-group tension: bins pooled across engines, sweet spot where the slower tier is nearest its best", () => {
+  const runs = [];
+  // Cold best at few row groups, warm best at many; the middle bin is the compromise.
+  for (const [rgs, cold, warm] of [[8, 100, 200], [8, 102, 210], [32, 110, 120], [32, 112, 118], [128, 150, 100], [128, 155, 101]]) {
+    runs.push({ rgs, rowsPerRg: 1e8 / rgs, dl: { cold, warm }, cu: { dl: cold * 10 } });
+  }
+  const b = r.rowGroupBins(runs);
+  assert.equal(b.rows.length, 3);
+  assert.equal(b.sweet.rgs, 32);
+  assert.match(r.tensionSvg(b), /sweet spot/);
+  assert.equal(r.rowGroupBins(runs.slice(0, 2)), null);   // one bin is not a curve
+});
+
 test("csv quotes what needs quoting and reads nested keys", () => {
   const text = r.csvOf([{ a: "x,y", b: { c: 2 } }], ["a", "b.c"]);
   assert.equal(text, 'a,b.c\n"x,y",2');

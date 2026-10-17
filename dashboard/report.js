@@ -184,6 +184,79 @@ export function strips({ rows, x, w = 760, rowH = 24 }) {
 }
 const fmtMsOr = (v, x) => (x.fmt ? x.fmt(v) : String(v));
 
+/**
+ * Runs of one dataset binned by row-group count (octave bins, at least two runs each), with the
+ * median cold, warm and Direct Lake read CU per bin. Every engine is pooled: Power BI sees the file,
+ * not who wrote it (finding "Power BI never sees the writer").
+ */
+export function rowGroupBins(runs) {
+  const bins = new Map();
+  for (const r of runs) {
+    if (!r.rgs || !r.dl.cold || !r.dl.warm) continue;
+    const k = Math.round(Math.log2(r.rgs));
+    (bins.get(k) || bins.set(k, []).get(k)).push(r);
+  }
+  const rows = [...bins].filter(([, v]) => v.length >= 2).sort((a, b) => a[0] - b[0]).map(([, v]) => ({
+    n: v.length, rgs: median(v.map((r) => r.rgs)), lo: Math.min(...v.map((r) => r.rgs)), hi: Math.max(...v.map((r) => r.rgs)),
+    rowsPerRg: median(v.map((r) => r.rowsPerRg)), cold: median(v.map((r) => r.dl.cold)), warm: median(v.map((r) => r.dl.warm)),
+    cu: median(v.map((r) => r.cu.dl).filter(Boolean)) }));
+  if (rows.length < 2) return null;
+  const best = (k) => Math.min(...rows.map((x) => x[k]).filter((v) => v > 0));
+  const bc = best("cold"), bw = best("warm"), bu = best("cu");
+  for (const x of rows) {
+    x.relCold = x.cold / bc; x.relWarm = x.warm / bw; x.relCu = x.cu > 0 ? x.cu / bu : null;
+    x.worst = Math.max(x.relCold, x.relWarm);
+  }
+  const sweet = rows.reduce((a, b) => (b.worst < a.worst ? b : a));
+  return { rows, sweet };
+}
+
+const TENSION = [["relCold", "cold", "var(--c1)", ""], ["relWarm", "warm", "var(--c2)", "6 4"], ["relCu", "read CU", "var(--c3)", "2 3"]];
+
+/** The row-group tension chart: cold, warm and read CU as multiples of their own best bin. */
+export function tensionSvg(bins, { w = 460, h = 300 } = {}) {
+  if (!bins) return `<p class="empty">Not enough runs at different row-group counts yet.</p>`;
+  const { rows, sweet } = bins;
+  const m = { l: 52, r: 62, t: 16, b: 44 };
+  const xs = rows.map((x) => x.rgs);
+  const sx = scale(xs, true, m.l, w - m.r);
+  const ys = rows.flatMap((x) => [x.relCold, x.relWarm, x.relCu]).filter((v) => v > 0);
+  const top = Math.max(1.5, Math.max(...ys) * 1.05);
+  const fy = (v) => h - m.b - ((v - 1) / (top - 1)) * (h - m.b - m.t);
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="cold, warm and read CU against row groups">`];
+  // The sweet spot: the bin whose worse tier is closest to its own best.
+  const half = (x) => (rows.length > 1 ? Math.abs(sx.f(x * 1.41) - sx.f(x)) : 20);
+  parts.push(`<rect x="${(sx.f(sweet.rgs) - half(sweet.rgs)).toFixed(1)}" y="${m.t}" width="${(2 * half(sweet.rgs)).toFixed(1)}" height="${h - m.b - m.t}" class="sweet"/>`,
+    `<text x="${sx.f(sweet.rgs).toFixed(1)}" y="${m.t + 12}" class="sweet-label" text-anchor="middle">sweet spot</text>`);
+  for (const t of linTicks(1, top, 4).filter((v) => v >= 1)) {
+    const yy = fy(t);
+    parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`,
+      `<text x="${m.l - 6}" y="${(yy + 3.5).toFixed(1)}" class="tick" text-anchor="end">${t.toFixed(t % 1 ? 1 : 0)}×</text>`);
+  }
+  for (const x of rows) {
+    parts.push(`<text x="${sx.f(x.rgs).toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${fmtInt(x.rgs)}</text>`,
+      `<text x="${sx.f(x.rgs).toFixed(1)}" y="${h - m.b + 27}" class="tick dimtick" text-anchor="middle">${fmtRows(x.rowsPerRg)}</text>`);
+  }
+  const labels = [];
+  for (const [k, name, css, dash] of TENSION) {
+    const pts = rows.filter((x) => x[k] > 0);
+    if (pts.length < 2) continue;
+    parts.push(`<polyline points="${pts.map((x) => `${sx.f(x.rgs).toFixed(1)},${fy(x[k]).toFixed(1)}`).join(" ")}" class="tline" style="stroke:${css}"${dash ? ` stroke-dasharray="${dash}"` : ""}/>`);
+    for (const x of pts) {
+      parts.push(`<g class="pt" data-tip="${esc(`${name}: ${fmtX(x[k])} its best · ${fmtInt(x.lo)}–${fmtInt(x.hi)} row groups (~${fmtRows(x.rowsPerRg)} rows each) · ${x.n} runs · median ${name === "read CU" ? fmtCu(x.cu) : fmtMs(name === "cold" ? x.cold : x.warm)}`)}"><circle cx="${sx.f(x.rgs).toFixed(1)}" cy="${fy(x[k]).toFixed(1)}" r="4" fill="${css}" stroke="var(--bg)" stroke-width="1.5"/><circle cx="${sx.f(x.rgs).toFixed(1)}" cy="${fy(x[k]).toFixed(1)}" r="10" fill="transparent"/></g>`);
+    }
+    const last = pts[pts.length - 1];
+    labels.push({ x: sx.f(last.rgs) + 8, y: fy(last[k]) + 4, name });
+  }
+  // End labels pushed apart so two lines finishing at the same value stay readable.
+  labels.sort((p, q) => p.y - q.y);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 12);
+  for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label">${esc(l.name)}</text>`);
+  parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 3}" class="axis" text-anchor="middle">row groups in the table · rows per row group</text>`,
+    `<text transform="translate(12,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">× its own best</text></svg>`);
+  return parts.join("");
+}
+
 export function legend(families, { reorder = true, extra = "" } = {}) {
   const items = families.map((f) => `<span class="key"><svg viewBox="0 0 12 12" width="12" height="12">${fam(f).shape === "square"
     ? `<rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="${fam(f).css}"/>`
@@ -545,6 +618,8 @@ export function findRowGroups(ctx) {
     .filter((t) => t.distinct >= 3 && t.timed.length >= 5);
   const nCold = all.filter(coldSlower), nWarm = all.filter(warmFaster), against = all.filter(warmSlower);
   const nCu = all.filter((t) => t.cuRho !== null && t.cuRho > 0.2), cuKnown = all.filter((t) => t.cuRho !== null);
+  const sweetSpots = dsList(ctx).map((ds) => ({ ds, bins: rowGroupBins(ctx.runs.filter((r) => r.ds === ds)) }))
+    .filter((t) => t.bins);
   const short = all.length
     ? `Row groups are a trade. More of them made columns slower to load cold on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and cost more Direct Lake CU on ${nCu.length} of ${cuKnown.length}` : ""}, but made warm queries faster on ${nWarm.length}${against.length ? ` (slower on ${against.map((t) => label(t.ds)).join(", ")})` : ""}.`
     : "Not enough runs at different row-group counts yet.";
@@ -594,6 +669,13 @@ export function findRowGroups(ctx) {
   });
   const html = `
     <p class="claim">${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
+    <h4>The sweet spot, per dataset</h4>
+    <p>Every run of the dataset, binned by row-group count. Each line is that measure's median per bin, divided by its best bin, so 1.0× is the best it got and every line can share the axis. Cold wants fewer row groups and warm wants more. The shaded bin is where the slower of the two is closest to its own best. Hover a point for its run count: a bin of two runs is a hint, not a result.</p>
+    ${facets(sweetSpots.map((t) => ({ title: `${label(t.ds)} · ~${fmtInt(t.bins.sweet.rgs)} row groups, ~${fmtRows(t.bins.sweet.rowsPerRg)} rows each`, html: tensionSvg(t.bins) })))}
+    ${table(["dataset", "sweet spot: row groups", "rows per row group", "cold there", "warm there", "read CU there", "runs in the bin"],
+      sweetSpots.map((t) => [label(t.ds), `${fmtInt(t.bins.sweet.lo)}–${fmtInt(t.bins.sweet.hi)}`, fmtRows(t.bins.sweet.rowsPerRg),
+        fmtX(t.bins.sweet.relCold), fmtX(t.bins.sweet.relWarm), t.bins.sweet.relCu ? fmtX(t.bins.sweet.relCu) : "—", fmtInt(t.bins.sweet.n)]), "num")}
+    <h4>Why, and measured column by column</h4>
     <p>A row group becomes one VertiPaq segment. Cold, every segment of a column is transcoded separately, so each extra segment adds its own fixed cost. Warm, the storage engine scans a column's segments in parallel, one thread per segment. A column held in nine segments can keep at most nine cores busy, however many the capacity has, so more segments let a scan use more of the machine.</p>
     <p>This is measured per column for cold (that column's probe minus the row-count probe) and per query for warm and hot. A suite total adds up columns and queries that move in opposite directions, plus fixed costs that do not move at all, and that is how a real trade-off can read as no effect. A count is a column or query whose ρ against the row-group count is beyond ±0.2.</p>
     ${legend(familiesIn(all.flatMap((t) => t.R)))}
