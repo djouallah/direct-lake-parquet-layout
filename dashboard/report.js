@@ -620,17 +620,56 @@ export function propSparkVOrder(ctx) {
       <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Build cost is not on this page; the repository's findings measured about +8% build CU.</p>` });
 }
 
+/** The controlled row-group pair: duckrun on aemo, same versions, same `date, time, price` sort, only
+ *  `row_group_size` moved (auto, ~3.9M rows, 37 groups -> 131,072 rows, 1,099 groups). */
+const RG_PAIR = { before: ["38998148550", "39024032584"], after: "39029139553" };
+
+function rgControlled(ctx) {
+  const before = RG_PAIR.before.map((id) => ctx.runs.find((r) => r.id === id)).filter(Boolean);
+  const after = ctx.runs.find((r) => r.id === RG_PAIR.after);
+  if (!before.length || !after) return null;
+  const mid = (f) => median(before.map(f).filter((v) => v > 0));
+  const row = (lab, f, fmt) => {
+    const b = mid(f), a = f(after);
+    return b > 0 && a > 0 ? [lab, fmt(b), fmt(a), `<b>${a >= b ? fmtX(a / b) : `÷${Math.round(b / a)}`}</b>`] : null;
+  };
+  const rows = [
+    row("rows per row group", (r) => r.rowsPerRg, fmtRows),
+    row("row groups", (r) => r.rgs, fmtInt),
+    row("size on disk", (r) => r.mb, fmtMb),
+    row("cold, whole suite", (r) => r.dl && r.dl.cold, fmtMs),
+    row("warm, whole suite", (r) => r.dl && r.dl.warm, fmtMs),
+    row("Direct Lake read CU", (r) => r.cu && r.cu.dl, fmtCu),
+  ];
+  const colCold = (id, col) => { const c = ctx.columns.find((x) => x.runId === id && x.column === col); return c ? c.cold : null; };
+  const cols = [...new Set(ctx.columns.filter((c) => c.runId === after.id).map((c) => c.column))];
+  const colRatios = [];
+  for (const col of cols) {
+    const b = median(RG_PAIR.before.map((id) => colCold(id, col)).filter((v) => v > 0)), a = colCold(after.id, col);
+    if (b > 0 && a > 0) { rows.push([`<code>${esc(col)}</code> cold`, fmtMs(b), fmtMs(a), `<b>${fmtX(a / b)}</b>`]); colRatios.push(a / b); }
+  }
+  return { rows: rows.filter(Boolean), colMed: colRatios.length ? median(colRatios) : null,
+    cold: after.dl && mid((r) => r.dl && r.dl.cold) ? after.dl.cold / mid((r) => r.dl && r.dl.cold) : null,
+    rgX: after.rgs / mid((r) => r.rgs) };
+}
+
 export function propRowGroups(ctx) {
   const rpr = (r) => r.rowsPerRg;
   const rg = Object.fromEntries(ctx.runs.map((r) => [r.id, r.rowsPerRg]));
   const s = { cu: runSlope(ctx, rpr, M.cu.get), cold: runSlope(ctx, rpr, M.cold.get), warm: runSlope(ctx, rpr, M.warm.get),
     col: columnSlope(ctx, (c) => rg[c.runId], (c) => c.cold), drs: runSlope(ctx, rpr, M.cu.get, (r) => r.family === "delta-rs") };
   const bandPts = bandPoints(ctx), bandT = bandTrend(bandPts, 2);
+  const ctl = rgControlled(ctx);
+  const ctlClaim = ctl && ctl.colMed ? ` One controlled run, same writer and sort, only the row-group size moved: ${fmtX(ctl.rgX)} the row groups (131,072 rows each) made a column's cold load <b>${fmtX(ctl.colMed)}</b> (median over columns) and the whole cold suite ${fmtX(ctl.cold)}; warm did not move.` : "";
   return propertyCard({ id: "row-groups", title: "Row-group size", evidence: "observational", status: verdictOf(s.col),
     head: [s.col.med !== null ? `${pct(s.col)} cold` : "—", "a column's cold cost each time row groups double in rows"],
-    card: "Bigger row groups make the cold load cheaper; smaller ones help warm a little. The effect is real but second-order.",
-    claim: s.col.med !== null ? `Twice the rows per row group: a column's cold cost <b>${pct(s.col)}</b> (${agree(s.col)}), Direct Lake read CU ${pct(s.cu)} (${agree(s.cu)}), warm ${pct(s.warm)}. ${bandT && bandT.band ? `Both cold and warm stay near the median from ${esc(bandText(bandT))} rows per group.` : "No single band of row-group sizes stands out across datasets."}` : "Not measurable yet.",
+    card: "Bigger row groups make the cold load cheaper, and below about a million rows per group the cost climbs fast. Warm barely moves.",
+    claim: s.col.med !== null ? `Twice the rows per row group: a column's cold cost <b>${pct(s.col)}</b> (${agree(s.col)}), Direct Lake read CU ${pct(s.cu)} (${agree(s.cu)}), warm ${pct(s.warm)}. ${bandT && bandT.band ? `Both cold and warm stay near the median from ${esc(bandText(bandT))} rows per group.` : "No single band of row-group sizes stands out across datasets."}${ctlClaim}` : "Not measurable yet.",
     body: `${effectTable([["column cold, per doubling of rows per group", s.col], ["Direct Lake read CU, per doubling", s.cu], ["cold suite, per doubling", s.cold], ["warm suite, per doubling", s.warm], ["Direct Lake read CU, delta-rs only", s.drs]])}
+      ${ctl ? `<h3>Controlled: one switch</h3>
+      <p>duckrun on aemo, the same writer versions and the same <code>date, time, price</code> sort; only <code>row_group_size</code> moved. Before is the median of two runs, after is one run, so read it as one sample per arm.</p>
+      ${table(["aemo, duckrun", "default", "131,072 rows per group", "change"], ctl.rows, "num")}
+      <p class="note">Every chunk has a dictionary page in both arms. <code>DUID</code> carries a separate, larger cold penalty on both arms of this pair that row-group size does not touch: it loaded in under a second on the September runs.</p>` : ""}
       ${bandPanels(bandPts, bandT, false)}
       <p class="note">The lines weigh every dataset equally: each dataset's own value per octave of rows per group, then the median across datasets.</p>` });
 }
