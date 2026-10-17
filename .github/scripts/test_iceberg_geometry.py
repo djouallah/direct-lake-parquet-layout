@@ -84,7 +84,7 @@ def create_sql(props, temporary=False):
 
 # ------------------------------------------------------------------ iceberg_geometry()
 
-CEILING = 2 * 1073741824
+CEILING = 1 * 1073741824
 ROWS, BYTES, FILE, PAGE, PER_FILE = (
     "write.parquet.row-group-size", "write.parquet.row-group-size-bytes",
     "write.target-file-size-bytes", "write.parquet.page-size-bytes", "write.parquet.row-groups-per-file")
@@ -105,11 +105,12 @@ def test_a_pinned_row_count_is_passed_as_rows_with_no_conversion():
 
 
 @pytest.mark.parametrize("rg,mb", [("auto", "auto"), ("5000000", "auto"), ("auto", "64"), ("16000000", "1024")])
-def test_only_the_row_count_can_close_a_row_group(rg, mb):
+def test_one_generic_byte_limit_for_row_groups_and_files(rg, mb):
     """The writer closes a row group at the row count OR the byte budget, whichever comes first, and
-    clamps the byte budget DOWN to the file target. So both byte limits sit at one ceiling far above
-    any row group this project writes, and `file_size_mb` — whose form default is 64 MB, which
-    would cap every row group at 64 MB — does not reach this leg at all."""
+    clamps the byte budget DOWN to the file target. So both sit at ONE value, 1 GiB, for every
+    dataset: ~1 GiB files, and rows wider than ~268 B get row groups under 4M rather than bigger
+    files. `file_size_mb` — whose form default of 64 MB would cap every row group at 64 MB — does
+    not reach this leg."""
     g = geometry(rg, mb)
     assert g[BYTES] == g[FILE] == CEILING
 
@@ -128,7 +129,7 @@ def test_the_page_size_is_duckruns_1_MiB_on_every_dispatch(rg):
 
 @pytest.mark.parametrize("rg", ["auto", "5000000"])
 def test_one_row_group_per_file(rg):
-    """Without it only the 2 GiB file ceiling rotates files, and a mart lands as one multi-GB file."""
+    """Sent although upstream ignores it today (see the macro): it takes effect when that is fixed."""
     assert geometry(rg, "auto")[PER_FILE] == 1
 
 
