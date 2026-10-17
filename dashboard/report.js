@@ -266,27 +266,27 @@ export function findColdWarm(ctx) {
   const ratios = per.map((p) => p.ratio), dqr = per.map((p) => p.dqRatio).filter(Boolean);
   const rhos = per.map((p) => p.rho).filter((r) => r !== null);
   const short = per.length
-    ? `The first query after a refresh costs ${range(ratios, fmtX)} the second in Direct Lake; the parquet layout matters for that first one.`
+    ? `In Direct Lake, cold costs ${range(ratios, fmtX)} warm; the parquet layout matters for cold.`
     : "No run carries both a cold and a warm Direct Lake time yet.";
   const chart = facets(per.map((p) => ({
     title: `${label(p.ds)} · cold ${fmtX(p.ratio)} warm`,
     html: scatter({
       points: p.R.map((r) => ({ x: r.dl.warm, y: r.dl.cold, family: r.family, filled: r.reorders,
         tip: runTip(r, ` · cold ${fmtMs(r.dl.cold)} · warm ${fmtMs(r.dl.warm)}`) })),
-      x: { label: "warm: second visit, data in memory", log: true, fmt: fmtMs },
-      y: { label: "cold: first visit after deploy", log: true, fmt: fmtMs },
+      x: { label: "warm query suite total", log: true, fmt: fmtMs },
+      y: { label: "cold query suite total", log: true, fmt: fmtMs },
       guides: [1, 10], w: 420, h: 290 }) })));
   const rows = per.map((p) => [label(p.ds), fmtInt(p.R.length), fmtX(p.ratio), rhoText(p.rho),
     p.dqRatio ? fmtX(p.dqRatio) : "—"]);
   const html = `
-    <p class="claim">${per.length ? `In Direct Lake the first visit cost <b>${range(ratios, fmtX)}</b> the second, median per dataset. Within a dataset a run's cold time says ${rhos.length ? `${strength(median(rhos)) === "strong" ? "a lot" : "little"} about its warm time (ρ ${range(rhos, rhoText)})` : "nothing measurable yet about its warm time"}. ${dqr.length ? `DirectQuery has no transcode step and its first visit cost only ${range(dqr, fmtX)} its second.` : ""}` : short}</p>
+    <p class="claim">${per.length ? `In Direct Lake, cold cost <b>${range(ratios, fmtX)}</b> warm, median per dataset. Within a dataset a run's cold time says ${rhos.length ? `${strength(median(rhos)) === "strong" ? "a lot" : "little"} about its warm time (ρ ${range(rhos, rhoText)})` : "nothing measurable yet about its warm time"}. ${dqr.length ? `DirectQuery has no transcode step: its cold cost only ${range(dqr, fmtX)} its warm.` : ""}` : short}</p>
     <p>Cold is the transcode: VertiPaq reading each column out of parquet and building its own segments. Warm is a second visit with those segments already in memory. They answer different questions, so every finding below reports them separately.</p>
     ${legend(familiesIn(per.flatMap((p) => p.R)))}
     ${chart}
     ${table(["dataset", "runs", "cold ÷ warm (Direct Lake)", "ρ cold vs warm", "cold ÷ warm (DirectQuery)"], rows, "num")}`;
-  return { id: "cold-warm", title: "First load against every query after", short, status: per.length ? "clear" : "few", html,
-    head: [range(ratios, fmtX), "slower: the first query after a refresh, against the second"],
-    card: "Layout matters most for the first query after a refresh, when Power BI loads the data from the files. After that the data is in memory." };
+  return { id: "cold-warm", title: "Cold against warm", short, status: per.length ? "clear" : "few", html,
+    head: [range(ratios, fmtX), "slower cold than warm"],
+    card: "Cold is where the parquet layout matters. Warm, the data is already in VertiPaq." };
 }
 
 export function findColumnSize(ctx) {
@@ -323,7 +323,7 @@ export function findColumnSize(ctx) {
     ${dropped ? `<p class="note">${fmtInt(dropped)} column-runs read faster than the row-count probe itself, so they have no positive extra cost to plot on a log axis. They count in ρ.</p>` : ""}`;
   return { id: "column-size", title: "Small columns load fast", short, status: rc.length ? "clear" : "few", html,
     head: [rc.length ? `${rc.filter((x) => x >= 0.4).length} of ${rc.length}` : "—", "datasets where bigger columns loaded slower"],
-    card: "Small columns load fast. The less space a column takes on disk, the quicker Power BI loads it the first time." };
+    card: "Small columns are fast cold. The less space a column takes on disk, the lower its cold cost." };
 }
 
 /**
@@ -593,7 +593,7 @@ export function findRowGroups(ctx) {
     }];
   });
   const html = `
-    <p class="claim">${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour the first visit and the bill; more, smaller ones favour the visits after.` : short}</p>
+    <p class="claim">${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
     <p>A row group becomes one VertiPaq segment. Cold, every segment of a column is transcoded separately, so each extra segment adds its own fixed cost. Warm, the storage engine scans a column's segments in parallel, one thread per segment. A column held in nine segments can keep at most nine cores busy, however many the capacity has, so more segments let a scan use more of the machine.</p>
     <p>This is measured per column for cold (that column's probe minus the row-count probe) and per query for warm and hot. A suite total adds up columns and queries that move in opposite directions, plus fixed costs that do not move at all, and that is how a real trade-off can read as no effect. A count is a column or query whose ρ against the row-group count is beyond ±0.2.</p>
     ${legend(familiesIn(all.flatMap((t) => t.R)))}
@@ -603,9 +603,9 @@ export function findRowGroups(ctx) {
     <p>Across writers, row-group count travels with everything else a writer does: Fabric Warehouse writes many small, uncompressed row groups, delta-rs a few big ones. Within delta-rs, row-group size is a setting someone chose and nothing else about the writer moves. It is the cleaner test, on fewer runs.</p>
     ${fixed.length ? table(head, rowsOf(fixed), "num") : `<p class="empty">No dataset has delta-rs runs at three or more row-group counts yet.</p>`}`;
   const status = !all.length ? "few" : nCold.length * 2 > all.length && nWarm.length * 2 > all.length ? "clear" : "noise";
-  return { id: "row-groups", title: "Row groups: fewer for the first load, more for later", short, status, html,
-    head: [all.length ? `${nCold.length} of ${all.length}` : "—", "datasets where more row groups meant a slower first load"],
-    card: "Fewer, bigger row groups: a faster first load and a smaller bill. More, smaller ones: faster queries once the data is in memory." };
+  return { id: "row-groups", title: "Row groups: fewer for cold, more for warm", short, status, html,
+    head: [all.length ? `${nCold.length} of ${all.length}` : "—", "datasets where more row groups meant slower cold"],
+    card: "Fewer, bigger row groups: faster cold and less CU. More, smaller ones: faster warm." };
 }
 
 export function findVOrder(ctx) {
@@ -663,7 +663,7 @@ export function findVOrder(ctx) {
       <p class="note">Turning Warehouse V-Order off is irreversible on a warehouse, so it has been measured rarely.</p>` : ""}`;
   return { id: "vorder", title: "V-Order", short, status: coldWins || cuClear ? "clear" : pairs.length ? "noise" : "few", html,
     head: [cuRatios.length ? `up to ${fmtX(Math.max(...cuRatios))}` : "—", "less capacity to read Spark tables written with V-Order"],
-    card: "In Spark, turning V-Order on made the tables cheaper to read and faster to load the first time." };
+    card: "In Spark, turning V-Order on made the tables cheaper to read and faster cold." };
 }
 
 export function findTableSize(ctx) {
@@ -792,7 +792,7 @@ export function findReadCu(ctx) {
       p.vDq.best ? `${esc(wl(p, p.vDq.best))} ${badge(p.vDq.status)}` : "—", fmtX(p.ratio)]), "num")}`;
   return { id: "read-cu", title: "What reading costs", short, status: per.length ? "clear" : "few", html,
     head: [ratios.length ? range(ratios, fmtX) : "—", "more capacity to answer the same queries in DirectQuery"],
-    card: "Reading costs capacity units. DirectQuery costs far more than Direct Lake, and in Direct Lake most of the bill is the first load." };
+    card: "DirectQuery costs far more CU than Direct Lake. In Direct Lake, most of the bill is cold." };
 }
 
 // --------------------------------------------------------------------------------- frame sections
