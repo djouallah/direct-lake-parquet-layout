@@ -18,8 +18,11 @@ import record  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _no_ambient_record(monkeypatch):
-    """RUN_RECORD leaking in from the environment would make every test write to one real file."""
+    """RUN_RECORD leaking in from the environment would make every test write to one real file.
+    DUCKDB_SORT_BY is workflow-level env in CI, so a dispatch with a key would add a declared
+    `sort_by` to every record these tests write."""
     monkeypatch.delenv("RUN_RECORD", raising=False)
+    monkeypatch.delenv("DUCKDB_SORT_BY", raising=False)
 
 
 def test_unset_run_record_is_a_no_op():
@@ -206,3 +209,14 @@ def test_the_sort_key_lands_outside_layout_config(tmp_path, monkeypatch):
     doc = json.loads(p.read_text(encoding="utf-8"))
     assert doc == {"dbt": {"duckrun": {"sort_by_auto": {"fct_summary": ["date", "time"]}}}}
     assert "layout" not in doc
+
+
+def test_an_explicit_key_is_recorded_as_the_declared_sort(tmp_path, monkeypatch):
+    # The `sort_by` dispatch input: the declaration, under the spelling the dashboard reads.
+    p = tmp_path / "f.json"
+    monkeypatch.setenv("RUN_RECORD", str(p))
+    monkeypatch.setenv("DATASET", "aemo")
+    monkeypatch.setenv("DUCKDB_SORT_BY", "date, time,price")
+    _fabric_run()._record_sort_keys("no auto line", "duckrun")
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    assert doc == {"dbt": {"duckrun": {"sort_by": {"fct_summary": ["date", "time", "price"]}}}}
