@@ -2398,7 +2398,8 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   iceberg writer, dev379 added duckdb#24957's footer `encoding_stats`, and the pin is
   `2.0.0.dev2610161340` since 2026-10-17 (it was `2.0.0.dev2609121639`, core
   `v2.0.0-alpha41344 / 81bc275dd6`, from 2026-09-13 — every aemo duckrun build on that one was
-  OOM-killed on attempt 1 at ~60 GiB rss and saved by the retry). The new core hash and the
+  OOM-killed on attempt 1 at ~60 GiB rss and saved by the retry). New core `v2.0.0-alpha48624 /
+  ffe0b8b7a2`; tpcds builds at 8 cores / 4 threads on attempt 1 (run 39004631159). The
   catalog verification below are still the OLD pin's until an iceberg leg runs. **THE WHEEL TRACKS
   THE v2.0 RELEASE BRANCH AND THE SMOKE WORKFLOW'S CLI TRACKS `main` (v2.1.0-alpha), so a red smoke
   does not condemn the pin** — TODO.md's Iceberg-CTAS break is a v2.1.0 finding. The pin is

@@ -165,7 +165,8 @@ def main() -> int:
     # 2026-09-13 and is `2.0.0.dev2610161340` since 2026-10-17 — the newest `pip install --pre`
     # resolves (uploaded 2026-10-16). Every aemo duckrun build on the old pin was OOM-killed on its
     # first attempt (rss ~60 GiB of 62.8, no spill, retry green); read the sampler on the next one.
-    # The new wheel's core hash is NOT recorded here yet — the leg's `duckdb core:` line names it.
+    # The new wheel reports core `v2.0.0-alpha48624 / ffe0b8b7a2` (run 39004631159), and is the first
+    # build here to take tpcds at 8 cores / 4 threads on attempt 1 (peak rss 54-56 GiB, spill 48.6 GiB).
     #
     # **THE WHEEL AND `main` TRACK DIFFERENT BRANCHES — DO NOT READ THE TWO VERSION STRINGS AS ONE
     # NUMBER LINE.** The old wheel reported core **`v2.0.0-alpha41344 / 81bc275dd6`**, the v2.0 RELEASE
