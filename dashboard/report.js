@@ -718,10 +718,10 @@ export function propDirectQuery(ctx) {
       <p>DirectQuery is not a layout property; it is the price of not loading the data into VertiPaq at all.</p>` });
 }
 
-// The first three are the presentation's message: V-Order in Spark, then the two levers any writer
-// controls (dictionary encoding, row-group size). The rest follow by what they do to read CU.
-export const PROPERTIES = [propSparkVOrder, propDictionary, propRowGroups, propTableSize, propVOrder, propSort, propColumnSize,
-  propCompression, propFileCount, propDirectQuery];
+// The presentation's order: the three levers any writer controls (sort, dictionary encoding, row-group
+// size), then V-Order (Spark's bundle of them, and its reproduction), then DirectQuery, then the rest.
+export const PROPERTIES = [propSort, propDictionary, propRowGroups, propSparkVOrder, propVOrder, propDirectQuery,
+  propTableSize, propColumnSize, propCompression, propFileCount];
 
 // --------------------------------------------------------------------------------- frame sections
 
