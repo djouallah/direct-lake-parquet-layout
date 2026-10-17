@@ -119,7 +119,8 @@ test("a dictionary gap is a column whose dictionary pages are fewer than its row
 
 test("the committed probe map is exactly what the DAX suite says", () => {
   assert.deepEqual(PROBE_COLUMNS, d.probeMapFrom(source()));
-  assert.equal(readFileSync(new URL("./probe_columns.js", import.meta.url), "utf8"), moduleText(PROBE_COLUMNS));
+  const text = readFileSync(new URL("./probe_columns.js", import.meta.url), "utf8").split("\r\n").join("\n");
+  assert.equal(text, moduleText(PROBE_COLUMNS));
 });
 
 test("the probe map covers every dataset's mart and never maps the row-count control", () => {
