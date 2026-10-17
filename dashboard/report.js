@@ -718,8 +718,10 @@ export function propDirectQuery(ctx) {
       <p>DirectQuery is not a layout property; it is the price of not loading the data into VertiPaq at all.</p>` });
 }
 
-export const PROPERTIES = [propSparkVOrder, propTableSize, propVOrder, propSort, propColumnSize, propRowGroups, propCompression,
-  propDictionary, propFileCount, propDirectQuery];
+// The first three are the presentation's message: V-Order in Spark, then the two levers any writer
+// controls (dictionary encoding, row-group size). The rest follow by what they do to read CU.
+export const PROPERTIES = [propSparkVOrder, propDictionary, propRowGroups, propTableSize, propVOrder, propSort, propColumnSize,
+  propCompression, propFileCount, propDirectQuery];
 
 // --------------------------------------------------------------------------------- frame sections
 
@@ -779,7 +781,7 @@ function methodSection(ctx) {
 
 // ------------------------------------------------------------------------------------- the page
 
-// The home page: one card per LAYOUT PROPERTY, ranked by what it does to read CU (see PROPERTIES).
+// The home page: one card per LAYOUT PROPERTY, in PROPERTIES order.
 export const FINDINGS = PROPERTIES;
 export const EXTRA_FINDINGS = [];
 
