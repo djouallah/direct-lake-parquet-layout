@@ -813,8 +813,9 @@ export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
 
 // Writers left off this tab by the user's call (2026-10-18): unsorted delta-rs is not a layout anyone
 // would ship, and V-Order is ON by default on a warehouse, so "Warehouse, V-Order off" is a setting
-// someone has to go and turn off. Their runs stay in the data and on every other page.
-export const PERF_HIDDEN = ["deltars_unsorted", "dwh_novorder"];
+// someone has to go and turn off. readHeavyForSpark enables no V-Order (Microsoft's profile reference)
+// and is neither side of the Spark comparison. Their runs stay in the data and on every other page.
+export const PERF_HIDDEN = ["deltars_unsorted", "dwh_novorder", "spark_readHeavyForSpark"];
 
 /** One entry per (dataset, writer) measured in `phase`, datasets in page order, writers in `WRITERS` order. */
 export function perfGroups(ctx, phase = "dl") {

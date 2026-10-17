@@ -393,9 +393,10 @@ test("performance tab: read CU only, writer x dataset, 1.0x is the cheapest writ
   assert.match(r.render(recs, { page: "perf", phase: "dq" }, ledger).html, /class="pill on"[^>]*>DirectQuery/);
 });
 
-test("performance tab: unsorted delta-rs and a warehouse with V-Order turned off are left off", () => {
+test("performance tab: unsorted delta-rs, a warehouse with V-Order turned off and readHeavyForSpark are left off", () => {
   const recs = [rec({ id: 1, cfg: { sorted: "true" } }), rec({ id: 2 }),
-    rec({ id: 3, engine: "dwh" }), rec({ id: 4, engine: "dwh", ord: { vorder_enabled: false } })];
+    rec({ id: 3, engine: "dwh" }), rec({ id: 4, engine: "dwh", ord: { vorder_enabled: false } }),
+    rec({ id: 5, engine: "spark", cfg: { resource_profile: "readHeavyForSpark" } })];
   const groups = r.perfGroups(r.context(recs), "dl");
   assert.deepEqual(groups.map((g) => g.key), ["deltars_sorted", "dwh"]);
 });
