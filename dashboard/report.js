@@ -218,93 +218,123 @@ export function rowGroupBins(runs) {
 // draws each dataset as one line, as a multiple of that dataset's own best bin. Where the lines all
 // sit near 1.0x at once is the interval the datasets converge on.
 
-const DS_ORDER = ["aemo", "nyc", "bts", "green", "cms", "tpcds"];
+// ------------------------------------------------------------- the row-group band, every dataset
+//
+// A row-group size that works both cold and warm, from the data alone. Every run is placed at its
+// own average rows per row group and its cold and warm are divided by its dataset's median run, so
+// datasets share one axis. Runs are grouped by OCTAVE of rows per row group (1M, 2M, 4M, 8M, 16M);
+// an octave counts when it holds at least `BAND_MIN_RUNS` runs from at least two datasets. The band
+// is the longest run of consecutive counting octaves where cold AND warm are both within
+// `BAND_WITHIN` of the median. It is stated as a range, never as one number.
 
-export function rowsPerRgCurves(ctx) {
-  const out = {};
+export const BAND_WITHIN = 1.10;
+export const BAND_MIN_RUNS = 10;
+const DS_ORDER = ["aemo", "nyc", "bts", "green", "cms", "tpcds"];
+const octave = (x) => Math.round(Math.log2(x / 1e6));
+const octaveRows = (k) => 2 ** k * 1e6;
+
+export function bandPoints(ctx) {
+  const pts = [];
   for (const ds of dsList(ctx)) {
-    const bins = new Map();
-    for (const r of ctx.runs) {
-      if (r.ds !== ds || !r.rowsPerRg || !r.dl.cold || !r.dl.warm) continue;
-      const k = Math.round(Math.log2(r.rowsPerRg / 1e6));
-      (bins.get(k) || bins.set(k, []).get(k)).push(r);
-    }
-    const rows = [...bins].filter(([, v]) => v.length >= 2).sort((a, b) => a[0] - b[0]).map(([k, v]) => ({
-      k, n: v.length, cold: median(v.map((r) => r.dl.cold)), warm: median(v.map((r) => r.dl.warm)) }));
-    if (rows.length < 2) continue;
-    for (const m of ["cold", "warm"]) {
-      const best = Math.min(...rows.map((x) => x[m]));
-      for (const x of rows) x[`rel_${m}`] = x[m] / best;
-    }
-    out[ds] = rows;
+    const R = ctx.runs.filter((r) => r.ds === ds && r.rowsPerRg && r.dl.cold && r.dl.warm);
+    if (R.length < 5) continue;
+    const mc = median(R.map((r) => r.dl.cold)), mw = median(R.map((r) => r.dl.warm));
+    for (const r of R) pts.push({ ds, run: r, x: r.rowsPerRg, cold: r.dl.cold / mc, warm: r.dl.warm / mw });
+  }
+  return pts;
+}
+
+function octaves(pts) {
+  const bins = new Map();
+  for (const p of pts) (bins.get(octave(p.x)) || bins.set(octave(p.x), []).get(octave(p.x))).push(p);
+  return [...bins].sort((a, b) => a[0] - b[0]).map(([k, v]) => ({ k, x: octaveRows(k), n: v.length,
+    datasets: new Set(v.map((p) => p.ds)).size, cold: median(v.map((p) => p.cold)), warm: median(v.map((p) => p.warm)) }));
+}
+
+export function bandTrend(pts) {
+  const rows = octaves(pts).filter((x) => x.datasets >= 2);
+  if (rows.length < 2) return null;
+  for (const x of rows) x.thin = x.n < BAND_MIN_RUNS;
+  let best = [], cur = [];
+  for (const x of rows.filter((r) => !r.thin)) {
+    const ok = Math.max(x.cold, x.warm) <= BAND_WITHIN && (!cur.length || x.k === cur[cur.length - 1].k + 1);
+    if (Math.max(x.cold, x.warm) <= BAND_WITHIN) cur = ok ? [...cur, x] : [x];
+    else cur = [];
+    if (cur.length > best.length) best = [...cur];
+  }
+  const band = best.length ? { from: best[0], to: best[best.length - 1] } : null;
+  return { rows, band };
+}
+
+const octaveText = (x) => fmtRows(x).replace(/\.0(?=[KMB])/, "");
+export const bandText = (t) => (t && t.band ? `${octaveText(t.band.from.x)} to ${octaveText(t.band.to.x)}` : null);
+
+/** Per dataset: its own octaves (at least two runs each), cold and warm against its median run. */
+export function datasetLines(pts) {
+  const out = {};
+  for (const ds of DS_ORDER) {
+    const rows = octaves(pts.filter((p) => p.ds === ds)).filter((x) => x.n >= 2);
+    if (rows.length >= 2) out[ds] = rows;
   }
   return out;
 }
 
-/**
- * The blog's chart, every dataset at once: per rows-per-row-group bin, each dataset's cold and warm as
- * a multiple of its own best bin, then the MEDIAN across the datasets measured there (at least two).
- * The sweet spot is the bin where the slower of the two pooled lines is lowest.
- */
-export function pooledTension(curves) {
-  const ks = [...new Set(Object.values(curves).flatMap((rows) => rows.map((x) => x.k)))].sort((a, b) => a - b);
-  const rows = ks.map((k) => {
-    const here = Object.entries(curves).map(([ds, rs]) => [ds, rs.find((x) => x.k === k)]).filter(([, x]) => x);
-    return { k, datasets: here.length, cold: median(here.map(([, x]) => x.rel_cold)),
-      warm: median(here.map(([, x]) => x.rel_warm)), per: here };
-  }).filter((x) => x.datasets >= 2);
-  if (rows.length < 2) return null;
-  const sweet = rows.reduce((a, b) => (Math.max(b.cold, b.warm) < Math.max(a.cold, a.warm) ? b : a));
-  return { rows, sweet };
-}
-
-const binLabel = (k) => fmtRows(2 ** k * 1e6);
-
-export function pooledTensionSvg(p, { w = 760, h = 360 } = {}) {
-  if (!p) return `<p class="empty">Not enough datasets measured at different row-group sizes yet.</p>`;
-  const { rows, sweet } = p;
-  // More row groups to the RIGHT, as in the blog: big row groups (few of them) on the left.
-  const ks = rows.map((x) => x.k).sort((a, b) => b - a);
-  const m = { l: 56, r: 70, t: 24, b: 58 };
-  const fx = (k) => m.l + ((ks[0] - k) / (ks[0] - ks[ks.length - 1] || 1)) * (w - m.l - m.r);
-  const dots = rows.flatMap((x) => x.per.flatMap(([, d]) => [d.rel_cold, d.rel_warm]));
-  const top = Math.max(1.6, Math.min(2.5, Math.max(...dots) * 1.03));
-  const fy = (v) => h - m.b - ((Math.min(v, top) - 1) / (top - 1)) * (h - m.b - m.t);
-  const step = (w - m.l - m.r) / Math.max(1, ks.length - 1);
-  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart wide" role="img" aria-label="cold and warm against row-group size, every dataset">`,
-    `<rect x="${(fx(sweet.k) - step / 2).toFixed(1)}" y="${m.t}" width="${step.toFixed(1)}" height="${h - m.b - m.t}" class="sweet"/>`,
-    `<text x="${fx(sweet.k).toFixed(1)}" y="${m.t + 14}" class="sweet-label" text-anchor="middle">sweet spot</text>`];
-  for (const t of linTicks(1, top, 5).filter((v) => v >= 1 && v <= top)) {
-    parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${fy(t).toFixed(1)}" y2="${fy(t).toFixed(1)}" class="grid"/>`,
-      `<text x="${m.l - 8}" y="${(fy(t) + 4).toFixed(1)}" class="tick" text-anchor="end">${t.toFixed(t % 1 ? 1 : 0)}×</text>`);
+/** One panel: every dataset's own line for one tier, all datasets together as a bold line, the band. */
+export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
+  const m = { l: 50, r: 78, t: 30, b: 50 };
+  const [lo, hi] = xr;
+  const fx = (v) => m.l + ((Math.log2(v) - Math.log2(lo)) / (Math.log2(hi) - Math.log2(lo))) * (w - m.l - m.r);
+  const bot = 0.6, top = 1.8;
+  const fy = (v) => h - m.b - ((Math.log(Math.min(Math.max(v, bot), top)) - Math.log(bot)) / (Math.log(top) - Math.log(bot))) * (h - m.b - m.t);
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${tier} against rows per row group, one line per dataset">`,
+    `<text x="${m.l}" y="16" class="panel-title">${tier}</text>`];
+  if (t.band) {
+    // The band covers its octaves whole: from half an octave below the first to half above the last.
+    const x0 = fx(t.band.from.x / Math.SQRT2), x1 = fx(t.band.to.x * Math.SQRT2);
+    parts.push(`<rect x="${x0.toFixed(1)}" y="${m.t}" width="${(x1 - x0).toFixed(1)}" height="${h - m.b - m.t}" class="sweet"/>`,
+      `<text x="${((x0 + x1) / 2).toFixed(1)}" y="${m.t + 14}" class="sweet-label big" text-anchor="middle">${esc(bandText(t))}</text>`);
   }
-  for (const k of ks) parts.push(`<text x="${fx(k).toFixed(1)}" y="${h - m.b + 17}" class="tick" text-anchor="middle">${binLabel(k)}</text>`);
-  parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - m.b + 36}" class="axis" text-anchor="middle">rows per row group  ·  more, smaller row groups →</text>`,
-    `<text transform="translate(14,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">× the best each dataset got</text>`);
-  const SERIES = [["cold", "var(--c1)"], ["warm", "var(--c2)"]];
-  // Each dataset's own value, faint, so the pooled line never hides how much it is pooling over.
-  for (const [mm, css] of SERIES) {
-    for (const x of rows) {
-      for (const [ds, d] of x.per) {
-        parts.push(`<g class="pt" data-tip="${esc(`${label(ds)} · ~${binLabel(x.k)} rows per row group · ${mm} ${fmtX(d[`rel_${mm}`])} its best · ${d.n} runs`)}"><circle cx="${(fx(x.k) + (mm === "cold" ? -5 : 5)).toFixed(1)}" cy="${fy(d[`rel_${mm}`]).toFixed(1)}" r="3" fill="${css}" opacity=".28"/><circle cx="${(fx(x.k) + (mm === "cold" ? -5 : 5)).toFixed(1)}" cy="${fy(d[`rel_${mm}`]).toFixed(1)}" r="8" fill="transparent"/></g>`);
-      }
-    }
+  for (const v of [0.75, 1, 1.25, 1.5]) {
+    parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${fy(v).toFixed(1)}" y2="${fy(v).toFixed(1)}" class="grid${v === 1 ? " one" : ""}"/>`,
+      `<text x="${m.l - 7}" y="${(fy(v) + 4).toFixed(1)}" class="tick" text-anchor="end">${v}×</text>`);
   }
-  const ordered = [...rows].sort((a, b) => b.k - a.k);
+  for (let k = Math.ceil(Math.log2(lo / 1e6)); octaveRows(k) <= hi; k++) {
+    parts.push(`<line x1="${fx(octaveRows(k)).toFixed(1)}" x2="${fx(octaveRows(k)).toFixed(1)}" y1="${m.t}" y2="${h - m.b}" class="grid"/>`,
+      `<text x="${fx(octaveRows(k)).toFixed(1)}" y="${h - m.b + 16}" class="tick" text-anchor="middle">${fmtRows(octaveRows(k))}</text>`);
+  }
+  parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 10}" class="axis" text-anchor="middle">rows per row group (fewer, bigger groups →)</text>`);
   const labels = [];
-  for (const [mm, css] of SERIES) {
-    parts.push(`<polyline points="${ordered.map((x) => `${fx(x.k).toFixed(1)},${fy(x[mm]).toFixed(1)}`).join(" ")}" class="tline bold" style="stroke:${css}"/>`);
-    for (const x of ordered) {
-      parts.push(`<g class="pt" data-tip="${esc(`${mm}, median of ${x.datasets} datasets: ${fmtX(x[mm])} their best · ~${binLabel(x.k)} rows per row group`)}"><circle cx="${fx(x.k).toFixed(1)}" cy="${fy(x[mm]).toFixed(1)}" r="5" fill="${css}" stroke="var(--bg)" stroke-width="2"/><circle cx="${fx(x.k).toFixed(1)}" cy="${fy(x[mm]).toFixed(1)}" r="11" fill="transparent"/></g>`);
+  for (const ds of DS_ORDER) {
+    const rows = lines[ds];
+    if (!rows) continue;
+    const css = `var(--d${DS_ORDER.indexOf(ds) + 1})`;
+    parts.push(`<polyline points="${rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline thin" style="stroke:${css}"/>`);
+    for (const x of rows) {
+      parts.push(`<g class="pt" data-tip="${esc(`${label(ds)} · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} its median · ${x.n} runs`)}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="3.4" fill="${css}" stroke="var(--bg)" stroke-width="1.2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="9" fill="transparent"/></g>`);
     }
-    const last = ordered[ordered.length - 1];
-    labels.push({ x: fx(last.k) + 10, y: fy(last[mm]) + 4, name: mm });
+    const last = rows[rows.length - 1];
+    labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: label(ds), cls: "small" });
   }
+  // Every dataset together: the median of all runs per octave, the line the band is computed from.
+  parts.push(`<polyline points="${t.rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline all"/>`);
+  for (const x of t.rows) {
+    parts.push(`<g class="pt" data-tip="${esc(`all datasets · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} the median · ${x.n} runs from ${x.datasets} datasets${x.thin ? " · too few runs to count toward the band" : ""}`)}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="5" fill="${x.thin ? "var(--bg)" : "var(--fg)"}" stroke="var(--fg)" stroke-width="2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="11" fill="transparent"/></g>`);
+  }
+  const last = t.rows[t.rows.length - 1];
+  labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: "all", cls: "strong" });
   labels.sort((a, b) => a.y - b.y);
-  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 14);
-  for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label strong">${esc(l.name)}</text>`);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 12);
+  for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label ${l.cls}">${esc(l.name)}</text>`);
   parts.push("</svg>");
   return parts.join("");
+}
+
+export function bandPanels(pts, t) {
+  if (!t) return `<p class="empty">Not enough datasets measured at different row-group sizes yet.</p>`;
+  const lines = datasetLines(pts);
+  const xs = [...Object.values(lines).flatMap((rows) => rows.map((x) => x.x)), ...t.rows.map((x) => x.x)];
+  const xr = [Math.min(...xs) / 1.6, Math.max(...xs) * 1.6];
+  return `<div class="facets two">${["cold", "warm"].map((tier) => `<figure class="facet">${bandPanelSvg(lines, t, tier, xr)}</figure>`).join("")}</div>`;
 }
 
 const TENSION = [["relCold", "cold", "var(--c1)", ""], ["relWarm", "warm", "var(--c2)", "6 4"], ["relCu", "read CU", "var(--c3)", "2 3"]];
@@ -714,9 +744,7 @@ export function findRowGroups(ctx) {
     .filter((t) => t.distinct >= 3 && t.timed.length >= 5);
   const nCold = all.filter(coldSlower), nWarm = all.filter(warmFaster), against = all.filter(warmSlower);
   const nCu = all.filter((t) => t.cuRho !== null && t.cuRho > 0.2), cuKnown = all.filter((t) => t.cuRho !== null);
-  const pooled = pooledTension(rowsPerRgCurves(ctx));
-  const sweetSpots = dsList(ctx).map((ds) => ({ ds, bins: rowGroupBins(ctx.runs.filter((r) => r.ds === ds)) }))
-    .filter((t) => t.bins);
+  const bandPts = bandPoints(ctx), bandT = bandTrend(bandPts);
   const short = all.length
     ? `Row groups are a trade. More of them made columns slower to load cold on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and cost more Direct Lake CU on ${nCu.length} of ${cuKnown.length}` : ""}, but made warm queries faster on ${nWarm.length}${against.length ? ` (slower on ${against.map((t) => label(t.ds)).join(", ")})` : ""}.`
     : "Not enough runs at different row-group counts yet.";
@@ -765,16 +793,10 @@ export function findRowGroups(ctx) {
     }];
   });
   const html = `
-    <p class="claim">${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
-    <h4>All datasets: the sweet spot</h4>
-    ${pooledTensionSvg(pooled)}
-    <p>Every dataset's runs, binned by rows per row group. For each dataset, cold and warm are divided by the best that dataset got, so all of them share one axis. The bold lines are the median across datasets; the faint dots are each dataset on its own. ${pooled ? `Cold is best with big row groups (${binLabel(pooled.rows.reduce((a, b) => (b.cold < a.cold ? b : a)).k)} rows each) and warm with small ones (${binLabel(pooled.rows.reduce((a, b) => (b.warm < a.warm ? b : a)).k)}). Where the slower of the two is lowest, the sweet spot, is <b>~${binLabel(pooled.sweet.k)} rows per row group</b>: cold at ${fmtX(pooled.sweet.cold)} and warm at ${fmtX(pooled.sweet.warm)} of their best.${pooled.rows[0].k === pooled.sweet.k ? ` The sweet spot is the smallest row group with at least two datasets measured, so the side where row groups get <b>too</b> small, and warm turns back up, is not in these runs yet. A bin needs two datasets to be drawn.` : ""}` : ""}</p>
-    <h4>The sweet spot, per dataset</h4>
-    <p>Every run of the dataset, binned by row-group count. Each line is that measure's median per bin, divided by its best bin, so 1.0× is the best it got and every line can share the axis. Cold wants fewer row groups and warm wants more. The shaded bin is where the slower of the two is closest to its own best. Hover a point for its run count: a bin of two runs is a hint, not a result.</p>
-    ${facets(sweetSpots.map((t) => ({ title: `${label(t.ds)} · ~${fmtInt(t.bins.sweet.rgs)} row groups, ~${fmtRows(t.bins.sweet.rowsPerRg)} rows each`, html: tensionSvg(t.bins) })))}
-    ${table(["dataset", "sweet spot: row groups", "rows per row group", "cold there", "warm there", "read CU there", "runs in the bin"],
-      sweetSpots.map((t) => [label(t.ds), `${fmtInt(t.bins.sweet.lo)}–${fmtInt(t.bins.sweet.hi)}`, fmtRows(t.bins.sweet.rowsPerRg),
-        fmtX(t.bins.sweet.relCold), fmtX(t.bins.sweet.relWarm), t.bins.sweet.relCu ? fmtX(t.bins.sweet.relCu) : "—", fmtInt(t.bins.sweet.n)]), "num")}
+    <p class="claim">${bandT && bandT.band ? `Across every dataset, <b>${esc(bandText(bandT))} rows per row group</b> keeps both cold and warm within ${Math.round((BAND_WITHIN - 1) * 100)}% of the median. ` : ""}${all.length ? `More row groups made each column <b>slower to load cold</b> on ${nCold.length} of ${all.length} datasets${cuKnown.length ? ` and the Direct Lake session <b>cost more CU</b> on ${nCu.length} of ${cuKnown.length}` : ""}, while warm queries got <b>faster</b> on ${nWarm.length} of ${all.length}${against.length ? `. The exception is ${against.map((t) => esc(label(t.ds))).join(" and ")}, where warm got slower too` : ""}. Fewer, bigger row groups favour cold and CU; more, smaller ones favour warm.` : short}</p>
+    <h4>A band that works cold and warm</h4>
+    ${bandPanels(bandPts, bandT)}
+    <p>Each thin line is one dataset: its runs grouped by octave of rows per row group, cold or warm divided by that dataset's median run so the datasets share the axis. The bold line is every dataset's runs together, and the band is computed from it: the octaves with at least ${BAND_MIN_RUNS} runs from two or more datasets where cold and warm are both within ${Math.round((BAND_WITHIN - 1) * 100)}% of the median. A hollow point is an octave with too few runs to count.${bandT && bandT.band ? ` Below the band cold gets slower; above it warm does.` : ""}</p>
     <h4>Why, and measured column by column</h4>
     <p>A row group becomes one VertiPaq segment. Cold, every segment of a column is transcoded separately, so each extra segment adds its own fixed cost. Warm, the storage engine scans a column's segments in parallel, one thread per segment. A column held in nine segments can keep at most nine cores busy, however many the capacity has, so more segments let a scan use more of the machine.</p>
     <p>This is measured per column for cold (that column's probe minus the row-count probe) and per query for warm and hot. A suite total adds up columns and queries that move in opposite directions, plus fixed costs that do not move at all, and that is how a real trade-off can read as no effect. A count is a column or query whose ρ against the row-group count is beyond ±0.2.</p>
@@ -785,9 +807,9 @@ export function findRowGroups(ctx) {
     <p>Across writers, row-group count travels with everything else a writer does: Fabric Warehouse writes many small, uncompressed row groups, delta-rs a few big ones. Within delta-rs, row-group size is a setting someone chose and nothing else about the writer moves. It is the cleaner test, on fewer runs.</p>
     ${fixed.length ? table(head, rowsOf(fixed), "num") : `<p class="empty">No dataset has delta-rs runs at three or more row-group counts yet.</p>`}`;
   const status = !all.length ? "few" : nCold.length * 2 > all.length && nWarm.length * 2 > all.length ? "clear" : "noise";
-  return { id: "row-groups", title: "Row groups: fewer for cold, more for warm", short, status, html,
-    head: [all.length ? `${nCold.length} of ${all.length}` : "—", "datasets where more row groups meant slower cold"],
-    card: "Fewer, bigger row groups: faster cold and less CU. More, smaller ones: faster warm." };
+  return { id: "row-groups", title: "Row groups: a band that works cold and warm", short, status, html,
+    head: [bandText(bandT) || "—", "rows per row group: works cold and warm"],
+    card: "Smaller row groups slow cold down, bigger ones slow warm down. In between is a band that works for both." };
 }
 
 export function findVOrder(ctx) {

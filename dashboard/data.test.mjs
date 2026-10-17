@@ -388,16 +388,18 @@ test("row-group tension: bins pooled across engines, sweet spot where the slower
   assert.equal(r.rowGroupBins(runs.slice(0, 2)), null);   // one bin is not a curve
 });
 
-test("pooled tension: per-dataset relative cold and warm, median across datasets, sweet spot between", () => {
-  const curves = {
-    aemo: [{ k: 4, rel_cold: 1.0, rel_warm: 1.5, n: 3 }, { k: 2, rel_cold: 1.05, rel_warm: 1.1, n: 3 }, { k: 0, rel_cold: 1.4, rel_warm: 1.0, n: 3 }],
-    nyc: [{ k: 4, rel_cold: 1.0, rel_warm: 1.6, n: 3 }, { k: 2, rel_cold: 1.1, rel_warm: 1.05, n: 3 }, { k: 0, rel_cold: 1.5, rel_warm: 1.0, n: 3 }],
-    cms: [{ k: -1, rel_cold: 1.0, rel_warm: 1.0, n: 3 }, { k: 0, rel_cold: 1.2, rel_warm: 1.1, n: 3 }],
-  };
-  const p = r.pooledTension(curves);
-  assert.deepEqual(p.rows.map((x) => x.k), [0, 2, 4]);   // k=-1 has one dataset: not drawn
-  assert.equal(p.sweet.k, 2);
-  assert.match(r.pooledTensionSvg(p), /sweet spot/);
+test("row-group band: octaves pooled across datasets, both tiers within 10%, stated as a range", () => {
+  // Cold slow at small groups, warm slow at big ones, both fine from 2M to 8M; 32M is thin.
+  const pts = [];
+  const shape = { 1: [1.3, 0.9], 2: [1.02, 0.95], 4: [0.98, 1.0], 8: [1.0, 1.05], 16: [1.0, 1.3], 32: [1.0, 1.0] };
+  for (const [m, [cold, warm]] of Object.entries(shape)) {
+    const n = m === "32" ? 4 : 12;
+    for (let i = 0; i < n; i++) pts.push({ ds: i % 2 ? "aemo" : "nyc", x: Number(m) * 1e6, cold, warm, run: {} });
+  }
+  const t = r.bandTrend(pts);
+  assert.equal(r.bandText(t), "2M to 8M");
+  assert.ok(t.rows.find((x) => x.x === 32e6).thin);
+  assert.match(r.bandPanels(pts, t), /2M to 8M/);
 });
 
 test("csv quotes what needs quoting and reads nested keys", () => {

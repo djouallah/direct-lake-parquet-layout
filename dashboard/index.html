@@ -68,6 +68,9 @@ ol.short li { margin:.55rem 0; }
 .facets { display:grid; grid-template-columns:repeat(auto-fill, minmax(460px, 1fr)); gap:1rem; margin:1rem 0; }
 .facets.one { grid-template-columns:minmax(0, 720px); }
 .facets.three { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+.facets.two { grid-template-columns:repeat(2, minmax(0, 1fr)); }
+@media (max-width:900px) { .facets.two { grid-template-columns:minmax(0, 1fr); } }
+.bandnote { margin:.6rem 0 0; }
 @media (max-width:900px) { .facets.three { grid-template-columns:minmax(0, 1fr); } }
 @media (max-width:560px) { .facets { grid-template-columns:minmax(0, 1fr); } }
 .facet { margin:0; padding:.6rem .6rem .2rem; background:var(--soft); border-radius:10px; min-width:0; }
@@ -124,12 +127,16 @@ button { font:inherit; font-size:.9rem; padding:.35rem .8rem; border-radius:6px;
 .framelinks { color:var(--dim); font-size:.95rem; }
 .pager { display:flex; justify-content:space-between; gap:1rem; margin:3rem 0 0; padding-top:1rem; border-top:1px solid var(--line); }
 svg.chart .sweet { fill:var(--c3); opacity:.12; }
+svg.chart .sweet-label.big { font-size:12.5px; fill:var(--fg); }
+svg.chart .grid.one { stroke:var(--dim); opacity:.45; }
 svg.chart .sweet-label { fill:var(--dim); font-size:10.5px; font-weight:600; }
 svg.chart .tline { fill:none; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; }
 svg.chart .panel-title { fill:var(--fg); font-size:12px; font-weight:600; }
 svg.chart .row-label.small { font-size:10px; }
 svg.chart.wide { max-width:820px; margin:1rem 0; }
 svg.chart .tline.bold { stroke-width:3.5; }
+svg.chart .tline.thin { stroke-width:1.8; opacity:.85; }
+svg.chart .tline.all { stroke:var(--fg); stroke-width:3.5; fill:none; stroke-linejoin:round; }
 svg.chart .row-label.strong { font-size:13px; font-weight:600; }
 svg.chart .dimtick { opacity:.7; font-size:9.5px; }
 svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
