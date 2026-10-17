@@ -565,17 +565,23 @@ function propertyCard(o) {
 
 export function propTableSize(ctx) {
   const s = { cu: runSlope(ctx, M.mb.get, M.cu.get), cold: runSlope(ctx, M.mb.get, M.cold.get),
-    warm: runSlope(ctx, M.mb.get, M.warm.get), dq: runSlope(ctx, M.mb.get, M.dq.get) };
+    warm: runSlope(ctx, M.mb.get, M.warm.get), dq: runSlope(ctx, M.mb.get, M.dq.get),
+    colCold: columnSlope(ctx, (c) => c.mb, (c) => c.cold), colWarm: columnSlope(ctx, (c) => c.mb, (c) => c.warmRaw) };
   return propertyCard({ id: "table-size", title: "Bytes on disk", evidence: "observational", status: verdictOf(s.cu),
     head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU each time the table doubles in size"],
-    card: "The fewer bytes the table takes on disk, the less capacity Power BI spends reading it.",
-    claim: s.cu.med !== null ? `Each doubling of the table's size on disk cost <b>${pct(s.cu)} Direct Lake read CU</b> and ${pct(s.cold)} cold time (${agree(s.cu)}).` : "Not measurable yet.",
-    body: `${effectTable([["Direct Lake read CU", s.cu, "per doubling"], ["cold", s.cold, "per doubling"], ["warm", s.warm, "per doubling"], ["DirectQuery read CU", s.dq, "per doubling"]])}
+    card: "The fewer bytes on disk, the less capacity Power BI spends reading them: true of the whole table, and of each column cold.",
+    claim: s.cu.med !== null ? `Each doubling of the table's size on disk cost <b>${pct(s.cu)} Direct Lake read CU</b> and ${pct(s.cold)} cold time (${agree(s.cu)}). Column by column it holds too: twice the bytes cost <b>${pct(s.colCold)} cold</b> (${agree(s.colCold)}), ${pct(s.colWarm)} warm.` : "Not measurable yet.",
+    body: `${effectTable([["Direct Lake read CU, per doubling of the table", s.cu], ["cold, per doubling of the table", s.cold], ["warm, per doubling of the table", s.warm], ["DirectQuery read CU, per doubling of the table", s.dq],
+      ["column cold, per doubling of the column", s.colCold], ["column warm, per doubling of the column", s.colWarm]])}
+      <h3>The table</h3>
       ${legend(familiesIn(ctx.runs))}
       ${normalisedScatter(ctx, M.mb.get, M.cu.get, "table size", "Direct Lake read CU")}
-      <p class="note">Size is measured where it varied enough within a dataset to fit a slope; a dataset where every engine wrote a similar size does not vote.</p>` });
+      <h3>Each column, cold</h3>
+      ${scatter({ points: ctx.columns.filter((c) => c.mb > 0 && c.cold > 0).map((c) => ({ x: c.mb, y: c.cold, family: c.family, filled: c.reorders,
+        tip: `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)}` })),
+        x: { label: "column compressed size", log: true, fmt: fmtMb }, y: { label: "extra cold time to load it", log: true, fmt: fmtMs }, w: 640, h: 360, trend: true })}
+      <p class="note">Table size is measured where it varied enough within a dataset to fit a slope; a dataset where every engine wrote a similar size does not vote. A column's cost is its probe query minus the row-count probe in the same pass; read CU is billed per session, not per column, so the column chart is cold time.</p>` });
 }
-
 export function propSort(ctx) {
   const s = { mb: columnSlope(ctx, (c) => c.runsPer1k, (c) => c.mb), cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold) };
   return propertyCard({ id: "sort", title: "Sort order", evidence: "observational", status: verdictOf(s.mb),
@@ -605,20 +611,6 @@ export function propSparkVOrder(ctx) {
         { label: "Spark, V-Order", keep: vo, family: "spark", filled: true },
         { label: "Spark, no V-Order", keep: plain, family: "spark", filled: false }], M.cu.get, "Direct Lake read CU")}
       <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Build cost is not on this page; the repository README measured about +8% build CU.</p>` });
-}
-
-export function propColumnSize(ctx) {
-  const s = { cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold), warm: columnSlope(ctx, (c) => c.mb, (c) => c.warmRaw) };
-  return propertyCard({ id: "column-size", title: "Column size", evidence: "observational", status: verdictOf(s.cold),
-    head: [s.cold.med !== null ? `${pct(s.cold)} cold` : "—", "cold cost of a column each time it doubles in size"],
-    card: "A column's cold cost follows its size on disk. Warm, its size does not matter.",
-    claim: s.cold.med !== null ? `The same column, twice the bytes: <b>${pct(s.cold)} cold</b> (${agree(s.cold)}), ${pct(s.warm)} warm.` : "Not measurable yet.",
-    body: `${effectTable([["column cold, per doubling of its size", s.cold], ["column warm, per doubling of its size", s.warm]])}
-      ${legend(familiesIn(ctx.columns))}
-      ${scatter({ points: ctx.columns.filter((c) => c.mb > 0 && c.cold > 0).map((c) => ({ x: c.mb, y: c.cold, family: c.family, filled: c.reorders,
-        tip: `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)}` })),
-        x: { label: "column compressed size", log: true, fmt: fmtMb }, y: { label: "extra cold time to load it", log: true, fmt: fmtMs }, w: 640, h: 360, trend: true })}
-      <p class="note">A column's cost is its probe query minus the row-count probe in the same pass. Read CU is billed per session, not per column, so this card is measured on cold time.</p>` });
 }
 
 export function propRowGroups(ctx) {
@@ -690,7 +682,7 @@ export function propDirectQuery(ctx) {
 // The presentation's order: the three levers any writer controls (sort, dictionary encoding, row-group
 // size), then Spark V-Order, then DirectQuery, then the rest.
 export const PROPERTIES = [propSort, propDictionary, propRowGroups, propSparkVOrder, propDirectQuery,
-  propTableSize, propColumnSize, propFileCount];
+  propTableSize, propFileCount];
 
 // --------------------------------------------------------------------------------- frame sections
 
