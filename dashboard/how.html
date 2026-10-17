@@ -99,16 +99,29 @@ th, td { text-align:right; padding:.3rem .7rem; border-bottom:1px solid var(--li
 th:first-child, td:first-child { text-align:left; }
 th { color:var(--dim); font-weight:600; }
 footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--dim); font-size:.9rem; }
+
+/* Top tabs, identical on index.html and how.html: the one way between the two pages. */
+.tabs { position:sticky; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:.5rem; padding:.7rem 0;
+  margin:-2rem 0 1.4rem; background:var(--bg); border-bottom:1px solid var(--line); }
+.tabs a { display:inline-flex; align-items:center; gap:.45rem; padding:.45rem 1rem; border-radius:999px;
+  text-decoration:none; color:var(--fg); border:1px solid var(--line); font-size:.95rem; font-weight:600;
+  background:var(--soft); }
+.tabs a:hover { border-color:var(--fg); }
+.tabs a[aria-current="page"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.tabs svg { width:17px; height:17px; min-width:0; flex:none; }
 </style>
 </head>
 <body>
 <main>
+<nav class="tabs" aria-label="pages">
+  <a href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Results</a>
+  <a href="how.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
+</nav>
 <header>
   <h1>How Direct Lake reads your parquet</h1>
   <p class="sub">What a parquet file is made of, what Power BI does to it on the first click, and why
     the order of the rows decides what every click after that costs.</p>
-  <nav><a href="./">← the results</a> ·
-    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">the rules and their numbers</a> ·
+  <nav class="links"><a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">the rules and their numbers</a> ·
     <a href="https://github.com/djouallah/direct-lake-parquet-layout">source</a></nav>
 </header>
 

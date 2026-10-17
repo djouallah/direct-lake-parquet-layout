@@ -150,10 +150,24 @@ svg.chart .dimtick { opacity:.7; font-size:9.5px; }
 svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
 footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
 @media (max-width:600px) { body { font-size:16px; } header h1 { font-size:1.6rem; } .claim { font-size:1.05rem; } }
+
+/* Top tabs, identical on index.html and how.html: the one way between the two pages. */
+.tabs { position:sticky; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:.5rem; padding:.7rem 0;
+  margin:-2rem 0 1.4rem; background:var(--bg); border-bottom:1px solid var(--line); }
+.tabs a { display:inline-flex; align-items:center; gap:.45rem; padding:.45rem 1rem; border-radius:999px;
+  text-decoration:none; color:var(--fg); border:1px solid var(--line); font-size:.95rem; font-weight:600;
+  background:var(--soft); }
+.tabs a:hover { border-color:var(--fg); }
+.tabs a[aria-current="page"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.tabs svg { width:17px; height:17px; min-width:0; flex:none; }
 </style>
 </head>
 <body>
 <main>
+<nav class="tabs" aria-label="pages">
+  <a href="./" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Results</a>
+  <a href="how.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
+</nav>
   <header>
     <h1>Writing parquet that Power BI likes</h1>
   </header>
