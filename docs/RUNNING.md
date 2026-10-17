@@ -1,6 +1,6 @@
 # Running the project
 
-The [README](../README.md) is about what the measurements found. This is how to run the thing
+[FINDINGS.md](FINDINGS.md) is about what the measurements found. This is how to run the thing
 that produced them. For how CI drives it against Fabric, see [CI.md](CI.md).
 
 ## Quick, offline (DuckDB → local Delta)

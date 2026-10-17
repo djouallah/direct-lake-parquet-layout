@@ -4290,7 +4290,7 @@ test("archiveTotals excludes duckrun's round-trip and falls back when there are 
   assert.deepEqual(d.archiveTotals({ files: 12, size_mb: 34 }), { files: 12, mb: 34, folders: [] });
 });
 
-// ------------------------------------------------------- the README's generated spark-profile table
+// ------------------------------------------------------- docs/FINDINGS.md's generated spark-profile table
 //
 // Its numbers reach a file people read without the page in front of them, so what is pinned here is
 // that it agrees with the page: it imports `runCu` rather than reimplementing the GUID join, and it
@@ -4405,7 +4405,7 @@ test("no spark run yet says so rather than printing an empty table", () => {
   assert.match(prof.renderProfileTable([]), /No spark run/);
 });
 
-// ------------------------------------------------------------------- the README's generated chart
+// ------------------------------------------------------------------- docs/FINDINGS.md's generated chart
 //
 // The chart is the same `profileRows` medians the table prints, as deltas against the same
 // readHeavyForPBI baseline — computed once in `chartData`, so the bars and the % columns cannot

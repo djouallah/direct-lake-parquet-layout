@@ -597,7 +597,7 @@ def vorder_tags(con, guid, schema, table, live_files):
 # WHY THE FOOTER IS READ BY HAND. Direct Lake transcodes a column chunk one of two ways: it REMAPS the
 # parquet dictionary IDs onto VertiPaq's when the chunk is entirely dictionary-encoded and the
 # footer's `encoding_stats` (`PageEncodingStats`) prove it, and it HASHES every value otherwise —
-# including a chunk that has a dictionary page its footer never declares (README rule #3,
+# including a chunk that has a dictionary page its footer never declares (docs/FINDINGS.md rule #3,
 # duckdb#24957: 10,857.5 -> 689.3 ms cold first-touch from that one footer list). The `encodings`
 # list cannot settle it — a dictionary-encoded chunk lists PLAIN for its dictionary page, and so does
 # one whose pages fell back to PLAIN — and neither DuckDB's `parquet_metadata()` nor pyarrow exposes

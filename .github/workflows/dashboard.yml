@@ -109,6 +109,8 @@ jobs:
           # hand when the models change and committed under `dashboard/`, which is what makes a
           # regenerated DAG republish the page on its own with no new trigger.
           cp dashboard/dag.html site/dag.html
+          # The "how it works" explainer: hand-written, static, no data. Linked from the page footer.
+          cp dashboard/how.html site/how.html
           # The live shell must not have picked up a snapshot: a page that ships its own data is a
           # page that goes stale silently, which is the whole failure this arrangement removes.
           grep -q '<script id="snapshot" type="application/json"></script>' site/index.html \

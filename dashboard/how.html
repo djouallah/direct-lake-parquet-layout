@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How Direct Lake reads parquet</title>
+<!--
+  Hand-written and static: no data is fetched. Published beside index.html by dashboard.yml
+  (`cp dashboard/how.html site/how.html`). Every number here is quoted from docs/FINDINGS.md or
+  CLAUDE.md, with its run or source named in place; the two strip demos are illustrations, not data.
+-->
+<style>
+:root { color-scheme: light dark;
+  --bg:#fcfcfb; --fg:#0b0b0b; --dim:#52514e; --line:#e4e3df; --soft:#f3f2ef; --code:#efeeea;
+  --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a;
+  --d1:#2a78d6; --d2:#eb6834; --d3:#1baf7a; --d4:#eda100; --d5:#e87ba4; --d6:#4a3aa7;
+  --good:#0f7b4a; --bad:#b4441c; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
+    --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70;
+    --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
+    --good:#4cc38a; --bad:#f08a5d; } }
+:root[data-theme="dark"] { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
+  --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70;
+  --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
+  --good:#4cc38a; --bad:#f08a5d; }
+
+* { box-sizing:border-box; }
+body { margin:0; background:var(--bg); color:var(--fg);
+  font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width:1000px; margin:0 auto; padding:2rem 16px 4rem; }
+h1 { font-size:2rem; line-height:1.2; margin:0 0 .4rem; }
+.sub { color:var(--dim); margin:0 0 .6rem; max-width:52rem; }
+nav { font-size:.9rem; color:var(--dim); }
+a { color:var(--c1); }
+h2 { font-size:1.4rem; margin:3rem 0 .6rem; padding-top:1rem; border-top:1px solid var(--line); }
+p, li { max-width:52rem; }
+.claim { font-size:1.12rem; line-height:1.5; border-left:3px solid var(--c1); padding:.2rem 0 .2rem 1rem; }
+code, .mono { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; }
+code { background:var(--code); padding:.05rem .3rem; border-radius:4px; font-size:.88em; }
+.dim, .note { color:var(--dim); }
+.note { font-size:.9rem; }
+ol.rules { padding-left:1.4rem; }
+ol.rules li { margin:.45rem 0; }
+
+figure { margin:1.4rem 0; }
+.scroll { overflow-x:auto; }
+figure svg { display:block; width:100%; min-width:640px; height:auto; color:var(--fg); }
+figcaption { color:var(--dim); font-size:.9rem; margin-top:.5rem; max-width:52rem; }
+
+/* SVG classes: the page stylesheet themes the drawings, so nothing inside an <svg> carries a hue. */
+.bx  { fill:var(--soft); stroke:var(--line); stroke-width:1.5; }
+.bx2 { fill:var(--bg);   stroke:var(--line); stroke-width:1.2; }
+.ck  { fill:var(--code); stroke:var(--line); }
+.acc { fill:var(--soft); stroke:var(--c2); stroke-width:2; }
+.accf { fill:var(--c2); }
+.ln  { stroke:var(--fg); stroke-width:1.5; fill:none; }
+.lna { stroke:var(--c2); stroke-width:2; fill:none; }
+.lnd { stroke:var(--dim); stroke-width:1.2; fill:none; stroke-dasharray:4 4; }
+.good { fill:var(--soft); stroke:var(--good); stroke-width:2; }
+.bad  { fill:var(--soft); stroke:var(--bad); stroke-width:2; }
+.goodf { fill:var(--good); } .badf { fill:var(--bad); }
+svg text { fill:var(--fg); font-size:13px; }
+svg text.b { font-weight:600; }
+svg text.d { fill:var(--dim); font-size:12px; }
+svg text.m { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:12.5px; }
+svg text.a { fill:var(--c2); font-weight:600; }
+
+/* bar pairs */
+.bars { display:grid; grid-template-columns:minmax(9rem, 16rem) 1fr; gap:.35rem .8rem; align-items:center;
+  font-size:.92rem; margin:1rem 0; max-width:52rem; }
+.bars .track { background:var(--soft); border-radius:4px; height:22px; position:relative; }
+.bars .fill { height:100%; border-radius:4px; background:var(--c1); }
+.bars .fill.hot { background:var(--c2); }
+.bars .val { position:absolute; left:.5rem; top:0; line-height:22px; font-size:.82rem; color:var(--fg);
+  font-variant-numeric:tabular-nums; }
+
+/* strip demos */
+.demo { background:var(--soft); border-radius:10px; padding:1rem; margin:1.2rem 0; }
+.btns { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:.9rem; }
+.btns button { font:inherit; font-size:.88rem; padding:.3rem .7rem; border-radius:999px; cursor:pointer;
+  border:1px solid var(--line); background:var(--bg); color:var(--fg); }
+.btns button[aria-pressed="true"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.col { margin:.2rem 0 .9rem; }
+.col .head { display:flex; justify-content:space-between; gap:1rem; font-size:.9rem; }
+.col .head b { font-variant-numeric:tabular-nums; }
+.strip { display:grid; height:30px; border-radius:4px; overflow:hidden; margin:.25rem 0; }
+.cell.rs { box-shadow:inset 2px 0 0 var(--bg); }
+.rle { font-size:.8rem; color:var(--dim); line-height:1.45; word-break:break-word; }
+.legend { display:flex; flex-wrap:wrap; gap:.3rem 1rem; font-size:.82rem; color:var(--dim); margin:.2rem 0 .6rem; }
+.legend i { display:inline-block; width:.8rem; height:.8rem; border-radius:2px; vertical-align:-1px; margin-right:.3rem; }
+.rgs { display:grid; grid-template-columns:repeat(4, 1fr); gap:.6rem; }
+.rgs .strip { height:26px; }
+.rgs .cap { font-size:.78rem; color:var(--dim); }
+.pair { display:grid; gap:1rem; }
+
+table { border-collapse:collapse; font-size:.9rem; margin:1rem 0; }
+th, td { text-align:right; padding:.3rem .7rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
+th:first-child, td:first-child { text-align:left; }
+th { color:var(--dim); font-weight:600; }
+footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--dim); font-size:.9rem; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>How Direct Lake reads your parquet</h1>
+  <p class="sub">What a parquet file is made of, what Power BI does to it on the first click, and why
+    the order of the rows decides what every click after that costs.</p>
+  <nav><a href="./">← the results</a> ·
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">the rules and their numbers</a> ·
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout">source</a></nav>
+</header>
+
+<ol class="rules">
+  <li><b>Power BI never sees your engine.</b> It sees parquet. Spark, a warehouse or DuckDB only matter through the files they leave behind.</li>
+  <li><b>The first query pays to load a column.</b> Every query after scans what that load built.</li>
+  <li><b>One parquet row group becomes one VertiPaq segment.</b> The writer picks the segment count for you.</li>
+  <li><b>Sorted values become runs.</b> VertiPaq stores a run as one (value, count) pair and scans it as one.</li>
+</ol>
+
+<!-- 1 ------------------------------------------------------------------------------------------ -->
+<h2>1. Direct Lake transcodes, it does not scan files</h2>
+<p class="claim">DuckDB and Spark read the files on every query. Direct Lake reads each column once,
+  converts it into VertiPaq's in-memory format, and answers from memory after that.</p>
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 920 220" role="img" aria-label="A DAX query touching a column that is not in memory makes Direct Lake transcode that column's parquet chunks from OneLake into VertiPaq segments once; later queries go straight to memory.">
+    <defs>
+      <marker id="h1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+      <marker id="h1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="accf" d="M0,0 L10,5 L0,10 z"/></marker>
+    </defs>
+    <!-- query -->
+    <rect class="bx" x="20" y="110" width="150" height="60" rx="8"/>
+    <text class="b" x="95" y="136" text-anchor="middle">DAX query</text>
+    <text class="d" x="95" y="155" text-anchor="middle">touches column X</text>
+    <!-- OneLake -->
+    <rect class="bx" x="270" y="14" width="270" height="112" rx="8"/>
+    <text class="b" x="285" y="36">OneLake · parquet files</text>
+    <rect class="ck" x="285" y="50" width="36" height="16"/><rect class="ck" x="327" y="50" width="36" height="16"/><rect class="acc" x="369" y="50" width="36" height="16"/><rect class="ck" x="411" y="50" width="36" height="16"/><rect class="ck" x="453" y="50" width="36" height="16"/>
+    <text class="d" x="497" y="63">RG 1</text>
+    <rect class="ck" x="285" y="74" width="36" height="16"/><rect class="ck" x="327" y="74" width="36" height="16"/><rect class="acc" x="369" y="74" width="36" height="16"/><rect class="ck" x="411" y="74" width="36" height="16"/><rect class="ck" x="453" y="74" width="36" height="16"/>
+    <text class="d" x="497" y="87">RG 2</text>
+    <rect class="ck" x="285" y="98" width="36" height="16"/><rect class="ck" x="327" y="98" width="36" height="16"/><rect class="acc" x="369" y="98" width="36" height="16"/><rect class="ck" x="411" y="98" width="36" height="16"/><rect class="ck" x="453" y="98" width="36" height="16"/>
+    <text class="d" x="497" y="111">RG 3</text>
+    <!-- VertiPaq -->
+    <rect class="bx" x="620" y="100" width="190" height="90" rx="8"/>
+    <text class="b" x="635" y="122">VertiPaq · memory</text>
+    <rect class="acc" x="635" y="134" width="52" height="42"/>
+    <text class="d" x="661" y="160" text-anchor="middle">dict</text>
+    <rect class="acc" x="695" y="134" width="32" height="42"/><rect class="acc" x="733" y="134" width="32" height="42"/><rect class="acc" x="771" y="134" width="32" height="42"/>
+    <text class="d" x="749" y="198" text-anchor="middle">3 segments of column X</text>
+    <!-- result -->
+    <rect class="bx" x="850" y="120" width="60" height="50" rx="8"/>
+    <text x="880" y="150" text-anchor="middle">result</text>
+    <!-- arrows -->
+    <path class="lna" d="M170,124 C215,124 225,70 266,70" marker-end="url(#h1a)"/>
+    <text class="a" x="205" y="84" text-anchor="middle">cold</text>
+    <path class="lna" d="M540,70 C590,70 595,140 616,140" marker-end="url(#h1a)"/>
+    <text class="a" x="560" y="60">transcode once</text>
+    <path class="ln" d="M170,160 L616,160" marker-end="url(#h1)"/>
+    <text class="d" x="394" y="180" text-anchor="middle">warm / hot: column already in memory, no file read</text>
+    <path class="ln" d="M810,145 L846,145" marker-end="url(#h1)"/>
+  </svg>
+  </div>
+  <figcaption>Only the chunks of the columns a query touches are read (orange). Columns no query
+    touches are never loaded. A column leaves memory only when the table is rewritten (a reframe) or
+    memory runs short.</figcaption>
+</figure>
+<p>That gives three kinds of query, and this project measures each one:</p>
+<ul>
+  <li><b>cold</b>: the first touch. Pays for the transcode. This is the wait a report user feels on first click.</li>
+  <li><b>warm</b>: columns already in memory. Pays only for the scan.</li>
+  <li><b>hot</b>: the same query again, partly answered from caches.</li>
+</ul>
+<p>Cold is where layout costs most: across our datasets cold is 3–27× warm. But a live model is
+  mostly warm and hot, so a layout that only helps cold helps less than it looks.</p>
+
+<!-- 2 ------------------------------------------------------------------------------------------ -->
+<h2>2. What a parquet file looks like inside</h2>
+<p class="claim">A parquet file is cut horizontally into row groups, and each row group stores every
+  column separately as a column chunk. The footer at the end describes all of it.</p>
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 920 400" role="img" aria-label="A parquet file holds row groups; each row group holds one chunk per column; a chunk is a dictionary page plus data pages of IDs, either run-length encoded or bit-packed; the footer stores the schema, min and max per chunk, and the encodings.">
+    <rect class="bx" x="20" y="14" width="500" height="380" rx="10"/>
+    <text class="b m" x="36" y="38">part-00000.parquet</text>
+    <!-- RG 1 -->
+    <rect class="bx2" x="36" y="50" width="468" height="76" rx="6"/>
+    <text class="d" x="48" y="68">row group 1 · millions of rows</text>
+    <rect class="ck" x="48"  y="76" width="82" height="40"/><text class="m" x="89"  y="101" text-anchor="middle">date</text>
+    <rect class="ck" x="138" y="76" width="82" height="40"/><text class="m" x="179" y="101" text-anchor="middle">time</text>
+    <rect class="ck" x="228" y="76" width="82" height="40"/><text class="m" x="269" y="101" text-anchor="middle">mw</text>
+    <rect class="ck" x="318" y="76" width="82" height="40"/><text class="m" x="359" y="101" text-anchor="middle">price</text>
+    <rect class="ck" x="408" y="76" width="82" height="40"/><text class="m" x="449" y="101" text-anchor="middle">DUID</text>
+    <!-- RG 2 -->
+    <rect class="bx2" x="36" y="136" width="468" height="76" rx="6"/>
+    <text class="d" x="48" y="154">row group 2</text>
+    <rect class="ck" x="48"  y="162" width="82" height="40"/><text class="m" x="89"  y="187" text-anchor="middle">date</text>
+    <rect class="ck" x="138" y="162" width="82" height="40"/><text class="m" x="179" y="187" text-anchor="middle">time</text>
+    <rect class="ck" x="228" y="162" width="82" height="40"/><text class="m" x="269" y="187" text-anchor="middle">mw</text>
+    <rect class="ck" x="318" y="162" width="82" height="40"/><text class="m" x="359" y="187" text-anchor="middle">price</text>
+    <rect class="acc" x="408" y="162" width="82" height="40"/><text class="m" x="449" y="187" text-anchor="middle">DUID</text>
+    <text class="d" x="270" y="236" text-anchor="middle">⋮</text>
+    <!-- RG 9 -->
+    <rect class="bx2" x="36" y="250" width="468" height="76" rx="6"/>
+    <text class="d" x="48" y="268">row group 9</text>
+    <rect class="ck" x="48"  y="276" width="82" height="40"/><text class="m" x="89"  y="301" text-anchor="middle">date</text>
+    <rect class="ck" x="138" y="276" width="82" height="40"/><text class="m" x="179" y="301" text-anchor="middle">time</text>
+    <rect class="ck" x="228" y="276" width="82" height="40"/><text class="m" x="269" y="301" text-anchor="middle">mw</text>
+    <rect class="ck" x="318" y="276" width="82" height="40"/><text class="m" x="359" y="301" text-anchor="middle">price</text>
+    <rect class="ck" x="408" y="276" width="82" height="40"/><text class="m" x="449" y="301" text-anchor="middle">DUID</text>
+    <!-- footer -->
+    <rect class="acc" x="36" y="336" width="468" height="50" rx="6"/>
+    <text class="b" x="48" y="356">footer</text>
+    <text class="d" x="48" y="375">schema · per chunk: min / max, encodings, encoding_stats</text>
+    <!-- zoom -->
+    <path class="lnd" d="M490,162 L570,50"/>
+    <path class="lnd" d="M490,202 L570,386"/>
+    <rect class="acc" x="570" y="50" width="330" height="336" rx="8"/>
+    <text class="b" x="586" y="74">one column chunk: DUID, row group 2</text>
+    <rect class="bx2" x="586" y="88" width="298" height="92" rx="4"/>
+    <text class="d" x="598" y="108">dictionary page: each distinct value once</text>
+    <text class="m" x="598" y="130">0 → BW01      3 → MUR1</text>
+    <text class="m" x="598" y="150">1 → ER01      4 → YWPS1</text>
+    <text class="m" x="598" y="170">2 → LYA1      …</text>
+    <rect class="bx2" x="586" y="192" width="298" height="86" rx="4"/>
+    <text class="d" x="598" y="212">data page: IDs, run-length encoded</text>
+    <text class="m" x="598" y="238">2 ×4,096 · 0 ×812 · 4 ×2,310 …</text>
+    <text class="d" x="598" y="262">a run costs one pair, however long</text>
+    <rect class="bx2" x="586" y="290" width="298" height="84" rx="4"/>
+    <text class="d" x="598" y="310">data page: IDs, bit-packed</text>
+    <text class="m" x="598" y="334">0 3 1 4 2 0 2 1 3 0 4 …</text>
+    <text class="d" x="598" y="360">no runs: every row pays its bits</text>
+  </svg>
+  </div>
+  <figcaption>The shape of the AEMO mart in this repo: 144M rows, five columns. The file stores IDs,
+    not values; the dictionary maps them back. A Delta table is a folder of these files plus a
+    <code>_delta_log</code> that lists which ones are live.</figcaption>
+</figure>
+<p>Two choices made by whoever writes the file decide almost everything below: <b>how many rows go
+  in a row group</b>, and <b>what order the rows are in</b>. The order decides whether the IDs come out
+  as long runs or as noise.</p>
+
+<!-- 3 ------------------------------------------------------------------------------------------ -->
+<h2>3. One row group becomes one segment</h2>
+<p class="claim">On a cold load, every row group brings its own little dictionary. VertiPaq merges them
+  into one dictionary for the whole column, then rewrites each row group's IDs into a segment.</p>
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 920 290" role="img" aria-label="Three row groups each carry a local dictionary; they merge into one global dictionary; each row group's IDs are then remapped into its own VertiPaq segment, one to one.">
+    <defs>
+      <marker id="h3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+    </defs>
+    <text class="b" x="20" y="24">parquet: DUID</text>
+    <text class="a" x="440" y="24" text-anchor="middle">① merge dictionaries</text>
+    <text class="a" x="589" y="24" text-anchor="middle">② remap IDs</text>
+    <text class="b" x="640" y="24">VertiPaq: DUID</text>
+
+    <rect class="bx" x="20" y="40" width="220" height="64" rx="6"/>
+    <text class="d" x="32" y="62">row group 1</text><text class="m" x="32" y="88">dict: BW01 ER01</text>
+    <rect class="bx" x="20" y="120" width="220" height="64" rx="6"/>
+    <text class="d" x="32" y="142">row group 2</text><text class="m" x="32" y="168">dict: ER01 LYA1</text>
+    <rect class="bx" x="20" y="200" width="220" height="64" rx="6"/>
+    <text class="d" x="32" y="222">row group 3</text><text class="m" x="32" y="248">dict: BW01 MUR1</text>
+
+    <rect class="acc" x="340" y="96" width="200" height="112" rx="8"/>
+    <text class="b" x="352" y="118">one global dictionary</text>
+    <text class="m" x="352" y="144">0 BW01   1 ER01</text>
+    <text class="m" x="352" y="166">2 LYA1   3 MUR1</text>
+    <text class="d" x="352" y="194">built before any scan</text>
+
+    <rect class="bx" x="640" y="40" width="260" height="64" rx="6"/>
+    <text class="d" x="652" y="62">segment 1</text><text class="m" x="652" y="88">IDs in 0..3</text>
+    <rect class="bx" x="640" y="120" width="260" height="64" rx="6"/>
+    <text class="d" x="652" y="142">segment 2</text><text class="m" x="652" y="168">IDs in 0..3</text>
+    <rect class="bx" x="640" y="200" width="260" height="64" rx="6"/>
+    <text class="d" x="652" y="222">segment 3</text><text class="m" x="652" y="248">IDs in 0..3</text>
+
+    <path class="ln" d="M240,72 L336,130" marker-end="url(#h3)"/>
+    <path class="ln" d="M240,152 L336,152" marker-end="url(#h3)"/>
+    <path class="ln" d="M240,232 L336,174" marker-end="url(#h3)"/>
+    <path class="ln" d="M540,130 L636,72" marker-end="url(#h3)"/>
+    <path class="ln" d="M540,152 L636,152" marker-end="url(#h3)"/>
+    <path class="ln" d="M540,174 L636,232" marker-end="url(#h3)"/>
+  </svg>
+  </div>
+  <figcaption>Both steps are paid per row group: one more dictionary to merge, one more segment to set
+    up. The row groups never get merged or split on the way in, so the writer chose the segments.</figcaption>
+</figure>
+<p>So the row-group size is a trade, and both ends of it are measured here:</p>
+<ul>
+  <li><b>Too many, too small</b> and cold load drowns in per-group overhead. DuckDB's default of
+    122,880 rows per group reached OneLake once: the same table became 1,172 tiny segments instead
+    of about 25.</li>
+  <li><b>Too few, too big</b> and warm queries lose parallelism: the scan works segment by segment
+    across cores. On the 144M-row AEMO mart, warm time stepped down from ≈5,700 ms to 3,221 ms
+    between 19 and 24 row groups.</li>
+</ul>
+<div class="bars" role="img" aria-label="Cold suite time: 96,503 ms with 1,172 segments, 27,785 ms with about 25.">
+  <span>1,172 segments of 122,880 rows</span>
+  <div class="track"><div class="fill hot" style="width:100%"></div><span class="val">96,503 ms cold</span></div>
+  <span>~25 segments of millions</span>
+  <div class="track"><div class="fill" style="width:28.8%"></div><span class="val">27,785 ms cold</span></div>
+</div>
+<p class="note">Same DuckDB, same notebook, same SQL; only the row-group size differed. Healthy is
+  millions of rows per group (Microsoft says 1–16M). Across our five datasets, more row groups made
+  columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5.</p>
+
+<!-- 4 ------------------------------------------------------------------------------------------ -->
+<h2>4. The footer decides: swap IDs, or redo everything</h2>
+<p class="claim">If a chunk is dictionary-encoded, VertiPaq can keep the parquet's work and just swap
+  IDs. It only trusts that when the footer says so.</p>
+<figure>
+  <div class="scroll">
+  <svg viewBox="0 0 920 200" role="img" aria-label="A chunk whose footer declares it 100 percent dictionary-encoded is remapped cheaply; a chunk without that declaration has every value decoded and hashed again. Cold first touch: 689 ms against 10,858 ms.">
+    <defs>
+      <marker id="h4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+    </defs>
+    <rect class="bx" x="20" y="22" width="300" height="64" rx="8"/>
+    <text class="b" x="34" y="48">footer: encoding_stats says</text>
+    <text class="d" x="34" y="70">every data page is dictionary-encoded</text>
+    <path class="ln" d="M320,54 L376,54" marker-end="url(#h4)"/>
+    <rect class="good" x="380" y="22" width="280" height="64" rx="8"/>
+    <text class="b" x="394" y="48">remap IDs</text>
+    <text class="d" x="394" y="70">swap parquet IDs for VertiPaq IDs</text>
+
+    <rect class="bx" x="20" y="112" width="300" height="64" rx="8"/>
+    <text class="b" x="34" y="138">footer silent, or PLAIN pages</text>
+    <text class="d" x="34" y="160">VertiPaq cannot know without reading</text>
+    <path class="ln" d="M320,144 L376,144" marker-end="url(#h4)"/>
+    <rect class="bad" x="380" y="112" width="280" height="64" rx="8"/>
+    <text class="b" x="394" y="138">decode and re-hash</text>
+    <text class="d" x="394" y="160">touch every value, rebuild the IDs</text>
+
+    <text x="700" y="44">689 ms</text>
+    <rect class="goodf" x="700" y="52" width="11" height="16" rx="2"/>
+    <text x="700" y="134">10,858 ms</text>
+    <rect class="badf" x="700" y="142" width="200" height="16" rx="2"/>
+  </svg>
+  </div>
+  <figcaption>Same pages, one footer field different: cold first touch of a 142M-row dictionary string
+    column, from <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>, which taught
+    DuckDB's writer to emit <code>encoding_stats</code>. Once a column is in memory this no longer
+    matters; it is a cold-only cost.</figcaption>
+</figure>
+<p>Two ways to land on the slow lane: a writer that never fills in <code>encoding_stats</code>, and a
+  column whose dictionary grew too big so the writer fell back to PLAIN pages part way through. That
+  second one is why a dictionary page size limit is a real setting, not a detail.</p>
+
+<!-- 5 ------------------------------------------------------------------------------------------ -->
+<h2>5. Sorting turns values into runs</h2>
+<p class="claim">In arrival order, equal values are scattered and every row costs bits. Sorted, they sit
+  next to each other and a whole run costs one pair. VertiPaq keeps the parquet's row order, so it
+  scans those runs too, not just stores them.</p>
+<div class="demo" id="sortdemo">
+  <div class="btns" role="group" aria-label="row order">
+    <button data-order="arrival" aria-pressed="true">arrival order</button>
+    <button data-order="pay">sort by payment_type</button>
+    <button data-order="payvendor">sort by payment_type, vendor</button>
+    <button data-order="vendorpay">sort by vendor, payment_type</button>
+  </div>
+  <div class="legend" id="legend"></div>
+  <div class="col"><div class="head"><span class="mono">payment_type</span><b id="r-pay"></b></div>
+    <div class="strip" id="s-pay"></div><div class="rle mono" id="rle-pay"></div></div>
+  <div class="col"><div class="head"><span class="mono">vendor</span><b id="r-vendor"></b></div>
+    <div class="strip" id="s-vendor"></div><div class="rle mono" id="rle-vendor"></div></div>
+  <p class="note" id="expect" style="margin:0"></p>
+</div>
+<p>Three things to try. Sort by one column and watch its runs collapse to one per value. Add a second
+  key: it gets runs too, but only inside the first key's runs. Swap the order and the winner swaps.
+  That is the whole sort trade-off: the first column takes the best runs, later ones get what is left,
+  and a near-unique column (a timestamp, an amount) cannot form runs at all.</p>
+<p>The same measurement on the real NYC taxi mart, runs per 4M rows, Spark without and with V-Order:</p>
+<div class="scroll"><table>
+  <thead><tr><th>column</th><th>no V-Order</th><th>V-Order</th><th>fewer runs</th></tr></thead>
+  <tbody>
+    <tr><td class="mono">passenger_count</td><td>1,368,511</td><td>406</td><td>3,371×</td></tr>
+    <tr><td class="mono">payment_type</td><td>1,910,869</td><td>594</td><td>3,217×</td></tr>
+    <tr><td class="mono">fare_amount</td><td>3,857,025</td><td>112,540</td><td>34×</td></tr>
+    <tr><td class="mono">tpep_pickup_datetime</td><td>3,996,210</td><td>3,991,701</td><td>1.0×</td></tr>
+  </tbody>
+</table></div>
+<p class="note">Spark runs 31451599140 and 31450956154. The skewed categoricals collapse by three orders
+  of magnitude, the near-unique timestamp does not move. On the 5-column AEMO mart, which has almost
+  nothing repetitive to group, the same switch moved no column. What sorting is worth depends on the
+  table's columns and skew, not on its row count.</p>
+
+<!-- 6 ------------------------------------------------------------------------------------------ -->
+<h2>6. Sort the table, or sort each file</h2>
+<p class="claim">A global sort keeps each value in one long run that crosses row groups. Sorting each file
+  on its own restarts every value in every row group.</p>
+<div class="demo pair">
+  <div>
+    <div class="note"><b>Global sort</b>: one <code>ORDER BY</code> over the whole table, then cut into row groups</div>
+    <div class="rgs" id="rg-global"></div>
+  </div>
+  <div>
+    <div class="note"><b>Per-file sort</b>: each file sorted on its own, the way V-Order sorts</div>
+    <div class="rgs" id="rg-local"></div>
+  </div>
+</div>
+<p>Same 48 rows, same four values. Globally sorted, most row groups hold one or two values: few runs,
+  small local dictionaries, little to merge. Sorted per file, every row group holds every value. That
+  is still far better than arrival order, which is why V-Order works, and a per-table sort chosen for
+  the table lands in the same place: in our runs duckrun's sort read at 0.90× V-Ordered Spark's
+  Direct Lake CU, the same within noise.</p>
+<p>V-Order is more than a sort. Microsoft describes it as four things: a sort within each file,
+  row-group distribution, dictionary encoding and compression. In Fabric Spark only the
+  <code>readHeavyForPBI</code> profile turns it on; it lowered cold load on 5 of 5 of our datasets.</p>
+
+<!-- 7 ------------------------------------------------------------------------------------------ -->
+<h2>7. What does not matter</h2>
+<p><b>File count and file size.</b> Direct Lake loads whole columns and does no file or row-group
+  skipping, so neither ever separated writers in the cost data. The one rule: never cap a file below
+  one row group's bytes, or the writer has to cut the row group short.</p>
+
+<footer>
+  <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
+    the live numbers are on <a href="./">the results page</a>. Further reading:
+    <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">how Direct Lake uses storage</a> (Microsoft),
+    <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun's parquet layout</a>.</p>
+</footer>
+</main>
+
+<script>
+// Illustrations, not data. A fixed seed so the page draws the same strips on every load.
+(() => {
+  const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
+  let seed = 7;
+  const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+
+  const runs = (vals) => vals.reduce((n, v, i) => n + (i === 0 || v !== vals[i - 1] ? 1 : 0), 0);
+  const rle = (vals, names) => {
+    const out = [];
+    vals.forEach((v, i) => { if (i && v === vals[i - 1]) out[out.length - 1][1]++; else out.push([v, 1]); });
+    return out.map(([v, c]) => `${names[v]}×${c}`).join(" · ");
+  };
+  function strip(el, vals, offset = 0) {
+    el.style.gridTemplateColumns = `repeat(${vals.length}, 1fr)`;
+    el.innerHTML = vals.map((v, i) =>
+      `<span class="cell${i && v !== vals[i - 1] ? " rs" : ""}" style="background:${PAL[v + offset]}"></span>`).join("");
+  }
+
+  // ---- section 5: two columns, four orders
+  const PAY = ["card", "cash", "no charge", "dispute"], PAYN = [29, 12, 5, 2];
+  const VEN = ["v1", "v2"];
+  const rows = shuffle(PAYN.flatMap((n, v) => Array.from({ length: n }, () => ({ p: v, v: rand() < 0.62 ? 0 : 1 }))));
+  const N = rows.length;
+  const by = (...ks) => [...rows].sort((a, b) => { for (const k of ks) if (a[k] !== b[k]) return a[k] - b[k]; return 0; });
+  const ORDERS = { arrival: rows, pay: by("p"), payvendor: by("p", "v"), vendorpay: by("v", "p") };
+
+  document.getElementById("legend").innerHTML =
+    PAY.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("")
+    + VEN.map((n, i) => `<span><i style="background:${PAL[i + 4]}"></i>vendor ${n}</span>`).join("");
+
+  const sumP2 = (counts) => counts.reduce((s, c) => s + (c / N) ** 2, 0);
+  const vCounts = [0, 1].map((v) => rows.filter((r) => r.v === v).length);
+  document.getElementById("expect").textContent =
+    `In arrival order a column breaks into about N·(1 − Σp²) runs: ${Math.round(N * (1 - sumP2(PAYN)))} for payment_type `
+    + `and ${Math.round(N * (1 - sumP2(vCounts)))} for vendor at N = ${N}. Sorted, the leading column has exactly one run per value.`;
+
+  function show(name) {
+    const o = ORDERS[name];
+    const p = o.map((r) => r.p), v = o.map((r) => r.v);
+    strip(document.getElementById("s-pay"), p);
+    strip(document.getElementById("s-vendor"), v, 4);
+    document.getElementById("r-pay").textContent = `${runs(p)} runs`;
+    document.getElementById("r-vendor").textContent = `${runs(v)} runs`;
+    document.getElementById("rle-pay").textContent = rle(p, PAY);
+    document.getElementById("rle-vendor").textContent = rle(v, VEN);
+    document.querySelectorAll("#sortdemo button").forEach((b) =>
+      b.setAttribute("aria-pressed", String(b.dataset.order === name)));
+  }
+  document.querySelectorAll("#sortdemo button").forEach((b) => b.addEventListener("click", () => show(b.dataset.order)));
+  show("arrival");
+
+  // ---- section 6: four row groups of 12, global sort against per-file sort
+  const COUNTS = [20, 14, 9, 5];
+  const all = COUNTS.flatMap((n, v) => Array(n).fill(v));
+  const global = [0, 1, 2, 3].map((g) => all.slice(g * 12, g * 12 + 12));
+  // Deal the rows round-robin into four files, then sort each file on its own.
+  const local = [0, 1, 2, 3].map((g) => all.filter((_, i) => i % 4 === g).sort((a, b) => a - b));
+  function rgs(id, groups) {
+    const el = document.getElementById(id);
+    el.innerHTML = groups.map((g, i) =>
+      `<div><div class="strip"></div><div class="cap">row group ${i + 1}: ${runs(g)} run${runs(g) > 1 ? "s" : ""}, dictionary of ${new Set(g).size}</div></div>`).join("");
+    el.querySelectorAll(".strip").forEach((s, i) => strip(s, groups[i]));
+  }
+  rgs("rg-global", global);
+  rgs("rg-local", local);
+})();
+</script>
+</body>
+</html>

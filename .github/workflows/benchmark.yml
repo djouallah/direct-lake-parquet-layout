@@ -189,7 +189,7 @@ on:
       # `readHeavyForSpark` is deliberately NOT an option: despite the name it does not enable
       # V-Order (the profile reference and our own in-session measurement agree), so it is neither
       # the workspace default nor the PBI-optimised layout — its one measured run only blurred the
-      # two-way comparison, and `profile_table.mjs` already excludes it from the README table.
+      # two-way comparison, and `profile_table.mjs` already excludes it from the docs/FINDINGS.md table.
       spark_resource_profile:
         description: "spark write profile"
         type: choice

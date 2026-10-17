@@ -1868,7 +1868,7 @@ that describes how the page PRESENTS** — `renderSummary`, the scorecard, the s
 tables, `LAYOUTS_SHOWN` / `PROFILES_HIDDEN` / `ENGINES_HIDDEN`, `layoutKey`, the generation switch,
 `?rows=`/`?table=`/`?record=` — **describes `dashboard/app.js`, which is no longer served.** It is
 kept, with `app.test.mjs`, only because `profile_table.mjs` reuses its join to regenerate the
-README's spark-profile table from `capacity.yml`. The bullets about the LEDGER (`cu/measure.py`, the
+docs/FINDINGS.md's spark-profile table from `capacity.yml`. The bullets about the LEDGER (`cu/measure.py`, the
 GUID join, `max(old, new)`, the workflows and triggers) are unaffected. Findings measured
 2026-10-17 that the new page leads with: a column's compressed size predicts its cold load cost (ρ
 0.73–0.95 per dataset) and not its warm cost (ρ ≈ 0); cold is 3–27× warm in Direct Lake and only
@@ -2384,7 +2384,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   `iceberg_properties` config. `row_group_size` / `file_size_mb` now drive BOTH DuckDB writers from
   one dispatch, because `write.parquet.row-group-size` counts ROWS like duckrun's does. **The SORT
   half is still true** — nothing in dbt-duckdb emits `ALTER TABLE … SET SORTED BY`, so the only sort
-  this leg gets is the model's own trailing `ORDER BY`. README.md has the property table, the two
+  this leg gets is the model's own trailing `ORDER BY`. docs/FINDINGS.md has the property table, the two
   knobs that are NOT mapped (`dictionary_size_limit`, `parquet_version` — the encoding half, an
   upstream gap), and why a `post_hook` cannot carry this.
   ⚠️ **THE ROW COUNT ALONE IS INERT, AND EVERY ICEBERG ROW-GROUP COUNT ON RECORD IS A HARDCODED
@@ -2443,7 +2443,7 @@ no data at all. `all.yml`, `dbt.yml` and `cu.yml` are gone.
   iceberg runs collapsed into ONE row, and `groupMid` would have taken a median across two writers'
   parquet and printed a `53–1,172 RG` span for a difference nobody dispatched. Hiding the engine used
   to prevent exactly that; with the hiding gone, the old generation has to leave instead. Their
-  numbers are in this file and README.md, which is what they were for.
+  numbers are in this file and docs/FINDINGS.md, which is what they were for.
   Counts as of 2026-08-21, and they move every week the grid runs: aemo holds **28** layout groups,
   of which the two surviving rules show **8** — one per engine plus duckrun's `auto` and both spark
   profiles. Do not treat any count in these bullets as current; recompute it before quoting one.
