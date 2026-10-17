@@ -1,5 +1,12 @@
 # `dashboard/` — the report
 
+**One question: which layout properties matter, and by how much.** Power BI reads parquet and sees
+only the layout, so the home page is one card per layout property (bytes on disk, sort order, column
+size, row-group size, compression, dictionary encoding, file count), plus a controlled "Spark: turn
+V-Order on", the V-Order reproducibility check and DirectQuery as context. Every number is global:
+fitted per dataset ("×N per doubling" or a ratio of medians), then the median across datasets so each
+dataset weighs the same, with "N of M datasets agree" beside it. No dataset switcher.
+
 **A live write-up of what in a parquet file decides how fast, and how cheaply, Power BI reads it.**
 `report.js` fetches `history/runs/*.json` and `history/cu.json` from `raw.githubusercontent.com` on
 every load.

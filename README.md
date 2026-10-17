@@ -291,15 +291,21 @@ Segment count was the loud problem and it was never the expensive one.
 **The encoding half is now fixed upstream too — and the fix is a footer list, not a new
 encoder.** [duckdb#24957][ddb-estats] (merged 2026-08-24) makes DuckDB's writer emit
 `encoding_stats`, the declaration rule #3 turns on. Until it, no DuckDB-written chunk — dictionary
-page or not — could be *proven* dictionary-encoded without decoding it, which is the likely
-reason fixing the geometry moved this leg's CU only ~15%: the 43 chunks that did carry a
-dictionary were still undeclared. The PR's measurement of what the one footer list is worth:
-cold first-touch of a 142M-row dictionary string column, **10,857.5 → 689.3 ms**. It is in no
-release — stable is 1.5.5 — but the pre-release wheel both DuckDB legs pin now CARRIES it: run
-34739218189 wrote an Iceberg table into OneLake on that exact wheel and its parquet's
-`encoding_stats` declare a dictionary page. No benchmark run here carries it yet, since the pin
-moved on 2026-09-13 and nothing has been dispatched on it since, so the iceberg column should close
-on the others at the next iceberg run.
+page or not — could be *proven* dictionary-encoded without decoding it. The PR's measurement of
+what the one footer list is worth: cold first-touch of a 142M-row dictionary string column,
+**10,857.5 → 689.3 ms**. It is in no release — stable is 1.5.5 — but the pre-release wheel both
+DuckDB legs pin carries it.
+
+⚠️ **ON THIS TABLE IT DID NOT MOVE THE COST, and this section used to predict that it would.** Run
+39014779361 (2026-10-17, pin `2.0.0.dev2610161340`) is the first iceberg benchmark on a declaring
+writer: all 53 row groups of `fct_summary` declare `encoding_stats`, and every chunk with a
+dictionary is declared fully dictionary-encoded (`mw` still has 11 chunks that fell back to
+`PLAIN`). Against the two undeclared iceberg runs of 2026-09-03 on the same table and the same 53
+row groups: cold **37 s** against 36 and 41 s, Direct Lake read CU about **3.0k** against 3.0k and
+3.1k, `price` cold 1.2 s against 1.1–1.2 s. So the declaration was not what kept this leg ~1.7×
+delta-rs's read cost; what still separates it is the index encoding (`PLAIN_DICTIONARY`, no RLE)
+and the `PLAIN` fallback on `mw`. One run against two rules out a large effect here, not a small
+one.
 
 ```sql
 COPY (SELECT * FROM fct_summary ORDER BY date, time, price)  -- #2: sort is yours to do

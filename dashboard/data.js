@@ -277,6 +277,10 @@ export function readCu(rec, ledger) {
       .map((it) => it.name));
     const guids = Object.entries(items).filter(([, it]) => it && (roles.includes(it.role)
       || (it.role === "sql_endpoint" && lakehouses.has(it.name)))).map(([g]) => g);
+    // A session's bill is only whole when its semantic model was billed: without it, what is left is
+    // the shortcut lakehouse's few CU (runs 35184037336, 34563142340 read 15 and 16 CU that way).
+    const model = Object.entries(items).find(([, it]) => it && it.role === roles[0]);
+    if (!model || led[model[0]] === undefined || led[model[0]] === null) { out[phase] = null; continue; }
     let sum = 0, seen = false;
     for (const g of guids) {
       const v = led[g];
@@ -313,6 +317,11 @@ export function build(records, probeMap, ledger = null) {
         hot: totalOf(r, "dl", "hot", qDl) };
       r.dq = { cold: totalOf(r, "dq", "cold", qDq), warm: totalOf(r, "dq", "warm", qDq),
         hot: totalOf(r, "dq", "hot", qDq) };
+      // A session that did not complete the query suite billed part of one (run 31850696469 died on a
+      // year-0002 date mid-suite and read 525 CU against a median of 1,649), so its read CU is not a
+      // measurement of reading that layout.
+      if (r.dl.cold === null) r.cu = { ...r.cu, dl: null };
+      if (r.dq.cold === null) r.cu = { ...r.cu, dq: null };
       runs.push(r);
     }
     perDataset[ds] = { rows: gen, runs: kept.length, queriesDl: qDl, queriesDq: qDq };

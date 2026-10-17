@@ -143,8 +143,6 @@ test("strength words never call a weak correlation a relationship", () => {
   assert.equal(d.strength(-0.5), "moderate");
   assert.equal(d.strength(0.3), "weak");
   assert.equal(d.strength(0.1), "none");
-  assert.equal(r.linkWord(0.3), "only a weak link");
-  assert.equal(r.linkWord(null), "too few points to judge a link");
 });
 
 test("verdict: clear only when every run of the winner beats every run of the rest", () => {
@@ -152,12 +150,6 @@ test("verdict: clear only when every run of the winner beats every run of the re
   assert.equal(d.verdict({ a: [1, 2, 5], b: [4, 5, 6] }).status, "noise");
   assert.equal(d.verdict({ a: [1, 2], b: [4, 5, 6] }).status, "few");
   assert.equal(d.verdict({ a: [1, 2, 3] }).status, "few");
-});
-
-test("the sign note is only said when it means something", () => {
-  assert.match(r.signNote(5, 5), /1 time in 16/);
-  assert.equal(r.signNote(4, 5), "");
-  assert.equal(r.signNote(3, 3), "");
 });
 
 test("formatters", () => {
@@ -195,82 +187,100 @@ function withCu(recs) {
   return { recs, ledger: { items } };
 }
 
-test("V-Order: the read-CU saving is measured, labelled and on the card", () => {
+// ---------------------------------------------------------------------------- layout properties
+
+test("slope per doubling: y = x^0.5 reads ×√2, and a property that never moved is not measurable", () => {
+  const xs = [1, 2, 4, 8, 16, 32], ys = xs.map((x) => Math.sqrt(x));
+  assert.ok(Math.abs(2 ** r.slopeLog2(xs, ys) - Math.SQRT2) < 1e-9);
+  assert.equal(r.slopeLog2([5, 5, 5, 5, 5], [1, 2, 3, 4, 5]), null);
+});
+
+test("every dataset weighs the same: one with ten times the runs does not move the global number", () => {
+  const g = r.acrossDatasets({ aemo: 0.5, nyc: 0.9, bts: 0.95 });
+  assert.equal(g.med, 0.9);
+  assert.deepEqual([g.n, g.down, g.up], [3, 3, 0]);
+});
+
+test("Spark V-Order card: the read-CU ratio per dataset, its median, and the agreement", () => {
   const { recs, ledger } = withCu(vorderFixture());
-  const f = r.findVOrder(r.context(recs, {}, ledger));
-  assert.match(f.short, /Direct Lake read CU lower on 4 of 4 datasets \(4 clearly\)/);
-  assert.match(f.head[0], /2\.0×/);
-});
-
-test("V-Order: a separated cold and an overlapping warm are reported as exactly that", () => {
-  const ctx = r.context(vorderFixture());
-  const f = r.findVOrder(ctx);
+  const f = r.propSparkVOrder(r.context(recs, {}, ledger));
   assert.equal(f.status, "clear");
-  assert.match(f.short, /cold faster on 4 of 4, warm faster on only/);
-  assert.doesNotMatch(f.short, /read CU/);   // no ledger, so no CU claim at all
-  assert.match(f.html, /1 time in 8/);
+  assert.match(f.head[0], /^−50% CU$/);
+  assert.match(f.html, /4 of 4 datasets agree/);
 });
 
-test("a finding the data cannot support says so instead of vanishing", () => {
-  const ctx = r.context([rec({ id: 1 })]);
-  const f = r.findVOrder(ctx);
-  assert.equal(f.status, "few");
-  assert.match(f.short, /No dataset has Spark runs with and without V-Order yet/);
-  assert.equal(r.findRowGroups(ctx).status, "few");
-  assert.match(r.findRowGroups(ctx).short, /Not enough runs at different row-group counts/);
+test("an effect inside ±10% is reported as no measurable effect, not dropped", () => {
+  const recs = [];
+  let id = 0;
+  for (const ds of ["aemo", "nyc", "bts"]) for (const files of [1, 2, 4, 8, 16]) {
+    const x = rec({ id: ++id, ds, cfg: { sorted: "true" } });
+    x.layout.stats.duckrun["mart." + d.DATASETS[ds].mart].num_files = files;
+    recs.push(x);
+  }
+  const f = r.propFileCount(r.context(recs));
+  assert.equal(f.status, "none");
+  assert.match(f.claim || f.html, /no measurable effect/);
 });
 
-// More probed columns, so each dataset clears the three-column floor. `dir` 1: faster warm with more
-// row groups; -1: slower.
-const probes = (rgs, dir) => Object.fromEntries(["probe_duid", "probe_date", "probe_time", "probe_fare",
-  "probe_distance", "probe_depdelay", "probe_dow", "probe_origin", "probe_pulocation", "probe_paytype"].map((q) => [q,
-  { cold_ms: 300 + rgs * 5, warm_ms: 300 - dir * rgs, hot_median_ms: 250 - dir * rgs }]));
-
-test("row groups: measured per column cold and per query warm, so a trade is not averaged away", () => {
-  // Cold column cost rises with the row-group count while warm falls; the suite TOTAL barely moves,
-  // which is exactly the shape the old total-based finding read as "no effect".
+test("row-group card: a column's cold cost per doubling of rows per row group, within the same column", () => {
   const recs = [];
   let id = 0;
   for (const ds of ["aemo", "nyc", "bts"]) {
     for (const rgs of [8, 16, 32, 64, 128]) {
-      recs.push(rec({ id: ++id, ds, rgs, cfg: { sorted: "true" }, cold: 500 + rgs * 10, warm: 400 - rgs * 2, extra: probes(rgs, 1) }));
+      // Fewer, bigger row groups (rgs small) load cheaper cold.
+      // Probes for each mart's own columns, so every dataset has columns to fit (nyc and bts map
+      // probe_fare / probe_distance / probe_depdelay, aemo maps probe_mw / probe_price).
+      const extra = Object.fromEntries(["probe_fare", "probe_distance", "probe_depdelay"].map((q) =>
+        [q, { cold_ms: 500 + rgs * 20, warm_ms: 400 - rgs, hot_median_ms: 300 }]));
+      recs.push(rec({ id: ++id, ds, rgs, rows: 128e6, cfg: { sorted: "true" }, cold: 500 + rgs * 20, warm: 400 - rgs, extra }));
     }
   }
-  const t = r.rowGroupTrade(r.context(recs), "aemo");
-  assert.equal(t.cold.up, 5);      // every probed column slower to load cold with more row groups
-  assert.ok(t.warm.down >= 2);     // and both probes faster warm
-  const f = r.findRowGroups(r.context(recs));
+  const f = r.propRowGroups(r.context(recs));
+  assert.match(f.head[0], /^−\d+% cold$/);
   assert.equal(f.status, "clear");
-  assert.match(f.short, /slower to load cold on 3 of 3 datasets, but made warm queries faster on 3/);
 });
 
-test("row groups: a dataset where warm also gets slower is named, not hidden", () => {
+test("the reproducibility card reads 'same within noise' when delta-rs and V-Order land together", () => {
   const recs = [];
+  const items = {};
   let id = 0;
   for (const ds of ["aemo", "nyc", "bts"]) {
-    for (const rgs of [8, 16, 32, 64, 128]) {
-      const warm = ds === "bts" ? 100 + rgs * 2 : 400 - rgs * 2;
-      recs.push(rec({ id: ++id, ds, rgs, cfg: { sorted: "true" }, cold: 500 + rgs * 10, warm, extra: probes(rgs, ds === "bts" ? -1 : 1) }));
+    for (let i = 0; i < 3; i++) {
+      for (const [engine, cfg, cu] of [["spark", { resource_profile: "readHeavyForPBI" }, 1000], ["duckrun", { sorted: "true" }, 1020], ["spark", { resource_profile: "writeHeavy" }, 2000]]) {
+        const x = rec({ id: ++id, ds, engine, cfg });
+        x.items = { [`m${id}`]: { role: "semantic_model" } };
+        items[`m${id}`] = { Query: cu + i };
+        recs.push(x);
+      }
     }
   }
-  const f = r.findRowGroups(r.context(recs));
-  assert.match(f.short, /warm queries faster on 2 \(slower on BTS flights\)/);
+  const f = r.propVOrder(r.context(recs, {}, { items }));
+  assert.equal(f.status, "parity");
+  assert.match(f.head[0], /^×1\.0\d CU$/);
 });
 
-test("home is one card per finding, and a card opens that finding alone", () => {
+test("home is one card per layout property; a card opens that property alone; no dataset switcher", () => {
   const recs = vorderFixture();
   const home = r.render(recs, {});
-  assert.equal((home.html.match(/class="card"/g) || []).length, r.FINDINGS.length);
-  assert.match(home.html, /href="\?finding=vorder"/);
-  assert.match(home.html, /href="\?page=method"/);
-  const one = r.render(recs, { finding: "vorder", dataset: "nyc" });
-  assert.match(one.html, /id="vorder"/);
+  assert.equal((home.html.match(/class="card"/g) || []).length, r.PROPERTIES.length);
+  assert.match(home.html, /which layout properties matter, and by how much/);
+  assert.doesNotMatch(home.html, /dataset=/);
+  const one = r.render(recs, { finding: "spark-vorder" });
+  assert.match(one.html, /id="spark-vorder"/);
+  assert.match(one.html, /href="\?">← All properties/);
   assert.doesNotMatch(one.html, /class="card"/);
-  assert.match(one.html, /href="\?dataset=nyc">← All findings/);
-  // The dataset switch keeps you on the finding.
-  assert.match(one.html, /href="\?finding=vorder&dataset=aemo"/);
   for (const page of ["method", "how", "data"]) assert.match(r.render(recs, { page }).html, new RegExp(`id="${page}"`));
-  assert.deepEqual(r.render(recs, { dataset: "nyc" }).ctx.datasets, ["nyc"]);
+});
+
+test("a session whose model was never billed, or whose suite did not finish, has no read CU", () => {
+  const x = rec({ id: 1 });
+  x.items = { b: { role: "bench_dl", name: "dbt_delta_dl" } };
+  assert.equal(d.readCu(x, { items: { b: { "OneLake Read": 15 } } }).dl, null);
+  const y = rec({ id: 2 });
+  delete y.benchmark.timings.aemo_duckrun.probe_mw.cold_ms;
+  y.items = { m: { role: "semantic_model" } };
+  const b = d.build([y, rec({ id: 3 }), rec({ id: 4 })], {}, { items: { m: { Query: 500 } } });
+  assert.equal(b.runs.find((r2) => r2.id === "2").cu.dl, null);
 });
 
 test("every card carries a headline number and the finding's own sentence", () => {
@@ -317,40 +327,9 @@ test("log ticks fill a narrow decade instead of leaving only its ends", () => {
   assert.deepEqual(r.logTicks(1, 1000), [1, 10, 100, 1000]);
 });
 
-test("writer-blind: cold explained by size and row groups leaves no writer residual, unless one exists", () => {
-  // Cold cost is a pure function of the layout for delta-rs and Spark; the warehouse pays 1.5x extra.
-  const recs = [];
-  let id = 0;
-  for (const [engine, cfg, extraCost] of [["duckrun", { sorted: "true" }, 1], ["spark", { resource_profile: "writeHeavy" }, 1], ["dwh", {}, 1.5]]) {
-    for (const [mb, rgs] of [[40, 10], [80, 10], [40, 40], [160, 20], [80, 80], [120, 30], [60, 15]]) {
-      const cold = Math.round(5 * mb * Math.sqrt(rgs) * extraCost);
-      recs.push(rec({ id: ++id, engine, cfg, rgs, mb: mb * 2, cold }));
-    }
-  }
-  const m = r.layoutModel(r.context(recs), ["aemo"]);
-  const by = Object.fromEntries(m.fams.map((f) => [f.family, f.resid]));
-  assert.ok(Math.abs(by["delta-rs"] - by.spark) < 0.05);
-  assert.ok(by.warehouse / by["delta-rs"] > 1.4);
-});
-
 test("cards speak plainly: no correlation coefficients on the home page", () => {
   const { html } = r.render(vorderFixture(), {});
   assert.doesNotMatch(html, /ρ/);
-});
-
-test("writer-blind: cold explained by size and row groups leaves no writer residual, unless one exists", () => {
-  // Cold cost is a pure function of the layout for delta-rs and Spark; the warehouse pays 1.5x extra.
-  const recs = [];
-  let id = 0;
-  for (const [engine, cfg, extraCost] of [["duckrun", { sorted: "true" }, 1], ["spark", { resource_profile: "writeHeavy" }, 1], ["dwh", {}, 1.5]]) {
-    for (const [mb, rgs] of [[40, 10], [80, 10], [40, 40], [160, 20], [80, 80], [120, 30], [60, 15]]) {
-      recs.push(rec({ id: ++id, engine, cfg, rgs, mb: mb * 2, cold: Math.round(5 * mb * Math.sqrt(rgs) * extraCost) }));
-    }
-  }
-  const m = r.layoutModel(r.context(recs), ["aemo"]);
-  const by = Object.fromEntries(m.fams.map((f) => [f.family, f.resid]));
-  assert.ok(Math.abs(by["delta-rs"] - by.spark) < 0.05);
-  assert.ok(by.warehouse / by["delta-rs"] > 1.4);
 });
 
 test("dictionary: with the footer declaration recorded, remap and hashing are measured apart", () => {
@@ -373,19 +352,6 @@ test("dictionary: without the declaration it says so and is only partly measured
   const f = r.findDictionary(r.context([rec({ id: 1 })]));
   assert.equal(f.status, "partial");
   assert.match(f.short, /do not yet capture the footer declaration/);
-});
-
-test("row-group tension: bins pooled across engines, sweet spot where the slower tier is nearest its best", () => {
-  const runs = [];
-  // Cold best at few row groups, warm best at many; the middle bin is the compromise.
-  for (const [rgs, cold, warm] of [[8, 100, 200], [8, 102, 210], [32, 110, 120], [32, 112, 118], [128, 150, 100], [128, 155, 101]]) {
-    runs.push({ rgs, rowsPerRg: 1e8 / rgs, dl: { cold, warm }, cu: { dl: cold * 10 } });
-  }
-  const b = r.rowGroupBins(runs);
-  assert.equal(b.rows.length, 3);
-  assert.equal(b.sweet.rgs, 32);
-  assert.match(r.tensionSvg(b), /sweet spot/);
-  assert.equal(r.rowGroupBins(runs.slice(0, 2)), null);   // one bin is not a curve
 });
 
 test("row-group band: octaves pooled across datasets, both tiers within 10%, stated as a range", () => {
@@ -419,5 +385,5 @@ test("the build inlines every module and leaves no relative import behind", asyn
   const html = readFileSync(out, "utf8");
   assert.doesNotMatch(html, /^import .* from "\.\//m);
   assert.match(html, /<script id="snapshot" type="application\/json"><\/script>/);
-  assert.match(html, /export function findVOrder/);
+  assert.match(html, /export function propSparkVOrder/);
 });

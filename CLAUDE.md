@@ -1836,9 +1836,24 @@ model by DAX over the Power BI `executeQueries` endpoint. Fabric exposes **no pe
 API** — that model is the only authoritative source, which is why this exists.
 [cu/README.md](cu/README.md) and [dashboard/README.md](dashboard/README.md) have the detail.
 
-⚠️ **THE PUBLISHED PAGE WAS REPLACED ON 2026-10-17.** It is now a live write-up of what in a parquet
-file decides Power BI speed (`dashboard/data.js` + `report.js`, tests `data.test.mjs`), modelled on
-the user's post *Writing parquet that VertiPaq likes*. The home page is one CARD per finding
+⚠️ **THE PUBLISHED PAGE WAS REPLACED ON 2026-10-17.** It answers ONE question: **which layout
+properties matter, and by how much** — Power BI reads parquet and sees only the layout, so no card is
+about an engine (the one engine card, "Spark: turn V-Order on", is a controlled one-switch test).
+`dashboard/data.js` + `report.js` (`PROPERTIES`), tests `data.test.mjs`. **GLOBAL ONLY, and the
+aggregation is shown, not hidden:** a continuous property is fitted per dataset as "×N per
+doubling" (`slopeLog2`), an on/off one as a ratio of medians (`ratioEffect`), and the card number is
+the MEDIAN ACROSS DATASETS (`acrossDatasets`), so every dataset weighs the same — a pooled median of
+runs let AEMO (half the runs) decide everything, which is how a 2M–8M row-group band appeared and
+then vanished under equal weighting. Each card says "N of M datasets agree". An effect counts beyond
+±10% with most datasets agreeing (3 of 5 counts; fixed before the numbers were read, deliberately
+not tightened after). No dataset switcher, no per-dataset charts; runs are only on the Data page.
+**V-Order is four levers, not a thing:** a sort WITHIN each file (not global), row-group
+distribution, dictionary encoding, compression (Microsoft Learn). A per-table delta-rs sort reads at
+0.90× V-Ordered Spark's CU ("same within noise"); the honest difference is that duckrun's sort is
+chosen per table (byte-minimising picker, NOT query-aware), V-Order is one generic rule. Read CU
+excludes sessions whose semantic model was never billed or whose suite did not finish (runs
+35184037336, 34563142340, 31850696469 read 15/16/525 CU as partial sessions). It reads
+`history/runs/` AND `history/cu.json`; earlier wording in this bullet follows. The home page is one CARD per finding
 (headline number, claim, status); a card opens that finding's evidence (`?finding=<id>`). It reads
 `history/runs/` AND `history/cu.json`, but uses only READ CU — the Direct Lake and DirectQuery
 sessions' own items (`readCu` in `data.js`) — and deliberately NOT build CU, by the user's call
