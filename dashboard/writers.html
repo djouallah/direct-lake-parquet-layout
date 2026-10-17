@@ -140,6 +140,8 @@ pre code { background:none; padding:0; font-size:inherit; }
 .card { background:var(--soft); border-radius:10px; padding:.9rem 1rem; display:flex; flex-direction:column; gap:.3rem; }
 .card span { color:var(--dim); font-size:.92rem; }
 td code { white-space:nowrap; }
+.callout { border-left:3px solid var(--c1); padding:.1rem 0 .1rem 1rem; margin:1.2rem 0; }
+.callout p { margin:.5rem 0; }
 table.left th, table.left td { text-align:left; }
 </style>
 </head>
@@ -156,15 +158,23 @@ table.left th, table.left td { text-align:left; }
   <a href="#databricks" role="tab" data-pane="databricks">Databricks</a>
   <a href="#deltars" role="tab" data-pane="deltars">delta-rs</a>
   <a href="#duckdb" role="tab" data-pane="duckdb">DuckDB</a>
-  <a href="#fabric" role="tab" data-pane="fabric">Fabric</a>
 </nav>
 </div>
 
 <section class="pane" data-name="overview" aria-label="Overview">
 <h1>Third-party writers</h1>
-<p class="sub">Not writing with Fabric? You do not need V-Order. VertiPaq reads parquet from any writer;
-  it just loads some layouts much faster than others. Here is what to set, per writer, and what it was
-  measured to buy.</p>
+<p class="sub">Power BI reads parquet from any writer, but it loads some layouts much faster than others.</p>
+
+<div class="callout">
+  <p><b>Writing inside Fabric? Just use V-Order.</b> It applies all three rules below for you. On Fabric
+    Spark only the <code>readHeavyForPBI</code> resource profile turns it on (the default
+    <code>writeHeavy</code> does not, nor does <code>readHeavyForSpark</code> despite its name); on Fabric
+    Warehouse it is on by default, so leave it. Measured: up to 2.8× less Direct Lake CU for about 8% more
+    build CU.</p>
+  <p><b>Writing anywhere else? Simulate it.</b> V-Order is not a format, it is these three rules. Set them
+    on your writer and you land in the same place: a delta-rs table sorted per table read at 0.90×
+    V-Ordered Spark's Direct Lake CU, and Databricks with the recipe came within 4% of it.</p>
+</div>
 
 <div class="cards">
   <div class="card"><b>1. Row groups of millions of rows</b><span>Every library default is far too small.
@@ -181,7 +191,6 @@ table.left th, table.left td { text-align:left; }
     <tr><td>Databricks</td><td><code>maxRecordsPerFile</code></td><td><code>parquet.dictionary.page.size</code></td><td><code>CLUSTER BY</code> one key</td><td><a href="#databricks">recipe →</a></td></tr>
     <tr><td>delta-rs / Python</td><td><code>max_row_group_size</code></td><td><code>dictionary_page_size_limit</code></td><td><code>ORDER BY</code> before writing</td><td><a href="#deltars">recipe →</a></td></tr>
     <tr><td>DuckDB <code>COPY</code></td><td><code>ROW_GROUP_SIZE</code></td><td><code>DICTIONARY_SIZE_LIMIT</code></td><td><code>ORDER BY</code> in the query</td><td><a href="#duckdb">recipe →</a></td></tr>
-    <tr><td>Fabric Spark / Warehouse</td><td colspan="3">V-Order does all three: just turn it on</td><td><a href="#fabric">recipe →</a></td></tr>
   </tbody>
 </table></div>
 <p class="note">Whatever you write with, check what you actually got by reading the parquet footer.
@@ -324,21 +333,6 @@ write_deltalake(path, table, writer_properties=wp,
 FROM parquet_metadata('fct_summary.parquet') GROUP BY 1;</code></pre>
 </section>
 
-<section class="pane" data-name="fabric" aria-label="Fabric">
-<h2>Fabric Spark and Fabric Warehouse</h2>
-<p class="claim">Writing inside Fabric, you get V-Order, which does all three rules for you. Just make
-  sure it is on.</p>
-<ul>
-  <li><b>Fabric Spark: only the <code>readHeavyForPBI</code> resource profile turns it on.</b> The
-    default <code>writeHeavy</code> turns it off, and <code>readHeavyForSpark</code> does not set it at all
-    despite the name. Measured: up to 2.8× less Direct Lake CU for about 8% more build CU.</li>
-  <li><b>Fabric Warehouse: on by default, leave it.</b> <code>ALTER DATABASE … SET VORDER = OFF</code> is
-    irreversible.</li>
-</ul>
-<pre><code>spark.fabric.resourceProfile  readHeavyForPBI     # session conf, environment or workspace setting</code></pre>
-<p class="note">A per-table sort written by delta-rs measured at 0.90× V-Ordered Spark's Direct Lake CU,
-  the same within noise. V-Order is not magic, it is these three rules applied for you.</p>
-</section>
 
 <footer>
   <p>The measurements behind every rule, with run ids and caveats:
