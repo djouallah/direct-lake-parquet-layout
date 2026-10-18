@@ -91,9 +91,18 @@ WITH trips AS (
   )
 )
 
+{# THE TWO DATETIMES ARE WRITTEN WITH A TIME ZONE, NOT AS `TIMESTAMP` (2026-10-18), exactly as nyc's
+   fct_trips: a no-zone timestamp lands as Iceberg `timestamp` / Delta `timestamp_ntz`, which the SQL
+   analytics endpoint does not expose, so DirectQuery fails with `Invalid column name`. Confirmed on
+   nyc run 39047118877. `timezone('UTC', …)` keeps the stored wall-clock value whatever the session
+   TimeZone; `pickup_date` still casts the source value. #}
 SELECT
   {%- for name in cols %}
+  {%- if name in ['lpep_pickup_datetime', 'lpep_dropoff_datetime'] %}
+  timezone('UTC', CAST({{ name }} AS {{ green_trip_type(name, 'duckdb') }})) AS {{ name }},
+  {%- else %}
   CAST({{ name }} AS {{ green_trip_type(name, 'duckdb') }}) AS {{ name }},
+  {%- endif %}
   {%- endfor %}
   CAST(lpep_pickup_datetime AS DATE) AS pickup_date,
   {{ parse_filename('filename') }} AS file
