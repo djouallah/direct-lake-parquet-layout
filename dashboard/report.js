@@ -923,10 +923,8 @@ export function perfSection(ctx, opts = {}) {
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
     ${perfHeadline(groups, "cu", "cheapest to read")}
     <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
-    ${perfGrid(groups, "cu", fmtCu)}
-    <h3>Read CU over time</h3>
-    <p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
-    ${perfHistory(ctx, phase)}`;
+    <div class="perf-pair">${perfGrid(groups, "cu", fmtCu)}${perfHistory(ctx, phase, groups)}</div>
+    <p class="dim">The chart beside it is the same unit over time: every ${mode} session as a multiple of the cheapest writer's current median on its own dataset, averaged per day, one line per writer. That is what lets every dataset share one axis. A line stepping up or down is that writer's read cost changing, from the writer, its settings or the service; a day mixes whichever datasets ran on it. Hover a point for the sessions.</p>`;
 }
 
 /** A run's start as epoch ms: `run.started`, or the `2026-10-17T1526Z-…` prefix of its record file. */
@@ -938,97 +936,91 @@ export function runTime(started) {
   return m ? Date.parse(`${m[1]}T${m[2]}:${m[3]}:00Z`) : null;
 }
 
-/** Per dataset, per shown writer: every session with a read CU in `phase`, oldest first. */
-export function perfHistoryPoints(ctx, phase = "dl") {
+/**
+ * One line per shown writer, in the grid's own unit: each session's read CU as a multiple of the
+ * cheapest writer's median on ITS dataset (the grid's 1.0×), averaged per UTC day. That is what lets
+ * six datasets whose CU differ by an order of magnitude share one axis.
+ */
+export function perfHistoryPoints(ctx, phase = "dl", groups = perfGroups(ctx, phase)) {
   const order = WRITERS.map((w) => w.key);
   const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
-  return dsList(ctx).map((ds) => {
-    const by = new Map();
-    for (const r of ctx.runs) {
-      const cu = (r.cu || {})[phase], t = runTime(r.started);
-      if (r.ds !== ds || PERF_HIDDEN.includes(r.writer) || !(cu > 0) || t === null) continue;
-      if (!r[phase] || !r[phase].cold) continue;
-      (by.get(r.writer) || by.set(r.writer, { key: r.writer, label: r.writerLabel, family: r.family,
-        filled: r.reorders, pts: [] }).get(r.writer)).pts.push({ t, cu, id: r.id, when: r.when, rg: r.rgSetting });
+  const base = {};
+  for (const g of groups) if (g.cu > 0 && !(base[g.ds] <= g.cu)) base[g.ds] = g.cu;
+  const by = new Map();
+  for (const r of ctx.runs) {
+    const cu = (r.cu || {})[phase], t = runTime(r.started);
+    if (PERF_HIDDEN.includes(r.writer) || !(cu > 0) || t === null || !(base[r.ds] > 0)) continue;
+    if (!r[phase] || !r[phase].cold) continue;
+    (by.get(r.writer) || by.set(r.writer, { key: r.writer, label: r.writerLabel, pts: [] }).get(r.writer))
+      .pts.push({ t, x: cu / base[r.ds], id: r.id, ds: r.ds });
+  }
+  const lines = [...by.values()].sort((a, b) => rank(a.key) - rank(b.key));
+  for (const l of lines) {
+    const days = new Map();
+    for (const q of l.pts) {
+      const d = Math.floor(q.t / DAY);
+      (days.get(d) || days.set(d, []).get(d)).push(q);
     }
-    const lines = [...by.values()].sort((a, b) => rank(a.key) - rank(b.key));
-    // One point per writer per UTC day: the mean of that day's sessions, placed at midday.
-    for (const l of lines) {
-      const days = new Map();
-      for (const q of l.pts) {
-        const d = Math.floor(q.t / DAY);
-        (days.get(d) || days.set(d, []).get(d)).push(q);
-      }
-      l.pts = [...days].sort((a, b) => a[0] - b[0]).map(([d, qs]) => ({
-        t: d * DAY + DAY / 2, cu: qs.reduce((s, q) => s + q.cu, 0) / qs.length, n: qs.length,
-        ids: qs.map((q) => q.id), day: new Date(d * DAY).toISOString().slice(0, 10),
-        rg: [...new Set(qs.map((q) => q.rg).filter(Boolean))].join(", ")}));
-    }
-    return { ds, lines };
-  }).filter((p) => p.lines.length);
+    l.pts = [...days].sort((a, b) => a[0] - b[0]).map(([d, qs]) => ({
+      t: d * DAY + DAY / 2, x: qs.reduce((s, q) => s + q.x, 0) / qs.length, n: qs.length,
+      ids: qs.map((q) => q.id), day: new Date(d * DAY).toISOString().slice(0, 10),
+      datasets: [...new Set(qs.map((q) => label(q.ds)))] }));
+  }
+  return lines;
 }
 
 const DAY = 86400000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Dots only, one colour per writer: the two Spark profiles share a hue in the family colours used
-// elsewhere, so this chart takes the validated categorical palette instead.
+// One colour per writer: the two Spark profiles share a hue in the family colours used elsewhere,
+// so this chart takes the validated categorical palette instead.
 const HISTORY_COLORS = { deltars_sorted: "var(--d1)", spark_vorder: "var(--d2)", dwh: "var(--d3)",
   spark_plain: "var(--d4)", iceberg: "var(--d6)" };
 const historyColor = (key) => HISTORY_COLORS[key] || "var(--c4)";
 const historyDot = (x, y, css, tip, r = 3.8) => `<g class="pt"${tip ? ` data-tip="${esc(tip)}"` : ""}><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${css}" stroke="var(--bg)" stroke-width="1"/>${tip ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/>` : ""}</g>`;
 
-/** One dataset's panel: time across, read CU up (lower is better), one coloured dot per session. */
-function historyPanel(p, [t0, t1], { w = 470, h = 250 } = {}) {
-  const m = { l: 62, r: 12, t: 26, b: 30 };
-  const all = p.lines.flatMap((l) => l.pts.map((q) => q.cu));
-  // Fitted to this panel's own range, not anchored at zero: the point is to see a writer's steps.
-  const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.08 || hi * 0.1 || 1;
+/** The one chart: time across, × the cheapest writer up (lower is better), one line per writer. */
+function historySvg(lines, { w = 440, h = 300 } = {}) {
+  const m = { l: 44, r: 10, t: 12, b: 26 };
+  const ts = lines.flatMap((l) => l.pts.map((q) => q.t)), xs = lines.flatMap((l) => l.pts.map((q) => q.x));
+  const t0 = Math.min(...ts) - 2 * DAY, t1 = Math.max(...ts) + 2 * DAY;
+  const lo = Math.min(1, ...xs), hi = Math.max(...xs), pad = (hi - lo) * 0.06 || 0.1;
   const ya = Math.max(0, lo - pad), yb = hi + pad;
-  const sy = { f: (v) => (h - m.b) + ((v - ya) / (yb - ya)) * (m.t - (h - m.b)), ticks: linTicks(ya, yb) };
+  const fy = (v) => (h - m.b) + ((v - ya) / (yb - ya)) * (m.t - (h - m.b));
   const fx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (w - m.l - m.r);
-  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(`read CU over time on ${label(p.ds)}`)}">`,
-    `<text x="${m.l}" y="15" class="panel-title">${esc(label(p.ds))}</text>`,
-    `<text transform="translate(13,${((m.t + h - m.b) / 2).toFixed(1)}) rotate(-90)" class="axis" text-anchor="middle">read CU · lower is better</text>`];
-  for (const v of sy.ticks) {
-    const y = sy.f(v);
-    parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" class="grid"/>`,
-      `<text x="${m.l - 6}" y="${(y + 3.5).toFixed(1)}" class="tick" text-anchor="end">${esc(fmtCu(v).replace(" CU", ""))}</text>`);
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="read CU over time, as a multiple of the cheapest writer on each dataset">`];
+  for (const v of linTicks(ya, yb)) {
+    parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${fy(v).toFixed(1)}" y2="${fy(v).toFixed(1)}" class="grid${v === 1 ? " one" : ""}"/>`,
+      `<text x="${m.l - 6}" y="${(fy(v) + 3.5).toFixed(1)}" class="tick" text-anchor="end">${+v.toFixed(2)}×</text>`);
   }
-  // One tick per month boundary inside the window.
   const d = new Date(t0); d.setUTCDate(1); d.setUTCHours(0, 0, 0, 0);
   for (d.setUTCMonth(d.getUTCMonth() + 1); d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + 1)) {
     const x = fx(d.getTime());
     parts.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${m.t}" y2="${h - m.b}" class="grid"/>`,
       `<text x="${x.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${MONTHS[d.getUTCMonth()]}</text>`);
   }
-  for (const l of p.lines) {
+  for (const l of lines) {
     const css = historyColor(l.key);
     if (l.pts.length > 1) {
-      const d = l.pts.map((q, i) => `${i ? "L" : "M"}${fx(q.t).toFixed(1)},${sy.f(q.cu).toFixed(1)}`).join("");
-      parts.push(`<path d="${d}" fill="none" stroke="${css}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
+      const p = l.pts.map((q, i) => `${i ? "L" : "M"}${fx(q.t).toFixed(1)},${fy(q.x).toFixed(1)}`).join("");
+      parts.push(`<path d="${p}" fill="none" stroke="${css}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
     }
     for (const q of l.pts) {
       const who = q.n === 1 ? `run ${q.ids[0]}` : `${q.n} sessions`;
-      parts.push(historyDot(fx(q.t), sy.f(q.cu), css,
-        `${l.label} · ${label(p.ds)} · ${q.day} · avg ${fmtCu(q.cu)} over ${who}${q.rg ? ` · row groups ${q.rg}` : ""}`, 2.6));
+      parts.push(historyDot(fx(q.t), fy(q.x), css,
+        `${l.label} · ${q.day} · avg ${q.x.toFixed(2)}× the cheapest · ${who} (${q.datasets.join(", ")})`, 2.6));
     }
   }
   parts.push("</svg>");
   return parts.join("");
 }
 
-/** The history: one panel per dataset on a shared time axis, with a legend naming each writer's mark. */
-export function perfHistory(ctx, phase = "dl") {
-  const panels = perfHistoryPoints(ctx, phase);
-  if (!panels.length) return `<p class="empty">No sessions with a read CU yet.</p>`;
-  const ts = panels.flatMap((p) => p.lines.flatMap((l) => l.pts.map((q) => q.t)));
-  const pad = 2 * 86400000, span = [Math.min(...ts) - pad, Math.max(...ts) + pad];
-  const seen = new Map();
-  for (const p of panels) for (const l of p.lines) if (!seen.has(l.key)) seen.set(l.key, l);
-  const key = [...seen.values()].map((l) => `<span class="key"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
-  return `<div class="legend">${key}</div><div class="facets two">${panels.map((p) =>
-    `<figure class="facet">${historyPanel(p, span)}</figure>`).join("")}</div>`;
+/** The history as one figure with its legend; meant to sit beside the grid. */
+export function perfHistory(ctx, phase = "dl", groups) {
+  const lines = perfHistoryPoints(ctx, phase, groups);
+  if (!lines.length) return `<p class="empty">No sessions with a read CU yet.</p>`;
+  const key = lines.map((l) => `<span class="key"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
+  return `<figure class="facet trend"><figcaption>Over time · daily average, × the cheapest</figcaption>${historySvg(lines)}<div class="legend">${key}</div></figure>`;
 }
 
 // ------------------------------------------------------------------------------------- the page
