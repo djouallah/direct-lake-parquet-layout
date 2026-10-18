@@ -593,7 +593,7 @@ export function propSort(ctx) {
   const s = { mb: columnSlope(ctx, (c) => c.runsPer1k, (c) => c.mb), cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold) };
   return propertyCard({ id: "sort", title: "Sort order", evidence: "observational", status: verdictOf(s.mb),
     head: [s.mb.med !== null ? `${pct(s.mb)} size` : "—", "column size when equal values are split into twice as many runs"],
-    card: "Sorting puts equal values together, so columns shrink, and smaller columns are cheaper to load cold, which is where read CU goes.",
+    card: "Sort so equal values sit together: columns shrink and load cheaper cold. It is the sort, not the engine: the same Spark writer costs clearly more with V-Order's sort turned off.",
     claim: s.mb.med !== null ? `Within the same column, twice as many runs of repeated values meant <b>${pct(s.mb)} more bytes</b> (${agree(s.mb)}), and each doubling of a column's bytes cost ${pct(s.cold)} cold time (${agree(s.cold)}).` : "Not measurable yet.",
     body: `${effectTable([["column size, per doubling of runs", s.mb], ["column cold, per doubling of column size", s.cold]])}
       ${legend(familiesIn(ctx.columns))}
@@ -663,7 +663,7 @@ export function propRowGroups(ctx) {
   const ctlClaim = ctl && ctl.colMed ? ` One controlled run, same writer and sort, only the row-group size moved: ${fmtX(ctl.rgX)} the row groups (131,072 rows each) made a column's cold load <b>${fmtX(ctl.colMed)}</b> (median over columns) and the whole cold suite ${fmtX(ctl.cold)}; warm did not move.` : "";
   return propertyCard({ id: "row-groups", title: "Row-group size", evidence: "observational", status: verdictOf(s.col),
     head: [s.col.med !== null ? `${pct(s.col)} cold` : "—", "a column's cold cost each time row groups double in rows"],
-    card: "Bigger row groups make the cold load, and so the read CU, cheaper; below about a million rows per group the cost climbs fast. Warm barely moves.",
+    card: "Millions of rows per row group: fewer, bigger segments are cheaper to load cold, whoever wrote them. Below about a million rows per group the cost climbs fast; warm barely moves.",
     claim: s.col.med !== null ? `Twice the rows per row group: a column's cold cost <b>${pct(s.col)}</b> (${agree(s.col)}), Direct Lake read CU ${pct(s.cu)} (${agree(s.cu)}), warm ${pct(s.warm)}. ${bandT && bandT.band ? `Both cold and warm stay near the median from ${esc(bandText(bandT))} rows per group.` : "No single band of row-group sizes stands out across datasets."}${ctlClaim}` : "Not measurable yet.",
     body: `${effectTable([["column cold, per doubling of rows per group", s.col], ["Direct Lake read CU, per doubling", s.cu], ["cold suite, per doubling", s.cold], ["warm suite, per doubling", s.warm], ["Direct Lake read CU, delta-rs only", s.drs]])}
       ${ctl ? `<h3>Controlled: one switch</h3>
@@ -704,7 +704,7 @@ export function propDictionary(ctx) {
     status: paired ? "clear" : base.status === "clear" ? "clear" : "partial",
     head: paired ? [`${drop(cu)} CU`, "Direct Lake read CU once the file declares its dictionary: same table, same pages, one footer list"]
       : [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
-    card: "Keep every column dictionary-encoded, and have the file declare it so Power BI can reuse the dictionary instead of rebuilding it.",
+    card: "Every column dictionary-encoded, declared in the footer with the dictionary page first, so Power BI reuses it instead of rebuilding it. Any writer that does this reads cheaply; delta-rs lost it in 1.6.3 (dictionary listed last) and its read CU jumped on identical data.",
     claim: `${paired ? `Same DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${drop(cu)}</b>, cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
     body: `${effectTable([["column cold, dictionary gaps ÷ full", s]])}${base.html}` });
 }
@@ -748,7 +748,7 @@ export const PROPERTIES = [propDictionary, propSort, propRowGroups, propSparkVOr
 
 // How the home page groups the cards, by finding id. `compact` groups render as a one-line list.
 export const PROPERTY_GROUPS = [
-  { title: "The three levers", ids: ["dictionary", "sort", "row-groups"] },
+  { title: "Do these three things, with any writer", ids: ["dictionary", "sort", "row-groups"] },
   { title: "Writer switches", ids: ["spark-vorder", "directquery"] },
   { title: "Secondary: a result of the levers, or no effect", ids: ["table-size", "file-count"], compact: true },
 ];
@@ -1079,6 +1079,7 @@ export function render(records, opts = {}, ledger = null) {
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
   const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet. Writers differ on the <b>cold load</b>, when Direct Lake first turns each column into memory, and what that costs is the <b>read CU</b> the session bills. Three layout properties decide it: <b>dictionary encoding</b> (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), <b>sorting</b> (long runs of equal values) and <b>row groups</b> (millions of rows each). Everything else is small.</p>
+    <p><b>This is not a ranking of writers.</b> Do those three things and the table reads cheaply whatever wrote it: Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB. Every writer that costs more here is missing one of them, and the cards show which.</p>
     <p class="dim">The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at about 5× the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>).</p></div>`;
   const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
