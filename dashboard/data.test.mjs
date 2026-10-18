@@ -426,7 +426,23 @@ test("performance tab: a cell is the median of the writer's LAST three runs, new
   assert.deepEqual(g.ids, ["5", "4", "3"]);
 });
 
-test("performance tab: history has one panel per dataset and every session as a dot, oldest first", () => {
+test("performance tab: history averages a writer's sessions per day", () => {
+  const recs = [1, 2, 3].map((i) => {
+    const x = rec({ id: i, cfg: { sorted: "true" } });
+    x.run.started = i < 3 ? `2026-10-01T0${i}:00:00Z` : "2026-10-02T00:00:00Z";
+    x.items = { [`sm-${i}`]: { role: "semantic_model" } };
+    return x;
+  });
+  const ledger = { items: Object.fromEntries(recs.map((x) => [`sm-${x.run.id}`, { Query: Number(x.run.id) * 100 }])) };
+  const ctx = r.context(recs, {}, ledger);
+  const [p] = r.perfHistoryPoints(ctx, "dl");
+  assert.deepEqual(p.lines[0].pts.map((q) => [q.day, q.cu, q.n]), [["2026-10-01", 150, 2], ["2026-10-02", 300, 1]]);
+  const html = r.perfHistory(ctx, "dl");
+  assert.equal((html.match(/<path d="M/g) || []).length, 1);
+  assert.match(html, /2026-10-01 · avg 150 CU over 2 sessions/);
+});
+
+test("performance tab: history has one panel per dataset and every day as a point, oldest first", () => {
   const recs = [3, 1, 2].map((i) => {
     const x = rec({ id: i, cfg: { sorted: "true" } });
     x.run.started = `2026-10-0${i}T00:00:00Z`;
@@ -440,7 +456,7 @@ test("performance tab: history has one panel per dataset and every session as a 
   assert.deepEqual(p.lines[0].pts.map((q) => q.cu), [100, 200, 300]);
   const html = r.perfHistory(ctx, "dl");
   assert.equal((html.match(/class="facet"/g) || []).length, 1);
-  assert.equal((html.match(/data-tip="delta-rs, autosort · AEMO · run/g) || []).length, 3);
+  assert.equal((html.match(/data-tip="delta-rs, autosort · AEMO · 2026-10-0\d · avg/g) || []).length, 3);
   // The CU axis fits the panel's range (100–300), so it does not start at zero.
   assert.ok(!/text-anchor="end">0</.test(html));
   assert.ok(/text-anchor="end">100</.test(html));

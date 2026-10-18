@@ -925,7 +925,7 @@ export function perfSection(ctx, opts = {}) {
     <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
     ${perfGrid(groups, "cu", fmtCu)}
     <h3>Read CU over time</h3>
-    <p class="dim">Every ${mode} session, one panel per dataset, one colour per writer. A writer's dots stepping up or down is its read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a dot for the run.</p>
+    <p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
     ${perfHistory(ctx, phase)}`;
 }
 
@@ -952,11 +952,23 @@ export function perfHistoryPoints(ctx, phase = "dl") {
         filled: r.reorders, pts: [] }).get(r.writer)).pts.push({ t, cu, id: r.id, when: r.when, rg: r.rgSetting });
     }
     const lines = [...by.values()].sort((a, b) => rank(a.key) - rank(b.key));
-    for (const l of lines) l.pts.sort((a, b) => a.t - b.t);
+    // One point per writer per UTC day: the mean of that day's sessions, placed at midday.
+    for (const l of lines) {
+      const days = new Map();
+      for (const q of l.pts) {
+        const d = Math.floor(q.t / DAY);
+        (days.get(d) || days.set(d, []).get(d)).push(q);
+      }
+      l.pts = [...days].sort((a, b) => a[0] - b[0]).map(([d, qs]) => ({
+        t: d * DAY + DAY / 2, cu: qs.reduce((s, q) => s + q.cu, 0) / qs.length, n: qs.length,
+        ids: qs.map((q) => q.id), day: new Date(d * DAY).toISOString().slice(0, 10),
+        rg: [...new Set(qs.map((q) => q.rg).filter(Boolean))].join(", ")}));
+    }
     return { ds, lines };
   }).filter((p) => p.lines.length);
 }
 
+const DAY = 86400000;
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // Dots only, one colour per writer: the two Spark profiles share a hue in the family colours used
@@ -991,9 +1003,15 @@ function historyPanel(p, [t0, t1], { w = 470, h = 250 } = {}) {
       `<text x="${x.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${MONTHS[d.getUTCMonth()]}</text>`);
   }
   for (const l of p.lines) {
+    const css = historyColor(l.key);
+    if (l.pts.length > 1) {
+      const d = l.pts.map((q, i) => `${i ? "L" : "M"}${fx(q.t).toFixed(1)},${sy.f(q.cu).toFixed(1)}`).join("");
+      parts.push(`<path d="${d}" fill="none" stroke="${css}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
+    }
     for (const q of l.pts) {
-      parts.push(historyDot(fx(q.t), sy.f(q.cu), historyColor(l.key),
-        `${l.label} · ${label(p.ds)} · run ${q.id} (${q.when}) · ${fmtCu(q.cu)}${q.rg ? ` · row groups ${q.rg}` : ""}`));
+      const who = q.n === 1 ? `run ${q.ids[0]}` : `${q.n} sessions`;
+      parts.push(historyDot(fx(q.t), sy.f(q.cu), css,
+        `${l.label} · ${label(p.ds)} · ${q.day} · avg ${fmtCu(q.cu)} over ${who}${q.rg ? ` · row groups ${q.rg}` : ""}`, 2.6));
     }
   }
   parts.push("</svg>");
@@ -1008,7 +1026,7 @@ export function perfHistory(ctx, phase = "dl") {
   const pad = 2 * 86400000, span = [Math.min(...ts) - pad, Math.max(...ts) + pad];
   const seen = new Map();
   for (const p of panels) for (const l of p.lines) if (!seen.has(l.key)) seen.set(l.key, l);
-  const key = [...seen.values()].map((l) => `<span class="key"><svg viewBox="0 0 12 12" width="12" height="12">${historyDot(6, 6, historyColor(l.key), "", 4.5)}</svg>${esc(l.label)}</span>`).join("");
+  const key = [...seen.values()].map((l) => `<span class="key"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
   return `<div class="legend">${key}</div><div class="facets two">${panels.map((p) =>
     `<figure class="facet">${historyPanel(p, span)}</figure>`).join("")}</div>`;
 }
