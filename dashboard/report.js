@@ -593,7 +593,7 @@ export function propSort(ctx) {
   const s = { mb: columnSlope(ctx, (c) => c.runsPer1k, (c) => c.mb), cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold) };
   return propertyCard({ id: "sort", title: "Sort order", evidence: "observational", status: verdictOf(s.mb),
     head: [s.mb.med !== null ? `${pct(s.mb)} size` : "—", "column size when equal values are split into twice as many runs"],
-    card: "Sorting puts equal values together, so columns shrink, and smaller columns are cheaper to read.",
+    card: "Sorting puts equal values together, so columns shrink, and smaller columns are cheaper to load cold, which is where read CU goes.",
     claim: s.mb.med !== null ? `Within the same column, twice as many runs of repeated values meant <b>${pct(s.mb)} more bytes</b> (${agree(s.mb)}), and each doubling of a column's bytes cost ${pct(s.cold)} cold time (${agree(s.cold)}).` : "Not measurable yet.",
     body: `${effectTable([["column size, per doubling of runs", s.mb], ["column cold, per doubling of column size", s.cold]])}
       ${legend(familiesIn(ctx.columns))}
@@ -663,7 +663,7 @@ export function propRowGroups(ctx) {
   const ctlClaim = ctl && ctl.colMed ? ` One controlled run, same writer and sort, only the row-group size moved: ${fmtX(ctl.rgX)} the row groups (131,072 rows each) made a column's cold load <b>${fmtX(ctl.colMed)}</b> (median over columns) and the whole cold suite ${fmtX(ctl.cold)}; warm did not move.` : "";
   return propertyCard({ id: "row-groups", title: "Row-group size", evidence: "observational", status: verdictOf(s.col),
     head: [s.col.med !== null ? `${pct(s.col)} cold` : "—", "a column's cold cost each time row groups double in rows"],
-    card: "Bigger row groups make the cold load cheaper, and below about a million rows per group the cost climbs fast. Warm barely moves.",
+    card: "Bigger row groups make the cold load, and so the read CU, cheaper; below about a million rows per group the cost climbs fast. Warm barely moves.",
     claim: s.col.med !== null ? `Twice the rows per row group: a column's cold cost <b>${pct(s.col)}</b> (${agree(s.col)}), Direct Lake read CU ${pct(s.cu)} (${agree(s.cu)}), warm ${pct(s.warm)}. ${bandT && bandT.band ? `Both cold and warm stay near the median from ${esc(bandText(bandT))} rows per group.` : "No single band of row-group sizes stands out across datasets."}${ctlClaim}` : "Not measurable yet.",
     body: `${effectTable([["column cold, per doubling of rows per group", s.col], ["Direct Lake read CU, per doubling", s.cu], ["cold suite, per doubling", s.cold], ["warm suite, per doubling", s.warm], ["Direct Lake read CU, delta-rs only", s.drs]])}
       ${ctl ? `<h3>Controlled: one switch</h3>
@@ -739,10 +739,19 @@ export function propDirectQuery(ctx) {
       <p>DirectQuery is not a layout property; it is the price of not loading the data into VertiPaq at all.</p>` });
 }
 
-// The presentation's order: the three levers any writer controls (sort, dictionary encoding, row-group
-// size), then Spark V-Order, then DirectQuery, then the rest.
-export const PROPERTIES = [propSort, propDictionary, propRowGroups, propSparkVOrder, propDirectQuery,
+// The presentation's order (2026-10-18 framing): warm is fast on every writer, the cold load is where
+// read CU goes, and three layout properties decide it — dictionary encoding first, then sort, then row
+// groups. Then the two writer switches, then the rest: bytes on disk follow from dictionary and sort rather than being a lever of their own, and file count has no effect. Reframing only: no card's
+// computation, headline or status depends on this order.
+export const PROPERTIES = [propDictionary, propSort, propRowGroups, propSparkVOrder, propDirectQuery,
   propTableSize, propFileCount];
+
+// How the home page groups the cards, by finding id. `compact` groups render as a one-line list.
+export const PROPERTY_GROUPS = [
+  { title: "The three levers", ids: ["dictionary", "sort", "row-groups"] },
+  { title: "Writer switches", ids: ["spark-vorder", "directquery"] },
+  { title: "Secondary: a result of the levers, or no effect", ids: ["table-size", "file-count"], compact: true },
+];
 
 // --------------------------------------------------------------------------------- frame sections
 
@@ -794,9 +803,9 @@ function methodSection(ctx) {
       <li><b>hot</b>: passes 3 to 6, median.</li>
     </ul>
     <p><b>Read CU</b> is the capacity units each session's own items billed: the semantic model, the shortcut lakehouse it reads through, and that lakehouse's SQL endpoint, read from the Capacity Metrics app. It covers the whole session (all six passes), in Direct Lake and in DirectQuery separately. The CU spent building the tables is not part of this report.</p>
-    <p><b>How every number is made.</b> A continuous property (size, rows per row group, file count, sort runs) is fitted per dataset as the change in the measure each time the property doubles. An on/off property (V-Order, compression, sorted) is the ratio of medians per dataset. The number on a card is the median of those per-dataset values, so a dataset with many runs counts no more than one with few, and each card says how many datasets agree on the direction. An effect counts when it is beyond ±10% and most datasets agree; otherwise the card says there is no measurable effect.</p>
+    <p><b>How every number is made.</b> A continuous property (size, rows per row group, file count, sort runs) is fitted per dataset as the change in the measure each time the property doubles. An on/off property (V-Order) is the ratio of medians per dataset. The number on a card is the median of those per-dataset values, so a dataset with many runs counts no more than one with few, and each card says how many datasets agree on the direction. An effect counts when it is beyond ±10% and most datasets agree; otherwise the card says there is no measurable effect.</p>
     <p>A total is the sum over the queries a dataset's runs have in common. Runs are compared only within a dataset and only at the same source row count. A difference is called <b>clear</b> only when every run of the winner beat every run of the loser, with at least ${MIN_RUNS} runs each. Otherwise it is <b>inside the noise</b> or <b>too few runs</b>, because one Fabric capacity runs everything and its load varies from run to run.</p>
-    <p>A writer changes several things at once: encoding, sort, row-group size, compression. Two findings hold the writer fixed (row-group size, and sorted against unsorted delta-rs) and one holds it to a single switch (Spark with V-Order on and off). Everything else is a correlation across writers, labelled as one.</p>
+    <p>A writer changes several things at once: encoding, sort, row-group size, compression. One finding holds the writer fixed (row-group size, with a controlled delta-rs pair) and one holds it to a single switch (Spark with V-Order on and off). Everything else is a correlation across writers, labelled as one.</p>
     ${table(["dataset", "rows", "runs", "timed runs", "queries", "writers"], rows)}`;
 }
 
@@ -1067,7 +1076,16 @@ export function render(records, opts = {}, ledger = null) {
   const frame = `<p class="framelinks">${Object.entries(PAGES).map(([k, v]) =>
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
-  const intro = `<p class="about">Each card is one layout property: <b>which layout properties matter, and by how much</b>. One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
+  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet. Writers differ on the <b>cold load</b>, when Direct Lake first turns each column into memory, and what that costs is the <b>read CU</b> the session bills. Three layout properties decide it: <b>dictionary encoding</b> (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), <b>sorting</b> (long runs of equal values) and <b>row groups</b> (millions of rows each). Everything else is small.</p>
+    <p class="dim">The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at about 5× the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>).</p></div>`;
+  const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
+  const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
+  const grouped = new Set(PROPERTY_GROUPS.flatMap((g) => g.ids));
+  const groups = [...PROPERTY_GROUPS, { title: "Other", ids: found.map((f) => f.id).filter((id) => !grouped.has(id)) }]
+    .map((g) => ({ ...g, items: g.ids.map((id) => byId[id]).filter(Boolean) })).filter((g) => g.items.length);
+  const home = groups.map((g) => g.compact
+    ? `<h3 class="group">${esc(g.title)}</h3><ul class="secondary">${g.items.map(([f]) => `<li><a href="${href({ finding: f.id })}">${esc(f.title)}</a>: ${esc((f.head || [])[0] || "—")} ${esc((f.head || [])[1] || "")} ${badge(f.status)}</li>`).join("")}</ul>`
+    : `<h3 class="group">${esc(g.title)}</h3><div class="cards">${g.items.map(([f, i]) => card(f, i, opts)).join("")}</div>`).join("");
   const idx = found.findIndex((f) => f.id === opts.finding);
   const side = extra.find((f) => f.id === opts.finding);
   let body;
@@ -1084,7 +1102,7 @@ export function render(records, opts = {}, ledger = null) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
   } else {
-    body = `<div class="cards">${found.map((f, i) => card(f, i, opts)).join("")}</div>${frame}${intro}`;
+    body = `${intro}${home}${frame}${about}`;
   }
   return { html: body, ctx, found };
 }

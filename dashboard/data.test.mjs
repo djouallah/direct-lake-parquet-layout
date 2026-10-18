@@ -243,8 +243,14 @@ test("row-group card: a column's cold cost per doubling of rows per row group, w
 test("home is one card per layout property; a card opens that property alone; no dataset switcher", () => {
   const recs = vorderFixture();
   const home = r.render(recs, {});
-  assert.equal((home.html.match(/class="card"/g) || []).length, r.PROPERTIES.length);
-  assert.match(home.html, /which layout properties matter, and by how much/);
+  // Levers and writer switches are cards; the secondary group is a compact list of the rest.
+  const compact = r.PROPERTY_GROUPS.filter((g) => g.compact).flatMap((g) => g.ids).length;
+  assert.equal((home.html.match(/class="card"/g) || []).length, r.PROPERTIES.length - compact);
+  assert.equal((home.html.match(/<ul class="secondary"><li>/g) || []).length, 1);
+  assert.match(home.html, /read CU/);
+  assert.match(home.html, /dictionary encoding.*sorting.*row groups/s);
+  // Dictionary leads the levers.
+  assert.ok(home.html.indexOf('href="?finding=dictionary"') < home.html.indexOf('href="?finding=sort"'));
   assert.doesNotMatch(home.html, /dataset=/);
   const one = r.render(recs, { finding: "spark-vorder" });
   assert.match(one.html, /id="spark-vorder"/);
