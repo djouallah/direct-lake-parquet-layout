@@ -46,7 +46,7 @@ export function writerOf(rec) {
   if (e === "duckrun") {
     const sorted = cfg.sorted === true || cfg.sorted === "true";
     return { key: sorted ? "deltars_sorted" : "deltars_unsorted", family: "delta-rs",
-      label: sorted ? "delta-rs, sorted" : "delta-rs, unsorted", vorder: false, sorted,
+      label: sorted ? "delta-rs, autosort" : "delta-rs, unsorted", vorder: false, sorted,
       rgSetting: cfg.row_group_size ? String(cfg.row_group_size) : "16000000" };
   }
   if (e === "iceberg") {
