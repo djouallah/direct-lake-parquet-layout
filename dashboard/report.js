@@ -903,7 +903,7 @@ export function perfSection(ctx, opts = {}) {
     <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
     ${perfGrid(groups, "cu", fmtCu)}
     <h3>Read CU over time</h3>
-    <p class="dim">Every ${mode} session, one panel per dataset, one line per writer. A step in a line is that writer's read cost changing, whether from the writer, its settings or the service. Hover a dot for the run.</p>
+    <p class="dim">Every ${mode} session, one panel per dataset, one line per writer. A step in a line is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a dot for the run.</p>
     ${perfHistory(ctx, phase)}`;
 }
 
@@ -941,7 +941,10 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 function historyPanel(p, [t0, t1], { w = 470, h = 250 } = {}) {
   const m = { l: 52, r: 12, t: 26, b: 30 };
   const all = p.lines.flatMap((l) => l.pts.map((q) => q.cu));
-  const sy = scale([0, Math.max(...all)], false, h - m.b, m.t);
+  // Fitted to this panel's own range, not anchored at zero: the point is to see a writer's steps.
+  const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.08 || hi * 0.1 || 1;
+  const ya = Math.max(0, lo - pad), yb = hi + pad;
+  const sy = { f: (v) => (h - m.b) + ((v - ya) / (yb - ya)) * (m.t - (h - m.b)), ticks: linTicks(ya, yb) };
   const fx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (w - m.l - m.r);
   const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(`read CU over time on ${label(p.ds)}`)}">`,
     `<text x="${m.l}" y="15" class="panel-title">${esc(label(p.ds))}</text>`];

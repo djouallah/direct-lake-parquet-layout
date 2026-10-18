@@ -435,6 +435,9 @@ test("performance tab: history has one panel per dataset and every session as a 
   const html = r.perfHistory(ctx, "dl");
   assert.equal((html.match(/class="facet"/g) || []).length, 1);
   assert.equal((html.match(/data-tip="delta-rs, autosort · AEMO · run/g) || []).length, 3);
+  // The CU axis fits the panel's range (100–300), so it does not start at zero.
+  assert.ok(!/text-anchor="end">0</.test(html));
+  assert.ok(/text-anchor="end">100</.test(html));
   // A record with no run.started falls back to the time in its file name.
   assert.equal(r.runTime("2026-10-17T1526Z-39042898921.json"), Date.parse("2026-10-17T15:26:00Z"));
 });
