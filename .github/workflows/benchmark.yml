@@ -990,11 +990,18 @@ jobs:
         if: always() && matrix.engine == 'dwh'
         continue-on-error: true
         run: python .github/scripts/dwh_vorder.py ${{ matrix.engine }}
+      # `logs/` rides along because dbt's console line keeps only the Spark error CLASS
+      # (`[TASK_WRITE_FAILED]`) and drops the executor cause; dbt.log is debug-level and carries the
+      # adapter's full statement output. The teardown deletes the lakehouse, and the Livy driver logs
+      # are only reachable through that item, so without this the cause is unrecoverable (run
+      # 39091142528).
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dbt-target-${{ matrix.engine }}
-          path: target/
+          path: |
+            target/
+            logs/
       - name: Upload the run-record fragment
         if: always()
         continue-on-error: true
