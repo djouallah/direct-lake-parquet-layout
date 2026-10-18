@@ -7,8 +7,8 @@
   <rect x="419.25" y="82" width="370.75" height="22" rx="3" fill="#3987e5"/>
   <text x="799" y="98" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">2.3× cheaper</text>
   <text x="158" y="127.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="419.25" y="112" width="50.64" height="22" rx="3" fill="#3987e5"/>
-  <text x="478.89" y="128" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−8%</text>
+  <rect x="419.25" y="112" width="62.79" height="22" rx="3" fill="#3987e5"/>
+  <text x="491.04" y="128" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−10%</text>
   <text x="76" y="199.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">cms</text>
   <text x="158" y="183.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
   <rect x="419.25" y="168" width="254.22" height="22" rx="3" fill="#3987e5"/>
