@@ -103,6 +103,11 @@
    "OneLake Write via Redirect": 298.534,
    "Warehouse Query": 8016.024
   },
+  "01DC1D70-5A96-41F9-B726-EA549776BE54": {
+   "OneLake Other Operations Via Redirect": 0.302,
+   "OneLake Read via Redirect": 0.832,
+   "OneLake Write via Redirect": 6.504
+  },
   "0247A5F6-CBD0-4380-AC7F-1BDFF20DCDD1": {
    "Dataset On-Demand Refresh": 58.992,
    "Dataset Scheduled Refresh": 0.752,
@@ -492,6 +497,11 @@
    "Query": 13.872,
    "XMLA Read Operation": 151.168
   },
+  "0B1665D5-E361-4520-8B42-615112CABACE": {
+   "OneLake Other Operations Via Redirect": 0.198,
+   "OneLake Read via Redirect": 0.551,
+   "OneLake Write via Redirect": 4.715
+  },
   "0B2A1E5A-6968-41E8-A9F0-DCBC7984D985": {
    "OneLake Iterative Read via Proxy": 45.04,
    "OneLake Other Operations": 1.934,
@@ -645,7 +655,7 @@
    "OneLake Other Operations Via Redirect": 0.499,
    "OneLake Read via Redirect": 1.123,
    "OneLake Write via Redirect": 9.431,
-   "SQL Endpoint Query": 5576.881
+   "SQL Endpoint Query": 5843.876
   },
   "0F3DC906-75C3-4489-8928-A757C9A6994A": {
    "OneLake Read via Redirect": 0.562,
@@ -1208,6 +1218,12 @@
   "1C736BCD-A397-4AF4-AA88-AB7737780083": {
    "SQL Endpoint Query": 19315.318
   },
+  "1C7F4905-2E21-43FB-B3DF-1EEC9E71B273": {
+   "OneLake Other Operations Via Redirect": 0.27,
+   "OneLake Read via Redirect": 0.759,
+   "OneLake Write via Redirect": 6.016,
+   "SQL Endpoint Query": 4176.212
+  },
   "1CA86F44-A7F4-45E5-BCB0-1E15F752901B": {
    "OneLake Iterative Read via Proxy": 15.772,
    "OneLake Other Operations": 0.187,
@@ -1606,6 +1622,13 @@
    "OneLake Read via Redirect": 19.386,
    "OneLake Write via Proxy": 11.382,
    "OneLake Write via Redirect": 30.244
+  },
+  "267BEE24-B4D2-4EE0-B0FE-B1D0C15406BD": {
+   "OneLake Iterative Read via Proxy": 20.0,
+   "OneLake Other Operations Via Redirect": 9.121,
+   "OneLake Read via Redirect": 117.447,
+   "OneLake Write via Proxy": 10.244,
+   "OneLake Write via Redirect": 21.788
   },
   "26B7298C-5015-40D2-9773-63C67159EAC0": {
    "OneLake Iterative Read via Proxy": 56.26,
@@ -2293,6 +2316,12 @@
   },
   "3D9F6E78-78F0-4981-B5DB-3151BA00755D": {
    "SQL Endpoint Query": 13.344
+  },
+  "3DB59316-8508-4B55-ABE1-3E9AADEE956D": {
+   "Dataset On-Demand Refresh": 178.752,
+   "Dataset Scheduled Refresh": 1.008,
+   "Query": 15.856,
+   "XMLA Read Operation": 4853.312
   },
   "3DFAC0D4-3C29-4036-872F-EF9989BFAF69": {
    "OneLake Iterative Read via Proxy": 11.057,
@@ -3348,6 +3377,16 @@
   "56CF0A15-034A-4ACB-9F90-E1721DD0997C": {
    "Jupyter Notebook Scheduled Run": 727.201
   },
+  "5705B4B5-99F3-4E0A-8858-B94E60F34DA7": {
+   "OneLake Iterative Read via Proxy": 22.276,
+   "OneLake Other Operations": 10.473,
+   "OneLake Other Operations Via Redirect": 10.556,
+   "OneLake Read via Proxy": 9.474,
+   "OneLake Read via Redirect": 5.054,
+   "OneLake Write via Proxy": 15.122,
+   "OneLake Write via Redirect": 1132.021,
+   "Warehouse Query": 3177.292
+  },
   "5725AE02-0C87-4C31-AF93-4A500DFEB15C": {
    "SQL Endpoint Query": 16151.032
   },
@@ -3722,7 +3761,14 @@
    "XMLA Read Operation": 7832.752
   },
   "5DFAD78A-4FE9-4509-B180-17CEC674BC70": {
-   "OneLake Write via Proxy": 1.138
+   "High Concurrency Session Livy Run": 6208.262,
+   "OneLake Iterative Read via Proxy": 84.064,
+   "OneLake Other Operations": 0.395,
+   "OneLake Other Operations Via Redirect": 11.086,
+   "OneLake Read via Proxy": 1.612,
+   "OneLake Read via Redirect": 66.373,
+   "OneLake Write via Proxy": 3.577,
+   "OneLake Write via Redirect": 1086.168
   },
   "5E357EA8-9D66-4F24-9C4D-66923D7DF3A2": {
    "Dataset On-Demand Refresh": 42.032,
@@ -4442,6 +4488,11 @@
   },
   "722EED61-2F5A-4C49-9A07-6207B1399030": {
    "Jupyter Notebook Scheduled Run": 12534.597
+  },
+  "729482C1-780E-48EA-A5A1-8850C0FFCE98": {
+   "Dataset On-Demand Refresh": 15.248,
+   "Query": 38.896,
+   "XMLA Read Operation": 336.528
   },
   "72BFE7F7-D903-4807-B975-6B0575BCCC63": {
    "Jupyter Notebook Scheduled Run": 7952.629
@@ -7835,7 +7886,9 @@
    "Jupyter Notebook Scheduled Run": 28100.318
   },
   "D43F3F39-8611-44E7-94D1-68CA1DDC0DD4": {
-   "OneLake Write via Redirect": 1.301
+   "OneLake Other Operations Via Redirect": 0.27,
+   "OneLake Read via Redirect": 0.686,
+   "OneLake Write via Redirect": 6.341
   },
   "D450044E-EA85-43DF-B2BA-605C60BC9DED": {
    "SQL Endpoint Query": 14437.739
@@ -8829,6 +8882,13 @@
    "OneLake Iterative Read via Proxy": 0.488,
    "OneLake Write via Proxy": 1.138
   },
+  "EE0D271A-F12E-4215-A7B8-B89A1E9FD5D8": {
+   "OneLake Iterative Read via Proxy": 12.358,
+   "OneLake Other Operations Via Redirect": 0.53,
+   "OneLake Read via Redirect": 143.489,
+   "OneLake Write via Proxy": 10.244,
+   "OneLake Write via Redirect": 6.829
+  },
   "EE13F266-A699-494A-89F4-BB9B8C0C22CA": {
    "SQL Endpoint Query": 34.976
   },
@@ -8957,6 +9017,14 @@
    "OneLake Read via Redirect": 15.579,
    "OneLake Write via Proxy": 18.211,
    "OneLake Write via Redirect": 28.13
+  },
+  "F15BC7C6-2B15-4C31-A81A-909A6575C4E6": {
+   "OneLake Iterative Read via Proxy": 20.813,
+   "OneLake Other Operations": 0.333,
+   "OneLake Other Operations Via Redirect": 51.397,
+   "OneLake Read via Redirect": 93.319,
+   "OneLake Write via Proxy": 6.829,
+   "OneLake Write via Redirect": 15.772
   },
   "F1FAD885-90D0-4D8D-9F9D-8C6BA1EE7C5A": {
    "High Concurrency Session Livy Run": 10465.451,
@@ -12661,6 +12729,14 @@
    "since": "2026-10-04T12:00:00",
    "timed": 123,
    "unfound": 1542
+  },
+  {
+   "at": "2026-10-18T03:45:12+00:00",
+   "changed": 53,
+   "items": 132,
+   "since": "2026-10-04T13:00:00",
+   "timed": 132,
+   "unfound": 1543
   }
  ],
  "schema": 2,
@@ -12767,6 +12843,11 @@
    "OneLake Write via Proxy": 0.042,
    "OneLake Write via Redirect": 0.027,
    "Warehouse Query": 395.146
+  },
+  "01DC1D70-5A96-41F9-B726-EA549776BE54": {
+   "OneLake Other Operations Via Redirect": 0.02,
+   "OneLake Read via Redirect": 0.024,
+   "OneLake Write via Redirect": 0.021
   },
   "0247A5F6-CBD0-4380-AC7F-1BDFF20DCDD1": {
    "Dataset On-Demand Refresh": 9.431,
@@ -13157,6 +13238,11 @@
    "Query": 5.857,
    "XMLA Read Operation": 287.346
   },
+  "0B1665D5-E361-4520-8B42-615112CABACE": {
+   "OneLake Other Operations Via Redirect": 0.012,
+   "OneLake Read via Redirect": 0.016,
+   "OneLake Write via Redirect": 0.013
+  },
   "0B2A1E5A-6968-41E8-A9F0-DCBC7984D985": {
    "OneLake Iterative Read via Proxy": 0.088,
    "OneLake Other Operations": 0.038,
@@ -13310,7 +13396,7 @@
    "OneLake Other Operations Via Redirect": 0.039,
    "OneLake Read via Redirect": 0.044,
    "OneLake Write via Redirect": 0.039,
-   "SQL Endpoint Query": 1307.72
+   "SQL Endpoint Query": 1458.454
   },
   "0F3DC906-75C3-4489-8928-A757C9A6994A": {
    "OneLake Read via Redirect": 0.013,
@@ -13873,6 +13959,12 @@
   "1C736BCD-A397-4AF4-AA88-AB7737780083": {
    "SQL Endpoint Query": 1429.286
   },
+  "1C7F4905-2E21-43FB-B3DF-1EEC9E71B273": {
+   "OneLake Other Operations Via Redirect": 0.016,
+   "OneLake Read via Redirect": 0.018,
+   "OneLake Write via Redirect": 0.016,
+   "SQL Endpoint Query": 882.959
+  },
   "1CA86F44-A7F4-45E5-BCB0-1E15F752901B": {
    "OneLake Iterative Read via Proxy": 0.061,
    "OneLake Other Operations": 0.01,
@@ -14264,6 +14356,13 @@
    "OneLake Read via Redirect": 0.037,
    "OneLake Write via Proxy": 0.015,
    "OneLake Write via Redirect": 0.009
+  },
+  "267BEE24-B4D2-4EE0-B0FE-B1D0C15406BD": {
+   "OneLake Iterative Read via Proxy": 0.076,
+   "OneLake Other Operations Via Redirect": 0.043,
+   "OneLake Read via Redirect": 0.03,
+   "OneLake Write via Proxy": 0.019,
+   "OneLake Write via Redirect": 0.006
   },
   "26B7298C-5015-40D2-9773-63C67159EAC0": {
    "OneLake Iterative Read via Proxy": 0.079,
@@ -14936,6 +15035,12 @@
   },
   "3D9F6E78-78F0-4981-B5DB-3151BA00755D": {
    "SQL Endpoint Query": 7.942
+  },
+  "3DB59316-8508-4B55-ABE1-3E9AADEE956D": {
+   "Dataset On-Demand Refresh": 11.964,
+   "Dataset Scheduled Refresh": 0.079,
+   "Query": 7.473,
+   "XMLA Read Operation": 75.133
   },
   "3DFAC0D4-3C29-4036-872F-EF9989BFAF69": {
    "OneLake Iterative Read via Proxy": 0.039,
@@ -15991,6 +16096,16 @@
   "56CF0A15-034A-4ACB-9F90-E1721DD0997C": {
    "Jupyter Notebook Scheduled Run": 181.799
   },
+  "5705B4B5-99F3-4E0A-8858-B94E60F34DA7": {
+   "OneLake Iterative Read via Proxy": 0.068,
+   "OneLake Other Operations": 0.053,
+   "OneLake Other Operations Via Redirect": 0.057,
+   "OneLake Read via Proxy": 0.169,
+   "OneLake Read via Redirect": 0.051,
+   "OneLake Write via Proxy": 0.024,
+   "OneLake Write via Redirect": 0.049,
+   "Warehouse Query": 758.275
+  },
   "5725AE02-0C87-4C31-AF93-4A500DFEB15C": {
    "SQL Endpoint Query": 1094.519
   },
@@ -16365,7 +16480,14 @@
    "XMLA Read Operation": 76.23
   },
   "5DFAD78A-4FE9-4509-B180-17CEC674BC70": {
-   "OneLake Write via Proxy": 0.002
+   "High Concurrency Session Livy Run": 559.04,
+   "OneLake Iterative Read via Proxy": 0.096,
+   "OneLake Other Operations": 0.022,
+   "OneLake Other Operations Via Redirect": 0.036,
+   "OneLake Read via Proxy": 0.081,
+   "OneLake Read via Redirect": 0.031,
+   "OneLake Write via Proxy": 0.008,
+   "OneLake Write via Redirect": 0.023
   },
   "5E357EA8-9D66-4F24-9C4D-66923D7DF3A2": {
    "Dataset On-Demand Refresh": 9.89,
@@ -17078,6 +17200,11 @@
   },
   "722EED61-2F5A-4C49-9A07-6207B1399030": {
    "Jupyter Notebook Scheduled Run": 783.405
+  },
+  "729482C1-780E-48EA-A5A1-8850C0FFCE98": {
+   "Dataset On-Demand Refresh": 2.501,
+   "Query": 4.522,
+   "XMLA Read Operation": 217.096
   },
   "72BFE7F7-D903-4807-B975-6B0575BCCC63": {
    "Jupyter Notebook Scheduled Run": 1988.14
@@ -20465,7 +20592,9 @@
    "Jupyter Notebook Scheduled Run": 1756.256
   },
   "D43F3F39-8611-44E7-94D1-68CA1DDC0DD4": {
-   "OneLake Write via Redirect": 0.001
+   "OneLake Other Operations Via Redirect": 0.009,
+   "OneLake Read via Redirect": 0.01,
+   "OneLake Write via Redirect": 0.01
   },
   "D450044E-EA85-43DF-B2BA-605C60BC9DED": {
    "SQL Endpoint Query": 882.508
@@ -21456,6 +21585,13 @@
    "OneLake Iterative Read via Proxy": 0.002,
    "OneLake Write via Proxy": 0.001
   },
+  "EE0D271A-F12E-4215-A7B8-B89A1E9FD5D8": {
+   "OneLake Iterative Read via Proxy": 0.059,
+   "OneLake Other Operations Via Redirect": 0.024,
+   "OneLake Read via Redirect": 0.014,
+   "OneLake Write via Proxy": 0.017,
+   "OneLake Write via Redirect": 0.003
+  },
   "EE13F266-A699-494A-89F4-BB9B8C0C22CA": {
    "SQL Endpoint Query": 10.186
   },
@@ -21584,6 +21720,14 @@
    "OneLake Read via Redirect": 0.026,
    "OneLake Write via Proxy": 0.03,
    "OneLake Write via Redirect": 0.01
+  },
+  "F15BC7C6-2B15-4C31-A81A-909A6575C4E6": {
+   "OneLake Iterative Read via Proxy": 0.076,
+   "OneLake Other Operations": 0.015,
+   "OneLake Other Operations Via Redirect": 0.051,
+   "OneLake Read via Redirect": 0.01,
+   "OneLake Write via Proxy": 0.011,
+   "OneLake Write via Redirect": 0.004
   },
   "F1FAD885-90D0-4D8D-9F9D-8C6BA1EE7C5A": {
    "High Concurrency Session Livy Run": 449.6,
@@ -22173,5 +22317,5 @@
    "XMLA Read Operation": 29.974
   }
  },
- "updated": "2026-10-18T02:57:38+00:00"
+ "updated": "2026-10-18T03:45:12+00:00"
 }
