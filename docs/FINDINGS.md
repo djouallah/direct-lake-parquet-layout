@@ -599,12 +599,12 @@ it is never staler than the ledger under it:
 | cms | `writeHeavy` | **8,051** | 82% | **2,029** | 164% | 87.7M | 1.3M | 5,582 |
 | green | `readHeavyForPBI` | **1,978** | 100% | **2,840** | 100% | 84.3M | 2.3M | 1,546 |
 | green | `writeHeavy` | **1,554** | 79% | **2,761** | 97% | 84.3M | 3.4M | 1,623 |
-| nyc | `readHeavyForPBI` | **11,606** | 100% | **6,499** | 100% | 591.7M | 5.7–10.4M | 5,850–5,867 |
-| nyc | `writeHeavy` | **10,522** | 91% | **8,689** | 134% | 591.7M | 5.8–10.4M | 9,200–9,291 |
+| nyc | `readHeavyForPBI` | **10,821** | 100% | **6,499** | 100% | 591.7M | 5.7–10.4M | 5,850–5,867 |
+| nyc | `writeHeavy` | **10,522** | 97% | **8,689** | 134% | 591.7M | 5.8–10.4M | 9,200–9,291 |
 | tpcds | `readHeavyForPBI` | **7,461** | 100% | **—** | — | — | — | — |
 | tpcds | `writeHeavy` | **9,547** | 128% | **11,409** | — | 262.1M | 1.6M | 21,684 |
 
-V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes (tpcds no), `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no, tpcds —), `writeHeavy` no (bts yes).
+V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes (nyc mixed, tpcds no), `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no, tpcds —), `writeHeavy` no (bts yes).
 
 <!-- spark-profiles:end -->
 

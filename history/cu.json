@@ -3513,6 +3513,15 @@
    "OneLake Write via Proxy": 23.902,
    "OneLake Write via Redirect": 24.878
   },
+  "59598A94-3C10-43CA-8CBA-80ACE1E74F54": {
+   "High Concurrency Session Livy Run": 1229.465,
+   "OneLake Iterative Read via Proxy": 21.788,
+   "OneLake Other Operations": 0.218,
+   "OneLake Other Operations Via Redirect": 1.477,
+   "OneLake Read via Redirect": 2.631,
+   "OneLake Write via Proxy": 2.114,
+   "OneLake Write via Redirect": 15.284
+  },
   "59CDD58F-2E28-4FB5-B2FE-DE15BC21E6D6": {
    "OneLake Iterative Read via Proxy": 136.096,
    "OneLake Other Operations": 8.663,
@@ -4887,6 +4896,9 @@
   },
   "7BF40C5E-39B5-4C78-9C0E-A50B40791993": {
    "SQL Endpoint Query": 53.44
+  },
+  "7C6163CC-8A9C-40E4-BF04-0029AE81B3A9": {
+   "OneLake Write via Redirect": 1.626
   },
   "7CB692FB-ABED-4FA0-B461-B9776C283232": {
    "High Concurrency Session Livy Run": 6350.125,
@@ -12745,6 +12757,14 @@
    "since": "2026-10-04T13:00:00",
    "timed": 132,
    "unfound": 1545
+  },
+  {
+   "at": "2026-10-18T04:26:14+00:00",
+   "changed": 8,
+   "items": 134,
+   "since": "2026-10-04T14:00:00",
+   "timed": 134,
+   "unfound": 1546
   }
  ],
  "schema": 2,
@@ -16240,6 +16260,15 @@
    "OneLake Write via Proxy": 0.037,
    "OneLake Write via Redirect": 0.009
   },
+  "59598A94-3C10-43CA-8CBA-80ACE1E74F54": {
+   "High Concurrency Session Livy Run": 307.361,
+   "OneLake Iterative Read via Proxy": 0.014,
+   "OneLake Other Operations": 0.009,
+   "OneLake Other Operations Via Redirect": 0.008,
+   "OneLake Read via Redirect": 0.008,
+   "OneLake Write via Proxy": 0.002,
+   "OneLake Write via Redirect": 0.007
+  },
   "59CDD58F-2E28-4FB5-B2FE-DE15BC21E6D6": {
    "OneLake Iterative Read via Proxy": 0.585,
    "OneLake Other Operations": 0.458,
@@ -17607,6 +17636,9 @@
   },
   "7BF40C5E-39B5-4C78-9C0E-A50B40791993": {
    "SQL Endpoint Query": 15.542
+  },
+  "7C6163CC-8A9C-40E4-BF04-0029AE81B3A9": {
+   "OneLake Write via Redirect": 0.003
   },
   "7CB692FB-ABED-4FA0-B461-B9776C283232": {
    "High Concurrency Session Livy Run": 409.628,
@@ -22325,5 +22357,5 @@
    "XMLA Read Operation": 29.974
   }
  },
- "updated": "2026-10-18T03:58:09+00:00"
+ "updated": "2026-10-18T04:26:14+00:00"
 }
