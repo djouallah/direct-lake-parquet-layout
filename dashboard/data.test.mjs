@@ -388,8 +388,9 @@ test("performance tab: read CU only, writer x dataset, 1.0x is the cheapest writ
   assert.match(page, /<th scope="row">Spark, no V-Order<\/th><td class="[^"]*"[^>]*><b>2\.0×/);
   const ctx = r.context(recs, {}, ledger);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
-  const dl = r.perfGroups(ctx, "dl"), dq = r.perfGroups(ctx, "dq");
-  assert.equal(dq[0].cold, dl[0].cold * 7);
+  // The DirectQuery totals are the dq timings, never the Direct Lake ones.
+  const run = ctx.runs[0];
+  assert.equal(run.dq.cold, run.dl.cold * 7);
   assert.match(r.render(recs, { page: "perf", phase: "dq" }, ledger).html, /class="pill on"[^>]*>DirectQuery/);
 });
 
@@ -397,8 +398,26 @@ test("performance tab: unsorted delta-rs, a warehouse with V-Order turned off an
   const recs = [rec({ id: 1, cfg: { sorted: "true" } }), rec({ id: 2 }),
     rec({ id: 3, engine: "dwh" }), rec({ id: 4, engine: "dwh", ord: { vorder_enabled: false } }),
     rec({ id: 5, engine: "spark", cfg: { resource_profile: "readHeavyForSpark" } })];
-  const groups = r.perfGroups(r.context(recs), "dl");
+  recs.forEach((x, i) => { x.items = { [`sm-${i}`]: { role: "semantic_model" } }; });
+  const ledger = { items: Object.fromEntries(recs.map((x, i) => [`sm-${i}`, { Query: 100 }])) };
+  const groups = r.perfGroups(r.context(recs, {}, ledger), "dl");
   assert.deepEqual(groups.map((g) => g.key), ["deltars_sorted", "dwh"]);
+});
+
+test("performance tab: a cell is the median of the writer's LAST three runs, newest by start time", () => {
+  // Five runs of one writer; CU 100..500, oldest first. The last three are 300/400/500 -> median 400.
+  const recs = [1, 2, 3, 4, 5].map((i) => {
+    const x = rec({ id: i, cfg: { sorted: "true" } });
+    x.run.started = `2026-10-0${i}T00:00:00Z`;
+    x.items = { [`sm-${i}`]: { role: "semantic_model" } };
+    return x;
+  });
+  const ledger = { items: Object.fromEntries(recs.map((x, i) => [`sm-${i + 1}`, { Query: (i + 1) * 100 }])) };
+  const [g] = r.perfGroups(r.context(recs, {}, ledger), "dl");
+  assert.equal(g.cu, 400);
+  assert.equal(g.runs, 3);
+  assert.equal(g.total, 5);
+  assert.deepEqual(g.ids, ["5", "4", "3"]);
 });
 
 test("performance tab: no timed runs is a sentence, not an empty grid", () => {

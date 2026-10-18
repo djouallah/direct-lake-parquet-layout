@@ -808,8 +808,14 @@ function methodSection(ctx) {
 // dataset (1.0x = cheapest, green), with the CU under it. Absolute numbers cannot share a chart across datasets — a
 // bigger table costs more whoever wrote it — so each dataset is read against itself. One storage mode
 // at a time: Direct Lake and DirectQuery are never in the same table. Deliberately plain.
+//
+// EACH CELL IS THE MEDIAN OF THE WRITER'S LAST `PERF_LAST_RUNS` RUNS ON THAT DATASET, newest by start
+// time, counting only runs with a read CU in that storage mode. Older runs stay in `history/runs/`
+// and on every other page, so an improvement over time remains visible there, while the grid
+// describes the writer as it is now. That replaces parking superseded runs in `legacy/`.
 
 export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
+export const PERF_LAST_RUNS = 3;
 
 // Writers left off this tab by the user's call (2026-10-18): unsorted delta-rs is not a layout anyone
 // would ship, and V-Order is ON by default on a warehouse, so "Warehouse, V-Order off" is a setting
@@ -825,12 +831,17 @@ export function perfGroups(ctx, phase = "dl") {
     const by = new Map();
     for (const r of ctx.runs) {
       if (r.ds !== ds || PERF_HIDDEN.includes(r.writer) || !r[phase] || !r[phase].cold || !r[phase].warm) continue;
+      if (!((r.cu || {})[phase] > 0)) continue;
       (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
     }
-    return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, runs]) => ({
-      ds, dsLabel: label(ds), key, label: runs[0].writerLabel, runs: runs.length,
+    return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, all]) => {
+      const runs = [...all].sort((a, b) => String(b.started).localeCompare(String(a.started))).slice(0, PERF_LAST_RUNS);
+      return {
+      ds, dsLabel: label(ds), key, label: runs[0].writerLabel, runs: runs.length, total: all.length,
+      ids: runs.map((r) => r.id),
       cold: median(runs.map((r) => r[phase].cold)), warm: median(runs.map((r) => r[phase].warm)),
-      cu: median(runs.map((r) => (r.cu || {})[phase]).filter((v) => typeof v === "number" && v > 0)) }));
+      cu: median(runs.map((r) => (r.cu || {})[phase]).filter((v) => typeof v === "number" && v > 0)) };
+    });
   });
 }
 
@@ -859,7 +870,7 @@ export function perfGrid(groups, measure, fmt) {
     if (!g || !(g[measure] > 0)) return `<td class="na">—</td>`;
     const x = g[measure] / best[ds];
     const cls = x < 1.0005 ? "best" : x >= 2 ? "slow" : "";
-    return `<td class="${cls}" title="${esc(`${g.label} on ${g.dsLabel}: ${fmt(g[measure])}, median of ${g.runs} run${g.runs === 1 ? "" : "s"}`)}"><b>${x.toFixed(1)}×</b><span>${esc(fmt(g[measure]))}</span></td>`;
+    return `<td class="${cls}" title="${esc(`${g.label} on ${g.dsLabel}: ${fmt(g[measure])}, median of the last ${g.runs} of ${g.total} run${g.total === 1 ? "" : "s"} (${g.ids.join(", ")})`)}"><b>${x.toFixed(1)}×</b><span>${esc(fmt(g[measure]))}</span></td>`;
   }).join("")}</tr>`).join("");
   return `<div class="tablewrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
@@ -889,7 +900,7 @@ export function perfSection(ctx, opts = {}) {
   return `
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
     ${perfHeadline(groups, "cu", "cheapest to read")}
-    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is a writer's median session on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
+    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
     ${perfGrid(groups, "cu", fmtCu)}`;
 }
 

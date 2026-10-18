@@ -131,6 +131,9 @@ export function flattenRun(rec) {
     id: String(((rec.run || {}).id) || rec._file || ""),
     file: rec._file || "",
     when: ((rec.run || {}).started || "").slice(0, 10),
+    // The full start timestamp, for "the last N runs"; the record's filename starts with the same UTC
+    // time, so it is the fallback for a record that carries no `run.started`.
+    started: (rec.run || {}).started || rec._file || "",
     url: (rec.run || {}).url || "",
     ds: datasetOf(rec), engine: rec.engine,
     writer: w.key, writerLabel: w.label, family: w.family, vorder: w.vorder,
