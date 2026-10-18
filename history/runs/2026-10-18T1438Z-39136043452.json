@@ -1,0 +1,741 @@
+{
+ "engine": "spark",
+ "full_load": true,
+ "inputs": {
+  "benchmark": "false",
+  "build": "true",
+  "cores": "8",
+  "dataset": "tpcds",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "auto",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "auto",
+  "runs": "6",
+  "skip_download": "true",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "0FF63C6D-9B17-428A-B764-04BA0B9517D2": {
+   "at": "2026-10-18T14:31:39+00:00",
+   "created": true,
+   "deleted": "2026-10-18T14:37:56+00:00",
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_spark",
+   "role": "output"
+  },
+  "6C23854F-CF0F-460D-8AFB-01D9BEA9A92D": {
+   "at": "2026-10-18T14:31:29+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "benchmark",
+   "role": "folder"
+  },
+  "870835DE-2509-4B84-8FD9-43FA8633AB49": {
+   "at": "2026-10-18T14:30:39+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "landing"
+  },
+  "C3FC6DAB-9ED7-4859-B8E3-841F4BEDFDEF": {
+   "at": "2026-10-18T14:30:41+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-10-18T14:30:37+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "layout": {
+  "config": {
+   "spark": {
+    "native_execution_engine": "true",
+    "resource_profile": "writeHeavy"
+   }
+  },
+  "detail_keys": [
+   "schema",
+   "total_rows",
+   "num_files",
+   "num_row_groups",
+   "avg_row_group",
+   "size_mb",
+   "vorder",
+   "compression"
+  ],
+  "encodings": {
+   "spark": {
+    "cache_buster": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 0.43,
+     "type": "INT32"
+    },
+    "ss_addr_sk": {
+     "chunks": 99,
+     "data_pages": 13159,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 223.1,
+     "type": "INT64"
+    },
+    "ss_cdemo_sk": {
+     "chunks": 99,
+     "data_pages": 13234,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 228.0,
+     "type": "INT64"
+    },
+    "ss_coupon_amt": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 325.9,
+     "type": "INT32"
+    },
+    "ss_customer_sk": {
+     "chunks": 99,
+     "data_pages": 13191,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 228.24,
+     "type": "INT64"
+    },
+    "ss_ext_discount_amt": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 325.9,
+     "type": "INT32"
+    },
+    "ss_ext_list_price": {
+     "chunks": 99,
+     "data_pages": 13185,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 1021.89,
+     "type": "INT32"
+    },
+    "ss_ext_sales_price": {
+     "chunks": 99,
+     "data_pages": 13230,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 960.64,
+     "type": "INT32"
+    },
+    "ss_ext_tax": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 544.3,
+     "type": "INT32"
+    },
+    "ss_ext_wholesale_cost": {
+     "chunks": 99,
+     "data_pages": 13154,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 988.79,
+     "type": "INT32"
+    },
+    "ss_hdemo_sk": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 98.25,
+     "type": "INT64"
+    },
+    "ss_item_sk": {
+     "chunks": 99,
+     "data_pages": 13160,
+     "declared": 99,
+     "dict_declared": 0,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 1165.88,
+     "type": "INT64"
+    },
+    "ss_list_price": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 476.59,
+     "type": "INT32"
+    },
+    "ss_net_paid": {
+     "chunks": 99,
+     "data_pages": 13228,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 977.11,
+     "type": "INT32"
+    },
+    "ss_net_paid_inc_tax": {
+     "chunks": 99,
+     "data_pages": 13171,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 1014.96,
+     "type": "INT32"
+    },
+    "ss_net_profit": {
+     "chunks": 99,
+     "data_pages": 13230,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 1003.04,
+     "type": "INT32"
+    },
+    "ss_promo_sk": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 313.78,
+     "type": "INT64"
+    },
+    "ss_quantity": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 219.72,
+     "type": "INT64"
+    },
+    "ss_sales_price": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 472.62,
+     "type": "INT32"
+    },
+    "ss_sold_date_sk": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 91.3,
+     "type": "INT64"
+    },
+    "ss_sold_time_sk": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 110.76,
+     "type": "INT64"
+    },
+    "ss_store_sk": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 57.58,
+     "type": "INT64"
+    },
+    "ss_ticket_number": {
+     "chunks": 99,
+     "data_pages": 13212,
+     "declared": 99,
+     "dict_declared": 3,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN",
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 203.01,
+     "type": "INT64"
+    },
+    "ss_wholesale_cost": {
+     "chunks": 99,
+     "data_pages": 13148,
+     "declared": 99,
+     "dict_declared": 99,
+     "dict_pages": 99,
+     "encodings": [
+      "PLAIN_DICTIONARY",
+      "RLE"
+     ],
+     "mb": 442.12,
+     "type": "INT32"
+    }
+   }
+  },
+  "engines": {
+   "spark": {
+    "guid": "0ff63c6d-9b17-428a-b764-04ba0b9517d2",
+    "item": "dbt_tpcds_spark",
+    "kind": "lakehouses",
+    "writer": "spark"
+   }
+  },
+  "landing": {
+   "files": 73,
+   "folders": {
+    "(root)": {
+     "files": 1,
+     "size_mb": 0.01
+    },
+    "parquet_raw/catalog_page": {
+     "files": 1,
+     "size_mb": 1.15
+    },
+    "parquet_raw/catalog_sales": {
+     "files": 32,
+     "size_mb": 9806.26
+    },
+    "parquet_raw/customer_address": {
+     "files": 1,
+     "size_mb": 18.76
+    },
+    "parquet_raw/customer_demographics": {
+     "files": 1,
+     "size_mb": 7.42
+    },
+    "parquet_raw/date_dim": {
+     "files": 1,
+     "size_mb": 0.07
+    },
+    "parquet_raw/item": {
+     "files": 1,
+     "size_mb": 18.59
+    },
+    "parquet_raw/promotion": {
+     "files": 1,
+     "size_mb": 0.05
+    },
+    "parquet_raw/ship_mode": {
+     "files": 1,
+     "size_mb": 0.0
+    },
+    "parquet_raw/store": {
+     "files": 1,
+     "size_mb": 0.04
+    },
+    "parquet_raw/store_sales": {
+     "files": 32,
+     "size_mb": 11550.17
+    }
+   },
+   "guid": "870835de-2509-4b84-8fd9-43fa8633ab49",
+   "item": "dbt_tpcds_landing",
+   "size_mb": 21402.51
+  },
+  "ordering": {
+   "spark": {
+    "columns": {
+     "cache_buster": {
+      "rg_overlap_pct": 0.0,
+      "rgs": 99,
+      "runs": 1
+     },
+     "ss_addr_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 366111
+     },
+     "ss_cdemo_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 366111
+     },
+     "ss_coupon_amt": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 1415524
+     },
+     "ss_customer_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 366111
+     },
+     "ss_ext_discount_amt": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 1415524
+     },
+     "ss_ext_list_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999987
+     },
+     "ss_ext_sales_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999555
+     },
+     "ss_ext_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3950482
+     },
+     "ss_ext_wholesale_cost": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999975
+     },
+     "ss_hdemo_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 366065
+     },
+     "ss_item_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999996
+     },
+     "ss_list_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999768
+     },
+     "ss_net_paid": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999421
+     },
+     "ss_net_paid_inc_tax": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999432
+     },
+     "ss_net_profit": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999977
+     },
+     "ss_promo_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3996042
+     },
+     "ss_quantity": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3960008
+     },
+     "ss_sales_price": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999060
+     },
+     "ss_sold_date_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 365872
+     },
+     "ss_sold_time_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 366103
+     },
+     "ss_store_sk": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 364303
+     },
+     "ss_ticket_number": {
+      "rg_overlap_pct": 98.0,
+      "rgs": 99,
+      "runs": 366111
+     },
+     "ss_wholesale_cost": {
+      "rg_overlap_pct": 100.0,
+      "rgs": 99,
+      "runs": 3999587
+     }
+    },
+    "sample": {
+     "file": "part-00000-e5f93b7f-5be1-4f81-bb94-15aa8ae5c65b-c000.snappy.parquet",
+     "rows": 4000000
+    },
+    "table": "mart.store_sales",
+    "vorder_files": {
+     "files": 32,
+     "tagged": 0,
+     "unknown": 0
+    }
+   }
+  },
+  "run": {
+   "dataset": "tpcds",
+   "id": "39136043452",
+   "sha": "a19539ae39779686b7628b22e05e2980fa69be3c",
+   "written": "2026-10-18T14:37:39.000209+00:00"
+  },
+  "stats": {
+   "spark": {
+    "catalog_page": {
+     "avg_row_group": 20400.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 1.23,
+     "total_rows": 20400,
+     "vorder": false
+    },
+    "catalog_sales": {
+     "avg_row_group": 1484976.2,
+     "compression": "SNAPPY",
+     "num_files": 32,
+     "num_row_groups": 96,
+     "schema": "mart",
+     "size_mb": 9838.06,
+     "total_rows": 142557716,
+     "vorder": false
+    },
+    "customer_address": {
+     "avg_row_group": 500000.0,
+     "compression": "SNAPPY",
+     "num_files": 2,
+     "num_row_groups": 2,
+     "schema": "mart",
+     "size_mb": 19.5,
+     "total_rows": 1000000,
+     "vorder": false
+    },
+    "customer_demographics": {
+     "avg_row_group": 960400.0,
+     "compression": "SNAPPY",
+     "num_files": 2,
+     "num_row_groups": 2,
+     "schema": "mart",
+     "size_mb": 7.98,
+     "total_rows": 1920800,
+     "vorder": false
+    },
+    "date_dim": {
+     "avg_row_group": 2191.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.09,
+     "total_rows": 2191,
+     "vorder": false
+    },
+    "item": {
+     "avg_row_group": 204000.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 18.83,
+     "total_rows": 204000,
+     "vorder": false
+    },
+    "promotion": {
+     "avg_row_group": 1000.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.06,
+     "total_rows": 1000,
+     "vorder": false
+    },
+    "ship_mode": {
+     "avg_row_group": 20.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.0,
+     "total_rows": 20,
+     "vorder": false
+    },
+    "stg_tpcds_archive_log": {
+     "avg_row_group": 72.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "landing",
+     "size_mb": 0.01,
+     "total_rows": 72,
+     "vorder": false
+    },
+    "store": {
+     "avg_row_group": 402.0,
+     "compression": "SNAPPY",
+     "num_files": 1,
+     "num_row_groups": 1,
+     "schema": "mart",
+     "size_mb": 0.05,
+     "total_rows": 402,
+     "vorder": false
+    },
+    "store_sales": {
+     "avg_row_group": 2647296.9,
+     "compression": "SNAPPY",
+     "num_files": 32,
+     "num_row_groups": 99,
+     "schema": "mart",
+     "size_mb": 11503.7,
+     "total_rows": 262082396,
+     "vorder": false
+    }
+   }
+  },
+  "tables": [
+   "stg_tpcds_archive_log",
+   "date_dim",
+   "item",
+   "store",
+   "promotion",
+   "ship_mode",
+   "catalog_page",
+   "customer_address",
+   "customer_demographics",
+   "store_sales",
+   "catalog_sales"
+  ]
+ },
+ "run": {
+  "finished": "2026-10-18T14:38:07+00:00",
+  "id": "39136043452",
+  "sha": "a19539ae39779686b7628b22e05e2980fa69be3c",
+  "started": "2026-10-18T14:27:14+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/39136043452"
+ },
+ "schema": 1
+}
