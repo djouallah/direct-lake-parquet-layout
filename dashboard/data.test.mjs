@@ -410,8 +410,8 @@ test("performance tab: unsorted delta-rs, a warehouse with V-Order turned off an
   assert.deepEqual(groups.map((g) => g.key), ["deltars_sorted", "dwh"]);
 });
 
-test("performance tab: a cell is the median of the writer's LAST three runs, newest by start time", () => {
-  // Five runs of one writer; CU 100..500, oldest first. The last three are 300/400/500 -> median 400.
+test("performance tab: a cell is the median of the writer's LAST two runs, newest by start time", () => {
+  // Five runs of one writer; CU 100..500, oldest first. The last two are 400/500 -> median 450.
   const recs = [1, 2, 3, 4, 5].map((i) => {
     const x = rec({ id: i, cfg: { sorted: "true" } });
     x.run.started = `2026-10-0${i}T00:00:00Z`;
@@ -420,10 +420,10 @@ test("performance tab: a cell is the median of the writer's LAST three runs, new
   });
   const ledger = { items: Object.fromEntries(recs.map((x, i) => [`sm-${i + 1}`, { Query: (i + 1) * 100 }])) };
   const [g] = r.perfGroups(r.context(recs, {}, ledger), "dl");
-  assert.equal(g.cu, 400);
-  assert.equal(g.runs, 3);
+  assert.equal(g.cu, 450);
+  assert.equal(g.runs, 2);
   assert.equal(g.total, 5);
-  assert.deepEqual(g.ids, ["5", "4", "3"]);
+  assert.deepEqual(g.ids, ["5", "4"]);
 });
 
 test("performance tab: history averages a writer's sessions per day", () => {

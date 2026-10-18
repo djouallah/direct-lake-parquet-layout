@@ -837,7 +837,7 @@ function methodSection(ctx) {
 // describes the writer as it is now. That replaces parking superseded runs in `legacy/`.
 
 export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
-export const PERF_LAST_RUNS = 3;
+export const PERF_LAST_RUNS = 2;
 
 // Writers left off this tab by the user's call (2026-10-18): unsorted delta-rs is not a layout anyone
 // would ship, and V-Order is ON by default on a warehouse, so "Warehouse, V-Order off" is a setting
