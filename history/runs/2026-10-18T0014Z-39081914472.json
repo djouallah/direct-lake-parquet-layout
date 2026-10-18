@@ -1,0 +1,29 @@
+{
+ "engine": "iceberg",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "true",
+  "build": "true",
+  "cores": "8",
+  "dataset": "bts",
+  "download_limit": "200",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "auto",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "auto",
+  "runs": "6",
+  "skip_download": "true",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "run": {
+  "finished": "2026-10-18T00:14:35+00:00",
+  "id": "39081914472",
+  "sha": "c5cbfde86acf2ff0d285d81187d679cdf2c5589c",
+  "started": "2026-10-18T00:12:43+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/39081914472"
+ },
+ "schema": 1
+}
