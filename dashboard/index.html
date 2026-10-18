@@ -167,6 +167,10 @@ table.grid td.best { background:color-mix(in srgb, var(--good) 18%, transparent)
 table.grid td.best b { color:var(--good); }
 table.grid td.slow b { color:var(--meh); }
 table.grid td.na { color:var(--dim); }
+svg.chart .hline { fill:none; stroke-width:1.8; stroke-linejoin:round; stroke-linecap:round; opacity:.8; }
+svg.chart .hline.dashed { stroke-dasharray:5 4; }
+svg .hline { fill:none; stroke-width:1.8; }
+svg .hline.dashed { stroke-dasharray:5 4; }
 svg.chart .trend { fill:none; stroke:var(--fg); stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round; opacity:.75; }
 footer { margin-top:4rem; color:var(--dim); font-size:.85rem; border-top:1px solid var(--line); padding-top:1rem; }
 @media (max-width:600px) { body { font-size:16px; } header h1 { font-size:1.6rem; } .claim { font-size:1.05rem; } }

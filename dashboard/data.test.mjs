@@ -420,6 +420,25 @@ test("performance tab: a cell is the median of the writer's LAST three runs, new
   assert.deepEqual(g.ids, ["5", "4", "3"]);
 });
 
+test("performance tab: history has one panel per dataset and every session as a dot, oldest first", () => {
+  const recs = [3, 1, 2].map((i) => {
+    const x = rec({ id: i, cfg: { sorted: "true" } });
+    x.run.started = `2026-10-0${i}T00:00:00Z`;
+    x.items = { [`sm-${i}`]: { role: "semantic_model" } };
+    return x;
+  });
+  const ledger = { items: Object.fromEntries(recs.map((x) => [`sm-${x.run.id}`, { Query: Number(x.run.id) * 100 }])) };
+  const ctx = r.context(recs, {}, ledger);
+  const [p] = r.perfHistoryPoints(ctx, "dl");
+  assert.equal(p.ds, "aemo");
+  assert.deepEqual(p.lines[0].pts.map((q) => q.cu), [100, 200, 300]);
+  const html = r.perfHistory(ctx, "dl");
+  assert.equal((html.match(/class="facet"/g) || []).length, 1);
+  assert.equal((html.match(/data-tip="delta-rs, autosort · AEMO · run/g) || []).length, 3);
+  // A record with no run.started falls back to the time in its file name.
+  assert.equal(r.runTime("2026-10-17T1526Z-39042898921.json"), Date.parse("2026-10-17T15:26:00Z"));
+});
+
 test("performance tab: no timed runs is a sentence, not an empty grid", () => {
   const recs = vorderFixture();
   for (const x of recs) x.benchmark.timings = {};
