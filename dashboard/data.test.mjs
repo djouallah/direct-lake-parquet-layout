@@ -426,7 +426,7 @@ test("performance tab: a cell is the median of the writer's LAST three runs, new
   assert.deepEqual(g.ids, ["5", "4", "3"]);
 });
 
-test("performance tab: history is one chart, × the cheapest on each dataset, averaged per day", () => {
+test("performance tab: history averages a writer's sessions per day", () => {
   const recs = [1, 2, 3].map((i) => {
     const x = rec({ id: i, cfg: { sorted: "true" } });
     x.run.started = i < 3 ? `2026-10-01T0${i}:00:00Z` : "2026-10-02T00:00:00Z";
@@ -435,17 +435,31 @@ test("performance tab: history is one chart, × the cheapest on each dataset, av
   });
   const ledger = { items: Object.fromEntries(recs.map((x) => [`sm-${x.run.id}`, { Query: Number(x.run.id) * 100 }])) };
   const ctx = r.context(recs, {}, ledger);
-  // The grid's 1.0× is the median of the last three sessions, 200 CU: sessions read 0.5×, 1.0×, 1.5×.
-  const [l] = r.perfHistoryPoints(ctx, "dl");
-  assert.equal(l.key, "deltars_sorted");
-  assert.deepEqual(l.pts.map((q) => [q.day, q.x, q.n]), [["2026-10-01", 0.75, 2], ["2026-10-02", 1.5, 1]]);
+  const [p] = r.perfHistoryPoints(ctx, "dl");
+  assert.deepEqual(p.lines[0].pts.map((q) => [q.day, q.cu, q.n]), [["2026-10-01", 150, 2], ["2026-10-02", 300, 1]]);
   const html = r.perfHistory(ctx, "dl");
-  assert.equal((html.match(/<svg viewBox="0 0 440/g) || []).length, 1);
   assert.equal((html.match(/<path d="M/g) || []).length, 1);
-  assert.match(html, /delta-rs, autosort · 2026-10-01 · avg 0.75× the cheapest · 2 sessions \(AEMO\)/);
-  assert.match(html, /class="grid one"/);
-  // It sits beside the grid on the page.
-  assert.match(r.render(recs, { page: "perf" }, ledger).html, /class="perf-pair"><div class="tablewrap">[\s\S]*class="facet trend"/);
+  assert.match(html, /2026-10-01 · avg 150 CU over 2 sessions/);
+});
+
+test("performance tab: history has one panel per dataset and every day as a point, oldest first", () => {
+  const recs = [3, 1, 2].map((i) => {
+    const x = rec({ id: i, cfg: { sorted: "true" } });
+    x.run.started = `2026-10-0${i}T00:00:00Z`;
+    x.items = { [`sm-${i}`]: { role: "semantic_model" } };
+    return x;
+  });
+  const ledger = { items: Object.fromEntries(recs.map((x) => [`sm-${x.run.id}`, { Query: Number(x.run.id) * 100 }])) };
+  const ctx = r.context(recs, {}, ledger);
+  const [p] = r.perfHistoryPoints(ctx, "dl");
+  assert.equal(p.ds, "aemo");
+  assert.deepEqual(p.lines[0].pts.map((q) => q.cu), [100, 200, 300]);
+  const html = r.perfHistory(ctx, "dl");
+  assert.equal((html.match(/class="facet"/g) || []).length, 1);
+  assert.equal((html.match(/data-tip="delta-rs, autosort · AEMO · 2026-10-0\d · avg/g) || []).length, 3);
+  // The CU axis fits the panel's range (100–300), so it does not start at zero.
+  assert.ok(!/text-anchor="end">0</.test(html));
+  assert.ok(/text-anchor="end">100</.test(html));
   // A record with no run.started falls back to the time in its file name.
   assert.equal(r.runTime("2026-10-17T1526Z-39042898921.json"), Date.parse("2026-10-17T15:26:00Z"));
 });
