@@ -912,7 +912,7 @@ export function perfSection(ctx, opts = {}) {
     <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
     ${perfGrid(groups, "cu", fmtCu)}
     <h3>Read CU over time</h3>
-    <p class="dim">Every ${mode} session, one panel per dataset, one line per writer. A step in a line is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a dot for the run.</p>
+    <p class="dim">Every ${mode} session, one panel per dataset, one colour per writer. A writer's dots stepping up or down is its read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a dot for the run.</p>
     ${perfHistory(ctx, phase)}`;
 }
 
@@ -946,9 +946,16 @@ export function perfHistoryPoints(ctx, phase = "dl") {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-/** One dataset's panel: time across, read CU up (from zero), a line and dots per writer. */
+// Dots only, one colour per writer: the two Spark profiles share a hue in the family colours used
+// elsewhere, so this chart takes the validated categorical palette instead.
+const HISTORY_COLORS = { deltars_sorted: "var(--d1)", spark_vorder: "var(--d2)", dwh: "var(--d3)",
+  spark_plain: "var(--d4)", iceberg: "var(--d6)" };
+const historyColor = (key) => HISTORY_COLORS[key] || "var(--c4)";
+const historyDot = (x, y, css, tip, r = 3.8) => `<g class="pt"${tip ? ` data-tip="${esc(tip)}"` : ""}><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${css}" stroke="var(--bg)" stroke-width="1"/>${tip ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/>` : ""}</g>`;
+
+/** One dataset's panel: time across, read CU up (lower is better), one coloured dot per session. */
 function historyPanel(p, [t0, t1], { w = 470, h = 250 } = {}) {
-  const m = { l: 52, r: 12, t: 26, b: 30 };
+  const m = { l: 62, r: 12, t: 26, b: 30 };
   const all = p.lines.flatMap((l) => l.pts.map((q) => q.cu));
   // Fitted to this panel's own range, not anchored at zero: the point is to see a writer's steps.
   const lo = Math.min(...all), hi = Math.max(...all), pad = (hi - lo) * 0.08 || hi * 0.1 || 1;
@@ -956,7 +963,8 @@ function historyPanel(p, [t0, t1], { w = 470, h = 250 } = {}) {
   const sy = { f: (v) => (h - m.b) + ((v - ya) / (yb - ya)) * (m.t - (h - m.b)), ticks: linTicks(ya, yb) };
   const fx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (w - m.l - m.r);
   const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(`read CU over time on ${label(p.ds)}`)}">`,
-    `<text x="${m.l}" y="15" class="panel-title">${esc(label(p.ds))}</text>`];
+    `<text x="${m.l}" y="15" class="panel-title">${esc(label(p.ds))}</text>`,
+    `<text transform="translate(13,${((m.t + h - m.b) / 2).toFixed(1)}) rotate(-90)" class="axis" text-anchor="middle">read CU · lower is better</text>`];
   for (const v of sy.ticks) {
     const y = sy.f(v);
     parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" class="grid"/>`,
@@ -970,15 +978,9 @@ function historyPanel(p, [t0, t1], { w = 470, h = 250 } = {}) {
       `<text x="${x.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${MONTHS[d.getUTCMonth()]}</text>`);
   }
   for (const l of p.lines) {
-    const css = fam(l.family).css;
-    if (l.pts.length > 1) {
-      parts.push(`<polyline points="${l.pts.map((q) => `${fx(q.t).toFixed(1)},${sy.f(q.cu).toFixed(1)}`).join(" ")}" class="hline${l.filled ? "" : " dashed"}" style="stroke:${css}"/>`);
-    }
-  }
-  for (const l of p.lines) {
     for (const q of l.pts) {
-      parts.push(mark(fx(q.t), sy.f(q.cu), { family: l.family, filled: l.filled,
-        tip: `${l.label} · ${label(p.ds)} · run ${q.id} (${q.when}) · ${fmtCu(q.cu)}${q.rg ? ` · row groups ${q.rg}` : ""}` }, 3.6));
+      parts.push(historyDot(fx(q.t), sy.f(q.cu), historyColor(l.key),
+        `${l.label} · ${label(p.ds)} · run ${q.id} (${q.when}) · ${fmtCu(q.cu)}${q.rg ? ` · row groups ${q.rg}` : ""}`));
     }
   }
   parts.push("</svg>");
@@ -993,7 +995,7 @@ export function perfHistory(ctx, phase = "dl") {
   const pad = 2 * 86400000, span = [Math.min(...ts) - pad, Math.max(...ts) + pad];
   const seen = new Map();
   for (const p of panels) for (const l of p.lines) if (!seen.has(l.key)) seen.set(l.key, l);
-  const key = [...seen.values()].map((l) => `<span class="key"><svg viewBox="0 0 30 12" width="30" height="12"><line x1="1" x2="29" y1="6" y2="6" class="hline${l.filled ? "" : " dashed"}" style="stroke:${fam(l.family).css}"/>${mark(15, 6, l, 4).replace(/<circle[^>]*fill="transparent"\/>/, "")}</svg>${esc(l.label)}</span>`).join("");
+  const key = [...seen.values()].map((l) => `<span class="key"><svg viewBox="0 0 12 12" width="12" height="12">${historyDot(6, 6, historyColor(l.key), "", 4.5)}</svg>${esc(l.label)}</span>`).join("");
   return `<div class="legend">${key}</div><div class="facets two">${panels.map((p) =>
     `<figure class="facet">${historyPanel(p, span)}</figure>`).join("")}</div>`;
 }
