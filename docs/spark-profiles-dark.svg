@@ -1,49 +1,49 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="604" viewBox="0 0 920 604" role="img" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
-  <line x1="448.13" y1="72" x2="448.13" y2="574" stroke="#4a4a46" stroke-width="1"/>
+  <line x1="473.02" y1="72" x2="473.02" y2="574" stroke="#4a4a46" stroke-width="1"/>
   <text x="8" y="30" fill="#ffffff" font-size="20" font-weight="600">Spark readHeavyForPBI</text>
   <text x="8" y="56" fill="#c3c2b7" font-size="14">CUs vs the default writeHeavy profile, median per dataset</text>
   <text x="76" y="113.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">aemo</text>
   <text x="158" y="97.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="448.13" y="82" width="341.87" height="22" rx="3" fill="#3987e5"/>
+  <rect x="473.02" y="82" width="316.98" height="22" rx="3" fill="#3987e5"/>
   <text x="799" y="98" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">2.3× cheaper</text>
   <text x="158" y="127.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="448.13" y="112" width="56.97" height="22" rx="3" fill="#3987e5"/>
-  <text x="514.09" y="128" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−9%</text>
+  <rect x="473.02" y="112" width="52.82" height="22" rx="3" fill="#3987e5"/>
+  <text x="534.84" y="128" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−9%</text>
   <text x="76" y="199.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">cms</text>
   <text x="158" y="183.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="448.13" y="168" width="222.79" height="22" rx="3" fill="#3987e5"/>
-  <text x="679.91" y="184" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.6× cheaper</text>
+  <rect x="473.02" y="168" width="206.56" height="22" rx="3" fill="#3987e5"/>
+  <text x="688.58" y="184" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.6× cheaper</text>
   <text x="158" y="213.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="374.88" y="198" width="73.24" height="22" rx="3" fill="#e66767"/>
-  <text x="365.88" y="214" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+12%</text>
+  <rect x="405.11" y="198" width="67.91" height="22" rx="3" fill="#e66767"/>
+  <text x="396.11" y="214" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+12%</text>
   <text x="76" y="285.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">nyc</text>
   <text x="158" y="269.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="448.13" y="254" width="161.1" height="22" rx="3" fill="#3987e5"/>
-  <text x="618.23" y="270" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.4× cheaper</text>
+  <rect x="473.02" y="254" width="149.37" height="22" rx="3" fill="#3987e5"/>
+  <text x="631.39" y="270" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.4× cheaper</text>
   <text x="158" y="299.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="350.41" y="284" width="97.72" height="22" rx="3" fill="#e66767"/>
-  <text x="341.41" y="300" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+16%</text>
+  <rect x="382.42" y="284" width="90.6" height="22" rx="3" fill="#e66767"/>
+  <text x="373.42" y="300" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+16%</text>
   <text x="76" y="371.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">tpcds</text>
   <text x="158" y="355.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="448.13" y="340" width="124.33" height="22" rx="3" fill="#3987e5"/>
-  <text x="581.45" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.3× cheaper</text>
+  <rect x="473.02" y="340" width="115.28" height="22" rx="3" fill="#3987e5"/>
+  <text x="597.29" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.3× cheaper</text>
   <text x="158" y="385.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="435.86" y="370" width="12.27" height="22" rx="3" fill="#e66767"/>
-  <text x="426.86" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+2%</text>
+  <rect x="461.64" y="370" width="11.37" height="22" rx="3" fill="#e66767"/>
+  <text x="452.64" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+2%</text>
   <text x="76" y="457.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">bts</text>
   <text x="158" y="441.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="448.13" y="426" width="48.97" height="22" rx="3" fill="#3987e5"/>
-  <text x="506.09" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.1× cheaper</text>
+  <rect x="473.02" y="426" width="45.4" height="22" rx="3" fill="#3987e5"/>
+  <text x="527.42" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.1× cheaper</text>
   <text x="158" y="471.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="448.13" y="456" width="140.09" height="22" rx="3" fill="#3987e5"/>
-  <text x="597.22" y="472" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−23%</text>
+  <rect x="473.02" y="456" width="129.89" height="22" rx="3" fill="#3987e5"/>
+  <text x="611.91" y="472" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−23%</text>
   <text x="76" y="543.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">green</text>
   <text x="158" y="527.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="408.74" y="512" width="39.39" height="22" rx="3" fill="#e66767"/>
-  <text x="399.74" y="528" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+6%</text>
+  <rect x="456.81" y="512" width="16.21" height="22" rx="3" fill="#e66767"/>
+  <text x="447.81" y="528" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+3%</text>
   <text x="158" y="557.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="242" y="542" width="206.13" height="22" rx="3" fill="#e66767"/>
-  <text x="233" y="558" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+34%</text>
-  <text x="440.13" y="594" fill="#898781" font-size="12.5" text-anchor="end">← readHeavyForPBI costs more</text>
-  <text x="456.13" y="594" fill="#898781" font-size="12.5" text-anchor="start">saves →</text>
+  <rect x="242" y="542" width="231.02" height="22" rx="3" fill="#e66767"/>
+  <text x="233" y="558" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+41%</text>
+  <text x="465.02" y="594" fill="#898781" font-size="12.5" text-anchor="end">← readHeavyForPBI costs more</text>
+  <text x="481.02" y="594" fill="#898781" font-size="12.5" text-anchor="start">saves →</text>
 </svg>
