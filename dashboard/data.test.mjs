@@ -426,6 +426,24 @@ test("performance tab: a cell is the median of the writer's LAST two runs, newes
   assert.deepEqual(g.ids, ["5", "4"]);
 });
 
+test("performance tab: the DirectQuery grid counts only sessions since PERF_SINCE, Direct Lake all of them", () => {
+  const mk = (id, engine, started) => {
+    const x = rec({ id, engine, cfg: engine === "duckrun" ? { sorted: "true" } : {}, dq: 7 });
+    x.run.started = started;
+    x.items = { [`sm-${id}`]: { role: "semantic_model" }, [`dq-${id}`]: { role: "semantic_model_dq" } };
+    return x;
+  };
+  // duckrun has an October DQ session, dwh only a September one.
+  const recs = [mk(1, "duckrun", "2026-10-05T00:00:00Z"), mk(2, "dwh", "2026-09-05T00:00:00Z")];
+  const ledger = { items: Object.fromEntries(recs.flatMap((x) =>
+    [[`sm-${x.run.id}`, { Query: 100 }], [`dq-${x.run.id}`, { Query: 1000 }]])) };
+  const ctx = r.context(recs, {}, ledger);
+  assert.deepEqual(r.perfGroups(ctx, "dq").map((g) => g.key), ["deltars_sorted"]);
+  assert.deepEqual(r.perfGroups(ctx, "dl").map((g) => g.key), ["deltars_sorted", "dwh"]);
+  // The history keeps the old session: it is where the price step shows.
+  assert.equal(r.perfHistoryPoints(ctx, "dq")[0].lines.length, 2);
+});
+
 test("performance tab: history averages a writer's sessions per day", () => {
   const recs = [1, 2, 3].map((i) => {
     const x = rec({ id: i, cfg: { sorted: "true" } });

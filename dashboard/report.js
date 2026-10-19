@@ -839,6 +839,13 @@ function methodSection(ctx) {
 export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
 export const PERF_LAST_RUNS = 2;
 
+// The grid counts only sessions started on or after this date, per storage mode. DirectQuery's bill
+// is mostly the SQL endpoint's `SQL Endpoint Query`, and Fabric cut that price between mid-September
+// and October 2026 (aemo ~15k CU -> ~4k for the same queries at the same speed), so an older session
+// would compare a price, not a writer. A writer with no recent session shows an empty cell: that is
+// the run still to dispatch. The history chart below keeps every session, which is where the step shows.
+export const PERF_SINCE = { dq: "2026-10-01" };
+
 // Writers left off this tab by the user's call (2026-10-18): unsorted delta-rs is not a layout anyone
 // would ship, and V-Order is ON by default on a warehouse, so "Warehouse, V-Order off" is a setting
 // someone has to go and turn off. readHeavyForSpark enables no V-Order (Microsoft's profile reference)
@@ -849,11 +856,13 @@ export const PERF_HIDDEN = ["deltars_unsorted", "dwh_novorder", "spark_readHeavy
 export function perfGroups(ctx, phase = "dl") {
   const order = WRITERS.map((w) => w.key);
   const rank = (k) => (order.includes(k) ? order.indexOf(k) : order.length);
+  const since = PERF_SINCE[phase] ? Date.parse(`${PERF_SINCE[phase]}T00:00:00Z`) : null;
   return dsList(ctx).flatMap((ds) => {
     const by = new Map();
     for (const r of ctx.runs) {
       if (r.ds !== ds || PERF_HIDDEN.includes(r.writer) || !r[phase] || !r[phase].cold || !r[phase].warm) continue;
       if (!((r.cu || {})[phase] > 0)) continue;
+      if (since !== null && !(runTime(r.started) >= since)) continue;
       (by.get(r.writer) || by.set(r.writer, []).get(r.writer)).push(r);
     }
     return [...by].sort((a, b) => rank(a[0]) - rank(b[0])).map(([key, all]) => {
@@ -922,7 +931,7 @@ export function perfSection(ctx, opts = {}) {
   return `
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
     ${perfHeadline(groups, "cu", "cheapest to read")}
-    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.</p>
+    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.${PERF_SINCE[phase] ? ` Only sessions since ${esc(PERF_SINCE[phase])} count here, because the SQL endpoint's price changed before then; an empty cell is a writer not yet run since.` : ""}</p>
     ${perfGrid(groups, "cu", fmtCu)}
     <h3>Read CU over time</h3>
     <p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
