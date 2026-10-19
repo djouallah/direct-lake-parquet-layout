@@ -11,11 +11,11 @@
   <text x="492" y="128" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="start">−9%</text>
   <text x="76" y="199.5" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="end">cms</text>
   <text x="158" y="183.5" fill="#52514e" font-size="13" text-anchor="end">queries</text>
-  <rect x="421.62" y="168" width="260.36" height="22" rx="3" fill="#2a78d6"/>
-  <text x="690.98" y="184" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="start">1.7× cheaper</text>
+  <rect x="421.62" y="168" width="240.06" height="22" rx="3" fill="#2a78d6"/>
+  <text x="670.68" y="184" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="start">1.6× cheaper</text>
   <text x="158" y="213.5" fill="#52514e" font-size="13" text-anchor="end">build</text>
-  <rect x="335.07" y="198" width="86.55" height="22" rx="3" fill="#e34948"/>
-  <text x="326.07" y="214" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="end">+13%</text>
+  <rect x="342.69" y="198" width="78.92" height="22" rx="3" fill="#e34948"/>
+  <text x="333.69" y="214" fill="#0b0b0b" font-size="15" font-weight="600" text-anchor="end">+12%</text>
   <text x="76" y="285.5" fill="#0b0b0b" font-size="16" font-weight="600" text-anchor="end">nyc</text>
   <text x="158" y="269.5" fill="#52514e" font-size="13" text-anchor="end">queries</text>
   <rect x="421.62" y="254" width="173.59" height="22" rx="3" fill="#2a78d6"/>
