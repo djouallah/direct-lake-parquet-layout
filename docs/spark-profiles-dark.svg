@@ -32,8 +32,8 @@
   <text x="558.64" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−19%</text>
   <text x="76" y="442.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">tpcds</text>
   <text x="158" y="441.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="416.01" y="426" width="5.61" height="22" rx="3" fill="#e66767"/>
-  <text x="407.01" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+1%</text>
+  <rect x="421.62" y="426" width="67.4" height="22" rx="3" fill="#3987e5"/>
+  <text x="498.02" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−10%</text>
   <text x="76" y="513.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">green</text>
   <text x="158" y="497.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
   <rect x="402.78" y="482" width="18.84" height="22" rx="3" fill="#e66767"/>
