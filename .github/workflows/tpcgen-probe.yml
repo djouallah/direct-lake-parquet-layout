@@ -1,13 +1,8 @@
 name: tpcgen probe
-# TEMPORARY. Answers whether tpcgen-cli can replace DuckDB dsdgen for the tpcds landing: its flags,
-# and whether its SF1 output equals dsdgen's after download_tpcds.customise_sql. Free runner, no
-# Fabric, no secrets. Deleted once answered.
+# TEMPORARY. Answers whether tpcgen-cli can replace DuckDB dsdgen for the tpcds landing. Free runner,
+# no Fabric, no secrets. Deleted once answered.
 on:
   workflow_dispatch:
-    inputs:
-      sf:
-        description: "scale factor for the equivalence check"
-        default: "1"
 permissions:
   contents: read
 jobs:
@@ -18,73 +13,47 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.11"}
-      - run: pip install tpcgen-cli==4.0.0 duckdb pytest
-      - name: CLI surface
+      - run: pip install tpcgen-cli==4.0.0 duckdb
+      - name: Per-column diff at SF1
         run: |
-          tpcgen-cli --version || true
-          tpcgen-cli --help || true
-          tpcgen-cli tpcds --help || true
-          tpcgen-cli tpcds parquet --help || true
-          df -h / /mnt || true
-          nproc; free -g
-      - name: Fractional scale factor
-        run: |
-          tpcgen-cli tpcds parquet -s 0.01 --output-dir /tmp/frac --tables store_sales && find /tmp/frac -type f | head || echo "FRACTIONAL REFUSED"
-      - name: Equivalence vs dsdgen
-        env: {SF: "${{ inputs.sf }}"}
-        run: |
-          set -e
-          /usr/bin/time -v tpcgen-cli tpcds parquet -s "$SF" --output-dir /tmp/tg 2>&1 | grep -E "Elapsed|Maximum resident" || true
-          find /tmp/tg -maxdepth 2 | sort | head -80
+          tpcgen-cli tpcds parquet -s 1 -q --output-dir /tmp/tg
           python - <<'EOF'
-          import os, sys, time, duckdb
+          import os, sys, duckdb
           sys.path.insert(0, os.getcwd())
           import download_tpcds as G
-          sf = float(os.environ["SF"])
           con = duckdb.connect()
-          con.sql("INSTALL tpcds; LOAD tpcds;")
-          t0 = time.time(); con.sql(f"CALL dsdgen(sf={sf})"); print("dsdgen", round(time.time()-t0,1), "s")
-          bad = 0
+          con.sql("INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=1)")
+          print("duckdb", duckdb.__version__)
           for t in G.TABLES:
-              import glob
-              files = sorted(glob.glob(f"/tmp/tg/{t}/*.parquet") + glob.glob(f"/tmp/tg/{t}.*parquet"))
-              print(t, files)
-              src = f"read_parquet({files})"
-              con.sql(f"CREATE OR REPLACE TABLE tg_{t} AS FROM {src}")
-              dt = {r[0]: r[1] for r in con.sql(f"DESCRIBE {t}").fetchall()}
-              gt = {r[0]: r[1] for r in con.sql(f"DESCRIBE tg_{t}").fetchall()}
-              print(f"\n== {t}: dsdgen {con.sql(f'SELECT count(*) FROM {t}').fetchone()[0]:,} rows, tpcgen {con.sql(f'SELECT count(*) FROM tg_{t}').fetchone()[0]:,}")
-              print("   dsdgen cols:", list(dt)); print("   tpcgen cols:", list(gt))
-              for c in dt:
-                  if gt.get(c) != dt[c]:
-                      print(f"   TYPE {c}: dsdgen {dt[c]} tpcgen {gt.get(c)}")
-              print("   TYPES", t, dt)
-              cast = ", ".join(f'CAST("{c}" AS {dt[c]}) AS "{c}"' for c in dt if c in gt)
-              con.sql(f"CREATE OR REPLACE TABLE tgc_{t} AS SELECT {cast} FROM tg_{t}")
-              a = con.sql(f"SELECT count(*) FROM ({G.customise_sql(t, t)} EXCEPT ALL {G.customise_sql(t, 'tgc_' + t)})").fetchone()[0]
-              b = con.sql(f"SELECT count(*) FROM ({G.customise_sql(t, 'tgc_' + t)} EXCEPT ALL {G.customise_sql(t, t)})").fetchone()[0]
-              print(f"   customised EXCEPT ALL: dsdgen-only {a:,}  tpcgen-only {b:,}  {'IDENTICAL' if a == b == 0 else 'DIFFER'}")
-              bad += (a or b) and 1 or 0
-          print("\nRESULT", "ALL TEN IDENTICAL" if not bad else f"{bad} TABLE(S) DIFFER")
+              con.sql(f"CREATE TABLE g_{t} AS FROM read_parquet('/tmp/tg/{t}.parquet')")
+          con.sql("ALTER TABLE g_store RENAME s_tax_precentage TO s_tax_percentage")
+          keys = dict(G.FACT_KEYS)
+          for t in G.TABLES:
+              cols = [r[0] for r in con.sql(f"DESCRIBE {t}").fetchall()]
+              k = keys.get(t, (cols[0],))
+              on = " AND ".join(f"d.{c} = g.{c}" for c in k)
+              n_join = con.sql(f"SELECT count(*) FROM {t} d JOIN g_{t} g ON {on}").fetchone()[0]
+              print(f"\n== {t}: joined {n_join:,} of {con.sql(f'select count(*) from {t}').fetchone()[0]:,} on {k}")
+              for c in cols:
+                  if c in k: continue
+                  q = f"SELECT count(*) FILTER (WHERE d.{c}::VARCHAR IS DISTINCT FROM g.{c}::VARCHAR), count(*) FILTER (WHERE d.{c} IS NULL), count(*) FILTER (WHERE g.{c} IS NULL) FROM {t} d JOIN g_{t} g ON {on}"
+                  diff, dn, gn = con.sql(q).fetchone()
+                  if diff:
+                      s = con.sql(f"SELECT d.{c}::VARCHAR, g.{c}::VARCHAR FROM {t} d JOIN g_{t} g ON {on} WHERE d.{c}::VARCHAR IS DISTINCT FROM g.{c}::VARCHAR LIMIT 3").fetchall()
+                      print(f"   {c:28s} differ {diff:>10,}  nulls dsdgen {dn:>8,} tpcgen {gn:>8,}  e.g. {s}")
           EOF
-      - name: Parts are a partition of the whole
-        env: {SF: "${{ inputs.sf }}"}
+      - name: tpcgen SF10 landed counts against the paper
         run: |
-          tpcgen-cli tpcds parquet -s "$SF" --tables store_sales --parts 4 --output-dir /tmp/tp4 || echo "PARTS FAILED"
-          find /tmp/tp4 -type f | sort
-          tpcgen-cli tpcds parquet -s "$SF" --tables store_sales --parts 4 --part 2 --output-dir /tmp/tp1 && find /tmp/tp1 -type f || echo "SINGLE PART FLAG REFUSED"
-          python - <<'EOF'
-          import duckdb, glob
-          c = duckdb.connect()
-          fa = glob.glob('/tmp/tg/**/store_sales*.parquet', recursive=True)
-          fb = glob.glob('/tmp/tp4/**/store_sales*.parquet', recursive=True)
-          print(fa, fb)
-          a = f"read_parquet({fa})"
-          b = f"read_parquet({fb})"
-          print("whole", c.sql(f"select count(*) from {a}").fetchone(), "parts", c.sql(f"select count(*) from {b}").fetchone())
-          print("diff", c.sql(f"select count(*) from (from {a} except all from {b})").fetchone(), c.sql(f"select count(*) from (from {b} except all from {a})").fetchone())
-          EOF
-      - name: SF10 fact speed on this runner
-        run: |
-          /usr/bin/time -v tpcgen-cli tpcds parquet -s 10 --tables store_sales,catalog_sales --parts 8 --output-dir /tmp/s10 2>&1 | grep -E "Elapsed|Maximum resident" || true
+          /usr/bin/time -v tpcgen-cli tpcds parquet -s 10 -q --tables store_sales,catalog_sales,date_dim --parts 8 --output-dir /tmp/s10 2>&1 | grep -E "Elapsed|Maximum resident" || true
           du -sh /tmp/s10/* || true
+          python - <<'EOF'
+          import os, sys, duckdb
+          sys.path.insert(0, os.getcwd())
+          import download_tpcds as G
+          con = duckdb.connect()
+          for t in ("store_sales", "catalog_sales"):
+              src = f"read_parquet('/tmp/s10/{t}/*.parquet')"
+              raw = con.sql(f"SELECT count(*) FROM {src}").fetchone()[0]
+              landed = con.sql(f"SELECT count(*) FROM ({G.customise_sql(t, src)})").fetchone()[0]
+              print(f"{t}: raw {raw:,} (spec {G.EXPECTED[10][t]:,})  landed {landed:,}  paper {G.PAPER_ROWS[10][t]:,}  {'MATCH' if landed == G.PAPER_ROWS[10][t] else 'DIFF'}")
+          EOF
