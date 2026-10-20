@@ -7,17 +7,17 @@ models:
   - name: store_sales
     description: >
       The larger of the white paper's two fact tables and this dataset's MART: the table stats.py
-      profiles deeply, the layout tables rank, and the selectivity ladder filters. 26,206,837 rows
-      at SF10 and 262,082,396 at SF100, which is the volume the paper's Direct Lake findings turn
+      profiles deeply, the layout tables rank, and the selectivity ladder filters. ~26.2M rows
+      at SF10 and ~262M at SF100 (the exact count depends on the generator -- see download_tpcds.py), which is the volume the paper's Direct Lake findings turn
       on.
 
       A FULL REBUILD, NOT A FILE-DRIVEN INCREMENTAL, and the only fact in this project that works
-      that way. dsdgen emits an entire scale factor in one call, so there is no arrival order to
+      that way. The generator emits an entire scale factor in one call, so there is no arrival order to
       increment along, no watermark and nothing to top up -- which is why there is no `file` column
       here where every other fact has one. The paper writes this table with a single CTAS and so
       does this.
 
-      Its columns are the paper's: dsdgen's 23 plus `cache_buster`, an INTEGER of 1 the paper adds
+      Its columns are the paper's: TPC-DS's 23 plus `cache_buster`, an INTEGER of 1 the paper adds
       so a load test can randomise a filter against it and defeat Databricks result caching.
       Nothing in this project reads it; it is carried so the tables match.
 
@@ -43,7 +43,7 @@ models:
       table stats.py profiles deeply and a second deep profile would double a ten-minute OneLake
       read to answer a question the first one already answers.
 
-      Same shape as store_sales: a full rebuild, no `file` column, dsdgen's 34 columns plus
+      Same shape as store_sales: a full rebuild, no `file` column, TPC-DS's 34 columns plus
       `cache_buster`, keyed on the TPC-DS primary key (cs_item_sk, cs_order_number).
 
       It reaches customer_address and customer_demographics twice over -- once through the billing

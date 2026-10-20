@@ -32,30 +32,27 @@ The dataset is the `DATASET` env var (`aemo` | `nyc` | `bts` | `green` | `cms` |
 
 `tpcds` is the one dataset whose input is **generated rather than downloaded**, and generating it is
 a **one-off** — done once per scale factor, then read by every engine and every dispatch afterwards.
-`download_limit` is the dsdgen **scale factor** there (1, 10 or 100; `plan` refuses anything else),
-and the work runs in a throwaway Fabric notebook because dsdgen materialises a whole scale factor at
-once. From a laptop:
+`download_limit` is the **scale factor** there (1, 10 or 100; `plan` refuses anything else). The
+generator is `tpcgen-cli`, pinned exactly (`pip install tpcgen-cli==4.0.0`); it streams one table
+part at a time, so it runs wherever the script runs — the `land` runner in CI — and spends no Fabric
+compute. From a laptop:
 
 ```bash
 python download_tpcds.py --status          # what is landed; creates nothing
 
-WS_ID=<workspace guid> FILES_PATH=<abfss .../dbt_tpcds_landing/Files>   download_limit=10 DATASET=tpcds FABRIC_CORES=8 python download_tpcds.py
+FILES_PATH=<abfss .../dbt_tpcds_landing/Files> download_limit=10 python download_tpcds.py
 ```
 
-A re-run is a no-op once the scale factor is logged (`TPCDS_FORCE=1` overrides), and the notebook is
-deleted and the deletion confirmed before the script exits. The upload is retried — six attempts at
-a widening backoff on a 5xx or a dropped connection, never on a 4xx — because run 33742041035 lost
-a whole SF100 generation to ten OneLake 500s on the last step.
+A re-run is a no-op once the scale factor is logged (`TPCDS_FORCE=1`, the `regenerate` dispatch
+input, overrides). Every count is checked before OneLake is touched; the upload is then retried —
+six attempts at a widening backoff on a 5xx or a dropped connection, never on a 4xx — because run
+33742041035 lost a whole SF100 generation to OneLake 500s on the last step.
 
-**`tpcds` is also the one dataset with no cron cells**, by `"scheduled": False` in
-`.github/scripts/datasets.py`. A scheduled run forces `skip_download` on, so a scheduled cell could
-never generate its own archive; it would just spend Fabric compute discovering the input is not
-there, which is what run 33734219062 did four times a week. Dispatch it:
+Dispatch it:
 
 ```bash
-# the one-off landing. SF100 needs cores=32 or more -- the generator refuses below ~260 GiB free
-# under TMPDIR, and FABRIC_CORES is what sizes the node.
-gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=32   -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false
+# the one-off landing, on the free runner
+gh workflow run Benchmark -f dataset=tpcds -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false
 
 # then, once it is landed, an ordinary dispatch
 gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=8

@@ -10,17 +10,12 @@ because nothing had ever been generated into that archive. It was not one bad di
 tpcds slots of the weekly grid did this, each spending Fabric compute to discover that its input
 is not there.
 
-**IT IS THE SCHEDULE THAT MAKES THIS UNREACHABLE, NOT A BUG IN THE GENERATOR.** `download_tpcds.py`
-is complete and works; but `land` only runs a downloader when `skip_download` is off, and a
-scheduled run FORCES it on (benchmark.yml: `github.event_name == 'schedule' || inputs.skip_download`)
-so that every scheduled build measures the same archive. So a dataset whose landing has never been
-populated by hand can never populate itself, and the grid rediscovers that weekly.
-
-tpcds itself is dispatch-only now (`"scheduled": False` in `datasets.py`), which removes the
-weekly repetition — but THIS CHECK IS DATASET-NEUTRAL AND STAYS THAT WAY. The failure is not a
-property of tpcds: any dataset can have an unpopulated landing, by a teardown, a new workspace
-or a first dispatch, and every one of them would spend a paid leg finding out. Putting a dataset
-back on the grid must not depend on remembering this.
+It was the SCHEDULE that made this unreachable then: `land` only runs a downloader when
+`skip_download` is off, and a scheduled run forced it on, so a landing never populated by hand could
+never populate itself. The grid is gone (2026-09-17) and every dataset is dispatch-only -- but THIS
+CHECK IS DATASET-NEUTRAL AND STAYS THAT WAY. The failure is not a property of tpcds: any dataset can
+have an unpopulated landing, by a teardown, a new workspace or a first dispatch, and every one of
+them would spend a paid leg finding out.
 
 THE CHECK IS A LISTING, NOT A QUERY, and it is deliberately the dumbest possible one: are there any
 bytes under `Files` that are not duckrun's own round-trip directory? It does NOT check the archive
@@ -92,16 +87,13 @@ def main():
         f"\n{dataset}: THE LANDING ARCHIVE IS EMPTY — refusing to build.\n\n"
         f"  {files_path}\n\n"
         "Nothing has ever been landed for this dataset, so every model would fail on a missing\n"
-        "path partway through a leg that had already spent Fabric compute. A scheduled run cannot\n"
-        "fix this by itself: it forces `skip_download` on, which is what makes every scheduled\n"
-        "build measure the same archive.\n\n"
+        "path partway through a leg that had already spent Fabric compute.\n\n"
         "Land it once, by hand:\n\n"
         f"  gh workflow run Benchmark -f dataset={dataset} -f skip_download=false \\\n"
         "     -f build=false -f benchmark=false -f download_limit=<N>\n\n"
-        "`download_limit` is a file count on most datasets, PROGRAM YEARS on cms, and the dsdgen\n"
-        "SCALE FACTOR (1, 10 or 100) on tpcds — where landing generates rather than downloads and\n"
-        "is a one-off that spends Fabric compute. tpcds at SF100 also needs `-f cores=32` or more,\n"
-        "which is what sizes the node the generator runs on. See TODO.md before picking a value.\n")
+        "`download_limit` is a file count on most datasets, PROGRAM YEARS on cms, and the\n"
+        "SCALE FACTOR (1, 10 or 100) on tpcds — where landing generates rather than downloads, on\n"
+        "the free runner, as a one-off. See TODO.md before picking a value.\n")
     return 1
 
 

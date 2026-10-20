@@ -85,80 +85,26 @@ geometry one and should not be bundled with it.
 
 ---
 
-## tpcds has never been generated — land SF100, by hand, before anything else
+## tpcds: re-land SF100 with tpcgen, then rebuild every engine on it
 
-`download_tpcds.py` is complete and nobody has ever run it, so `dbt_tpcds_landing/Files` is empty
-and every tpcds leg fails on
-
-```
-[PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/customer_address
-```
-
-**A scheduled run cannot fix this by itself, and that is by design**: `land` only runs a downloader
-when `skip_download` is off, and a scheduled run forces it ON so every scheduled build measures the
-same archive. Which is why the dataset is DISPATCH-ONLY now — `"scheduled": False` in
-`datasets.py` — rather than losing four grid cells a week to rediscovering it. The generation is a
-hand dispatch, once per scale factor, and then the dataset behaves like any other.
-
-**THE GENERATION HALF IS PROVEN — run 34550578120, 2026-09-11.** At `cores=32`: 1,116 GiB free
-disk, 201 GiB memory, `dsdgen(sf=100)` in 1,398s, raw counts matching the spec on all ten tables,
-the null-drop landing **262,082,396** `store_sales` and **142,557,716** `catalog_sales` — both
-exactly the paper's Table 4.3.1 — and **0 orphans across all 13 relationships**. 36 minutes end to
-end. Nothing about dsdgen, the section 4.5 customisation or the parquet write is open.
-
-**WHAT FAILED WAS THE UPLOAD, AND IT WAS A SIZE LIMIT RATHER THAN WEATHER — now fixed.**
-`dr.copy(..., overwrite=True)` becomes duckrun's `single_shot` path, one `Put Blob` with the file
-buffered in memory, and OneLake answers a ~400 MB `store_sales` file with a bare 500. All six
-`_retry_onelake()` attempts re-ran the identical PUT and failed identically. The per-table copy is
-`overwrite=False` now — duckrun's streaming multipart path — which is safe because `wipe()` empties
-the folder immediately before it; the archive-log rewrite keeps `overwrite=True` because it really
-does replace a blob and is a few KB. **Run 33742041035's "ten OneLake 500s" was almost certainly
-this same limit, not the transient it was recorded as.**
-
-The other original failure is closed too: `check_landing.py` refuses an empty archive on the FREE
-runner and names the dataset and the dispatch.
+The generator moved from DuckDB's `dsdgen` (in a Fabric notebook at `cores=32`) to `tpcgen-cli`
+on the free `land` runner on 2026-10-21 — see CLAUDE.md, *GENERATING IS A ONE-OFF*. **It is not the
+same data**, so the landed SF100 archive (dsdgen's, run 34555739985) and every tpcds record built
+from it are a generation the new code will never reproduce. Two steps, in order:
 
 ```bash
-gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=32   -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false
+# 1. re-land (free runner, no Fabric compute; regenerate=true because sf100 is already logged)
+gh workflow run Benchmark -f dataset=tpcds -f skip_download=false -f download_limit=100 -f regenerate=true -f build=false -f benchmark=false
+# 2. then each engine, serially, like any other dataset
+gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=8
 ```
 
-**SF100, and `cores=32` is not optional.** `download_limit` IS the scale factor here — 262,082,396
-`store_sales` rows against SF10's 26,206,837 — and it is the volume the white paper's Direct Lake
-findings turn on. dsdgen has no chunking, so the working set is the whole scale factor: the script
-refuses below ~260 GiB free under `TMPDIR` and `FABRIC_CORES` is what sizes the node. That refusal
-is early and cheap, but it is a refusal — the dispatch has to pass the number, and it is the one
-place this repo's standing `cores=8` does not apply. `land` gets 240 minutes on this dataset.
+Expect the step summary to say `DIFFERS` against the paper on both facts (SF10 measured at
+26,208,141 / 14,257,679 against 26,206,837 / 14,257,451) and match it on every dimension, with 0
+orphans. A raw count off the spec is fatal and stops before OneLake is touched.
 
-Read `python download_tpcds.py --status` first: it answers "has this already happened" without
-creating anything, and a re-run is a no-op once the scale factor is logged (`TPCDS_FORCE=1`
-overrides).
-
-`build=false -f benchmark=false` because generating is the whole job: there is nothing to measure
-until it has happened, and one dispatch doing both puts a first-ever build behind a first-ever
-generation.
-
-**SF100 IS LANDED — run 34555739985, 2026-09-11.** 73 files, 21,403 MB, all ten tables, archive log
-written with 72 rows, zero upload retries. That step is done and does not need repeating.
-
-**AND THE BUILD NEEDS `cores=32`, NOT `cores=8`** — run 34559633288 OOM-killed a 62.8 GiB node three
-times sorting both facts at once. CLAUDE.md has the measurement; the short form is that tpcds is the
-only dataset with TWO large facts and `threads: 4` sorts them concurrently. So the ordinary dispatch
-for this dataset is:
-
-```bash
-gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=32
-```
-
-**The other three engines have never been run at all.** dwh and spark do their compute Fabric-side
-rather than in the duckrun notebook, so the 62.8 GiB ceiling does not apply to them and `cores` does
-not size them — but neither has ever seen this dataset, and `store_sales` at 262M rows is the largest
-table either has been asked to write here. Expect to find something.
-
-⚠️ **THIS NO LONGER ENDS WITH "PUT IT ON THE GRID": there is no grid.** The 20-slot weekly cron
-was removed on 2026-09-17 (throttled capacity) along with `datasets.SCHEDULED` and the `scheduled`
-flag, so tpcds is dispatch-only exactly like every other dataset and nothing needs flipping. What
-still matters from that plan is the reason it was held back — **tpcds needs `cores=32`**, and the
-grid would have pinned every cell to 8, i.e. four OOM kills a week. Dispatch it explicitly.
+**dwh and spark have still never built this dataset.** `store_sales` at ~262M rows is the largest
+table either has been asked to write here; expect to find something.
 
 ---
 

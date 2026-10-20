@@ -1,10 +1,9 @@
-"""Generate the white paper's TPC-DS subset with DuckDB `dsdgen` and land it in OneLake.
+"""Generate the white paper's TPC-DS subset with tpcgen-cli and land it in OneLake.
 
-THE ONLY GENERATOR HERE, AND THE ONLY ONE THAT SPENDS COMPUTE. The other five scripts in this
-directory download a public archive; this one MAKES its input. Everything else about it follows the
-same idiom -- an archive-log parquet at the Files root, one row per landed file, so a re-run only
-does what is new -- because the models, the macros and stats.py all read that log and know nothing
-about where the bytes came from.
+THE ONLY GENERATOR HERE. The other five scripts in this directory download a public archive; this
+one MAKES its input. Everything else about it follows the same idiom -- an archive-log parquet at the
+Files root, one row per landed file, so a re-run only does what is new -- because the models, the
+macros and stats.py all read that log and know nothing about where the bytes came from.
 
 WHAT IT BUILDS. The 2 facts and 8 dimensions of the Data Leaps / Microsoft white paper *Modern Power
 BI Architecture Choices for Reporting on Azure Databricks*, with that paper's section 4.5
@@ -23,40 +22,40 @@ Customising here rather than in the models is the same division of labour every 
 landing is the irreversible half, so the downloader normalises and the models are pass-throughs. It
 also means all four engines read byte-identical input, which is the whole basis of the comparison.
 
-THE PAPER'S SCRIPT IS NOT PUBLISHED, so the null rule is a RECONSTRUCTION. What makes it credible is
-that it reproduces the paper's own Table 4.3.1 row counts: at SF1 the drop keeps 0.910 of store_sales
-and 0.990 of catalog_sales, and the paper's SF10 counts are 26,206,837 / 28,800,991 = 0.910 and
-14,257,451 / 14,401,261 = 0.990. The run REPORTS the comparison at every scale factor and does not
-fail on it -- see `verdict` -- because a mismatch is a finding about the reconstruction, not a
-corrupt landing. It DOES fail on a raw dsdgen count that disagrees with the spec, which is a real
-fault.
+THE GENERATOR IS tpcgen-cli (datafusion-contrib/tpcgen-rs), PINNED EXACTLY, AND IT REPLACED DuckDB's
+`dsdgen` ON 2026-10-21. dsdgen materialises a whole scale factor before returning, so SF100 needed a
+throwaway Fabric notebook at `cores=32` with ~260 GiB of disk -- which made `land` the one job here
+that spent Fabric compute, and carried a relay, a notebook-deletion poll and a cgroup memory pin.
+tpcgen streams one table PART at a time in constant memory (SF10's two facts: 23s, 270 MB RSS on a
+free runner), so this runs on the GitHub runner like every other downloader and spends no capacity.
+⚠️ **IT IS NOT THE SAME DATA, AND THAT WAS MEASURED BEFORE THE SWITCH.** Runs 39514066032 and
+39514324649 put both generators side by side: row counts per table agree with the TPC-DS spec and
+with each other, but nearly every fact value, the facts' NULL pattern, and several dimension text
+columns differ -- so the null drop keeps a different number of rows. At SF10 tpcgen lands
+26,208,141 / 14,257,679 against the paper's 26,206,837 / 14,257,451, which DuckDB's dsdgen
+reproduced exactly. Every tpcds record before the switch measured the dsdgen generation; the
+mart's `total_rows` moved with it, so the page reads the two as separate generations rather than
+blending them. The pin is the data's identity: a different tpcgen version may emit different rows,
+so `tpcgen()` refuses a binary that is not exactly `TPCGEN_VERSION`.
+
+THE PAPER'S SCRIPT IS NOT PUBLISHED, so the null rule is a RECONSTRUCTION, and the comparison against
+its Table 4.3.1 is REPORTED, never fatal -- see `verdict`. A raw count that disagrees with the TPC-DS
+spec IS fatal: that is the generator not producing TPC-DS, or two parts overlapping.
 
 `download_limit` IS THE SCALE FACTOR, not a file count. cms already reinterprets it (program years);
 this reinterprets it again, and the `plan` job refuses anything outside SCALE_FACTORS for free,
-before a leg spends capacity -- the dispatch form's default is 200, which would otherwise ask dsdgen
-for SF200.
-
-WHERE IT RUNS, AND WHY THAT IS NEW. dsdgen materialises a whole scale factor at once; SF10 is ~10 GB
-and SF100 ~100 GB, which no free GitHub runner can hold. So this script has two modes. On the runner
-it validates, decides whether anything needs doing, and RELAYS ITSELF into a throwaway Fabric Python
-notebook with duckrun's `run_python` -- the same mechanism `.github/scripts/fabric_run.py` uses for
-the DuckDB legs. In the notebook (`--in-notebook`) it generates, customises, checks and uploads,
-data-local to OneLake.
-
-⚠️ THIS MAKES `land` A JOB THAT SPENDS FABRIC COMPUTE, which it never was before. The notebook's item
-GUID is therefore written into the run record under role `compute` with `engine: landing`, so the CU
-ledger attributes it to the generator and not to whichever engine the dispatch happened to build.
+before a leg spends capacity -- the dispatch form's default is 200, which would otherwise ask for
+SF200.
 
 IT IS A ONE-OFF. A scale factor is generated once and read by every engine, every dispatch,
-afterwards -- so this is not part of the normal run and is not meant to be. Three things keep it
-that way, and none of them is a convention someone has to remember:
+afterwards. The `land` job only calls this when `skip_download=false`, which is off by default; and
+it skips itself when the archive log already carries `etag = sf<N>` for all ten tables, so even an
+explicit re-dispatch is a no-op unless `TPCDS_FORCE=1` -- the `regenerate` dispatch input.
 
-  * the `land` job only calls it when `skip_download=false`, which is off by default and FORCED off
-    on every scheduled run;
-  * it skips itself when the archive log already carries `etag = sf<N>` for all ten tables, so even
-    an explicit re-dispatch is a no-op (`TPCDS_FORCE=1` overrides);
-  * the notebook it creates is deleted and the deletion is CONFIRMED, so nothing is left billing
-    between the one-off and the runs that use its output.
+EVERYTHING IS GENERATED AND CHECKED LOCALLY BEFORE ONELAKE IS TOUCHED. Each fact part is generated,
+customised to its landed parquet and its raw file deleted, so the runner's disk holds the landed
+scale factor (21.4 GB at SF100) plus one raw part. Only once every count has passed does `land()`
+wipe and upload, so a refused generation leaves the previous archive exactly as it was.
 
 THE TABLE UPLOADS GO `overwrite=False`, AND THAT IS THE WHOLE SF100 FIX. duckrun turns
 `overwrite=True` on an abfss target into a single-shot `Put Blob` with the file buffered in memory
@@ -76,9 +75,10 @@ identical single-shot PUT and failed identically; obstore's own ten internal ret
 33742041035's "ten OneLake 500s", recorded as a transient, was almost certainly this same limit.
 Keep the retry for real transients; it is also what made the deterministic shape legible.
 
-Run it once per scale factor, by hand, and never think about it again:
+Run it once per scale factor and never think about it again:
 
-    WS_ID=<workspace guid> FILES_PATH=<abfss .../dbt_tpcds_landing/Files>       download_limit=10 DATASET=tpcds FABRIC_CORES=8 python download_tpcds.py
+    pip install tpcgen-cli==4.0.0
+    FILES_PATH=<abfss .../dbt_tpcds_landing/Files> download_limit=10 python download_tpcds.py
 
     python download_tpcds.py --status      # what is landed, without generating anything
 
@@ -86,41 +86,45 @@ Env in:
   FILES_PATH        the landing lakehouse's Files root (set by `provision.py land`)
   download_limit    the scale factor: 1, 10 or 100
   TPCDS_FORCE       "1" to re-land a scale factor that is already logged
-  WS_ID             Fabric workspace GUID (runner side only, for the relay)
-  FABRIC_CORES      notebook size (runner side only); SF100 needs at least 32
+  TMPDIR            where the scale factor is staged before upload (needs ~40 GiB free at SF100)
 """
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
-import uuid
 
-IN_NOTEBOOK = "--in-notebook" in sys.argv
 STATUS = "--status" in sys.argv
 
 FILES_PATH = os.environ.get("FILES_PATH", "/tmp/landing").rstrip("/")
 SF_RAW = (os.environ.get("download_limit") or "10").strip()
 FORCE = os.environ.get("TPCDS_FORCE", "").strip() == "1"
 
+# EXACT, and the data's identity rather than a dependency floor: the rows are whatever this version
+# of the generator emits. benchmark.yml installs the same spelling in `checks` and `land`.
+TPCGEN_VERSION = "4.0.0"
+
 # The scale factors this project will run. SF1 is the local smoke; SF10 is the paper's smallest
 # volume and the default here; SF100 is the volume its Direct Lake findings turn on. SF1000 is
-# deliberately absent: dsdgen holds every table in memory, so it needs a node this workspace cannot
-# allocate, and the paper's own SF1000 mirrored run exceeded the memory of an F128 anyway.
+# absent because nothing here has measured a runner landing ~210 GB, not because the generator
+# cannot stream it.
 SCALE_FACTORS = ("1", "10", "100")
 
-# The ten tables of the paper's subset (section 4.3). dsdgen produces 24; the rest are dropped from
-# memory before anything is written, because at SF100 they are the difference between fitting and
-# not.
+# The ten tables of the paper's subset (section 4.3). TPC-DS has 24; only these are generated.
 TABLES = ("store_sales", "catalog_sales", "catalog_page", "customer_address",
           "customer_demographics", "date_dim", "item", "promotion", "ship_mode", "store")
 FACTS = ("store_sales", "catalog_sales")
 
-# The landed schema of every table: dsdgen's own column order, plus the paper's two additions.
+# Parts per fact. tpcgen generates one part at a time (`--parts N --part i`), so this is both the
+# landed file count and the runner's working-set divisor: SF100 keeps the 32 files of ~400 MB that
+# dsdgen's PER_THREAD_OUTPUT produced at cores=32. SF1 is one part, written whole.
+FACT_PARTS = {1: 1, 10: 8, 100: 32}
+
+# The landed schema of every table: the TPC-DS column order, plus the paper's two additions.
 # MIRRORS macros/tpcds_columns.sql, and `.github/scripts/test_tpcds_columns.py` asserts the two
-# agree column for column and in order. Regenerate rather than retype:
-#   INSTALL tpcds; LOAD tpcds; CALL dsdgen(sf=0); DESCRIBE <table>
+# agree column for column and in order.
 COLUMNS = {
     "store_sales": [
         "ss_sold_date_sk", "ss_sold_time_sk", "ss_item_sk", "ss_customer_sk", "ss_cdemo_sk",
@@ -186,10 +190,52 @@ COLUMNS = {
     ],
 }
 
-# TPC-DS row counts BEFORE customisation, per the v4.0.0 spec. Dimensions are exact; the facts are
-# what dsdgen produces and are checked to within 1%, so a wrong scale factor is caught while a
-# build-to-build wobble is not fatal. A MISMATCH HERE IS FATAL: it means the generator did not
-# produce TPC-DS.
+# The landed TYPE of every non-VARCHAR column, pinned to what DuckDB's dsdgen wrote before the
+# switch so the parquet the models, the semantic model and three engines read did not change shape
+# with the generator. tpcgen emits Int32 for every integer, where dsdgen gave BIGINT for all but
+# `cd_dep_college_count`; `customise_sql()` casts every column to this, and
+# `test_tpcds_landing_sql.py` asserts the landed DESCRIBE equals it. Anything absent is VARCHAR.
+_D72 = "DECIMAL(7,2)"
+TYPES = {
+    "store_sales": dict({c: "BIGINT" for c in COLUMNS["store_sales"][:11]},
+                        **{c: _D72 for c in COLUMNS["store_sales"][11:23]},
+                        cache_buster="INTEGER"),
+    "catalog_sales": dict({c: "BIGINT" for c in COLUMNS["catalog_sales"][:19]},
+                          **{c: _D72 for c in COLUMNS["catalog_sales"][19:34]},
+                          cache_buster="INTEGER"),
+    "catalog_page": {"cp_catalog_page_sk": "BIGINT", "cp_start_date_sk": "BIGINT",
+                     "cp_end_date_sk": "BIGINT", "cp_catalog_number": "BIGINT",
+                     "cp_catalog_page_number": "BIGINT"},
+    "customer_address": {"ca_address_sk": "BIGINT", "ca_gmt_offset": "DECIMAL(5,2)"},
+    "customer_demographics": {"cd_demo_sk": "BIGINT", "cd_purchase_estimate": "BIGINT",
+                              "cd_dep_count": "BIGINT", "cd_dep_employed_count": "BIGINT",
+                              "cd_dep_college_count": "INTEGER"},
+    "date_dim": dict({c: "BIGINT" for c in (
+        "d_date_sk", "d_month_seq", "d_week_seq", "d_quarter_seq", "d_year", "d_dow", "d_moy",
+        "d_dom", "d_qoy", "d_fy_year", "d_fy_quarter_seq", "d_fy_week_seq", "d_first_dom",
+        "d_last_dom", "d_same_day_ly", "d_same_day_lq", "d_date_sk_1")}, d_date="DATE"),
+    "item": {"i_item_sk": "BIGINT", "i_rec_start_date": "DATE", "i_rec_end_date": "DATE",
+             "i_current_price": _D72, "i_wholesale_cost": _D72, "i_brand_id": "BIGINT",
+             "i_class_id": "BIGINT", "i_category_id": "BIGINT", "i_manufact_id": "BIGINT",
+             "i_manager_id": "BIGINT"},
+    "promotion": {"p_promo_sk": "BIGINT", "p_start_date_sk": "BIGINT", "p_end_date_sk": "BIGINT",
+                  "p_item_sk": "BIGINT", "p_cost": "DECIMAL(15,2)", "p_response_target": "BIGINT"},
+    "ship_mode": {"sm_ship_mode_sk": "BIGINT"},
+    "store": {"s_store_sk": "BIGINT", "s_rec_start_date": "DATE", "s_rec_end_date": "DATE",
+              "s_closed_date_sk": "BIGINT", "s_number_employees": "BIGINT",
+              "s_floor_space": "BIGINT", "s_market_id": "BIGINT", "s_division_id": "BIGINT",
+              "s_company_id": "BIGINT", "s_gmt_offset": "DECIMAL(5,2)",
+              "s_tax_percentage": "DECIMAL(5,2)"},
+}
+
+# Where tpcgen's column name differs from the landed one. The TPC-DS spec itself spells this column
+# `s_tax_precentage` and tpcgen follows the spec; DuckDB's dsdgen corrected it, and the models, the
+# semantic model and `macros/tpcds_columns.sql` all carry the corrected name, so it is renamed here.
+SOURCE_NAMES = {"store": {"s_tax_percentage": "s_tax_precentage"}}
+
+# TPC-DS row counts BEFORE customisation, per the v4.0.0 spec, checked EXACTLY for every table --
+# tpcgen and dsdgen both hit them to the row. A MISMATCH HERE IS FATAL: it means the generator did
+# not produce TPC-DS, or two fact parts overlapped.
 EXPECTED = {
     1:   {"store_sales": 2_880_404, "catalog_sales": 1_441_548, "catalog_page": 11_718,
           "customer_address": 50_000, "customer_demographics": 1_920_800, "date_dim": 73_049,
@@ -202,8 +248,10 @@ EXPECTED = {
           "item": 204_000, "promotion": 1_000, "ship_mode": 20, "store": 402},
 }
 
-# The paper's Table 4.3.1 -- row counts AFTER customisation, which is the reproduction target. SF1 is
-# absent because the paper does not test it, so a SF1 run reports `null` rather than a false verdict.
+# The paper's Table 4.3.1 -- row counts AFTER customisation. DuckDB's dsdgen hit both facts exactly;
+# tpcgen does not (its NULL pattern differs, see the docstring), so the facts now report DIFFERS by
+# design and only the dimensions are expected to match. SF1 is absent because the paper does not
+# test it, so a SF1 run reports `null` rather than a false verdict.
 PAPER_ROWS = {
     10:  {"store_sales": 26_206_837, "catalog_sales": 14_257_451, "catalog_page": 12_000,
           "customer_address": 250_000, "customer_demographics": 1_920_800, "date_dim": 2_191,
@@ -253,37 +301,42 @@ LOG_COLUMNS = ("source_type VARCHAR, source_filename VARCHAR, archive_path VARCH
                "archived_at TIMESTAMPTZ, row_count BIGINT, source_url VARCHAR, "
                "etag VARCHAR, file_stem VARCHAR, columns VARCHAR")
 
-RESULT_PREFIX = "[tpcds] RESULT "
-
 
 def scale_factor():
     """The scale factor, refused unless it is one this project will run.
 
     Refuses rather than clamping, for the same reason `datasets.selected()` refuses an unknown
     dataset: `download_limit` means files everywhere else and the form's default is 200, so a value
-    that fell through would ask dsdgen for a volume nobody chose and nothing would say so."""
+    that fell through would ask for a volume nobody chose and nothing would say so."""
     if SF_RAW not in SCALE_FACTORS:
         raise SystemExit(
             "download_limit is the SCALE FACTOR for tpcds and must be one of "
-            + ", ".join(SCALE_FACTORS) + "; got " + repr(SF_RAW)
-            + ". SF1000 needs a node this workspace cannot allocate and is out of scope.")
+            + ", ".join(SCALE_FACTORS) + "; got " + repr(SF_RAW) + ".")
     return int(SF_RAW)
 
 
+def _landed(table, col):
+    """`CAST("<source name>" AS <landed type>) AS "<landed name>"` for one raw column."""
+    src = SOURCE_NAMES.get(table, {}).get(col, col)
+    return 'CAST("' + src + '" AS ' + TYPES[table].get(col, "VARCHAR") + ') AS "' + col + '"'
+
+
 def customise_sql(table, src=None):
-    """The SELECT that turns a raw dsdgen table into the paper's table (section 4.5).
+    """The SELECT that turns a raw tpcgen table into the paper's table (section 4.5).
 
     Kept as a pure function of the table name so `.github/scripts/test_tpcds_landing_sql.py` can
-    execute the REAL text against a tiny dsdgen in local DuckDB. That test is the one that would
+    execute the REAL text against a tiny generation in local DuckDB. That test is the one that would
     have caught the cms landing bug for free, and this SQL is the only place in the project where a
-    value is edited rather than passed through."""
+    value is edited rather than passed through. It also pins the landed names and types, which the
+    generator does not choose to match."""
     src = src or table
     raw = [c for c in COLUMNS[table] if c not in ("cache_buster", "d_date_sk_1")]
-    cols = ", ".join('"' + c + '"' for c in raw)
+    cols = ", ".join(_landed(table, c) for c in raw)
     if table in FACTS:
         # "All nulls in both Fact Tables were removed" -- read as: drop any row with a NULL in any
         # column. The reconstruction is validated by the row counts, not by this comment.
-        not_null = " AND ".join('"' + c + '" IS NOT NULL' for c in raw)
+        not_null = " AND ".join('"' + SOURCE_NAMES.get(table, {}).get(c, c) + '" IS NOT NULL'
+                                for c in raw)
         return ("SELECT " + cols + ", CAST(1 AS INTEGER) AS cache_buster "
                 "FROM " + src + " WHERE " + not_null)
     if table == "date_dim":
@@ -293,31 +346,19 @@ def customise_sql(table, src=None):
     return "SELECT " + cols + " FROM " + src
 
 
-# --------------------------------------------------------------------------- the notebook half
+def _quote_list(files):
+    return "[" + ", ".join("'" + f.replace("\\", "/") + "'" for f in files) + "]"
 
-def _cgroup_limit():
-    """The container's own memory ceiling, which is what actually kills us.
 
-    /proc/meminfo reports the HOST's RAM inside a container and can be far larger, so DuckDB's
-    default limit (a share of what it detects) can sit above the ceiling that will kill the process.
-    Same two paths `fabric_build.py` reads, for the same reason."""
-    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
-        try:
-            with open(path) as fh:
-                raw = fh.read().strip()
-            return None if raw == "max" else int(raw)
-        except Exception:                                          # noqa: BLE001
-            continue
-    return None
-
+# --------------------------------------------------------------------------- generate
 
 def _log(msg):
     print("[tpcds] " + msg, flush=True)
 
 
 # Ten consecutive OneLake 500s is what ended run 33742041035, partway through uploading SF100 --
-# after dsdgen, after the customisation and after the whole scale factor had been written to local
-# parquet, i.e. the most expensive thing this script does, failing last. THE UPLOAD IS THE ONE PART
+# after generation, after the customisation and after the whole scale factor had been written to
+# local parquet, i.e. the most expensive thing this script does, failing last. THE UPLOAD IS THE ONE PART
 # WITH NO NATURAL RETRY: the generate half is deterministic and re-runnable, the archive log is
 # rewritten last on purpose, but a `dr.copy` that raises throws away hours of compute over a
 # transient.
@@ -354,42 +395,101 @@ def _retry_onelake(what, fn):
             time.sleep(backoff)
 
 
+def tpcgen(sf, out, table, parts=None, part=None):
+    """Run the pinned tpcgen-cli for one table (or one part of one) and return its parquet files.
+
+    Refuses a missing binary or any version but `TPCGEN_VERSION`: the rows are a function of the
+    generator version, so a silently newer one would land a different dataset under the same etag.
+    `--compat c` is the default and is spelled out anyway -- it is the mode tpcgen tests against the
+    C dsdgen, and `trino` produces different rows."""
+    exe = shutil.which("tpcgen-cli")
+    if not exe:
+        raise SystemExit("tpcgen-cli is not installed; pip install tpcgen-cli==" + TPCGEN_VERSION)
+    got = subprocess.run([exe, "--version"], capture_output=True, text=True, check=True).stdout.split()
+    if got[-1:] != [TPCGEN_VERSION]:
+        raise SystemExit("tpcgen-cli " + " ".join(got[1:]) + " found, " + TPCGEN_VERSION
+                         + " required: another version may generate different rows")
+    shutil.rmtree(out, ignore_errors=True)
+    cmd = [exe, "tpcds", "parquet", "-s", str(sf), "--tables", table, "--compat", "c",
+           "--output-dir", out, "--overwrite", "--quiet", "--no-progress"]
+    if parts:
+        cmd += ["--parts", str(parts)]
+        if part:
+            cmd += ["--part", str(part)]
+    subprocess.run(cmd, check=True)
+    files = sorted(os.path.join(root, f) for root, _d, fs in os.walk(out)
+                   for f in fs if f.endswith(".parquet"))
+    if not files:
+        raise SystemExit("tpcgen-cli wrote no parquet for " + table + " " + " ".join(cmd[3:]))
+    return files
+
+
 def generate(con, sf, work):
-    """dsdgen -> customise -> check -> local parquet. Returns the verdict dict."""
-    _log("dsdgen(sf=" + str(sf) + ") starting")
+    """tpcgen -> customise -> check -> local parquet under <work>/<table>. Returns the verdict.
+
+    Dimensions first, held in memory as `<t>_landed` (the largest, customer_demographics, is 1.9M
+    rows at every scale factor) so each fact part can be probed for orphans as it is written. Facts
+    are generated ONE PART AT A TIME and the raw part is deleted the moment its landed parquet
+    exists, which is what keeps SF100 inside a free runner's disk."""
+    raw_counts, landed, files, orphans = {}, {}, {}, {}
+    gen = os.path.join(work, "_raw")
     t0 = time.time()
-    con.sql("INSTALL tpcds; LOAD tpcds;")
-    con.sql("CALL dsdgen(sf=" + str(sf) + ")")
-    _log("dsdgen done in " + format(time.time() - t0, ",.0f") + "s")
-
-    produced = {r[0] for r in con.sql("SHOW TABLES").fetchall()}
-    missing = [t for t in TABLES if t not in produced]
-    if missing:
-        raise SystemExit("dsdgen did not produce " + str(missing))
-    for t in sorted(produced - set(TABLES)):
-        con.sql("DROP TABLE " + t)          # free the other 14 before anything is materialised
-
-    raw_counts, spec = {}, EXPECTED.get(sf, {})
-    problems = []
     for t in TABLES:
-        raw_counts[t] = con.sql("SELECT count(*) FROM " + t).fetchall()[0][0]
-        want = spec.get(t)
-        if want is None:
+        d = os.path.join(work, t)
+        os.makedirs(d, exist_ok=True)
+        if t in FACTS:
             continue
-        ok = (abs(raw_counts[t] - want) / want <= 0.01) if t in FACTS else (raw_counts[t] == want)
-        if not ok:
-            problems.append(t + ": got " + str(raw_counts[t]) + ", spec " + str(want))
+        src = "read_parquet(" + _quote_list(tpcgen(sf, gen, t)) + ")"
+        raw_counts[t] = con.sql("SELECT count(*) FROM " + src).fetchall()[0][0]
+        con.sql("CREATE OR REPLACE TABLE " + t + "_landed AS " + customise_sql(t, src))
+        landed[t] = con.sql("SELECT count(*) FROM " + t + "_landed").fetchall()[0][0]
+        con.sql("COPY " + t + "_landed TO '" + os.path.join(d, t + ".parquet").replace("\\", "/")
+                + "' (FORMAT parquet, COMPRESSION snappy, ROW_GROUP_SIZE 1000000)")
+        files[t] = [t + ".parquet"]
+
+    for fact in FACTS:
+        n = FACT_PARTS.get(sf, 1)
+        raw_counts[fact] = landed[fact] = 0
+        for _f, col, _d, _k in RELATIONSHIPS:
+            if _f == fact:
+                orphans[fact + "." + col] = 0
+        files[fact] = []
+        for i in range(1, n + 1):
+            parts = tpcgen(sf, gen, fact, parts=n, part=i) if n > 1 else tpcgen(sf, gen, fact)
+            src = "read_parquet(" + _quote_list(parts) + ")"
+            raw_counts[fact] += con.sql("SELECT count(*) FROM " + src).fetchall()[0][0]
+            name = fact + "_" + format(i - 1, "04d") + ".parquet"
+            out = os.path.join(work, fact, name).replace("\\", "/")
+            con.sql("COPY (" + customise_sql(fact, src) + ") TO '" + out
+                    + "' (FORMAT parquet, COMPRESSION snappy, ROW_GROUP_SIZE 1000000)")
+            shutil.rmtree(gen, ignore_errors=True)
+            part = "read_parquet('" + out + "')"
+            landed[fact] += con.sql("SELECT count(*) FROM " + part).fetchall()[0][0]
+            for _f, col, dim, key in RELATIONSHIPS:
+                if _f == fact:
+                    orphans[fact + "." + col] += con.sql(
+                        "SELECT count(*) FROM " + part + " f WHERE f." + col + " IS NOT NULL AND "
+                        "NOT EXISTS (SELECT 1 FROM " + dim + "_landed d WHERE d." + key + " = f."
+                        + col + ")").fetchall()[0][0]
+            files[fact].append(name)
+            _log("  " + fact + " part " + str(i) + "/" + str(n) + ": " + format(landed[fact], ",")
+                 + " landed so far")
+    for t in TABLES:
+        if t not in FACTS:
+            con.sql("DROP TABLE " + t + "_landed")
+    _log("generated sf" + str(sf) + " in " + format(time.time() - t0, ",.0f") + "s")
+
+    # EXACT for the facts too, which dsdgen's ±1% never was: tpcgen matched the spec to the row at
+    # SF1 and SF10, and generating part by part means an overlap or a gap between parts shows up
+    # here as a count off by a part's worth -- the one fault this layout introduces.
+    spec = EXPECTED.get(sf, {})
+    problems = [t + ": got " + str(raw_counts[t]) + ", spec " + str(spec[t])
+                for t in TABLES if t in spec and raw_counts[t] != spec[t]]
     if problems:
-        raise SystemExit("raw dsdgen counts disagree with the TPC-DS spec -- " + "; ".join(problems))
+        raise SystemExit("raw tpcgen counts disagree with the TPC-DS spec -- " + "; ".join(problems))
     _log("raw counts match the spec for all " + str(len(TABLES)) + " tables")
 
-    landed, paper = {}, PAPER_ROWS.get(sf)
-    for t in TABLES:
-        con.sql("CREATE OR REPLACE TABLE " + t + "_landed AS " + customise_sql(t))
-        con.sql("DROP TABLE " + t)
-        landed[t] = con.sql("SELECT count(*) FROM " + t + "_landed").fetchall()[0][0]
-
-    matches = None
+    matches, paper = None, PAPER_ROWS.get(sf)
     if paper:
         matches = {t: landed[t] == paper[t] for t in TABLES}
         for t in TABLES:
@@ -398,46 +498,21 @@ def generate(con, sf, work):
                  + format(paper[t], ">15,") + "  " + flag)
         bad = [t for t in TABLES if not matches[t]]
         _log("vs the paper's Table 4.3.1: " + ("all match" if not bad else "DIFFERS on " + str(bad)
-             + " -- the null rule is a reconstruction, not a landing fault"))
+             + " -- expected since the tpcgen switch: its NULL pattern is not dsdgen's"))
     else:
         _log("no published row counts for sf" + str(sf) + "; skipping the paper comparison")
 
-    orphans = {}
-    for fact, col, dim, key in RELATIONSHIPS:
-        n = con.sql("SELECT count(*) FROM " + fact + "_landed f WHERE f." + col
-                    + " IS NOT NULL AND NOT EXISTS (SELECT 1 FROM " + dim + "_landed d WHERE d."
-                    + key + " = f." + col + ")").fetchall()[0][0]
-        orphans[fact + "." + col] = n
     broken = {k: v for k, v in orphans.items() if v}
     _log("referential integrity over " + str(len(RELATIONSHIPS)) + " relationships: "
          + ("0 orphans everywhere" if not broken else "ORPHANS " + str(broken)
             + " -- relyOnReferentialIntegrity would drop these rows in every query"))
 
-    files = {}
-    for t in TABLES:
-        d = os.path.join(work, t)
-        os.makedirs(d, exist_ok=True)
-        if t in FACTS:
-            # PER_THREAD_OUTPUT gives several files, which is what a fact of this size wants; the
-            # row-group size here is irrelevant to the benchmark (each engine rewrites the layout on
-            # the way in) and 1M rows just keeps the downstream read cheap.
-            con.sql("COPY " + t + "_landed TO '" + d.replace("\\", "/")
-                    + "' (FORMAT parquet, COMPRESSION snappy, ROW_GROUP_SIZE 1000000, "
-                      "PER_THREAD_OUTPUT, OVERWRITE)")
-            parts = sorted(f for f in os.listdir(d) if f.endswith(".parquet"))
-            for i, f in enumerate(parts):
-                os.rename(os.path.join(d, f), os.path.join(d, t + "_" + format(i, "04d") + ".parquet"))
-        else:
-            con.sql("COPY " + t + "_landed TO '" + os.path.join(d, t + ".parquet").replace("\\", "/")
-                    + "' (FORMAT parquet, COMPRESSION snappy, ROW_GROUP_SIZE 1000000)")
-        con.sql("DROP TABLE " + t + "_landed")
-        files[t] = sorted(f for f in os.listdir(d) if f.endswith(".parquet"))
-        _log("  wrote " + t.ljust(23) + format(landed[t], ">15,") + " rows in "
-             + str(len(files[t])) + " file(s)")
+    return {"sf": sf, "generator": "tpcgen-cli " + TPCGEN_VERSION, "raw": raw_counts,
+            "landed": landed, "paper": paper, "matches_paper": matches, "orphans": orphans,
+            "files": files}
 
-    return {"sf": sf, "raw": raw_counts, "landed": landed, "paper": paper,
-            "matches_paper": matches, "orphans": orphans, "files": files}
 
+# --------------------------------------------------------------------------- land
 
 def land(dr, con, sf, work, verdict):
     """Upload the parquet and rewrite this dataset's rows in the archive log."""
@@ -486,8 +561,7 @@ def land(dr, con, sf, work, verdict):
     # are left alone, and this run's own previous rows go, so the log describes one scale factor.
     con.sql("DELETE FROM _pq_archive_log WHERE source_type IN ('" + "', '".join(TABLES) + "')")
 
-    import duckdb
-    url = "duckdb://tpcds/dsdgen?sf=" + str(sf) + "&duckdb=" + duckdb.__version__
+    url = "tpcgen://tpcds?sf=" + str(sf) + "&tpcgen-cli=" + TPCGEN_VERSION
     for t in TABLES:
         wipe("parquet_raw/" + t)
         # ⚠️ `overwrite=False`, AND THE DESTINATION IS EMPTY BECAUSE `wipe()` JUST DELETED IT. That
@@ -543,59 +617,37 @@ def land(dr, con, sf, work, verdict):
         "SELECT count(*) FROM _pq_archive_log").fetchall()[0][0]) + " row(s)")
 
 
-def run_in_notebook():
+def run(sf):
+    """Generate and check locally, then land. Runs where it is called -- the GitHub runner in CI."""
     import duckdb
     import duckrun
 
-    sf = scale_factor()
     tmp = os.environ.get("TMPDIR") or tempfile.gettempdir()
     work = os.path.join(tmp, "tpcds_sf" + str(sf))
     shutil.rmtree(work, ignore_errors=True)
     os.makedirs(work, exist_ok=True)
 
+    # The whole LANDED scale factor is staged before upload (21.4 GB at SF100) plus one raw part, so
+    # this refuses early rather than dying on a full disk partway through the facts.
     free = shutil.disk_usage(tmp).free
+    need_gb = {1: 2, 10: 8, 100: 40}.get(sf, 1)
     _log("sf=" + str(sf) + " cpus=" + str(os.cpu_count()) + " free disk "
          + format(free / 1024 ** 3, ",.0f") + " GiB at " + tmp)
-    # dsdgen has no chunking: it builds every table before returning, so the working set is the
-    # whole scale factor. An on-disk database plus a spill directory is what lets SF100 finish on a
-    # node that cannot hold it in memory, and this refuses early rather than dying an hour in.
-    need_gb = {1: 8, 10: 40, 100: 260}[sf]
     if free < need_gb * 1024 ** 3:
         raise SystemExit("sf" + str(sf) + " needs about " + str(need_gb) + " GiB free under " + tmp
-                         + "; found " + format(free / 1024 ** 3, ",.0f")
-                         + " GiB. Dispatch with more cores, which is what sizes the node.")
+                         + "; found " + format(free / 1024 ** 3, ",.0f") + " GiB. Point TMPDIR "
+                         "at a bigger disk.")
 
-    # ON-DISK, not in-memory: dsdgen has no chunking, so the whole scale factor is materialised
-    # before anything can be written, and an in-memory database would have to hold it all.
-    con = duckdb.connect(os.path.join(work, "gen.duckdb"))
-    con.sql("SET threads TO " + str(os.cpu_count()))
-    con.sql("SET temp_directory = '" + os.path.join(work, "spill").replace("\\", "/") + "'")
+    con = duckdb.connect()
     con.sql("SET preserve_insertion_order = false")
-    # THE MEMORY LIMIT IS PINNED FROM THE CGROUP, NOT LEFT TO DuckDB. Its default is ~80% of the
-    # RAM it DETECTS, and inside a container /proc/meminfo reports the HOST's -- which is how a
-    # process gets OOM-killed while its own settings look generous. `fabric_build.py` reads the same
-    # two cgroup files for the same reason; this cannot import it (it runs in a different process on
-    # the notebook), so the six lines are repeated rather than shared.
-    limit = _cgroup_limit()
-    if limit:
-        con.sql("SET memory_limit = '" + str(int(limit * 0.8 / 1024 ** 2)) + "MB'")
-    _log("duckdb " + duckdb.__version__ + "  threads=" + str(os.cpu_count())
-         + "  cgroup=" + (format(limit / 1024 ** 3, ",.0f") + " GiB" if limit else "unset")
-         + "  memory_limit=" + str(con.sql("SELECT current_setting('memory_limit')").fetchall()[0][0]))
-
+    con.sql("SET temp_directory = '" + os.path.join(work, "_spill").replace("\\", "/") + "'")
     verdict = generate(con, sf, work)
     dr = duckrun.connect(FILES_PATH, read_only=False)
     land(dr, dr.con, sf, work, verdict)
     con.close()
     shutil.rmtree(work, ignore_errors=True)
+    return verdict
 
-    # LAST LINE, DELIBERATELY. duckrun hands the runner the notebook's log with the FIRST 400,000
-    # characters dropped, and there is no structured result channel, so the verdict has to be
-    # scraped from the tail. Anything printed after this could push it out.
-    print(RESULT_PREFIX + json.dumps(verdict, default=str), flush=True)
-
-
-# --------------------------------------------------------------------------- the runner half
 
 def already_landed(sf):
     """True when the log already describes every table at this scale factor."""
@@ -608,124 +660,6 @@ def already_landed(sf):
         "SELECT DISTINCT source_type FROM read_parquet('" + log_path + "') WHERE etag = 'sf"
         + str(sf) + "'").fetchall()}
     return not (set(TABLES) - got)
-
-
-def relay(sf):
-    """Run this same script inside a throwaway Fabric notebook and relay its outcome."""
-    import duckrun
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".github", "scripts"))
-    import datasets
-    import record
-
-    ws = os.environ["WS_ID"]
-    cores = int(os.environ.get("FABRIC_CORES", "8"))
-    if sf >= 100 and cores < 32:
-        raise SystemExit("sf100 needs FABRIC_CORES >= 32 (dsdgen holds the whole scale factor); "
-                         "dispatch with cores=32 or more, got " + str(cores))
-    # Named for what it is and given a random suffix for the same reason fabric_run.py's is: Fabric
-    # keeps a deleted item's display name reserved for minutes and the create is not retried.
-    name = "tpcds-gen-sf" + str(sf) + "-" + uuid.uuid4().hex[:8]
-    env = {k: os.environ[k] for k in ("FILES_PATH", "download_limit", "DATASET", "TPCDS_FORCE")
-           if os.environ.get(k)}
-    _log("relaying into Fabric: notebook=" + name + " cores=" + str(cores)
-         + " forwarding " + ", ".join(sorted(env)))
-
-    def remember(item_id):
-        if not item_id:
-            return
-        try:
-            record.merge({"items": {str(item_id).upper(): {
-                "role": "compute", "kind": "Notebook", "name": name,
-                # `landing`, not the run's engine: this notebook generates the input every engine
-                # then reads, so folding its CU into whichever engine the dispatch happened to
-                # build would attribute the generator's cost to one arm of the comparison.
-                "engine": "landing", "created": True,
-                "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}}})
-        except Exception as ex:                                    # noqa: BLE001
-            _log("could not record the generator notebook (" + type(ex).__name__ + ": " + str(ex) + ")")
-
-    def confirm_deleted(item_id):
-        """Prove the throwaway notebook is gone, and go red if it is not.
-
-        duckrun deletes it in a `finally`, so the delete is attempted on the success and the failure
-        path alike -- but `_delete_item` is BEST-EFFORT: a non-2xx or a thrown exception only logs
-        `warning: could not delete temp notebook`. An item that is still listed is still billable,
-        and a warning inside a green log is not something anyone reads.
-
-        The workflow would eventually catch it -- `provision.py teardown` deletes role `compute` by
-        GUID and exits non-zero if it survives -- but leaning on that is wrong twice over. Generating
-        is a ONE-OFF meant to be runnable from a laptop with no workflow around it; and even inside a
-        run, the notebook would sit billable from `land` until the teardown at the very end, for a
-        job that finished an hour earlier.
-
-        So this polls for the 404 itself. It is deliberately NOT `provision.drop_guid`, which does
-        exactly this and is the obvious reuse: provision.py reads `sys.argv[1]` at module level and
-        runs its whole mode dispatch on import, so importing it here would provision something.
-        """
-        if not item_id:
-            return
-        import requests
-        from duckrun import auth
-        api = "https://api.fabric.microsoft.com/v1/workspaces/" + ws + "/items/" + str(item_id)
-        hdr = {"Authorization": "Bearer " + auth.get_fabric_token()}
-        try:
-            requests.delete(api, headers=hdr, timeout=60)
-        except Exception:                                          # noqa: BLE001
-            pass                       # duckrun has almost certainly deleted it already; the poll decides
-        # Fabric accepts a DELETE asynchronously (202), so the only answer that ends this loop is a
-        # 404. A thrown request is read as "not gone yet", never as evidence it went.
-        for _ in range(60):
-            try:
-                if requests.get(api, headers=hdr, timeout=60).status_code == 404:
-                    try:
-                        record.item(str(item_id).upper(), "compute", "Notebook", name,
-                                    deleted=record.now())
-                    except Exception:                              # noqa: BLE001
-                        pass
-                    _log("generator notebook " + str(item_id) + " confirmed deleted")
-                    return
-            except Exception:                                      # noqa: BLE001
-                pass
-            time.sleep(5)
-        raise SystemExit("generator notebook " + name + " (" + str(item_id) + ") is STILL LISTED "
-                         "and therefore STILL BILLABLE -- delete it in the workspace")
-
-    try:
-        res = duckrun.workspace(ws).run_python(
-            ".", entry="download_tpcds.py", args=["--in-notebook"], name=name,
-            lakehouse=datasets.spec()["landing"], env=env, cores=cores, pip=["duckrun>=0.4.50"])
-    except BaseException as ex:
-        item = getattr(ex, "item_id", None)
-        remember(item)
-        # Best-effort on the failure path: the run is already going to fail with a real cause, and
-        # raising a teardown error here would replace it. The workflow's own teardown is the net.
-        try:
-            confirm_deleted(item)
-        except BaseException:                                      # noqa: BLE001
-            _log("WARNING the generator notebook may still be listed; teardown will catch it")
-        raise
-    remember(res.item_id)
-    confirm_deleted(res.item_id)
-
-    verdict = None
-    for line in (res.log or "").splitlines():
-        if line.startswith(RESULT_PREFIX):
-            try:
-                verdict = json.loads(line[len(RESULT_PREFIX):])
-            except ValueError:
-                pass
-    if verdict:
-        try:
-            record.merge({"generator": verdict})
-        except Exception:                                          # noqa: BLE001
-            pass
-        summarise(verdict)
-    elif res.success:
-        _log("WARNING the notebook succeeded but printed no result line; the record carries no "
-             "row counts for this landing")
-
-    _log("generator success=" + str(res.success) + " returncode=" + str(res.returncode))
-    return 0 if res.success else 1
 
 
 def summarise(v):
@@ -775,18 +709,23 @@ def status():
 
 
 def main():
-    if IN_NOTEBOOK:
-        run_in_notebook()
-        return 0
     if STATUS:
         return status()
     sf = scale_factor()
     _log("sf=" + str(sf) + " files_path=" + FILES_PATH + " force=" + str(FORCE))
     if not FORCE and already_landed(sf):
         _log("sf" + str(sf) + " is already landed for all " + str(len(TABLES))
-             + " tables; nothing to do. Set TPCDS_FORCE=1 to regenerate.")
+             + " tables; nothing to do. Set TPCDS_FORCE=1 (the `regenerate` input) to regenerate.")
         return 0
-    return relay(sf)
+    verdict = run(sf)
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".github", "scripts"))
+    try:
+        import record
+        record.merge({"generator": verdict})
+    except Exception as ex:                                        # noqa: BLE001
+        _log("could not record the verdict (" + type(ex).__name__ + ": " + str(ex) + ")")
+    summarise(verdict)
+    return 0
 
 
 if __name__ == "__main__":

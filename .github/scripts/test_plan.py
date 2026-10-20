@@ -71,7 +71,7 @@ CASES = [
     ("zero geometry", {"row_group_size": "0"}, False),
     ("unknown engine", {"engines": "nope"}, False),
     ("unknown dataset", {"dataset": "taxi"}, False),
-    # --- tpcds: `download_limit` is the dsdgen SCALE FACTOR there, and `plan` is the only thing
+    # --- tpcds: `download_limit` is the SCALE FACTOR there, and `plan` is the only thing
     # standing between a wrong one and a Fabric notebook generating a volume nobody chose. The
     # refusal only fires when the download is actually going to run.
     ("auto on tpcds", {"dataset": "tpcds", "engines": "spark"}, True),

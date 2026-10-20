@@ -1,4 +1,4 @@
-"""Execute download_tpcds.py's REAL customisation SQL against a tiny dsdgen, in local DuckDB.
+"""Execute download_tpcds.py's REAL generation and customisation against a tiny tpcgen, in local DuckDB.
 
 WHY THIS EXISTS, AND IT IS THE cms LESSON. `test_cms_landing_sql.py` was written after a
 `strftime(VARCHAR, STRING_LITERAL)` bind failure killed run 31810902120 -- after 5.95 GB had been
@@ -8,14 +8,15 @@ paper's whole section 4.5 customisation happens, so it is the only place in the 
 value is edited rather than passed through, and every claim the models and the semantic model make
 rests on it being right.
 
-`customise_sql()` is a pure function of the table name precisely so this file can run the real text.
-`dsdgen(sf=0.01)` finishes in about a second and produces every table with real values, which is
-enough to check each rule.
-
-Offline, no credentials, runs in the free `checks` job before any leg spends capacity.
+The fixture runs `generate()` itself -- the pinned tpcgen-cli, the part loop, the customisation, the
+local parquet -- at SF 0.01, which takes about a second, and every test reads the parquet it wrote.
+It skips where tpcgen-cli is not installed; the free `checks` job installs the pinned version, so it
+runs there before any leg spends capacity.
 """
 import datetime
+import glob
 import os
+import shutil
 import sys
 
 import pytest
@@ -32,17 +33,22 @@ SF = 0.01
 
 
 @pytest.fixture(scope="module")
-def con():
-    """One tiny dsdgen, customised exactly as a real landing would customise it."""
+def landed(tmp_path_factory):
+    """One tiny generation, through the real `generate()`: (connection, verdict)."""
+    if not shutil.which("tpcgen-cli"):
+        pytest.skip("tpcgen-cli is not installed here (pip install tpcgen-cli==" + G.TPCGEN_VERSION + ")")
+    work = str(tmp_path_factory.mktemp("tpcds"))
     c = duckdb.connect()
-    try:
-        c.sql("INSTALL tpcds; LOAD tpcds;")
-    except Exception as ex:                                        # noqa: BLE001
-        pytest.skip("the duckdb tpcds extension is unavailable here: " + str(ex))
-    c.sql("CALL dsdgen(sf=" + str(SF) + ")")
+    verdict = G.generate(c, SF, work)
     for t in G.TABLES:
-        c.sql("CREATE OR REPLACE TABLE " + t + "_landed AS " + G.customise_sql(t))
-    return c
+        files = sorted(glob.glob(os.path.join(work, t, "*.parquet")))
+        c.sql("CREATE TABLE " + t + "_landed AS FROM read_parquet(" + G._quote_list(files) + ")")
+    return c, verdict
+
+
+@pytest.fixture(scope="module")
+def con(landed):
+    return landed[0]
 
 
 def cols(con, table):
@@ -51,18 +57,34 @@ def cols(con, table):
 
 @pytest.mark.parametrize("table", sorted(G.TABLES))
 def test_the_landed_schema_is_the_declared_schema(con, table):
-    """The SQL and the COLUMNS dict have to agree, or the models select columns the parquet lacks."""
+    """The SQL and the COLUMNS dict have to agree, or the models select columns the parquet lacks.
+    store's `s_tax_percentage` is the one rename: tpcgen follows the spec's `s_tax_precentage`."""
     assert cols(con, table) == G.COLUMNS[table]
+
+
+@pytest.mark.parametrize("table", sorted(G.TABLES))
+def test_the_landed_types_are_the_declared_types(con, table):
+    """tpcgen writes Int32 where the dsdgen archive had BIGINT. The models, the semantic model and
+    three engines read whatever type the parquet carries, so the cast in `customise_sql()` is what
+    keeps the generator swap from changing the landed schema."""
+    got = [(r[0], r[1]) for r in con.sql("DESCRIBE " + table + "_landed").fetchall()]
+    assert got == [(c, G.TYPES[table].get(c, "VARCHAR")) for c in G.COLUMNS[table]]
 
 
 @pytest.mark.parametrize("fact", sorted(G.FACTS))
 def test_no_fact_row_survives_with_a_null_in_any_column(con, fact):
-    """The paper's rule, as reconstructed: "All nulls in both Fact Tables were removed". What makes
-    the reconstruction credible is the row counts it reproduces (see the generator's docstring); what
-    this asserts is that the SQL actually implements the rule it claims."""
+    """The paper's rule, as reconstructed: "All nulls in both Fact Tables were removed"."""
     checks = " OR ".join('"' + c + '" IS NULL' for c in G.COLUMNS[fact])
     n = con.sql("SELECT count(*) FROM " + fact + "_landed WHERE " + checks).fetchall()[0][0]
     assert n == 0
+
+
+@pytest.mark.parametrize("fact", sorted(G.FACTS))
+def test_the_null_drop_actually_dropped_something(landed, fact):
+    """A rule that removes nothing would pass the test above on a generator that emits no NULLs --
+    and tpcgen's NULL pattern is not dsdgen's, so this is worth asserting rather than assuming."""
+    _c, v = landed
+    assert 0 < v["landed"][fact] < v["raw"][fact]
 
 
 @pytest.mark.parametrize("fact", sorted(G.FACTS))
@@ -111,24 +133,40 @@ def test_every_modelled_relationship_has_no_orphans(con, rel):
     assert n == 0
 
 
-def test_a_dimension_passes_through_untouched(con):
+def test_a_dimension_passes_through_untouched(landed):
     """Only the two facts and date_dim are edited. If a dimension's SQL ever grew a filter, its row
     count would stop matching the TPC-DS spec and the paper comparison would quietly shift."""
+    _c, v = landed
     for t in ("item", "store", "promotion", "ship_mode", "catalog_page", "customer_address",
               "customer_demographics"):
-        raw = con.sql("SELECT count(*) FROM " + t).fetchall()[0][0]
-        landed = con.sql("SELECT count(*) FROM " + t + "_landed").fetchall()[0][0]
-        assert raw == landed, t
+        assert v["raw"][t] == v["landed"][t], t
+
+
+def test_the_verdict_records_the_generator(landed):
+    """The record's `generator` block is the only place a reader can tell which generation a tpcds
+    run measured, now that two exist."""
+    assert landed[1]["generator"] == "tpcgen-cli " + G.TPCGEN_VERSION
+
+
+def test_a_different_tpcgen_version_is_refused(monkeypatch, tmp_path):
+    """The rows are a function of the generator version, so a newer binary must not land a different
+    dataset under the same `sf<N>` etag."""
+    import subprocess
+    monkeypatch.setattr(G.shutil, "which", lambda _n: "/bin/tpcgen-cli")
+    monkeypatch.setattr(G.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(
+        a, 0, stdout="tpcgen-cli 9.9.9\n", stderr=""))
+    with pytest.raises(SystemExit, match="9.9.9"):
+        G.tpcgen(1, str(tmp_path), "store")
 
 
 # --------------------------------------------------------------- the OneLake upload retry
 #
 # NOT ABOUT SQL, and here anyway, because this file is where download_tpcds.py's behaviour is
 # covered offline and a second file for four tests would be the drift this repo is built against.
-# None of these touches the `con` fixture, so they run even where the tpcds extension is missing.
+# None of these touches the `con` fixture, so they run even where tpcgen-cli is missing.
 #
 # Run 33742041035 is what they are for: `land` died on ten OneLake 500s partway through uploading
-# SF100 -- after dsdgen, after the customisation, after the whole scale factor was on local disk.
+# SF100 -- after generation, after the customisation, after the whole scale factor was on local disk.
 
 
 class _Boom(Exception):

@@ -157,7 +157,7 @@ models:
         staging:    {+materialized: view,        +schema: landing}
         dimensions: {+materialized: table,       +schema: mart}
         marts:      {+materialized: incremental,  +schema: mart}
-    tpcds:                                                   # TPC-DS paper subset — dsdgen, 11 models
+    tpcds:                                                   # TPC-DS paper subset — tpcgen, 11 models
       # The folder defaults below are the same four lines every dataset carries, and every tpcds
       # model overrides its own `materialized` in-model — exactly as the cms tree does. Two reasons
       # the overrides are not folded up here: the duckdb tree must spell `incremental` even for the

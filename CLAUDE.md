@@ -21,7 +21,7 @@ notice, with several it silently records another dataset's layout under this run
 
 | | `aemo` | `nyc` | `bts` | `green` | `cms` | `tpcds` |
 |---|---|---|---|---|---|---|
-| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN | annual CSV from download.cms.gov | **generated**: DuckDB `dsdgen` in a Fabric notebook |
+| source | ragged CSV from nemweb | monthly parquet from TLC's CDN | monthly zipped CSV from TranStats PREZIP | monthly parquet from TLC's CDN | annual CSV from download.cms.gov | **generated**: `tpcgen-cli` on the runner (DuckDB `dsdgen` in a Fabric notebook until 2026-10-21 — different rows) |
 | models | 8, `mart.fct_summary` | 4, `mart.fct_trips` | 4, `mart.fct_flights` | 4, `mart.fct_green_trips` | 4, `mart.fct_cms_payments` | 11, `mart.store_sales` — **two facts, eight dimensions** |
 | mart shape | 143M rows, **5 narrow columns**, regular 5-min × DUID grid | ~1.5B rows, **17 columns** | ~175M rows full-drain (no 1990s — see GAP_YEARS), **22 columns** | ~80M rows full-drain (2014-01 on — the CDN serves no 2013 month), **20 columns** | ~88M rows full-drain (PY2019-2025), **91 columns**, of which **54 are >50% NULL** | 26M rows at SF10, 262M at SF100, **24 columns** |
 | skew | near-uniform | `store_and_fwd_flag` ~99% one value, `RatecodeID` ~97%, both LocationIDs Zipfian | INDEPENDENT moderate skew: `DayOfWeek` uniform-7, carrier ~20, `Origin`/`Dest` ~350 Zipfian, `Tail_Number` thousands, `CancellationCode` ~98% NULL | nyc's regime plus `trip_type` ~98% one value and `ehail_fee` ~all NULL; LocationIDs Zipfian on Brooklyn/Queens | BOTH regimes at once: `Nature_of_Payment` 92% one value / `Form_of_Payment` 86% / `Dispute_Status` 100% beside `Covered_Recipient_Specialty_1` ~302 values and the payer id ~1,000 — plus SPARSITY nothing else has | synthetic: parameterised per column, INDEPENDENT across columns — the regime that never exercises the trade-off. **Not a point on this surface** |
@@ -132,18 +132,35 @@ than a shortcut:
   ever restored, the flag and the tuple have to come back with it.
 - **`download_limit` IS THE SCALE FACTOR** (1, 10 or 100), not a file count. `plan` refuses anything
   else *before* a leg starts, because the form's default is 200 and the generator is not free.
-- **GENERATING IS A ONE-OFF, AND IT SPENDS FABRIC COMPUTE — the only landing here that does.**
-  dsdgen materialises a whole scale factor at once, so `download_tpcds.py` validates on the runner
-  and relays itself into a throwaway Fabric notebook (duckrun's `run_python`). Run it once per scale
-  factor and never again: `land` only calls it when `skip_download=false`, which is off by default
-  and forced off on every scheduled run, and the script skips itself when the archive log already
-  carries `etag = sf<N>` for all ten tables (`TPCDS_FORCE=1` overrides). `--status` answers "has it
-  already happened" without creating anything.
-  ⚠️ **SF100 NEEDS `cores=32` OR MORE, WHICH IS AN EXPLICIT EXCEPTION TO THIS REPO'S `cores=8`.**
-  dsdgen has no chunking, so the working set is the whole scale factor: the script refuses below
-  ~260 GiB free under `TMPDIR` (40 at SF10, 8 at SF1) and `FABRIC_CORES` is what sizes the node. It
-  refuses early rather than dying an hour in, but the dispatch has to pass the number:
-  `gh workflow run Benchmark -f dataset=tpcds -f cores=32 -f skip_download=false -f download_limit=100 -f build=false -f benchmark=false`.
+- **GENERATING IS A ONE-OFF, ON THE FREE RUNNER, WITH `tpcgen-cli` PINNED EXACTLY.** Since
+  2026-10-21 `download_tpcds.py` runs datafusion-contrib/tpcgen-rs (`tpcgen-cli==4.0.0`) inside the
+  `land` job, one fact PART at a time (`FACT_PARTS`: 1/8/32 at SF1/10/100), customises and stages
+  every table locally, checks every count, and only then wipes and uploads. It spends **no Fabric
+  compute**. Run it once per scale factor and never again: `land` only calls it when
+  `skip_download=false`, and the script skips itself when the archive log already carries
+  `etag = sf<N>` for all ten tables — the `regenerate` dispatch input (`TPCDS_FORCE=1`) overrides.
+  `--status` answers "has it already happened" without creating anything.
+  `gh workflow run Benchmark -f dataset=tpcds -f skip_download=false -f download_limit=100 -f regenerate=true -f build=false -f benchmark=false`.
+  ⚠️ **tpcgen IS NOT THE SAME DATA AS DuckDB's `dsdgen`, AND EVERY tpcds RECORD BEFORE THE SWITCH
+  MEASURED dsdgen's.** Measured side by side on a runner (runs 39514066032, 39514324649): per-table
+  raw counts agree with the spec and each other, but nearly every fact value, the facts' NULL
+  pattern, and several dimension text columns (`i_item_desc`, `cp_description`, 872 `ca_zip`s at
+  SF1) differ. So the null drop keeps a different number of rows: **SF10 lands 26,208,141 /
+  14,257,679 against the paper's 26,206,837 / 14,257,451**, which dsdgen hit exactly. The paper
+  comparison therefore reports `DIFFERS` on both facts by design — it was always reported, never
+  fatal — and the mart's `total_rows` moved, so `sameGeneration` keeps the two generations apart on
+  the page. Accepted knowingly (2026-10-21) for what dsdgen cost: SF100 needed a throwaway Fabric
+  notebook at `cores=32` (36 minutes, ~260 GiB disk, 201 GiB memory) because dsdgen holds a whole
+  scale factor in memory, and carried a relay, a confirmed-deletion poll for the notebook and a
+  `compute`/`engine: landing` record entry, all now deleted. tpcgen does SF10's two facts in 23s at
+  270 MB RSS. **The version pin is the data's identity**: `tpcgen()` refuses any binary but
+  `TPCGEN_VERSION`, because a different version may emit different rows under the same etag.
+  Two shape fixes live in `customise_sql()` and are pinned by `test_tpcds_landing_sql.py`: every
+  column is CAST to the dsdgen-era type (`TYPES` — tpcgen writes Int32 where the archive had
+  BIGINT, and three engines plus the `.bim` read whatever the parquet carries), and the spec's own
+  typo `s_tax_precentage`, which tpcgen keeps, is renamed to the `s_tax_percentage` every model uses.
+  The raw-count check is now EXACT on the facts too (dsdgen's was ±1%): generating by part means an
+  overlap or a gap between parts would show as a count off by a part's worth.
   ⚠️ **THE SF100 UPLOAD NEEDS `overwrite=False`, AND THAT IS A SIZE LIMIT RATHER THAN WEATHER.**
   duckrun computes `single_shot = overwrite and remote.is_abfss(base)`, and `single_shot` means
   `obstore.put(..., use_multipart=False)` — the file BUFFERED IN MEMORY and sent as one `Put Blob`.
@@ -169,20 +186,9 @@ than a shortcut:
   **and run 33742041035's "ten OneLake 500s", recorded here as a transient, was almost certainly
   this same limit.** Keep the retry for real transients; it is also what made the deterministic
   shape legible instead of looking like one unlucky night.
-  `land`'s job timeout is 240 minutes on this dataset against 120 elsewhere: the runner is free and
-  only WAITING on the notebook, so a cap that fires loses the evidence while the notebook keeps
-  running workspace-side. Measured: 34550578120 did the whole generation in **36 minutes** at
-  `cores=32` — `dsdgen(sf=100)` 1,398s, 1,116 GiB free disk, 201 GiB memory — so the cap is
-  headroom, not a constraint.
-  Its item GUID is recorded under role `compute` with `engine: landing`, so the generator's CU does
-  not fold into whichever engine the dispatch happened to build.
-  **THE NOTEBOOK'S DELETION IS CONFIRMED, NOT ASSUMED.** duckrun deletes it in a `finally`, so the
-  attempt happens on the success and failure paths alike — but `_delete_item` is best-effort and a
-  non-2xx only logs `warning: could not delete temp notebook`, which is a line nobody reads in a
-  green log, on an item that is still billing. So the script polls for the 404 itself and exits
-  non-zero if the notebook survives. It deliberately does NOT reuse `provision.drop_guid`, which is
-  exactly this poll: `provision.py` reads `sys.argv[1]` at module level and runs its whole mode
-  dispatch on import, so importing it would provision something.
+  `land`'s job timeout is 240 minutes on this dataset against 120 elsewhere. It was set while the
+  runner only WAITED on the Fabric notebook; it now times real generation and upload, on a free
+  runner, so it stays a hang guard.
 - ⚠️ **SUPERSEDED: tpcds BUILDS AT `cores=8` NOW.** Run 39004631159 (2026-10-17, DuckDB 2.0 pin
   `2.0.0.dev2610161340`) built SF100 at `cores=8` / 4 threads on attempt 1. The OOM below was the
   older DuckDB; dispatch tpcds at `cores=8` like every other dataset. Kept as history:
@@ -221,7 +227,7 @@ than a shortcut:
   is the paper's table: null fact rows dropped, `cache_buster` added, `d_date_sk_1` = `d_date_sk` −
   8,401 days replacing the date key, date_dim trimmed to 2021–2026 (2,191 rows). All 30 model files
   select columns and nothing else.
-- **THE FACTS ARE FULL REBUILDS AND CARRY NO `file` COLUMN.** dsdgen emits everything at once, so
+- **THE FACTS ARE FULL REBUILDS AND CARRY NO `file` COLUMN.** The generator emits everything at once, so
   there is no arrival order to increment along. The duckdb tree still *spells* it `incremental`,
   because the Iceberg REST catalog runs neither `CREATE VIEW` nor the table materialization's temp
   RENAME — under the per-run teardown every CI run takes the overwrite branch, which is the CTAS the
