@@ -391,8 +391,9 @@ test("performance tab: read CU only, writer x dataset, 1.0x is the cheapest writ
   // The ledger bills V-Order ~1,000 CU against ~2,000 without, on every dataset: the green cell.
   assert.doesNotMatch(page, /Cheapest to read/);
   assert.equal((page.match(/class="best"/g) || []).length, 4);
-  // The explanation of the grid is the last block, after the history panels.
+  // Both explanations sit at the end, after the history panels.
   assert.ok(page.indexOf("Read CU is what the whole") > page.indexOf("Read CU over time"));
+  assert.ok(page.indexOf("read CU averaged per day") > page.indexOf("Read CU over time"));
   assert.match(page, /<th scope="row">Spark, no V-Order<\/th><td class="[^"]*"[^>]*><b>2\.0×/);
   const ctx = r.context(recs, {}, ledger);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
