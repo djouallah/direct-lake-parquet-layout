@@ -768,6 +768,10 @@ jobs:
         if: ${{ !inputs.skip_download }}
         env:
           TPCDS_FORCE: ${{ inputs.regenerate && '1' || '' }}
+          # ON DISK, NOT /tmp: the ubuntu-26.04 image mounts /tmp as tmpfs (8 GiB free, measured on
+          # run 39518409710, which download_tpcds.py refused before touching OneLake) while `/`
+          # has ~88 GiB. tpcds stages its whole landed scale factor here (21.4 GB at SF100).
+          TMPDIR: ${{ runner.temp }}
         run: python "$(python .github/scripts/datasets.py --download)"
       - name: Say the archive was reused
         if: ${{ inputs.skip_download }}
