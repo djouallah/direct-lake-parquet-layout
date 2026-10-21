@@ -1,0 +1,52 @@
+{
+ "engine": "duckrun",
+ "full_load": false,
+ "inputs": {
+  "benchmark": "false",
+  "build": "false",
+  "cores": "8",
+  "dataset": "tpcds",
+  "download_limit": "100",
+  "duckrun_auto": "true",
+  "dwh_vorder": "true",
+  "file_size_mb": "auto",
+  "gap_seconds": "600",
+  "native_execution_engine": "true",
+  "row_group_size": "auto",
+  "runs": "6",
+  "skip_download": "false",
+  "spark_resource_profile": "writeHeavy",
+  "think_seconds": "4"
+ },
+ "items": {
+  "870835DE-2509-4B84-8FD9-43FA8633AB49": {
+   "at": "2026-10-21T00:02:27+00:00",
+   "created": false,
+   "kind": "Lakehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "landing"
+  },
+  "C3FC6DAB-9ED7-4859-B8E3-841F4BEDFDEF": {
+   "at": "2026-10-21T00:02:29+00:00",
+   "created": false,
+   "kind": "Warehouse",
+   "name": "dbt_tpcds_landing",
+   "role": "sql_endpoint"
+  },
+  "F50469D2-8347-4464-9EE8-97C768B4F355": {
+   "at": "2026-10-21T00:02:25+00:00",
+   "created": false,
+   "kind": "Folder",
+   "name": "landing",
+   "role": "folder"
+  }
+ },
+ "run": {
+  "finished": "2026-10-21T00:02:55+00:00",
+  "id": "39518409710",
+  "sha": "518840166e3efc9cbcb4dff0cb6411ea7ad4ac78",
+  "started": "2026-10-20T23:58:33+00:00",
+  "url": "https://github.com/djouallah/direct-lake-parquet-layout/actions/runs/39518409710"
+ },
+ "schema": 1
+}
