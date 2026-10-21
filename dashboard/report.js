@@ -1127,7 +1127,7 @@ export function render(records, opts = {}, ledger = null) {
     const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id })}">${esc(next.title)} →</a>` : ""}</nav>`;
     body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>${pager}`;
   } else if (opts.page === "perf") {
-    body = `<section id="perf" class="perf"><h2>Read CU: watch for regressions</h2>${perfSection(ctx, opts)}</section>`;
+    body = `<section id="perf" class="perf">${perfSection(ctx, opts)}</section>`;
   } else if (PAGES[opts.page]) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
