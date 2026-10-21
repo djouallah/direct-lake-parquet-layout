@@ -76,6 +76,9 @@ footer p { margin:.2rem 0; max-width:52rem; }
 .facets { display:grid; grid-template-columns:repeat(auto-fill, minmax(460px, 1fr)); gap:1rem; margin:1rem 0; }
 .facets.one { grid-template-columns:minmax(0, 720px); }
 .facets.three { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+/* The read-CU history has to fit one screen with its legend: cap each panel's height to half of what
+   is left of the viewport, so a short window shrinks the charts instead of scrolling them. */
+.facets.history svg.chart { max-height:calc((100vh - 15rem) / 2); max-height:calc((100dvh - 15rem) / 2); }
 .facets.two { grid-template-columns:repeat(2, minmax(0, 1fr)); }
 @media (max-width:900px) { .facets.two { grid-template-columns:minmax(0, 1fr); } }
 .bandnote { margin:.6rem 0 0; }

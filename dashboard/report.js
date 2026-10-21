@@ -972,10 +972,11 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 const HISTORY_COLORS = { deltars_sorted: "var(--d1)", spark_vorder: "var(--d2)", dwh: "var(--d3)",
   spark_plain: "var(--d5)", iceberg: "var(--d6)" };
 const historyColor = (key) => HISTORY_COLORS[key] || "var(--c4)";
+const LEGEND_ORDER = ["spark_vorder", "dwh", "spark_plain", "deltars_sorted", "iceberg"];
 const historyDot = (x, y, css, tip, r = 3.8) => `<g class="pt"${tip ? ` data-tip="${esc(tip)}"` : ""}><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${css}" stroke="var(--bg)" stroke-width="1"/>${tip ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/>` : ""}</g>`;
 
 /** One dataset's panel: time across, read CU up (lower is better), one coloured dot per session. */
-function historyPanel(p, [t0, t1], { w = 360, h = 200 } = {}) {
+function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
   const m = { l: 62, r: 12, t: 26, b: 30 };
   const all = p.lines.flatMap((l) => l.pts.map((q) => q.cu));
   // Fitted to this panel's own range, not anchored at zero: the point is to see a writer's steps.
@@ -1022,8 +1023,10 @@ export function perfHistory(ctx, phase = "dl") {
   const pad = 2 * 86400000, span = [Math.min(...ts) - pad, Math.max(...ts) + pad];
   const seen = new Map();
   for (const p of panels) for (const l of p.lines) if (!seen.has(l.key)) seen.set(l.key, l);
-  const key = [...seen.values()].map((l) => `<span class="key"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
-  return `<div class="legend">${key}</div><div class="facets three">${panels.map((p) =>
+  // Legend order by the user's call (2026-10-21): the Fabric writers first, the DuckDB family last.
+  const rank = (k) => { const i = LEGEND_ORDER.indexOf(k); return i < 0 ? LEGEND_ORDER.length : i; };
+  const key = [...seen.values()].sort((a, b) => rank(a.key) - rank(b.key)).map((l) => `<span class="key"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
+  return `<div class="legend">${key}</div><div class="facets three history">${panels.map((p) =>
     `<figure class="facet">${historyPanel(p, span)}</figure>`).join("")}</div>`;
 }
 
