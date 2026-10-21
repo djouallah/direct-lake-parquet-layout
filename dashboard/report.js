@@ -970,7 +970,7 @@ const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "
 // Dots only, one colour per writer: the two Spark profiles share a hue in the family colours used
 // elsewhere, so this chart takes the validated categorical palette instead.
 const HISTORY_COLORS = { deltars_sorted: "var(--d1)", spark_vorder: "var(--d2)", dwh: "var(--d3)",
-  spark_plain: "var(--d4)", iceberg: "var(--d6)" };
+  spark_plain: "var(--d5)", iceberg: "var(--d6)" };
 const historyColor = (key) => HISTORY_COLORS[key] || "var(--c4)";
 const historyDot = (x, y, css, tip, r = 3.8) => `<g class="pt"${tip ? ` data-tip="${esc(tip)}"` : ""}><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${css}" stroke="var(--bg)" stroke-width="1"/>${tip ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/>` : ""}</g>`;
 
