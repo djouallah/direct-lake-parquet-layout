@@ -506,8 +506,8 @@ group's bytes and control size with the row-group knob, not the file knob.
 
 Five datasets, chosen to span the surface layout acts on — skew, competing skew, width,
 sparsity — plus one deliberate near-zero-surface control, because that control alone once
-produced a confidently wrong answer about V-Order. A sixth is a reproduction rather than a point on
-that surface, and is marked as such:
+produced a confidently wrong answer about V-Order. All five are real, public data; nothing here is
+synthetic:
 
 | dataset | source | mart | shape |
 |---|---|---|---|
@@ -516,7 +516,6 @@ that surface, and is marked as such:
 | `bts` | US on-time flights, monthly zipped CSV from TranStats | `fct_flights` — 180M rows, **22 columns** | independent *moderate* skew — many categoricals competing for one sort budget |
 | `green` | NYC green-taxi trips, monthly parquet from TLC's CDN | `fct_green_trips` — 84M rows, **20 columns** | nyc's skew regime at 1/7 the rows |
 | `cms` | CMS Open Payments, annual CSV | `fct_cms_payments` — 88M rows, **91 columns** | wide and sparse — **54 columns >50% NULL** — with both skew regimes in one table |
-| `tpcds` | TPC-DS, generated with `tpcgen-cli` (DuckDB `dsdgen` until 2026-10-21 — different rows, so a separate generation) | `store_sales` — 26M rows at SF10, 262M at SF100, **24 columns** | *synthetic, and not a surface point.* the star schema and the DAX capture from *Modern Power BI Architecture Choices for Reporting on Azure Databricks*, borrowed as a test dataset — the shape and the queries, not the paper's numbers. **Generating its scale factor is a one-off you run by hand** with `skip_download=false` |
 
 Four writers produce the same rows from the same landed files, selected by dbt target — the
 parquet each writes is the only variable:
@@ -601,10 +600,8 @@ it is never staler than the ledger under it:
 | green | `writeHeavy` | **1,405** | 72% | **2,761** | 97% | 84.3M | 3.4–4.7M | 1,623–1,628 |
 | nyc | `readHeavyForPBI` | **11,589** | 100% | **6,425** | 100% | 591.7M | 5.7–10.4M | 5,835–5,867 |
 | nyc | `writeHeavy` | **9,991** | 86% | **8,726** | 136% | 591.7M | 5.8–10.4M | 9,200–9,291 |
-| tpcds | `readHeavyForPBI` | **8,485** | 100% | **8,959** | 100% | 262.1M | 2.0M | 24,543 |
-| tpcds | `writeHeavy` | **8,318** | 98% | **11,248** | 126% | 262.1M | 1.6–2.6M | 21,388–21,684 |
 
-V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` mixed (bts yes, cms yes, green yes), `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no, green mixed, tpcds no), `writeHeavy` no (bts yes).
+V-Order (measured off the parquet, not the profile name): `readHeavyForPBI` yes (aemo mixed, nyc mixed), `writeHeavy` no. Dictionary encoding survived — no mart column fell back to PLAIN data pages (dictionary overflow, what makes a segment expensive to transcode): `readHeavyForPBI` yes (cms no, green mixed), `writeHeavy` no (bts yes).
 
 <!-- spark-profiles:end -->
 

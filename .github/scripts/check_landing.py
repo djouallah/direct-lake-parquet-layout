@@ -1,19 +1,19 @@
 """Refuse a build whose landing archive is EMPTY, in the free job, before any compute is spent.
 
-WHAT THIS COSTS TO NOT HAVE, measured: run 33734219062 was a scheduled `tpcds` cell. `land`
+WHAT THIS COSTS TO NOT HAVE, measured: run 33734219062 was a scheduled cell. `land`
 provisioned the lakehouse and reported success, `plan` was green, and the spark leg then acquired a
 Livy session and failed 29 models deep on
 
-    [PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/customer_address
+    [PATH_NOT_FOUND] Path does not exist: abfss://…/Files/landing/parquet_raw/…
 
-because nothing had ever been generated into that archive. It was not one bad dispatch: all four
-tpcds slots of the weekly grid did this, each spending Fabric compute to discover that its input
+because nothing had ever been landed into that archive. It was not one bad dispatch: every slot of
+that dataset on the weekly grid did this, each spending Fabric compute to discover that its input
 is not there.
 
 It was the SCHEDULE that made this unreachable then: `land` only runs a downloader when
 `skip_download` is off, and a scheduled run forced it on, so a landing never populated by hand could
 never populate itself. The grid is gone (2026-09-17) and every dataset is dispatch-only -- but THIS
-CHECK IS DATASET-NEUTRAL AND STAYS THAT WAY. The failure is not a property of tpcds: any dataset can
+CHECK IS DATASET-NEUTRAL AND STAYS THAT WAY. The failure is not a property of one dataset: any can
 have an unpopulated landing, by a teardown, a new workspace or a first dispatch, and every one of
 them would spend a paid leg finding out.
 
@@ -91,9 +91,7 @@ def main():
         "Land it once, by hand:\n\n"
         f"  gh workflow run Benchmark -f dataset={dataset} -f skip_download=false \\\n"
         "     -f build=false -f benchmark=false -f download_limit=<N>\n\n"
-        "`download_limit` is a file count on most datasets, PROGRAM YEARS on cms, and the\n"
-        "SCALE FACTOR (1, 10 or 100) on tpcds — where landing generates rather than downloads, on\n"
-        "the free runner, as a one-off. See TODO.md before picking a value.\n")
+        "`download_limit` is a file count on most datasets and PROGRAM YEARS on cms.\n")
     return 1
 
 

@@ -85,30 +85,6 @@ geometry one and should not be bundled with it.
 
 ---
 
-## tpcds: re-land SF100 with tpcgen, then rebuild every engine on it
-
-The generator moved from DuckDB's `dsdgen` (in a Fabric notebook at `cores=32`) to `tpcgen-cli`
-on the free `land` runner on 2026-10-21 — see CLAUDE.md, *GENERATING IS A ONE-OFF*. **It is not the
-same data**, so the landed SF100 archive (dsdgen's, run 34555739985) and every tpcds record built
-from it are a generation the new code will never reproduce. Two steps, in order:
-
-```bash
-# 1. re-land (free runner, no Fabric compute; regenerate=true because sf100 is already logged)
-gh workflow run Benchmark -f dataset=tpcds -f skip_download=false -f download_limit=100 -f regenerate=true -f build=false -f benchmark=false
-# 2. then each engine, serially, like any other dataset
-gh workflow run Benchmark -f dataset=tpcds -f engines=duckrun -f cores=8
-```
-
-Expect the step summary to say `DIFFERS` against the paper on both facts (SF10 measured at
-26,208,141 / 14,257,679 against 26,206,837 / 14,257,451) and match it on every dimension, with 0
-orphans. A raw count off the spec is fatal and stops before OneLake is touched.
-
-**dwh and spark have still never built this dataset.** `store_sales` at ~262M rows is the largest
-table either has been asked to write here; expect to find something.
-
----
-
-
 ## Does dwh's V-Order move its parquet? Genuinely open, and one dispatch away
 
 `layout.ordering.dwh` reads 100% row-group overlap on every column but `cutoff`, and CLAUDE.md read

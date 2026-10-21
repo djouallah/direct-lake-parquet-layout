@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="604" viewBox="0 0 920 604" role="img" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
-  <line x1="469.24" y1="72" x2="469.24" y2="574" stroke="#4a4a46" stroke-width="1"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="518" viewBox="0 0 920 518" role="img" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <line x1="469.24" y1="72" x2="469.24" y2="488" stroke="#4a4a46" stroke-width="1"/>
   <text x="8" y="30" fill="#ffffff" font-size="20" font-weight="600">Spark readHeavyForPBI</text>
   <text x="8" y="56" fill="#c3c2b7" font-size="14">CUs vs the default writeHeavy profile, median per dataset</text>
   <text x="76" y="113.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">aemo</text>
@@ -23,27 +23,20 @@
   <text x="158" y="299.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
   <rect x="377.56" y="284" width="91.68" height="22" rx="3" fill="#e66767"/>
   <text x="368.56" y="300" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+16%</text>
-  <text x="76" y="371.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">tpcds</text>
+  <text x="76" y="371.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">bts</text>
   <text x="158" y="355.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="469.24" y="340" width="116.65" height="22" rx="3" fill="#3987e5"/>
-  <text x="594.89" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.3× cheaper</text>
+  <rect x="469.24" y="340" width="45.94" height="22" rx="3" fill="#3987e5"/>
+  <text x="524.19" y="356" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.1× cheaper</text>
   <text x="158" y="385.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="457.73" y="370" width="11.51" height="22" rx="3" fill="#e66767"/>
-  <text x="448.73" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+2%</text>
-  <text x="76" y="457.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">bts</text>
+  <rect x="469.24" y="370" width="131.44" height="22" rx="3" fill="#3987e5"/>
+  <text x="609.68" y="386" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−23%</text>
+  <text x="76" y="457.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">green</text>
   <text x="158" y="441.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="469.24" y="426" width="45.94" height="22" rx="3" fill="#3987e5"/>
-  <text x="524.19" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">1.1× cheaper</text>
+  <rect x="452.84" y="426" width="16.4" height="22" rx="3" fill="#e66767"/>
+  <text x="443.84" y="442" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+3%</text>
   <text x="158" y="471.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="469.24" y="456" width="131.44" height="22" rx="3" fill="#3987e5"/>
-  <text x="609.68" y="472" fill="#ffffff" font-size="15" font-weight="600" text-anchor="start">−23%</text>
-  <text x="76" y="543.5" fill="#ffffff" font-size="16" font-weight="600" text-anchor="end">green</text>
-  <text x="158" y="527.5" fill="#c3c2b7" font-size="13" text-anchor="end">queries</text>
-  <rect x="452.84" y="512" width="16.4" height="22" rx="3" fill="#e66767"/>
-  <text x="443.84" y="528" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+3%</text>
-  <text x="158" y="557.5" fill="#c3c2b7" font-size="13" text-anchor="end">build</text>
-  <rect x="242" y="542" width="227.24" height="22" rx="3" fill="#e66767"/>
-  <text x="233" y="558" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+40%</text>
-  <text x="461.24" y="594" fill="#898781" font-size="12.5" text-anchor="end">← readHeavyForPBI costs more</text>
-  <text x="477.24" y="594" fill="#898781" font-size="12.5" text-anchor="start">saves →</text>
+  <rect x="242" y="456" width="227.24" height="22" rx="3" fill="#e66767"/>
+  <text x="233" y="472" fill="#ffffff" font-size="15" font-weight="600" text-anchor="end">+40%</text>
+  <text x="461.24" y="508" fill="#898781" font-size="12.5" text-anchor="end">← readHeavyForPBI costs more</text>
+  <text x="477.24" y="508" fill="#898781" font-size="12.5" text-anchor="start">saves →</text>
 </svg>

@@ -23,8 +23,7 @@ direct_lake_parquet_layout:
       root_path: "{{ env_var('ONELAKE_TABLES_PATH') }}"
       # 4, and every other target here is a hard 4 — DAG concurrency must not be a hidden variable
       # between the legs. This one is env-driven ONLY so a diagnostic run can serialize the DAG
-      # without editing a tracked default: tpcds is the one dataset with TWO large facts, they are
-      # independent nodes, and at 4 threads they sort concurrently and OOM a 62.8 GiB node.
+      # without editing a tracked default, when concurrent sorts OOM a node with no dbt error.
       # ⚠️ A run at anything but 4 is NOT comparable and must be parked in history/runs/legacy/:
       # `variant()` cannot see thread count, so it would key to the same dashboard column as a
       # 4-thread run. That is exactly why run 30733912205 sits there.

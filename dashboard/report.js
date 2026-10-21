@@ -202,7 +202,7 @@ const fmtMsOr = (v, x) => (x.fmt ? x.fmt(v) : String(v));
 
 export const BAND_WITHIN = 1.10;
 export const BAND_MIN_RUNS = 10;
-const DS_ORDER = ["aemo", "nyc", "bts", "green", "cms", "tpcds"];
+const DS_ORDER = ["aemo", "nyc", "bts", "green", "cms"];
 const octave = (x) => Math.round(Math.log2(x / 1e6));
 const octaveRows = (k) => 2 ** k * 1e6;
 
@@ -906,19 +906,6 @@ export function perfGrid(groups, measure, fmt) {
   return `<div class="tablewrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
 
-/** One plain sentence: who is best most often, and how far apart best and worst are. */
-function perfHeadline(groups, measure, word) {
-  const B = perfBest(groups, measure);
-  if (!B.length) return "";
-  const wins = new Map();
-  for (const b of B) wins.set(b.best.label, (wins.get(b.best.label) || 0) + 1);
-  const who = [...wins].sort((a, b) => b[1] - a[1])
-    .map(([w, n], i) => `<b>${esc(w)}</b> on ${n}${i === 0 ? ` of ${B.length} datasets` : ""}`);
-  const lo = Math.min(...B.map((b) => b.spread)), hi = Math.max(...B.map((b) => b.spread));
-  const spread = lo.toFixed(1) === hi.toFixed(1) ? `${hi.toFixed(1)}×` : `${lo.toFixed(1)}× to ${hi.toFixed(1)}×`;
-  return `<p class="headline">${word[0].toUpperCase()}${word.slice(1)}: ${who.join(", ")}. On the same dataset, the most expensive writer costs ${spread} as much.</p>`;
-}
-
 export function perfSection(ctx, opts = {}) {
   const phase = PERF_PHASES[opts.phase] ? opts.phase : "dl";
   const pill = (on, url, text) => `<a class="pill${on ? " on" : ""}" href="${url}"${on ? ' aria-current="true"' : ""}>${text}</a>`;
@@ -930,12 +917,11 @@ export function perfSection(ctx, opts = {}) {
   if (!groups.some((g) => g.cu)) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No read CU measured yet.</p>`;
   return `
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
-    ${perfHeadline(groups, "cu", "cheapest to read")}
-    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.${PERF_SINCE[phase] ? ` Only sessions since ${esc(PERF_SINCE[phase])} count here, because the SQL endpoint's price changed before then; an empty cell is a writer not yet run since.` : ""}</p>
     ${perfGrid(groups, "cu", fmtCu)}
     <h3>Read CU over time</h3>
     <p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
-    ${perfHistory(ctx, phase)}`;
+    ${perfHistory(ctx, phase)}
+    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.${PERF_SINCE[phase] ? ` Only sessions since ${esc(PERF_SINCE[phase])} count here, because the SQL endpoint's price changed before then; an empty cell is a writer not yet run since.` : ""}</p>`;
 }
 
 /** A run's start as epoch ms: `run.started`, or the `2026-10-17T1526Z-…` prefix of its record file. */

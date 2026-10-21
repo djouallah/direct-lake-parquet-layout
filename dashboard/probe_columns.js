@@ -47,13 +47,5 @@ export const PROBE_COLUMNS = {
     "state": "Recipient_State",
     "recipient": "Covered_Recipient_Profile_ID",
     "date": "Date_of_Payment"
-  },
-  "store_sales": {
-    "ext_sales_price": "ss_ext_sales_price",
-    "quantity": "ss_quantity",
-    "item": "ss_item_sk",
-    "customer": "ss_customer_sk",
-    "store": "ss_store_sk",
-    "sold_date": "ss_sold_date_sk"
   }
 };
