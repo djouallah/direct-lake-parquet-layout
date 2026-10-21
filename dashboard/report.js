@@ -917,9 +917,10 @@ export function perfSection(ctx, opts = {}) {
   if (!groups.some((g) => g.cu)) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No read CU measured yet.</p>`;
   return `
     <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
-    ${perfGrid(groups, "cu", fmtCu)}
     <h3>Read CU over time</h3>
     ${perfHistory(ctx, phase)}
+    <h3>Cheapest writer per dataset</h3>
+    ${perfGrid(groups, "cu", fmtCu)}
     <p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
     <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.${PERF_SINCE[phase] ? ` Only sessions since ${esc(PERF_SINCE[phase])} count here, because the SQL endpoint's price changed before then; an empty cell is a writer not yet run since.` : ""}</p>`;
 }
@@ -1126,7 +1127,7 @@ export function render(records, opts = {}, ledger = null) {
     const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id })}">${esc(next.title)} →</a>` : ""}</nav>`;
     body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>${pager}`;
   } else if (opts.page === "perf") {
-    body = `<section id="perf" class="perf"><h2>Which writer is cheapest to read</h2>${perfSection(ctx, opts)}</section>`;
+    body = `<section id="perf" class="perf"><h2>Read CU: watch for regressions</h2>${perfSection(ctx, opts)}</section>`;
   } else if (PAGES[opts.page]) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;

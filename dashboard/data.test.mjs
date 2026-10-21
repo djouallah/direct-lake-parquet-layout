@@ -394,6 +394,8 @@ test("performance tab: read CU only, writer x dataset, 1.0x is the cheapest writ
   // Both explanations sit at the end, after the history panels.
   assert.ok(page.indexOf("Read CU is what the whole") > page.indexOf("Read CU over time"));
   assert.ok(page.indexOf("read CU averaged per day") > page.indexOf("Read CU over time"));
+  // Regressions first: the history comes before the cheapest-writer grid.
+  assert.ok(page.indexOf("Read CU over time") < page.indexOf('<table class="grid">'));
   assert.match(page, /<th scope="row">Spark, no V-Order<\/th><td class="[^"]*"[^>]*><b>2\.0×/);
   const ctx = r.context(recs, {}, ledger);
   // DirectQuery reads the dq totals and never the Direct Lake ones.
