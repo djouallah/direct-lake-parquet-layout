@@ -174,14 +174,14 @@ on:
         type: choice
         options: ["writeHeavy", "readHeavyForPBI"]
         default: "writeHeavy"
-      # ON by default: it is what a Fabric user gets by choosing the faster engine. Measured across
-      # seven spark runs it moves NOTHING — same file and row-group layout either way — which is why
-      # `LAYOUT_CONFIG` excludes it from the layout grouping. Read the NEE bullet in CLAUDE.md before
-      # drawing a conclusion from a run with it on.
+      # OFF by default since 2026-10-21: three AEMO spark runs in a row (39525333010, 39526241807,
+      # 39527142978) died on `stg_csv_archive_log` with `[TASK_WRITE_FAILED]` and NEE on. It moves
+      # NOTHING in the layout — same files and row groups either way across seven runs, which is why
+      # `LAYOUT_CONFIG` excludes it — so turning it off costs the measurement nothing.
       native_execution_engine:
         description: "spark NEE"
         type: boolean
-        default: true
+        default: false
       # ON by default because that is what a Fabric warehouse IS —
       # V-Order is enabled on every new warehouse and nothing here ever turned it off, so every
       # dwh run this repo measured up to 2026-08-09 wrote V-Ordered parquet, and a bare dispatch must

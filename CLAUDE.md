@@ -1240,7 +1240,9 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   item carries `created: true` — i.e. the previous run's teardown really did run. An input only ever
   stated an intention; 143M rows written from nothing and 3M rows appended are not the same run, and
   the record has to say which one a layout or a CU number describes.
-- **`native_execution_engine` toggles Fabric's NEE on the spark leg, ON by default.** It sets
+- **`native_execution_engine` toggles Fabric's NEE on the spark leg, OFF by default since 2026-10-21**
+  (three AEMO spark runs, 39525333010 / 39526241807 / 39527142978, failed on `stg_csv_archive_log`
+  with `[TASK_WRITE_FAILED]` with it on; the history below is why it had been on). It sets
   `SPARK_NATIVE_ENABLED` → `spark.native.enabled` in the Livy conf, and that one key is the whole
   recipe: Microsoft's current session-level doc sets nothing else. Earlier preview guidance and
   most community posts pair it with
