@@ -6022,7 +6022,7 @@
    "OneLake Other Operations": 3.942,
    "OneLake Other Operations Via Redirect": 27.352,
    "OneLake Read via Proxy": 16.12,
-   "OneLake Write via Proxy": 901.942,
+   "OneLake Write via Proxy": 1869.9,
    "OneLake Write via Redirect": 1678.52
   },
   "8717CB7A-4A4D-4939-8D76-B9380CFEAE04": {
@@ -14540,6 +14540,14 @@
    "since": "2026-10-07T10:00:00",
    "timed": 390,
    "unfound": 1579
+  },
+  {
+   "at": "2026-10-21T01:15:13+00:00",
+   "changed": 1,
+   "items": 390,
+   "since": "2026-10-07T11:00:00",
+   "timed": 390,
+   "unfound": 1519
   }
  ],
  "schema": 2,
@@ -25635,5 +25643,5 @@
    "XMLA Read Operation": 29.974
   }
  },
- "updated": "2026-10-21T00:19:43+00:00"
+ "updated": "2026-10-21T01:15:13+00:00"
 }
