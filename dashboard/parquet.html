@@ -196,14 +196,12 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 <h2>Sorting</h2>
 <h3>Real data is skewed</h3>
 <p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code, most
-  flights are not cancelled, most CMS payments are of one kind. The research on real data says the same. Across real
-  collections (Tableau's public BI workbooks, ClickHouse samples, Yelp, IMDb, SEC logs and more),
-  <b>fewer than 5% of columns are uniformly distributed</b>: 60–70% follow a gentle Zipf curve and about
-  30% have a few heavy hitters. Over 80% of integer columns and 60% of string columns have fewer distinct
-  values than 1% of their rows (Zeng et al., VLDB).</p>
+  flights are not cancelled, most CMS payments are of one kind. That holds well beyond these tables:
+  <b>uniformly distributed columns are rare in real data</b>. Most columns follow a gentle Zipf curve,
+  a large minority have a few values covering most rows, and most columns have far fewer distinct
+  values than rows.</p>
 <p>The standard benchmarks generate uniform data instead (TPC-H, TPC-DS and SSB all do), which is why
-  they hide what sorting is worth. That uniformity assumption has been known to be wrong since
-  Christodoulakis (1984). The datasets in this project are real, and they show it:</p>
+  they hide what sorting is worth. The datasets in this project are real, and they show it:</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>dataset</th><th>column</th><th>skew</th></tr></thead>
   <tbody>
@@ -291,11 +289,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
     <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
     the live numbers are on <a href="./">the experiments page</a>. Further reading:
     <a href="https://parquet.apache.org/docs/file-format/">the parquet file format</a>,
-    <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun's parquet layout</a>.
-    On skew in real data: Zeng, Pavlo, McKinney et al.,
-    <a href="https://arxiv.org/abs/2304.05028">An Empirical Evaluation of Columnar Storage Formats</a> (VLDB);
-    Vogelsgesang et al., <a href="https://doi.org/10.1145/3209950.3209952">Get Real: How Benchmarks Fail to Represent the Real World</a> (DBTest 2018);
-    Christodoulakis, <a href="https://doi.org/10.1145/329.318578">Implications of Certain Assumptions in Database Performance Evaluation</a> (ACM TODS 1984).</p>
+    <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun's parquet layout</a>.</p>
 </footer>
 </main>
 <script src="learn.js"></script>
