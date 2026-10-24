@@ -15,50 +15,11 @@
 <main>
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
-  <a href="#overview" role="tab" data-pane="overview">Overview</a>
   <a href="#databricks" role="tab" data-pane="databricks">Databricks</a>
   <a href="#deltars" role="tab" data-pane="deltars">delta-rs</a>
   <a href="#duckdb" role="tab" data-pane="duckdb">DuckDB</a>
 </nav>
 </div>
-
-<section class="pane" data-name="overview" aria-label="Overview">
-<h1>Third-party writers</h1>
-<p class="sub">Power BI reads parquet from any writer, but it loads some layouts much faster than others.</p>
-
-<div class="callout">
-  <p><b>Writing inside Fabric? Just use V-Order.</b> It applies all three rules below for you. On Fabric
-    Spark only the <code>readHeavyForPBI</code> resource profile turns it on (the default
-    <code>writeHeavy</code> does not, nor does <code>readHeavyForSpark</code> despite its name); on Fabric
-    Warehouse it is on by default, so leave it. Measured: up to 2.8× less Direct Lake CU for about 8% more
-    build CU.</p>
-  <p><b>Writing anywhere else? Simulate it.</b> V-Order is not a format, it is these three rules. Set them
-    on your writer and you land in the same place: a delta-rs table sorted per table read at 0.90×
-    V-Ordered Spark's Direct Lake CU, and Databricks with the recipe came within 4% of it.</p>
-</div>
-
-<div class="cards">
-  <div class="card"><b>1. Row groups of millions of rows</b><span>Every library default is far too small.
-    Each row group becomes one VertiPaq segment.</span></div>
-  <div class="card"><b>2. Dictionary on every column, declared in the footer</b><span>So the first load is
-    an ID swap instead of a rebuild.</span></div>
-  <div class="card"><b>3. Sort by the column your reports filter</b><span>Usually the date. The row order
-    survives into memory, so it pays on every query.</span></div>
-</div>
-
-<div class="scroll"><table class="left">
-  <thead><tr><th>you write with</th><th>row groups</th><th>dictionary</th><th>sort</th><th></th></tr></thead>
-  <tbody>
-    <tr><td>Databricks</td><td><code>maxRecordsPerFile</code></td><td><code>parquet.dictionary.page.size</code></td><td><code>CLUSTER BY</code> one key</td><td><a href="#databricks">recipe →</a></td></tr>
-    <tr><td>delta-rs / Python</td><td><code>max_row_group_size</code></td><td><code>dictionary_page_size_limit</code></td><td><code>ORDER BY</code> before writing</td><td><a href="#deltars">recipe →</a></td></tr>
-    <tr><td>DuckDB → Iceberg</td><td><code>write.parquet.row-group-size</code> + both byte limits at 1 GiB</td><td>not settable yet</td><td><code>ORDER BY</code> in the CTAS</td><td><a href="#duckdb">recipe →</a></td></tr>
-    <tr><td>DuckDB → Delta</td><td colspan="3">no parquet settings exposed: use duckrun, which applies all three</td><td><a href="#duckdb">recipe →</a></td></tr>
-  </tbody>
-</table></div>
-<p class="note">Whatever you write with, check what you actually got by reading the parquet footer.
-  Writers drop dictionaries and ignore settings without telling you; twice in this project a declared
-  setting never reached the file and only the footer showed it.</p>
-</section>
 
 <section class="pane" data-name="databricks" aria-label="Databricks">
 <h2>Databricks</h2>
