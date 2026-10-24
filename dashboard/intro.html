@@ -30,7 +30,16 @@
 <p>The lakehouse decouples them. The disk format is open (Parquet, with Delta or Iceberg on top) and any
   engine can write it. So every engine that reads it has to do some work to turn it into its own
   in-memory format. In Power BI, that work is called <b>transcoding</b>.</p>
+<p>The two formats are very close. Parquet and VertiPaq both store a table column by column, encode a
+  column as a dictionary plus small IDs, and cut it into pieces (row groups in parquet, segments in
+  VertiPaq). The main difference: parquet keeps a separate dictionary in every row group, VertiPaq keeps
+  one dictionary for the whole column.</p>
 <p>How much work depends on how the file was written.</p>
+<p>So optimise the file for the read, not the write. A table is written once and then read for days,
+  sometimes months, by every report that uses it. Writing is cheap and getting cheaper; every engine
+  does it well enough. Reading is what users wait on, where even 500 ms is noticed, and it costs
+  capacity every time, whoever's engine runs it. In this project, V-Order cost about 8% more to write
+  and up to 2.8× less to read.</p>
 </section>
 
 <section class="pane" data-name="owned" aria-label="Proprietary format">
