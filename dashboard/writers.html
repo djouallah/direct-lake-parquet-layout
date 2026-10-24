@@ -23,8 +23,6 @@
 
 <section class="pane" data-name="databricks" aria-label="Databricks">
 <h2>Databricks</h2>
-<p class="claim">Eleven lines of cluster config plus one <code>CLUSTER BY</code> per fact table, and a
-  Databricks-written table queries in Direct Lake within 4% of Fabric's own V-Ordered layout.</p>
 <p>Measured on TPC-DS SF100 and SF1000 with Microsoft's own Direct Lake benchmark protocol: the DAX
   from the paper <a href="https://raw.githubusercontent.com/microsoft/FabricCAT/main/Direct%20Lake_DirectQuery/Modern%20Power%20BI%20Architecture%20Choices.pdf">Modern
   Power BI Architecture Choices for Reporting on Azure Databricks</a>, 20 concurrent readers. Full
@@ -97,8 +95,6 @@ df.write.format("delta").mode("append").saveAsTable(fq)                         
 
 <section class="pane" data-name="deltars" aria-label="delta-rs">
 <h2>delta-rs (Python, Rust, duckrun)</h2>
-<p class="claim">delta-rs keeps dictionaries everywhere once you raise one limit. The row-group size and
-  the sort are yours to set.</p>
 <p>This is the profile <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun</a> ships
   as its default, each value tuned against a Spark V-Order reference with DAX timings as the signal.</p>
 <pre><code>from deltalake import write_deltalake, WriterProperties, ColumnProperties
@@ -128,9 +124,6 @@ write_deltalake(path, table, writer_properties=wp,
 
 <section class="pane" data-name="duckdb" aria-label="DuckDB">
 <h2>DuckDB</h2>
-<p class="claim">Power BI reads a lakehouse table, not a loose parquet file, so what matters is which
-  table format DuckDB writes, and whether that path lets you set the parquet layout.</p>
-
 <h3>DuckDB → Delta: a dead end for layout</h3>
 <p>DuckDB's delta extension writes Delta, but it exposes none of the parquet settings: no row-group size,
   no dictionary limit, no sort it keeps. Whatever its defaults produce is what Power BI gets, and there
