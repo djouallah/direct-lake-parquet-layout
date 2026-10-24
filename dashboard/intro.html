@@ -40,6 +40,10 @@
   does it well enough. Reading is what users wait on, where even 500 ms is noticed, and it costs
   capacity every time, whoever's engine runs it. In this project, V-Order cost about 8% more to write
   and up to 2.8× less to read.</p>
+<p>The core issue is not technical. Data engineering tends to optimise for write speed: a pipeline that
+  finishes faster looks like a win, while the read cost shows up later, in someone else's report and on
+  the capacity bill. Push back on that. Judge a table by what it costs to read, not by how fast it was
+  written.</p>
 </section>
 
 <section class="pane" data-name="owned" aria-label="Proprietary format">
