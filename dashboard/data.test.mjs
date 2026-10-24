@@ -492,3 +492,16 @@ test("performance tab: no timed runs is a sentence, not an empty grid", () => {
   for (const x of recs) x.benchmark.timings = {};
   assert.match(r.render(recs, { page: "perf" }).html, /No timed runs yet/);
 });
+
+test("every finding links to learning-tab sections that exist", () => {
+  const { found } = r.render(vorderFixture(), {});
+  for (const f of found) {
+    assert.ok(r.LEARN[f.id], `${f.id} has no LEARN entry`);
+    for (const [, href] of r.LEARN[f.id]) {
+      const [file, hash] = href.split("#");
+      const html = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
+      assert.match(html, new RegExp(`data-name="${hash}"`), href);
+    }
+  }
+  assert.match(r.render(vorderFixture(), { finding: "sort" }).html, /href="parquet\.html#sorting"/);
+});

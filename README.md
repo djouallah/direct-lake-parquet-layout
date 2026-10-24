@@ -11,7 +11,9 @@ over each.
 **We use only real data, never synthetic.**
 
 - **Results:** <https://djouallah.github.io/direct-lake-parquet-layout/>
-- **How it works** (parquet anatomy, transcoding, why sorting matters):
-  <https://djouallah.github.io/direct-lake-parquet-layout/how.html>
+- **How it works**, as a one-hour tour with demos: why an open format makes the writer decide the
+  read cost ([Introduction](https://djouallah.github.io/direct-lake-parquet-layout/intro.html)), what is
+  inside a parquet file ([Parquet](https://djouallah.github.io/direct-lake-parquet-layout/parquet.html)),
+  and what Direct Lake does with it ([Transcoding](https://djouallah.github.io/direct-lake-parquet-layout/transcode.html))
 - **The rules and the numbers behind them:** [docs/FINDINGS.md](docs/FINDINGS.md)
 - **Run it:** [docs/RUNNING.md](docs/RUNNING.md) · **CI:** [docs/CI.md](docs/CI.md)

@@ -1074,9 +1074,22 @@ export const COLUMN_KEYS = ["ds", "writerLabel", "runId", "column", "type", "mb"
 
 const HOW = `
   <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy. DirectQuery keeps nothing and goes back to the parquet through the SQL endpoint for every query.</p>
-  ${DIAGRAM}`;
+  ${DIAGRAM}
+  <p>The whole mechanism, step by step with demos: <a href="intro.html">Introduction</a>, <a href="parquet.html">Parquet</a> and <a href="transcode.html">Transcoding</a>.</p>`;
 
 const PAGES = { method: "Method", how: "How Power BI reads parquet", data: "The data" };
+
+/** Where the learning tabs explain why each finding happens: [label, href] per finding id. */
+export const LEARN = {
+  dictionary: [["Parquet · Encodings", "parquet.html#encodings"], ["Parquet · The footer", "parquet.html#footer"], ["Transcoding · ID swap or rebuild", "transcode.html#swap"]],
+  sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
+  "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#segments"]],
+  "spark-vorder": [["Parquet · Global vs per-file", "parquet.html#global"]],
+  directquery: [["Introduction · Every query, or once", "intro.html#once"]],
+  "table-size": [["Transcoding · What it does not do", "transcode.html#noskip"]],
+  "file-count": [["Transcoding · What it does not do", "transcode.html#noskip"]],
+};
+const learnLine = (id) => (LEARN[id] ? `<p class="note">Why: ${LEARN[id].map(([l, h]) => `<a href="${h}">${esc(l)}</a>`).join(" · ")}</p>` : "");
 
 /** `?a=b&c=d` from the params that are set, so a link keeps the dataset it was clicked under. */
 function href(params) {
@@ -1105,11 +1118,13 @@ export function render(records, opts = {}, ledger = null) {
   const extra = EXTRA_FINDINGS.map((f) => f(ctx));
   const switcher = "";
   const back = `<a class="back" href="?">← All properties</a>`;
-  const frame = `<p class="framelinks">${Object.entries(PAGES).map(([k, v]) =>
+  // "How Power BI reads parquet" stays reachable (?page=how) but the learning tabs now carry it.
+  const frame = `<p class="framelinks">${Object.entries(PAGES).filter(([k]) => k !== "how").map(([k, v]) =>
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
   const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet. Writers differ on the <b>cold load</b>, when Direct Lake first turns each column into memory, and what that costs is the <b>read CU</b> the session bills. Three layout properties decide it: <b>dictionary encoding</b> (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), <b>sorting</b> (long runs of equal values) and <b>row groups</b> (millions of rows each). Everything else is small.</p>
     <p><b>This is not a ranking of writers.</b> Do those three things and the table reads cheaply whatever wrote it: Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB. Every writer that costs more here is missing one of them, and the cards show which.</p>
+    <p class="dim">New to this? The <a href="intro.html">Introduction</a> tab explains why the writer decides the read cost.</p>
     <p class="dim">The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at about 5× the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>).</p></div>`;
   const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
@@ -1128,14 +1143,14 @@ export function render(records, opts = {}, ledger = null) {
     const f = found[idx];
     const prev = found[idx - 1], next = found[idx + 1];
     const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id })}">${esc(next.title)} →</a>` : ""}</nav>`;
-    body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${f.html}</section>${pager}`;
+    body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${learnLine(f.id)}${f.html}</section>${pager}`;
   } else if (opts.page === "perf") {
     body = `<section id="perf" class="perf">${perfSection(ctx, opts)}</section>`;
   } else if (PAGES[opts.page]) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
   } else {
-    body = `${home}${frame}${about}${intro}`;
+    body = `${intro}${home}${frame}${about}`;
   }
   return { html: body, ctx, found };
 }

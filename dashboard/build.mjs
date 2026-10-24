@@ -114,7 +114,8 @@ if (flag("snapshot")) {
   const linked = html.replace('<a id="daglink" href="dag.html">',
     `<a id="daglink" href="${PAGES}/dag.html">`);
   if (linked === html) throw new Error("index.html no longer carries the relative dag.html link");
-  html = linked;
+  // The static learning pages are siblings on the live site too; same reasoning.
+  html = linked.replace(/href="(intro|parquet|transcode|writers)\.html"/g, `href="${PAGES}/$1.html"`);
 }
 
 mkdirSync(dirname(resolve(out)), { recursive: true });

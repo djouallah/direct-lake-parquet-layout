@@ -12,8 +12,11 @@ dataset weighs the same, with "N of M datasets agree" beside it. No dataset swit
 every load.
 
 The home page is one card per finding: a headline number, the claim and a status. A card opens that
-finding's evidence (`?finding=<id>`, which keeps `?dataset=`). Method, how Power BI reads parquet and
-the raw data are pages of their own (`?page=method|how|data`). Every finding reports query time and
+finding's evidence (`?finding=<id>`), and each finding links to the learning-tab sections that explain
+it (`LEARN` in `report.js`). Method and the raw data are pages of their own (`?page=method|data`;
+`?page=how` still renders but is superseded by the learning tabs). The tab order is the talk order:
+Introduction · Parquet · Transcoding · Experiments · Performance · Third-party writers. It is written
+twice, in `index.html` and in `learn.js`. Every finding reports query time and
 **read CU**: the capacity units each benchmark session's own Direct Lake or DirectQuery items billed.
 Build CU is deliberately left out.
 
@@ -41,6 +44,12 @@ probe_columns.mjs  regenerates it: node dashboard/probe_columns.mjs
 build.mjs          index.html + the three modules -> one file, twice (live, and offline with data inlined)
 data.test.mjs      offline tests, no browser, no network
 dag.html           the dbt DAG, `dbt docs generate --static` output
+intro.html         the learning tabs, static, no data: Introduction (why an open format makes the
+parquet.html         writer decide the read cost), Parquet (what is on disk), Transcoding (what a
+transcode.html       reader does with it); a one-hour talk, ←/→ step through it like slides
+writers.html       Third-party writers: the settings per writer
+learn.css/.js      the chrome those four share: tab bar, one section at a time, pager, keys
+how.html           redirect stub: the old single "how it works" page, mapped onto the three tabs
 app.js             the PREVIOUS page, no longer served; kept because profile_table.mjs reuses its
 app.test.mjs         join to regenerate the README's spark-profile table (capacity.yml)
 profile_table.mjs

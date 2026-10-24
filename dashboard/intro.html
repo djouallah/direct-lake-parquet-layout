@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Parquet for Power BI</title>
+<!--
+  Hand-written and static: no data is fetched. Published beside index.html by dashboard.yml. The first
+  stop of the tour: why an open table format makes the WRITER decide what every reader pays. Numbers
+  are quoted from docs/FINDINGS.md or CLAUDE.md with their source named; the demos are illustrations.
+-->
+<link rel="stylesheet" href="learn.css">
+</head>
+<body data-tab="intro">
+<main>
+<div class="topbar">
+<nav class="subtabs" aria-label="sections" role="tablist">
+  <a href="#start" role="tab" data-pane="start">Overview</a>
+  <a href="#owned" role="tab" data-pane="owned">The engine owned the format</a>
+  <a href="#lake" role="tab" data-pane="lake">The lakehouse</a>
+  <a href="#decode" role="tab" data-pane="decode">Every reader decodes</a>
+  <a href="#once" role="tab" data-pane="once">Every query, or once</a>
+  <a href="#question" role="tab" data-pane="question">What we measured</a>
+</nav>
+</div>
+
+<section class="pane" data-name="start" aria-label="Overview">
+<h1>Same rows, different files, different bill</h1>
+<p class="sub">Why the program that <b>writes</b> a Delta table decides what Power BI pays to <b>read</b> it,
+  and the three things any writer can do about it.</p>
+<p class="claim">For decades a database read only files it had written itself. The lakehouse broke that:
+  one engine writes the file, another reads it. The reader now has to translate a file it did not design,
+  and how much work that is was decided by the writer.</p>
+<p>The tour, one tab at a time:</p>
+<div class="cards">
+  <a class="card" href="#owned"><b>1. Introduction</b><span>Why an open format moves the cost to the reader. You are here.</span></a>
+  <a class="card" href="parquet.html"><b>2. Parquet</b><span>What the writer leaves on disk: row groups, encodings, the footer, row order.</span></a>
+  <a class="card" href="transcode.html"><b>3. Transcoding</b><span>What a reader does with it, and why Direct Lake does it once and keeps the result.</span></a>
+  <a class="card" href="./"><b>4. Experiments</b><span>Five real datasets, four writers, the same rows: what each layout property costs in read CU.</span></a>
+  <a class="card" href="./?page=perf"><b>5. Performance</b><span>Read CU per writer and dataset, over time.</span></a>
+  <a class="card" href="writers.html"><b>6. Third-party writers</b><span>The settings, for Databricks, delta-rs and DuckDB.</span></a>
+</div>
+</section>
+
+<section class="pane" data-name="owned" aria-label="The engine owned the format">
+<h2>Before: the engine owned the format</h2>
+<p class="claim">SQL Server, a Power BI import model, Analysis Services: each one writes its own storage
+  format and reads it back exactly as written. The writer and the reader are the same program, so the
+  bytes are always in the shape the reader wants.</p>
+<div class="scroll">
+<svg viewBox="0 0 920 240" role="img" aria-label="One engine box contains both the query processor and storage in its own format; data goes in once and is read back as-is, with no translation step.">
+  <rect class="bx" x="20" y="90" width="150" height="60" rx="8"/>
+  <text class="b" x="95" y="116" text-anchor="middle">source data</text>
+  <text class="d" x="95" y="135" text-anchor="middle">CSV, an app, a feed</text>
+  <path class="ln" d="M170,120 L268,120" marker-end="url(#ow-a)"/>
+  <text class="d" x="219" y="110" text-anchor="middle">load / refresh</text>
+  <rect class="acc" x="270" y="20" width="420" height="200" rx="12"/>
+  <text class="b big" x="290" y="48">one engine</text>
+  <rect class="bx2" x="290" y="66" width="180" height="134" rx="8"/>
+  <text class="b" x="380" y="92" text-anchor="middle">its own storage</text>
+  <text class="d" x="380" y="114" text-anchor="middle">pages, segments,</text>
+  <text class="d" x="380" y="131" text-anchor="middle">in the engine's format,</text>
+  <text class="d" x="380" y="148" text-anchor="middle">laid out for its reader</text>
+  <rect class="bx2" x="500" y="66" width="170" height="134" rx="8"/>
+  <text class="b" x="585" y="92" text-anchor="middle">query processor</text>
+  <text class="d" x="585" y="114" text-anchor="middle">reads its own bytes</text>
+  <text class="d" x="585" y="131" text-anchor="middle">as they are</text>
+  <path class="lna" d="M470,160 L498,160"/>
+  <text class="a" x="585" y="180" text-anchor="middle">no translation</text>
+  <path class="ln" d="M690,120 L778,120" marker-end="url(#ow-a)"/>
+  <rect class="bx" x="780" y="90" width="120" height="60" rx="8"/>
+  <text class="b" x="840" y="125" text-anchor="middle">report</text>
+  <defs><marker id="ow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
+</svg>
+</div>
+<p>That arrangement has one big advantage and one big cost.</p>
+<ul>
+  <li><b>The advantage:</b> the format is tuned for exactly one reader. An import-mode Power BI model
+    builds its VertiPaq segments at refresh, sorted and dictionary-encoded the way VertiPaq likes them,
+    and every query reads them as they are.</li>
+  <li><b>The cost:</b> the data is locked in. Every other tool that wants it needs its own copy, its own
+    load, its own refresh.</li>
+</ul>
+<p class="note">Keep the import model in mind: it is the same VertiPaq engine Direct Lake uses. What
+  changes in Direct Lake is only who wrote the file.</p>
+</section>
+
+<section class="pane" data-name="lake" aria-label="The lakehouse">
+<h2>Then: the lakehouse</h2>
+<p class="claim">Open table formats (Delta Lake or Iceberg, both made of parquet files plus a log) put
+  one copy of the data in OneLake that any engine can write and any engine can read. The format belongs
+  to nobody, so no reader gets a file shaped for it.</p>
+<div class="demo" id="lk">
+  <div class="btns" role="group" aria-label="pick a reader">
+    <span class="lbl">read it with:</span>
+    <button type="button" data-r="0">Direct Lake</button>
+    <button type="button" data-r="1">SQL endpoint</button>
+    <button type="button" data-r="2">Fabric Spark</button>
+    <button type="button" data-r="3">DuckDB</button>
+  </div>
+  <div class="scroll">
+  <svg viewBox="0 0 920 320" role="img" aria-label="Four writers write one copy of a Delta table in OneLake; four readers read it, and each one passes through its own decode step to turn parquet into its in-memory format.">
+    <text class="d" x="105" y="22" text-anchor="middle">writers</text>
+    <text class="d" x="815" y="22" text-anchor="middle">readers</text>
+    <g id="lk-w"></g>
+    <rect class="acc" x="330" y="100" width="230" height="130" rx="10"/>
+    <text class="b big" x="445" y="132" text-anchor="middle">OneLake: one copy</text>
+    <text x="445" y="158" text-anchor="middle">Delta / Iceberg table</text>
+    <text class="d" x="445" y="180" text-anchor="middle">parquet files + a log</text>
+    <text class="d" x="445" y="200" text-anchor="middle">laid out by whoever wrote it</text>
+    <g id="lk-r"></g>
+    <circle class="dot" id="lk-dot" r="7" cx="0" cy="0"/>
+  </svg>
+  </div>
+  <p class="say" id="lk-say">Pick a reader. Every path out of OneLake goes through a decode step.</p>
+</div>
+<p>What you get is one copy and a free choice of engine. What you give up is that the file is no longer
+  written for its reader. A writer's defaults are tuned for the writer: write fast, use little memory,
+  make files of a convenient size. Nothing in the format makes it think about who reads next.</p>
+</section>
+
+<section class="pane" data-name="decode" aria-label="Every reader decodes">
+<h2>The price: every reader decodes</h2>
+<p class="claim">No engine computes on parquet bytes as they sit in the file. DuckDB turns them into its
+  vectors, Spark into its columnar batches, VertiPaq into segments. That translation is real work, and
+  three choices the writer made decide how much.</p>
+<div class="demo" id="dc">
+  <div class="btns" role="group" aria-label="row groups">
+    <span class="lbl">row groups:</span>
+    <button type="button" data-k="rg" data-v="8">8 small</button>
+    <button type="button" data-k="rg" data-v="2">2 big</button>
+  </div>
+  <div class="btns" role="group" aria-label="dictionary">
+    <span class="lbl">dictionary:</span>
+    <button type="button" data-k="dict" data-v="0">off</button>
+    <button type="button" data-k="dict" data-v="1">on, declared in the footer</button>
+  </div>
+  <div class="btns" role="group" aria-label="row order">
+    <span class="lbl">row order:</span>
+    <button type="button" data-k="sort" data-v="0">as it arrived</button>
+    <button type="button" data-k="sort" data-v="1">sorted</button>
+  </div>
+  <div class="legend" id="dc-legend"></div>
+  <div class="rgwrap" id="dc-wrap"></div>
+  <div class="stats">
+    <div class="stat" id="dc-seg"><b></b><span>row groups the reader opens, one segment each</span></div>
+    <div class="stat" id="dc-dict"><b></b><span>dictionary entries to merge</span></div>
+    <div class="stat" id="dc-raw"><b></b><span>values rebuilt one by one from raw bytes</span></div>
+    <div class="stat" id="dc-runs"><b></b><span>runs to scan, on every query after</span></div>
+  </div>
+  <p class="say" id="dc-say"></p>
+</div>
+<p>That box is the whole talk in miniature: a toy column of 48 rows, but every counter in it is a real
+  cost the next two tabs explain. The same three choices, <b>dictionary encoding</b>, <b>sort order</b>
+  and <b>row groups</b>, are what the experiments find decide Power BI's read CU on real tables, whatever
+  engine made them.</p>
+<p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
+</section>
+
+<section class="pane" data-name="once" aria-label="Every query, or once">
+<h2>Pay on every query, or pay once</h2>
+<p class="claim">Most engines decode the parquet again on every query. Direct Lake decodes a column the
+  first time a query needs it, keeps the result in memory, and answers later queries from that copy. That
+  one difference is where <b>cold</b>, <b>warm</b> and <b>hot</b> come from.</p>
+<div class="scroll">
+<svg viewBox="0 0 920 260" role="img" aria-label="Direct Lake transcodes parquet into VertiPaq segments on first touch (cold) and then answers warm and hot queries from memory; DirectQuery sends every query to the SQL endpoint, which reads the parquet each time.">
+  <defs><marker id="on-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
+  <rect class="bx" x="20" y="85" width="160" height="96" rx="8"/>
+  <text class="b" x="100" y="112" text-anchor="middle">parquet in OneLake</text>
+  <text class="d" x="100" y="134" text-anchor="middle">row groups</text>
+  <text class="d" x="100" y="151" text-anchor="middle">encodings · dictionary</text>
+  <text class="d" x="100" y="168" text-anchor="middle">row order</text>
+  <text class="b" x="250" y="26">Direct Lake</text>
+  <path class="ln" d="M180,110 C220,110 220,60 258,60" marker-end="url(#on-a)"/>
+  <rect class="acc" x="260" y="35" width="190" height="52" rx="8"/>
+  <text class="b" x="355" y="57" text-anchor="middle">transcode, first touch</text>
+  <text class="a" x="355" y="76" text-anchor="middle">COLD, once per column</text>
+  <path class="ln" d="M450,61 L498,61" marker-end="url(#on-a)"/>
+  <rect class="bx" x="500" y="35" width="180" height="52" rx="8"/>
+  <text class="b" x="590" y="57" text-anchor="middle">VertiPaq segments</text>
+  <text class="d" x="590" y="76" text-anchor="middle">kept in memory</text>
+  <path class="ln" d="M680,61 L738,61" marker-end="url(#on-a)"/>
+  <rect class="bx" x="740" y="35" width="160" height="52" rx="8"/>
+  <text class="b" x="820" y="57" text-anchor="middle">every later query</text>
+  <text class="d" x="820" y="76" text-anchor="middle">WARM, HOT: a scan</text>
+  <text class="b" x="250" y="166">DirectQuery</text>
+  <path class="ln" d="M180,156 C220,156 220,206 258,206" marker-end="url(#on-a)"/>
+  <rect class="bx" x="260" y="180" width="420" height="52" rx="8"/>
+  <text class="b" x="470" y="202" text-anchor="middle">SQL analytics endpoint reads the parquet</text>
+  <text class="d" x="470" y="221" text-anchor="middle">decodes again on every query, keeps nothing in VertiPaq</text>
+  <path class="ln" d="M680,206 L738,206" marker-end="url(#on-a)"/>
+  <rect class="bx" x="740" y="180" width="160" height="52" rx="8"/>
+  <text class="b" x="820" y="202" text-anchor="middle">every query</text>
+  <text class="d" x="820" y="221" text-anchor="middle">pays the read again</text>
+</svg>
+</div>
+<p>Measured in this project, the gap between first and later visits shows the difference:</p>
+<table>
+  <thead><tr><th>storage mode</th><th>cold ÷ warm, range across the datasets</th></tr></thead>
+  <tbody>
+    <tr><td>Direct Lake</td><td>3–27×</td></tr>
+    <tr><td>DirectQuery</td><td>1.6–3.3×</td></tr>
+  </tbody>
+</table>
+<p>So in Direct Lake the layout is paid for mostly <b>once</b>, at the cold load, and that is where the
+  read CU goes. One part of it keeps paying after: the row order survives into memory, so a sorted table
+  is also cheaper to scan warm. DirectQuery pays for the file on every query; its read CU against Direct
+  Lake is on <a href="./?finding=directquery">the DirectQuery card</a>.</p>
+<p class="note">A caution that holds for every number in this tour: a live model transcodes once per
+  reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
+  model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
+</section>
+
+<section class="pane" data-name="question" aria-label="What we measured">
+<h2>The question, and how it was measured</h2>
+<p class="claim">Keep the rows fixed, change only the writer, and read the bill. Five real public datasets,
+  four writers producing the <b>same rows</b> from the same landed files, one semantic model and one DAX
+  suite per dataset, and the capacity units each read session billed.</p>
+<div class="scroll"><table class="left">
+  <thead><tr><th>dataset</th><th>source</th><th>mart</th><th>why it is here</th></tr></thead>
+  <tbody>
+    <tr><td>AEMO</td><td>Australian electricity market</td><td>144M rows, 5 narrow columns</td><td>near-uniform: the control</td></tr>
+    <tr><td>NYC taxi</td><td>NYC yellow-taxi trips</td><td>592M rows, 17 columns</td><td>extreme skew, categoricals at 97–99% one value</td></tr>
+    <tr><td>BTS flights</td><td>US on-time flights</td><td>180M rows, 22 columns</td><td>many moderately skewed columns competing for one sort</td></tr>
+    <tr><td>Green taxi</td><td>NYC green-taxi trips</td><td>84M rows, 20 columns</td><td>the taxi skew at 1/7 the rows</td></tr>
+    <tr><td>CMS payments</td><td>CMS Open Payments</td><td>88M rows, 91 columns</td><td>wide and sparse: 54 columns more than half NULL</td></tr>
+  </tbody>
+</table></div>
+<div class="scroll"><table class="left">
+  <thead><tr><th>writer</th><th>engine</th><th>parquet writer</th></tr></thead>
+  <tbody>
+    <tr><td>delta-rs</td><td>DuckDB in a Fabric notebook (duckrun)</td><td>delta-rs</td></tr>
+    <tr><td>DuckDB → Iceberg</td><td>the same DuckDB, same notebook</td><td>DuckDB's own writer</td></tr>
+    <tr><td>Fabric Warehouse</td><td>T-SQL</td><td>the warehouse's own, V-Order on</td></tr>
+    <tr><td>Fabric Spark</td><td>Livy sessions</td><td>V-Order only under the <code>readHeavyForPBI</code> profile</td></tr>
+  </tbody>
+</table></div>
+<p><b>This is not a ranking of writers.</b> The finding is that three properties of the file decide the
+  read cost, and any writer that gets them right reads cheaply:</p>
+<ol class="rules">
+  <li><b>Dictionary encoding</b> on every column, declared in the footer. <a href="parquet.html#encodings">Parquet</a> · <a href="transcode.html#swap">Transcoding</a></li>
+  <li><b>Sort order</b> that turns equal values into long runs. <a href="parquet.html#sorting">Parquet</a> · <a href="transcode.html#runs">Transcoding</a></li>
+  <li><b>Row groups</b> of millions of rows each. <a href="parquet.html#rowgroups">Parquet</a> · <a href="transcode.html#merge">Transcoding</a></li>
+</ol>
+<p class="note">Method, caveats and every run id: <a href="./?page=method">Method</a> and
+  <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>.</p>
+</section>
+
+<footer>
+  <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
+    the live numbers are on <a href="./">the experiments page</a>.</p>
+</footer>
+</main>
+<script src="learn.js"></script>
+<script>
+// Illustrations, not data. A fixed seed so the page draws the same rows every load.
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
+  const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+  let seed = 11;
+  const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const runs = (v) => v.reduce((n, x, i) => n + (i === 0 || x !== v[i - 1] ? 1 : 0), 0);
+  function along(path, dot, ms) {
+    return new Promise((done) => {
+      const L = path.getTotalLength(), t0 = performance.now();
+      dot.classList.add("on");
+      const frame = (t) => {
+        const k = STILL ? 1 : Math.min(1, (t - t0) / ms);
+        const p = path.getPointAtLength((k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2) * L);
+        dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
+        if (k < 1) requestAnimationFrame(frame); else { dot.classList.remove("on"); done(); }
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+
+  // ---- the lakehouse: four writers, one copy, four readers each behind a decode step
+  {
+    const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
+    const R = [
+      ["Direct Lake", "Power BI", "Direct Lake transcodes each column it needs into VertiPaq segments the first time, then keeps them in memory. It pays the decode once per column, until the table changes or memory runs short."],
+      ["SQL endpoint", "DirectQuery goes here", "The SQL analytics endpoint reads and decodes the parquet on every query. A DirectQuery model sends every visual's query here, so it pays the decode again each time."],
+      ["Fabric Spark", "notebooks, jobs", "Spark decodes the parquet into its own columnar batches on every query that reads it."],
+      ["DuckDB", "a laptop, a notebook", "DuckDB decodes the parquet into its own vectors on every query that reads it."],
+    ];
+    const ys = [40, 110, 180, 250];
+    const gw = $("lk-w"), gr = $("lk-r");
+    W.forEach((w, i) => {
+      const y = ys[i];
+      gw.append(el("rect", { class: "bx", x: 20, y, width: 170, height: 50, rx: 8 }));
+      gw.append(el("text", { class: "b", x: 105, y: y + 30, "text-anchor": "middle" }, w));
+      gw.append(el("path", { class: "lnd", d: `M190,${y + 25} C260,${y + 25} 260,165 328,165` }));
+    });
+    const paths = [], dec = [];
+    R.forEach(([name, sub], i) => {
+      const y = ys[i] + 25;
+      const p = el("path", { class: "path", d: `M560,165 C590,165 580,${y} 610,${y} L728,${y}` });
+      gr.append(p); paths.push(p);
+      const d = el("rect", { class: "bx", x: 612, y: y - 15, width: 82, height: 30, rx: 6 });
+      gr.append(d); dec.push(d);
+      gr.append(el("text", { class: "a", x: 653, y: y + 5, "text-anchor": "middle" }, "decode"));
+      gr.append(el("rect", { class: "bx", x: 730, y: y - 25, width: 170, height: 50, rx: 8 }));
+      gr.append(el("text", { class: "b", x: 815, y: y - 3, "text-anchor": "middle" }, name));
+      gr.append(el("text", { class: "d", x: 815, y: y + 15, "text-anchor": "middle" }, sub));
+    });
+    const bs = [...$("lk").querySelectorAll("button")];
+    let busy = false;
+    bs.forEach((b) => b.addEventListener("click", async () => {
+      if (busy) return; busy = true;
+      const i = Number(b.dataset.r);
+      bs.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      paths.forEach((p, j) => p.classList.toggle("lit", j === i));
+      dec.forEach((d) => d.classList.remove("lit"));
+      $("lk-say").textContent = R[i][2];
+      await along(paths[i], $("lk-dot"), 1100);
+      dec[i].classList.add("lit");
+      busy = false;
+    }));
+  }
+
+  // ---- every reader decodes: three writer choices on one toy column
+  {
+    const NAMES = ["card", "cash", "no charge", "dispute"], COUNTS = [20, 14, 9, 5];
+    const rows = shuffle(COUNTS.flatMap((n, v) => Array.from({ length: n }, () => v)));
+    const N = rows.length;
+    const st = { rg: 8, dict: 0, sort: 0 };
+    const wrap = $("dc-wrap");
+    $("dc-legend").innerHTML = NAMES.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("");
+    const cells = rows.map((v) => { const c = document.createElement("span"); c.className = "c"; c.dataset.v = v; wrap.append(c); return c; });
+    let boxes = [];
+    const worst = (() => { const g = 8, per = N / g; let d = 0, r = 0; for (let i = 0; i < g; i++) { const s = rows.slice(i * per, i * per + per); d += new Set(s).size; r += runs(s); } return { d, r }; })();
+    function draw() {
+      const G = st.rg, per = N / G, GAP = G > 4 ? 1.2 : 3, Wg = (100 - GAP * (G - 1)) / G;
+      // Each element of `order` is an index into rows; cells keep their identity so they slide.
+      const idx = rows.map((_, i) => i);
+      if (st.sort) idx.sort((a, b) => rows[a] - rows[b] || a - b);
+      boxes.forEach((b) => b.remove());
+      boxes = Array.from({ length: G }, (_, g) => {
+        const b = document.createElement("span"); b.className = "rgbox";
+        b.style.left = `calc(${g * (Wg + GAP)}% - 3px)`; b.style.width = `calc(${Wg}% + 6px)`;
+        wrap.prepend(b); return b;
+      });
+      let dict = 0, rr = 0;
+      for (let g = 0; g < G; g++) {
+        const grp = idx.slice(g * per, g * per + per);
+        const vals = grp.map((i) => rows[i]);
+        dict += new Set(vals).size; rr += runs(vals);
+        grp.forEach((ri, k) => {
+          const c = cells[ri];
+          c.style.left = `${g * (Wg + GAP) + k * Wg / per}%`;
+          c.style.width = `calc(${Wg / per}% + 1px)`;
+          c.style.background = st.dict ? PAL[rows[ri]]
+            : `repeating-linear-gradient(45deg, ${PAL[rows[ri]]} 0 3px, var(--bg) 3px 5px)`;
+          c.classList.toggle("rs", k > 0 && vals[k] !== vals[k - 1]);
+        });
+      }
+      const set = (id, v, worse) => { const s = $(id); s.querySelector("b").textContent = v; s.classList.toggle("up", worse === 1); s.classList.toggle("down", worse === -1); };
+      set("dc-seg", G, G > 2 ? 1 : -1);
+      set("dc-dict", st.dict ? dict : "—", st.dict ? (dict > 8 ? 1 : -1) : 0);
+      set("dc-raw", st.dict ? 0 : N, st.dict ? -1 : 1);
+      set("dc-runs", rr, rr > worst.r / 2 ? 1 : -1);
+      const parts = [];
+      parts.push(G > 2 ? `${G} row groups: the reader opens and sets up ${G} pieces${st.dict ? `, merging ${G} little dictionaries` : ""}.` : "2 big row groups: few pieces to open and set up.");
+      parts.push(st.dict ? "With a declared dictionary the reader adopts the IDs instead of rebuilding them." : "With no dictionary every one of the 48 values is decoded and re-encoded by the reader (the striped cells).");
+      parts.push(st.sort ? `Sorted, equal values sit together: ${rr} runs to scan.` : `In arrival order the values are scattered: ${rr} runs.`);
+      $("dc-say").textContent = parts.join(" ");
+    }
+    $("dc").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      st[b.dataset.k] = Number(b.dataset.v);
+      $("dc").querySelectorAll(`button[data-k="${b.dataset.k}"]`).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      draw();
+    }));
+    ["rg:8", "dict:0", "sort:0"].forEach((s) => { const [k, v] = s.split(":"); $("dc").querySelector(`button[data-k="${k}"][data-v="${v}"]`).setAttribute("aria-pressed", "true"); });
+    draw();
+  }
+})();
+</script>
+</body>
+</html>

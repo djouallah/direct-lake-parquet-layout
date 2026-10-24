@@ -9,153 +9,11 @@
   (`cp dashboard/writers.html site/writers.html`). Numbers are quoted from docs/FINDINGS.md and from
   github.com/djouallah/parquet_layout_vertipaq_spark, named in place.
 -->
-<style>
-:root { color-scheme: light dark;
-  --bg:#fcfcfb; --fg:#0b0b0b; --dim:#52514e; --line:#e4e3df; --soft:#f3f2ef; --code:#efeeea;
-  --c1:#2a78d6; --c2:#eb6834; --c3:#1baf7a;
-  --d1:#2a78d6; --d2:#eb6834; --d3:#1baf7a; --d4:#eda100; --d5:#e87ba4; --d6:#4a3aa7;
-  --good:#0f7b4a; --bad:#b4441c; }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
-    --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70;
-    --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
-    --good:#4cc38a; --bad:#f08a5d; } }
-:root[data-theme="dark"] { --bg:#1a1a19; --fg:#f4f4f2; --dim:#b9b8b0; --line:#34332f;
-  --soft:#242422; --code:#2a2a27; --c1:#3987e5; --c2:#d95926; --c3:#199e70;
-  --d1:#3987e5; --d2:#d95926; --d3:#199e70; --d4:#c98500; --d5:#d55181; --d6:#9085e9;
-  --good:#4cc38a; --bad:#f08a5d; }
-
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--fg);
-  font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-main { max-width:1000px; margin:0 auto; padding:2rem 16px 4rem; }
-h1 { font-size:2rem; line-height:1.2; margin:0 0 .4rem; }
-.sub { color:var(--dim); margin:0 0 .6rem; max-width:52rem; }
-nav { font-size:.9rem; color:var(--dim); }
-a { color:var(--c1); }
-h2 { font-size:1.4rem; margin:3rem 0 .6rem; padding-top:1rem; border-top:1px solid var(--line); }
-p, li { max-width:52rem; }
-.claim { font-size:1.12rem; line-height:1.5; border-left:3px solid var(--c1); padding:.2rem 0 .2rem 1rem; }
-code, .mono { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; }
-code { background:var(--code); padding:.05rem .3rem; border-radius:4px; font-size:.88em; }
-.dim, .note { color:var(--dim); }
-.note { font-size:.9rem; }
-ol.rules { padding-left:1.4rem; }
-ol.rules li { margin:.45rem 0; }
-
-figure { margin:1.4rem 0; }
-.scroll { overflow-x:auto; }
-figure svg { display:block; width:100%; min-width:640px; height:auto; color:var(--fg); }
-figcaption { color:var(--dim); font-size:.9rem; margin-top:.5rem; max-width:52rem; }
-
-/* SVG classes: the page stylesheet themes the drawings, so nothing inside an <svg> carries a hue. */
-.bx  { fill:var(--soft); stroke:var(--line); stroke-width:1.5; }
-.bx2 { fill:var(--bg);   stroke:var(--line); stroke-width:1.2; }
-.ck  { fill:var(--code); stroke:var(--line); }
-.acc { fill:var(--soft); stroke:var(--c2); stroke-width:2; }
-.accf { fill:var(--c2); }
-.ln  { stroke:var(--fg); stroke-width:1.5; fill:none; }
-.lna { stroke:var(--c2); stroke-width:2; fill:none; }
-.lnd { stroke:var(--dim); stroke-width:1.2; fill:none; stroke-dasharray:4 4; }
-.good { fill:var(--soft); stroke:var(--good); stroke-width:2; }
-.bad  { fill:var(--soft); stroke:var(--bad); stroke-width:2; }
-.goodf { fill:var(--good); } .badf { fill:var(--bad); }
-svg text { fill:var(--fg); font-size:13px; }
-svg text.b { font-weight:600; }
-svg text.d { fill:var(--dim); font-size:12px; }
-svg text.m { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:12.5px; }
-svg text.a { fill:var(--c2); font-weight:600; }
-
-/* bar pairs */
-.bars { display:grid; grid-template-columns:minmax(9rem, 16rem) 1fr; gap:.35rem .8rem; align-items:center;
-  font-size:.92rem; margin:1rem 0; max-width:52rem; }
-.bars .track { background:var(--soft); border-radius:4px; height:22px; position:relative; }
-.bars .fill { height:100%; border-radius:4px; background:var(--c1); }
-.bars .fill.hot { background:var(--c2); }
-.bars .val { position:absolute; left:.5rem; top:0; line-height:22px; font-size:.82rem; color:var(--fg);
-  font-variant-numeric:tabular-nums; }
-
-/* strip demos */
-.demo { background:var(--soft); border-radius:10px; padding:1rem; margin:1.2rem 0; }
-.btns { display:flex; flex-wrap:wrap; gap:.4rem; margin-bottom:.9rem; }
-.btns button { font:inherit; font-size:.88rem; padding:.3rem .7rem; border-radius:999px; cursor:pointer;
-  border:1px solid var(--line); background:var(--bg); color:var(--fg); }
-.btns button[aria-pressed="true"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
-.col { margin:.2rem 0 .9rem; }
-.col .head { display:flex; justify-content:space-between; gap:1rem; font-size:.9rem; }
-.col .head b { font-variant-numeric:tabular-nums; }
-.strip { display:grid; height:30px; border-radius:4px; overflow:hidden; margin:.25rem 0; }
-.cell.rs { box-shadow:inset 2px 0 0 var(--bg); }
-.rle { font-size:.8rem; color:var(--dim); line-height:1.45; word-break:break-word; }
-.legend { display:flex; flex-wrap:wrap; gap:.3rem 1rem; font-size:.82rem; color:var(--dim); margin:.2rem 0 .6rem; }
-.legend i { display:inline-block; width:.8rem; height:.8rem; border-radius:2px; vertical-align:-1px; margin-right:.3rem; }
-.rgs { display:grid; grid-template-columns:repeat(4, 1fr); gap:.6rem; }
-.rgs .strip { height:26px; }
-.rgs .cap { font-size:.78rem; color:var(--dim); }
-.pair { display:grid; gap:1rem; }
-
-table { border-collapse:collapse; font-size:.9rem; margin:1rem 0; }
-th, td { text-align:right; padding:.3rem .7rem; border-bottom:1px solid var(--line); font-variant-numeric:tabular-nums; }
-th:first-child, td:first-child { text-align:left; }
-th { color:var(--dim); font-weight:600; }
-footer { margin-top:3rem; padding-top:1rem; border-top:1px solid var(--line); color:var(--dim); font-size:.9rem; }
-
-/* Top tabs, identical on index.html and how.html: the one way between the two pages. */
-.tabs { position:sticky; top:0; z-index:10; display:flex; flex-wrap:wrap; gap:.5rem; padding:.7rem 0;
-  margin:-2rem 0 1.4rem; background:var(--bg); border-bottom:1px solid var(--line); }
-.tabs a { display:inline-flex; align-items:center; gap:.45rem; padding:.45rem 1rem; border-radius:999px;
-  text-decoration:none; color:var(--fg); border:1px solid var(--line); font-size:.95rem; font-weight:600;
-  background:var(--soft); }
-.tabs a:hover { border-color:var(--fg); }
-.tabs a[aria-current="page"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
-.tabs svg { width:17px; height:17px; min-width:0; flex:none; }
-.tabs a.gh { margin-left:auto; padding:.45rem; border-radius:50%; }
-
-/* how.html only: the page tabs plus a row of section tabs, pinned together; one section shows at a time. */
-.topbar { position:sticky; top:0; z-index:10; background:var(--bg); margin:-2rem 0 1.4rem;
-  border-bottom:1px solid var(--line); }
-.topbar .tabs { position:static; margin:0; border-bottom:0; padding-bottom:.4rem; }
-.subtabs { display:flex; gap:.2rem; overflow-x:auto; scrollbar-width:none; white-space:nowrap; }
-.subtabs::-webkit-scrollbar { display:none; }
-.subtabs a { padding:.5rem .8rem; font-size:.92rem; color:var(--dim); text-decoration:none;
-  border-bottom:3px solid transparent; }
-.subtabs a:hover { color:var(--fg); }
-.subtabs a[aria-selected="true"] { color:var(--fg); font-weight:600; border-bottom-color:var(--c2); }
-.js .pane { display:none; }
-.js .pane.on { display:block; }
-.pane > h2:first-child { margin-top:0; padding-top:0; border-top:0; }
-.pager { display:flex; justify-content:space-between; gap:1rem; margin:2.2rem 0 0; }
-.pager a { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem 1rem; border-radius:999px;
-  border:1px solid var(--line); background:var(--soft); color:var(--fg); text-decoration:none; font-weight:600; font-size:.95rem; }
-.pager a:hover { border-color:var(--fg); }
-.pager a.next { margin-left:auto; background:var(--fg); color:var(--bg); border-color:var(--fg); }
-
-h1 { margin-top:0; }
-h3 { font-size:1.05rem; margin:1.8rem 0 .5rem; }
-pre { position:relative; background:var(--code); border-radius:8px; padding:.9rem 1rem; overflow-x:auto;
-  font-size:.8rem; line-height:1.5; margin:.8rem 0 1rem; }
-pre code { background:none; padding:0; font-size:inherit; }
-.copy { position:absolute; top:.45rem; right:.45rem; font:inherit; font-size:.75rem; padding:.15rem .55rem;
-  border-radius:999px; border:1px solid var(--line); background:var(--bg); color:var(--fg); cursor:pointer; }
-.cards { display:grid; grid-template-columns:repeat(auto-fit, minmax(14rem, 1fr)); gap:.8rem; margin:1.4rem 0; }
-.card { background:var(--soft); border-radius:10px; padding:.9rem 1rem; display:flex; flex-direction:column; gap:.3rem; }
-.card span { color:var(--dim); font-size:.92rem; }
-td code { white-space:nowrap; }
-.callout { border-left:3px solid var(--c1); padding:.1rem 0 .1rem 1rem; margin:1.2rem 0; }
-.callout p { margin:.5rem 0; }
-table.left th, table.left td { text-align:left; }
-</style>
+<link rel="stylesheet" href="learn.css">
 </head>
-<body>
+<body data-tab="writers">
 <main>
 <div class="topbar">
-<nav class="tabs" aria-label="pages">
-  <a href="how.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M2 5c3-1.5 6-1.5 10 1 4-2.5 7-2.5 10-1v14c-3-1.5-6-1.5-10 1-4-2.5-7-2.5-10-1z"/><path d="M12 6v14"/></svg>How it works</a>
-  <a href="./"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Experiments</a>
-  <a href="./?page=perf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 3v18h18"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="17" cy="12" r="1.6"/><circle cx="19" cy="5" r="1.6"/></svg>Performance</a>
-  <a href="writers.html" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/></svg>Third-party writers</a>
-  <a class="gh" href="https://github.com/djouallah/direct-lake-parquet-layout" title="Source on GitHub" aria-label="Source on GitHub"><svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg></a>
-</nav>
 <nav class="subtabs" aria-label="sections" role="tablist">
   <a href="#overview" role="tab" data-pane="overview">Overview</a>
   <a href="#databricks" role="tab" data-pane="databricks">Databricks</a>
@@ -380,49 +238,9 @@ con.sql("""
   <p>The measurements behind every rule, with run ids and caveats:
     <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
     and <a href="https://github.com/djouallah/parquet_layout_vertipaq_spark">parquet_layout_vertipaq_spark</a>.
-    Why the rules work: <a href="how.html">how it works</a>.</p>
+    Why the rules work: <a href="parquet.html">Parquet</a> and <a href="transcode.html">Transcoding</a>.</p>
 </footer>
 </main>
-<script>
-// Copy buttons on the code blocks.
-document.querySelectorAll("pre").forEach((pre) => {
-  const b = document.createElement("button");
-  b.className = "copy"; b.type = "button"; b.textContent = "copy";
-  b.addEventListener("click", async () => {
-    try { await navigator.clipboard.writeText(pre.querySelector("code").innerText); b.textContent = "copied"; }
-    catch { b.textContent = "select + copy"; }
-    setTimeout(() => (b.textContent = "copy"), 1500);
-  });
-  pre.append(b);
-});
-// ---- section tabs: one pane at a time, the hash names it so links and the back button work
-(() => {
-  document.documentElement.classList.add("js");
-  const panes = [...document.querySelectorAll(".pane")];
-  const tabs = [...document.querySelectorAll(".subtabs a")];
-  panes.forEach((pane, i) => {
-    const prev = panes[i - 1], next = panes[i + 1];
-    const nav = document.createElement("nav");
-    nav.className = "pager";
-    nav.innerHTML = (prev ? `<a href="#${prev.dataset.name}">← ${prev.getAttribute("aria-label")}</a>` : "")
-      + (next ? `<a class="next" href="#${next.dataset.name}">${next.getAttribute("aria-label")} →</a>` : "");
-    pane.append(nav);
-  });
-  function show() {
-    const id = location.hash.slice(1);
-    const pane = panes.find((p) => p.dataset.name === id) || panes[0];
-    panes.forEach((p) => p.classList.toggle("on", p === pane));
-    tabs.forEach((t) => {
-      const on = t.dataset.pane === pane.dataset.name;
-      t.setAttribute("aria-selected", String(on));
-      // Keep the chosen tab visible in the bar on a phone, without scrolling the page itself.
-      if (on) { const bar = t.parentElement; bar.scrollLeft = t.offsetLeft - (bar.clientWidth - t.offsetWidth) / 2; }
-    });
-    window.scrollTo(0, 0);
-  }
-  addEventListener("hashchange", show);
-  show();
-})();
-</script>
+<script src="learn.js"></script>
 </body>
 </html>
