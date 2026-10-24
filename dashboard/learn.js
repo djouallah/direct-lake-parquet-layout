@@ -85,6 +85,14 @@
     if (a) { e.preventDefault(); a.click(); }
   });
 
+  // A demo's counter tile: big value, green when `good` is true, red when false, plain when null.
+  window.setStat = (id, value, good = null) => {
+    const t = document.getElementById(id);
+    t.querySelector("b").textContent = value;
+    t.classList.toggle("down", good === true);
+    t.classList.toggle("up", good === false);
+  };
+
   // Copy buttons on code blocks.
   document.querySelectorAll("pre").forEach((pre) => {
     const b = document.createElement("button");

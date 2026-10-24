@@ -17,9 +17,9 @@
 <nav class="subtabs" aria-label="sections" role="tablist">
   <a href="#overview" role="tab" data-pane="overview">Overview</a>
   <a href="#translate" role="tab" data-pane="translate">Writer's choices</a>
-  <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
   <a href="#merge" role="tab" data-pane="merge">Segments</a>
   <a href="#swap" role="tab" data-pane="swap">ID swap</a>
+  <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
   <a href="#segments" role="tab" data-pane="segments">Threads</a>
   <a href="#runs" role="tab" data-pane="runs">Runs</a>
   <a href="#noskip" role="tab" data-pane="noskip">Not levers</a>
@@ -79,15 +79,92 @@
 <p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
 </section>
 
+<section class="pane" data-name="merge" aria-label="Row groups → segments">
+<h2>Row groups become segments, one to one</h2>
+<p>The first time a query touches a column (the cold load), every row group brings its own little
+  dictionary. VertiPaq merges them into one dictionary for the whole column, then turns each row group
+  into one segment. Row groups are never merged or split on the way in, so <b>the writer chose your
+  segments</b>.</p>
+<div class="demo" id="mg">
+  <div class="btns" role="group" aria-label="row groups">
+    <span class="lbl">the same DUID column, written as:</span>
+    <button type="button" data-g="1">1 row group</button>
+    <button type="button" data-g="3">3 row groups</button>
+    <button type="button" data-g="6">6 row groups</button>
+  </div>
+  <div class="dgrid" id="mg-grid"></div>
+  <div class="stats">
+    <div class="stat" id="mg-seg"><b></b><span>segments VertiPaq builds</span></div>
+    <div class="stat" id="mg-loc"><b></b><span>local dictionary entries to read and merge</span></div>
+    <div class="stat" id="mg-glob"><b></b><span>entries in the merged dictionary</span></div>
+  </div>
+  <p class="say" id="mg-say"></p>
+</div>
+<p>Now on a real table, the 144M-row AEMO mart, with what was measured at each size:</p>
+<div class="demo" id="rs">
+  <div class="btns">
+    <span class="lbl">rows per row group:</span>
+    <button type="button" data-rows="122880">122,880 · DuckDB default</button>
+    <button type="button" data-rows="1000000">1M</button>
+    <button type="button" data-rows="2000000">2M</button>
+    <button type="button" data-rows="6000000">6M</button>
+    <button type="button" data-rows="16000000">16M</button>
+  </div>
+  <div class="tiles" id="rs-tiles"></div>
+  <div class="stats">
+    <div class="stat" id="rs-seg"><b></b><span>segments</span></div>
+    <div class="stat" id="rs-cold"><b></b><span>cold load</span></div>
+    <div class="stat" id="rs-warm"><b></b><span>warm scan</span></div>
+  </div>
+  <p class="say" id="rs-say"></p>
+</div>
+<p class="note">Microsoft says 1–16M rows per segment. Across the datasets here, more row groups made
+  columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5: a trade, with a wide flat
+  middle. Why the warm scan wants more of them: <a href="#segments">Threads</a>.</p>
+</section>
+
+<section class="pane" data-name="swap" aria-label="ID swap or rebuild">
+<h2>The footer decides: swap IDs, or rebuild the column</h2>
+<p>The other half of the cold load. If a chunk is dictionary-encoded, VertiPaq can keep the parquet's
+  work and just swap its IDs for global ones. It only does that when the footer proves it.</p>
+<div class="demo" id="ft">
+  <div class="btns" role="group" aria-label="footer">
+    <span class="lbl">the footer:</span>
+    <button type="button" data-mode="first">declares the dictionary, listed first</button>
+    <button type="button" data-mode="none">declares nothing</button>
+    <button type="button" data-mode="last">lists the dictionary last</button>
+  </div>
+  <div class="ftrow"><span class="lbl">one column chunk, as loaded</span><div class="ids" id="ft-ids"></div></div>
+  <div class="stats">
+    <div class="stat" id="ft-path"><b></b><span>what VertiPaq does</span></div>
+    <div class="stat" id="ft-hash"><b></b><span>values decoded and re-hashed one by one</span></div>
+    <div class="stat" id="ft-meas"><b></b><span>measured</span></div>
+  </div>
+  <p class="say" id="ft-say"></p>
+</div>
+<div class="scroll"><table class="left">
+  <thead><tr><th>the footer…</th><th>where it was measured</th></tr></thead>
+  <tbody>
+    <tr><td>declares nothing</td><td>DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>: a 142M-row string column's cold first touch, 10,857.5 → 689.3 ms once declared, same pages.</td></tr>
+    <tr><td>lists the dictionary last</td><td>delta-rs 1.6.3 and later, byte-identical pages otherwise: about 5× the read CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>). The live number is on <a href="./?finding=dictionary">the dictionary card</a>.</td></tr>
+    <tr><td>declares PLAIN pages</td><td>the dictionary grew past the writer's limit and the rest of the chunk fell back to PLAIN; OSS-profile Spark and DuckDB's own writer did this on the widest columns.</td></tr>
+  </tbody>
+</table></div>
+<p>A cold-only cost: once the column is in memory the parquet encoding is out of the picture. It is
+  also the biggest single item on the read bill, which is why dictionary encoding leads the experiments.
+  What the footer looks like in each case: <a href="parquet.html#footer">Parquet · The footer</a>.</p>
+</section>
+
 <section class="pane" data-name="tiers" aria-label="Cold, warm, hot">
 <h2>Cold, warm, hot</h2>
-<p>Direct Lake reads each column once, converts it into VertiPaq's in-memory format, and
-  answers from memory after that. A query's cost depends on whether its columns are already there.</p>
+<p>The merge and the ID swap happen once per column. After that the column stays in VertiPaq's memory
+  and later queries only scan it. A query's cost depends on whether its columns are already there.</p>
 <div class="demo" id="tc">
-  <div class="btns">
-    <button type="button" data-step="cold">① first query on column X</button>
-    <button type="button" data-step="warm">② the same column again</button>
-    <button type="button" data-step="reframe">③ the table is rewritten</button>
+  <div class="btns" role="group" aria-label="query">
+    <span class="lbl">the query:</span>
+    <button type="button" data-step="cold">first query on column X</button>
+    <button type="button" data-step="warm">next query on column X</button>
+    <button type="button" data-step="reframe">after the table is rewritten</button>
   </div>
   <div class="scroll">
   <svg viewBox="0 0 920 220" role="img" aria-label="A DAX query touching a column that is not in memory makes Direct Lake transcode that column's parquet chunks from OneLake into VertiPaq segments once; later queries go straight to memory.">
@@ -129,7 +206,13 @@
     <circle class="dot" id="tc-dot" r="7" cx="0" cy="0"/>
   </svg>
   </div>
-  <p class="say" id="tc-say">Memory is empty. Click ① to send the first query that touches column X.</p>
+  <div class="stats">
+    <div class="stat" id="tc-tier"><b></b><span>this query is</span></div>
+    <div class="stat" id="tc-read"><b></b><span>parquet chunks read from OneLake</span></div>
+    <div class="stat" id="tc-merge"><b></b><span>dictionaries merged</span></div>
+    <div class="stat" id="tc-scan"><b></b><span>segments scanned</span></div>
+  </div>
+  <p class="say" id="tc-say"></p>
 </div>
 <p>That gives three kinds of query, and this project measures each one:</p>
 <ul>
@@ -156,110 +239,6 @@
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
 </section>
 
-<section class="pane" data-name="merge" aria-label="Row groups → segments">
-<h2>Row groups become segments, one to one</h2>
-<p>On a cold load, every row group brings its own little dictionary. VertiPaq merges them
-  into one dictionary for the whole column, then rewrites each row group's IDs into a segment.</p>
-<div class="demo" id="mg">
-  <div class="btns">
-    <button type="button" data-step="merge">① merge the dictionaries</button>
-    <button type="button" data-step="remap">② remap into segments</button>
-    <button type="button" data-step="reset">↺ start again</button>
-  </div>
-  <div class="scroll">
-  <svg viewBox="0 0 920 290" role="img" aria-label="Three row groups each carry a local dictionary; they merge into one global dictionary; each row group's local IDs are then remapped to global IDs in its own VertiPaq segment, one to one.">
-    <text class="b" x="20" y="24">parquet: DUID</text>
-    <text class="a" x="440" y="24" text-anchor="middle">① merge</text>
-    <text class="a" x="589" y="24" text-anchor="middle">② remap</text>
-    <text class="b" x="640" y="24">VertiPaq: DUID</text>
-
-    <rect class="bx" x="20" y="40" width="220" height="64" rx="6"/>
-    <text class="d" x="32" y="62">row group 1 · local dictionary</text><text class="m" x="32" y="88">0 BW01   1 ER01</text>
-    <rect class="bx" x="20" y="120" width="220" height="64" rx="6"/>
-    <text class="d" x="32" y="142">row group 2 · local dictionary</text><text class="m" x="32" y="168">0 ER01   1 LYA1</text>
-    <rect class="bx" x="20" y="200" width="220" height="64" rx="6"/>
-    <text class="d" x="32" y="222">row group 3 · local dictionary</text><text class="m" x="32" y="248">0 BW01   1 MUR1</text>
-
-    <rect class="acc" x="340" y="96" width="200" height="112" rx="8"/>
-    <text class="b" x="352" y="118">one global dictionary</text>
-    <text class="m ent" id="mg-g0" x="352" y="144">0 BW01</text><text class="m ent" id="mg-g1" x="446" y="144">1 ER01</text>
-    <text class="m ent" id="mg-g2" x="352" y="166">2 LYA1</text><text class="m ent" id="mg-g3" x="446" y="166">3 MUR1</text>
-    <text class="d" x="352" y="194">built before any scan</text>
-
-    <rect class="bx" x="640" y="40" width="260" height="64" rx="6"/>
-    <text class="d" x="652" y="62">segment 1 · local → global IDs</text><text class="m ent" id="mg-s0" x="652" y="88">0→0   1→1</text>
-    <rect class="bx" x="640" y="120" width="260" height="64" rx="6"/>
-    <text class="d" x="652" y="142">segment 2 · local → global IDs</text><text class="m ent" id="mg-s1" x="652" y="168">0→1   1→2</text>
-    <rect class="bx" x="640" y="200" width="260" height="64" rx="6"/>
-    <text class="d" x="652" y="222">segment 3 · local → global IDs</text><text class="m ent" id="mg-s2" x="652" y="248">0→0   1→3</text>
-
-    <path class="path" id="mg-m0" d="M240,72 L338,130"/>
-    <path class="path" id="mg-m1" d="M240,152 L338,152"/>
-    <path class="path" id="mg-m2" d="M240,232 L338,174"/>
-    <path class="path" id="mg-r0" d="M540,130 L638,72"/>
-    <path class="path" id="mg-r1" d="M540,152 L638,152"/>
-    <path class="path" id="mg-r2" d="M540,174 L638,232"/>
-    <circle class="dot" id="mg-dot" r="7" cx="0" cy="0"/>
-  </svg>
-  </div>
-  <p class="say" id="mg-say">Three row groups, three little dictionaries. Click ① to load the column.</p>
-</div>
-<p>Both steps are paid per row group: one more dictionary to merge, one more segment to set up. The
-  row groups are never merged or split on the way in, so <b>the writer chose your segments</b>. Try it
-  on a real table:</p>
-<div class="demo" id="rs">
-  <p class="note" style="margin:0 0 .6rem">The 144M-row AEMO mart. <b>Pick the rows per row group</b> its writer used:</p>
-  <div class="btns">
-    <button type="button" data-rows="122880">122,880 · DuckDB default</button>
-    <button type="button" data-rows="1000000">1M</button>
-    <button type="button" data-rows="2000000">2M</button>
-    <button type="button" data-rows="6000000">6M</button>
-    <button type="button" data-rows="16000000">16M</button>
-  </div>
-  <div class="rsstat"><span><b id="rs-n"></b> segments</span><span class="verdict" id="rs-v"></span></div>
-  <div class="tiles" id="rs-tiles"></div>
-  <p class="say" id="rs-say"></p>
-</div>
-<p class="note">Healthy is millions of rows per group (Microsoft says 1–16M). Across the datasets here,
-  more row groups made columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5: it is a
-  trade, with a wide flat middle. Why warm wants more of them is two sections on:
-  <a href="#segments">segments vs threads</a>.</p>
-</section>
-
-<section class="pane" data-name="swap" aria-label="ID swap or rebuild">
-<h2>The footer decides: swap IDs, or rebuild the column</h2>
-<p>If a chunk is dictionary-encoded, VertiPaq can keep the parquet's work and just swap
-  IDs. It only trusts that when the footer says so.</p>
-<div class="demo" id="ft">
-  <div class="btns">
-    <button type="button" data-mode="declared">footer declares the dictionary</button>
-    <button type="button" data-mode="silent">footer is silent</button>
-  </div>
-  <div class="ftrow"><span class="lbl">one column chunk, as stored</span><div class="ids" id="ft-ids"></div></div>
-  <div class="bars" style="margin-top:.9rem">
-    <span>cold first touch</span>
-    <div class="track"><div class="fill" id="ft-bar" style="width:0"></div><span class="val" id="ft-val"></span></div>
-  </div>
-  <p class="say" id="ft-say">Same pages either way. Click a button to load the chunk.</p>
-</div>
-<p class="note">Numbers: cold first touch of a 142M-row dictionary string column, from
-  <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>, which taught DuckDB's writer to
-  emit <code>encoding_stats</code>.</p>
-<p>Three ways to land on the slow lane, all measured in this project:</p>
-<div class="scroll"><table class="left">
-  <thead><tr><th>the footer…</th><th>what happened</th></tr></thead>
-  <tbody>
-    <tr><td>declares nothing</td><td>DuckDB's writer before duckdb#24957: same pages, 10,857.5 → 689.3 ms once declared.</td></tr>
-    <tr><td>lists the dictionary page last</td><td>delta-rs 1.6.3 and later, byte-identical pages otherwise: about 5× the read CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>). The live number is on <a href="./?finding=dictionary">the dictionary card</a>.</td></tr>
-    <tr><td>honestly declares PLAIN pages</td><td>the dictionary grew past the writer's limit and the rest of the chunk fell back to PLAIN; OSS-profile Spark and DuckDB's own writer did this on the widest columns.</td></tr>
-  </tbody>
-</table></div>
-<p><b>A cold-only cost.</b> Once the column is in memory it is VertiPaq's own segments and the parquet
-  encoding is out of the picture. But it is the biggest single item on the read bill, which is why
-  dictionary encoding leads the experiments.</p>
-<p class="note">What the footer looks like in each case: <a href="parquet.html#footer">Parquet · The footer</a>.</p>
-</section>
-
 <section class="pane" data-name="segments" aria-label="Segments vs threads">
 <h2>Segments vs threads: the warm scan wants enough of them</h2>
 <p>A warm query scans segments in parallel, one per thread at a time. With fewer segments
@@ -275,9 +254,10 @@
     <button type="button" data-n="96">96</button>
   </div>
   <div class="lanes" id="sg-lanes"></div>
-  <div class="bars">
-    <span>time to scan (illustration)</span>
-    <div class="track"><div class="fill" id="sg-bar" style="width:0"></div><span class="val" id="sg-val"></span></div>
+  <div class="stats">
+    <div class="stat" id="sg-n"><b></b><span>segments</span></div>
+    <div class="stat" id="sg-idle"><b></b><span>threads with nothing to do</span></div>
+    <div class="stat" id="sg-time"><b></b><span>time to scan, in units (illustration)</span></div>
   </div>
   <p class="say" id="sg-say"></p>
 </div>
@@ -466,104 +446,87 @@
     draw();
   }
 
-  // ---- cold, warm, reframe
+  // ---- cold, warm, after a rewrite: three states of one column
   {
     const dot = $("tc-dot"), say = (t) => ($("tc-say").textContent = t);
     const P = [1, 2, 3, 4].map((i) => $(`tc-p${i}`));
     const xs = [...document.querySelectorAll("#tc-files .x")];
-    let resident = false;
     const lit = (paths, on) => paths.forEach((p) => p.classList.toggle("lit", on));
-    buttons($("tc"), "data-step", async (s) => {
-      if (s === "cold") {
-        if (resident) return say("Column X is already in memory, so no query on it is cold any more. Click ③ to rewrite the table first.");
-        lit([P[0], P[1], P[3]], true);
-        say("Column X is not in memory. Direct Lake goes to OneLake for X's chunk in every row group…");
-        await along(P[0], dot, 900);
-        xs.forEach((c) => c.classList.add("lit"));
-        say("…merges their dictionaries and transcodes each chunk into a segment. This is the cold wait.");
-        await wait(500);
-        await along(P[1], dot, 1100);
-        $("tc-mem").classList.add("full"); $("tc-memlbl").textContent = "3 segments of column X";
-        await along(P[3], dot, 450);
-        $("tc-res").classList.add("flash"); await wait(500); $("tc-res").classList.remove("flash");
-        xs.forEach((c) => c.classList.remove("lit")); lit(P, false);
-        resident = true;
-        say("Done: column X now lives in memory. The other four columns were never read. Now click ②.");
-      } else if (s === "warm") {
-        if (!resident) return say("Nothing is in memory yet, so the first query on a column is always cold. Click ① first.");
-        lit([P[2], P[3]], true);
-        await along(P[2], dot, 700);
-        await along(P[3], dot, 350);
-        $("tc-res").classList.add("flash"); await wait(400); $("tc-res").classList.remove("flash");
-        lit(P, false);
-        say("Warm: no file read, no transcode, only a scan of X's segments. Every query after the first looks like this, until ③.");
-      } else {
-        $("tc-files").classList.add("flashg");
-        $("tc-mem").classList.remove("full"); $("tc-memlbl").textContent = "empty";
-        await wait(700); $("tc-files").classList.remove("flashg");
-        resident = false;
-        say("New data or an OPTIMIZE rewrote the files (a reframe), or memory ran short. The segments are dropped, so the next query on X is cold again: click ①.");
-      }
-    });
-  }
-
-  // ---- merge dictionaries, then remap
-  {
-    const dot = $("mg-dot"), say = (t) => ($("mg-say").textContent = t);
-    const show = (id, on = true) => $(id).classList.toggle("on", on);
-    let merged = false, mapped = false;
-    const STEPS = [
-      ["mg-g0", "mg-g1", "Row group 1 brings BW01 and ER01: global IDs 0 and 1."],
-      ["mg-g2", null, "Row group 2 brings ER01 (already known) and LYA1: global ID 2."],
-      ["mg-g3", null, "Row group 3 brings BW01 (known) and MUR1: global ID 3. One dictionary for the whole column."],
-    ];
-    function reset() {
-      ["mg-g0", "mg-g1", "mg-g2", "mg-g3", "mg-s0", "mg-s1", "mg-s2"].forEach((id) => show(id, false));
-      merged = mapped = false;
+    const mem = (on) => { $("tc-mem").classList.toggle("full", on); $("tc-memlbl").textContent = on ? "3 segments of column X" : "empty"; };
+    async function cold() {
+      mem(false); lit(P, false); lit([P[0], P[1], P[3]], true);
+      await along(P[0], dot, 450);
+      xs.forEach((c) => c.classList.add("lit"));
+      await along(P[1], dot, 500);
+      mem(true);
+      await along(P[3], dot, 250);
+      xs.forEach((c) => c.classList.remove("lit"));
     }
-    buttons($("mg"), "data-step", async (s) => {
-      if (s === "reset") { reset(); return say("Three row groups, three little dictionaries. Click ① to load the column."); }
-      if (s === "merge") {
-        if (merged) return say("Already merged. Click ② to build the segments, or ↺ to start again.");
-        for (let i = 0; i < 3; i++) {
-          const p = $(`mg-m${i}`); p.classList.add("lit");
-          await along(p, dot, 650);
-          STEPS[i].slice(0, 2).forEach((id) => id && show(id));
-          say(STEPS[i][2]); p.classList.remove("lit");
-          await wait(500);
-        }
-        merged = true;
-        return say("Merged: 4 entries from 3 row groups. Each extra row group is one more dictionary to fold in. Click ②.");
+    const STATE = {
+      cold: [["COLD", false], [3, false], [3, false], "Column X is not in memory: Direct Lake reads X's chunk from every row group, merges the dictionaries and builds the segments, then scans them. The other four columns are never read."],
+      warm: [["WARM", true], [0, true], [0, true], "Column X is already in memory: no file read, no merge, only a scan of its segments. Every query after the first looks like this."],
+      reframe: [["COLD", false], [3, false], [3, false], "New data or an OPTIMIZE rewrote the files (a reframe), or memory ran short: the segments were dropped, so X is loaded again from scratch."],
+    };
+    buttons($("tc"), "data-step", async (s) => {
+      const [tier, read, merged, text] = STATE[s];
+      setStat("tc-tier", ...tier); setStat("tc-read", ...read); setStat("tc-merge", ...merged); setStat("tc-scan", 3);
+      say(text);
+      if (s === "warm") {
+        mem(true); lit(P, false); lit([P[2], P[3]], true);
+        await along(P[2], dot, 450); await along(P[3], dot, 250);
+      } else {
+        if (s === "reframe") { $("tc-files").classList.add("flashg"); mem(false); await wait(500); $("tc-files").classList.remove("flashg"); }
+        await cold();
       }
-      if (!merged) return say("The global dictionary has to exist first. Click ①.");
-      if (mapped) return say("Already done. Click ↺ to watch it again.");
-      for (let i = 0; i < 3; i++) {
-        const p = $(`mg-r${i}`); p.classList.add("lit");
-        await along(p, dot, 650);
-        show(`mg-s${i}`); p.classList.remove("lit");
-        say(`Segment ${i + 1}: row group ${i + 1}'s local IDs swapped for global ones. One row group, one segment.`);
-        await wait(450);
-      }
-      mapped = true;
-      say("Three row groups became exactly three segments. Nothing was merged or split: the writer decided.");
     });
+    // Initial state without animating: the pane may still be hidden, where SVG path lengths are not available.
+    $("tc").querySelector('button[data-step="cold"]').setAttribute("aria-pressed", "true");
+    { const [tier, read, merged, text] = STATE.cold; setStat("tc-tier", ...tier); setStat("tc-read", ...read); setStat("tc-merge", ...merged); setStat("tc-scan", 3); mem(true); say(text); }
   }
 
-  // ---- pick a row-group size
+  // ---- merge: the same column as 1, 3 or 6 row groups
+  {
+    const VALUE = ["BW01", "ER01", "LYA1", "MUR1"];
+    seed = 5;
+    const col = shuffle([0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3]);
+    const chip = (v) => `<span class="chip" style="background:${PAL[v]}">${VALUE[v]}</span>`;
+    buttons($("mg"), "data-g", async (gs) => {
+      const G = Number(gs), per = col.length / G;
+      let local = 0;
+      const boxes = Array.from({ length: G }, (_, g) => {
+        const d = [...new Set(col.slice(g * per, g * per + per))].sort();
+        local += d.length;
+        return `<div class="dbox"><b>row group ${g + 1}</b>${d.map(chip).join("")}</div>`;
+      });
+      $("mg-grid").innerHTML = boxes.join("") + `<span class="arrow">→</span><div class="dbox glob"><b>merged dictionary</b>${[0, 1, 2, 3].map(chip).join("")}</div>`;
+      setStat("mg-seg", G, G === 1 ? null : G <= 3);
+      setStat("mg-loc", local, local <= 4 ? true : local > 12 ? false : null);
+      setStat("mg-glob", 4);
+      $("mg-say").textContent = G === 1
+        ? "One row group: one local dictionary, the cheapest merge. But it is one segment, and the warm scan cannot split a segment across threads."
+        : `${G} row groups: ${G} local dictionaries, ${local} entries to read and fold into the same 4-entry dictionary, and ${G} segments to set up. Same column, more work, all of it on the cold load.`;
+      await wait(200);
+    });
+    $("mg").querySelector('button[data-g="3"]').click();
+  }
+
+  // ---- pick a row-group size on the real AEMO mart
   {
     const ROWS = 143980961;
+    // [cold label, cold ok?, warm label, warm ok?, what was measured]
     const NOTES = {
-      122880: ["too many", "bad", "Measured on this table: 96,503 ms cold, against 27,785 ms with about 25 segments. Every segment is one more dictionary to merge and one more segment to set up."],
-      1000000: ["worse cold", "meh", "Measured: 2,190 Direct Lake CU, the one size in a 60-run sweep clearly worse than the rest (1,561–1,765)."],
-      2000000: ["in the sweet spot", "good", "Measured: 1,593 CU. Anywhere from about 10 to 73 segments, cold and warm cannot tell the difference."],
-      6000000: ["in the sweet spot", "good", "Measured: warm 3,221 ms. In the flat middle, and what the Databricks recipe uses."],
-      16000000: ["too few for warm", "meh", "Cheapest cold (1,561 CU at 8–10 segments), but too few segments to keep every thread scanning: warm was ≈5,700 ms at 19 segments against 3,221 at 24. 16M is also the largest segment VertiPaq takes."],
+      122880: ["3.5× slower", false, "—", null, "Measured on this table: 96,503 ms cold, against 27,785 ms with about 25 segments. Every segment is one more dictionary to merge and one more segment to set up."],
+      1000000: ["worst CU", false, "—", null, "Measured: 2,190 Direct Lake CU, the one size in a 60-run sweep clearly worse than the rest (1,561–1,765)."],
+      2000000: ["fine", true, "fine", true, "Measured: 1,593 CU. Anywhere from about 10 to 73 segments, cold and warm cannot tell the difference."],
+      6000000: ["fine", true, "fine", true, "Measured: warm 3,221 ms. In the flat middle, and what the Databricks recipe uses."],
+      16000000: ["cheapest", true, "starved", false, "Cheapest cold (1,561 CU at 8–10 segments), but too few segments to keep every thread scanning: warm was ≈5,700 ms at 19 segments against 3,221 at 24. 16M is also the largest segment VertiPaq takes."],
     };
     buttons($("rs"), "data-rows", async (r) => {
       const n = Math.ceil(ROWS / Number(r));
-      const [v, cls, text] = NOTES[r];
-      $("rs-n").textContent = fmt(n);
-      $("rs-v").textContent = v; $("rs-v").className = `verdict ${cls}`;
+      const [c, cOk, w, wOk, text] = NOTES[r];
+      const ok = cOk !== false && wOk !== false;
+      setStat("rs-seg", fmt(n), ok);
+      setStat("rs-cold", c, cOk); setStat("rs-warm", w, wOk);
       $("rs-say").textContent = text;
       const size = n > 500 ? 6 : n > 100 ? 14 : n > 50 ? 20 : n > 20 ? 34 : 60;
       const box = $("rs-tiles");
@@ -572,8 +535,8 @@
       const frag = document.createDocumentFragment();
       for (let i = 0; i < n; i++) {
         const t = document.createElement("span");
-        t.className = `tile ${cls}`;
-        t.style.animationDelay = `${STILL ? 0 : Math.round(i * 700 / n)}ms`;
+        t.className = `tile ${ok ? "good" : "bad"}`;
+        t.style.animationDelay = `${STILL ? 0 : Math.round(i * 500 / n)}ms`;
         frag.append(t);
       }
       box.append(frag);
@@ -581,38 +544,37 @@
     $("rs").querySelector('button[data-rows="122880"]').click();
   }
 
-  // ---- footer declared vs silent
+  // ---- the footer: first, nothing, last
   {
     const LOCAL = [0, 0, 1, 2, 2, 2, 3, 0, 1, 1, 3, 3, 0, 2, 1, 0];
     const VALUE = ["BW01", "ER01", "LYA1", "MUR1"], GLOBAL = [2, 0, 3, 1];
     const box = $("ft-ids");
     const cells = LOCAL.map((id) => { const s = document.createElement("span"); s.className = "id"; s.textContent = id; box.append(s); return s; });
-    const bar = $("ft-bar"), val = $("ft-val"), say = (t) => ($("ft-say").textContent = t);
-    function reset() { cells.forEach((c, i) => { c.className = "id"; c.textContent = LOCAL[i]; }); bar.style.transition = "none"; bar.style.width = "0"; val.textContent = ""; bar.offsetWidth; }
+    const say = (t) => ($("ft-say").textContent = t);
     buttons($("ft"), "data-mode", async (m) => {
-      reset();
-      if (m === "declared") {
-        bar.className = "fill"; bar.style.transition = `width ${STILL ? 0 : 600}ms ease-out`; bar.style.width = `${689 / 10858 * 100}%`;
-        say("encoding_stats prove every page is dictionary-encoded. VertiPaq maps the 4 dictionary entries once and swaps every ID in one pass…");
-        await wait(350);
+      cells.forEach((c, i) => { c.className = "id"; c.textContent = LOCAL[i]; });
+      if (m === "first") {
+        setStat("ft-path", "ID swap", true); setStat("ft-hash", 0, true); setStat("ft-meas", "689 ms", true);
+        say("encoding_stats prove every page is dictionary-encoded and the dictionary comes first. VertiPaq maps the 4 dictionary entries once and swaps every ID in one pass. Measured: 689 ms cold first touch on a 142M-row column.");
+        await wait(200);
         cells.forEach((c, i) => { c.classList.add("good"); c.textContent = GLOBAL[LOCAL[i]]; });
-        await wait(300);
-        val.textContent = "689 ms";
-        say("Done: 4 lookups, then a bulk ID swap. 689 ms.");
-      } else {
-        bar.className = "fill hot"; bar.style.transition = `width ${STILL ? 0 : cells.length * 210}ms linear`; bar.style.width = "100%";
-        say("Nothing in the footer proves the pages are dictionary-encoded, so VertiPaq decodes every value and hashes it into its own dictionary, one by one…");
+      } else if (m === "none") {
+        setStat("ft-path", "rebuild", false); setStat("ft-hash", cells.length, false); setStat("ft-meas", "10,858 ms", false);
+        say("Nothing proves the pages are dictionary-encoded, so VertiPaq decodes every value and hashes it into its own dictionary, one by one. Same pages, same result: 10,858 ms on the same column, about 15× slower.");
         for (let i = 0; i < cells.length; i++) {
           const c = cells[i];
           c.classList.add("bad"); c.textContent = VALUE[LOCAL[i]];
-          await wait(120);
+          await wait(45);
           c.classList.remove("bad"); c.classList.add("done"); c.textContent = GLOBAL[LOCAL[i]];
-          await wait(90);
         }
-        val.textContent = "10,858 ms";
-        say("Same pages, same result, but every value was touched: 10,858 ms, about 15× slower.");
+      } else {
+        setStat("ft-path", "slow path", false); setStat("ft-hash", "—"); setStat("ft-meas", "≈5× read CU", false);
+        say("The same pages and the same declaration, only listed in the other order. Measured on the same table: about 5× the read CU. How the engine handles it inside is not documented, so the cells are left unexplained.");
+        await wait(200);
+        cells.forEach((c) => c.classList.add("meh"));
       }
     });
+    $("ft").querySelector('button[data-mode="first"]').click();
   }
 
   // ---- segments vs threads: deal segments onto 8 lanes, longest-first onto the least loaded
@@ -620,7 +582,6 @@
     const T = 8, WORK = 48, OVH = 0.15;
     const lanesEl = $("sg-lanes");
     lanesEl.innerHTML = Array.from({ length: T }, (_, i) => `<div class="lane"><span>thread ${i + 1}</span><div class="trk" id="sg-l${i}"></div></div>`).join("");
-    let maxT = null;
     function plan(key) {
       const uneven = key.endsWith("u"), n = parseInt(key, 10);
       let sizes = Array(n).fill(WORK / n);
@@ -632,20 +593,21 @@
       });
       return { n, uneven, parts, time: Math.max(...load), idle: load.filter((x) => x === 0).length };
     }
-    if (maxT === null) maxT = plan("4").time;
+    const keys = [...$("sg").querySelectorAll("button[data-n]")].map((b) => b.dataset.n);
+    const maxT = Math.max(...keys.map((k) => plan(k).time)), best = Math.min(...keys.map((k) => plan(k).time));
     buttons($("sg"), "data-n", async (k) => {
       const p = plan(k);
       p.parts.forEach((segs, i) => {
         $(`sg-l${i}`).innerHTML = segs.map(([at, sz], j) => `<span class="seg" style="left:${at / maxT * 100}%;width:${sz / maxT * 100}%;animation-delay:${STILL ? 0 : j * 60}ms"></span>`).join("");
       });
-      $("sg-bar").style.width = `${p.time / maxT * 100}%`;
-      $("sg-bar").className = `fill${p.time > maxT * 0.6 ? " hot" : ""}`;
-      $("sg-val").textContent = `${p.time.toFixed(1)} units`;
+      setStat("sg-n", p.n);
+      setStat("sg-idle", p.idle, p.idle === 0);
+      setStat("sg-time", p.time.toFixed(1), p.time <= best * 1.1);
       $("sg-say").textContent = p.idle ? `${p.n} segments on ${T} threads: ${p.idle} thread${p.idle > 1 ? "s" : ""} have nothing to do, and the query waits for the busiest one.`
-        : p.uneven ? `24 segments of uneven size: every thread is busy, but the ones handed the big segments finish last. This is what a file-size cap that truncates row groups does.`
+        : p.uneven ? "24 segments of uneven size: every thread is busy, but the ones handed the big segments finish last. This is what a file-size cap that truncates row groups does."
         : p.n > T * 4 ? `${p.n} small segments: every thread busy, and a little slower than 24, because each segment adds its own fixed cost. On a cold load it also means ${p.n} dictionaries to merge.`
         : `${p.n} segments on ${T} threads: every thread busy, evenly. Past this point more segments buy nothing.`;
-      await wait(500);
+      await wait(400);
     });
     $("sg").querySelector('button[data-n="4"]').click();
   }

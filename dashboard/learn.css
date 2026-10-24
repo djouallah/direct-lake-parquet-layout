@@ -93,6 +93,15 @@ svg text.big { font-size:15px; font-weight:600; }
 .stat b { display:block; font-size:1.5rem; line-height:1.2; font-variant-numeric:tabular-nums; }
 .stat span { font-size:.82rem; color:var(--dim); }
 .stat.up b { color:var(--bad); } .stat.down b { color:var(--good); }
+.stat.down { border-color:var(--good); } .stat.up { border-color:var(--bad); }
+.dgrid { display:flex; flex-wrap:wrap; gap:.5rem; align-items:stretch; margin:.4rem 0; }
+.dbox { background:var(--bg); border:1px solid var(--line); border-radius:6px; padding:.35rem .5rem; font-size:.75rem; color:var(--dim); }
+.dbox.glob { border:2px solid var(--c2); }
+.dbox b { display:block; font-weight:600; color:var(--fg); margin-bottom:.2rem; }
+.chip { display:inline-block; padding:.05rem .35rem; margin:.1rem .1rem 0 0; border-radius:4px; color:#fff;
+  font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:.72rem; }
+.arrow { align-self:center; color:var(--c2); font-weight:700; font-size:1.2rem; }
+.id.meh { border-color:var(--meh); color:var(--meh); }
 
 /* click-driven svg demos */
 .path { stroke:var(--line); stroke-width:2; fill:none; transition:stroke .3s; }
