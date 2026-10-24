@@ -28,19 +28,12 @@
 
 <section class="pane" data-name="overview" aria-label="Overview">
 <h1>What a reader does with the file</h1>
-<p class="sub">Transcoding is turning parquet into an engine's own in-memory format. It is not a Power BI
-  quirk: every engine that reads parquet does it. What differs is how often.</p>
-<div class="scroll"><table class="left">
-  <thead><tr><th>reader</th><th>turns parquet into</th><th>how often</th></tr></thead>
-  <tbody>
-    <tr><td>DuckDB</td><td>its vectors</td><td>every query</td></tr>
-    <tr><td>Spark</td><td>its columnar batches</td><td>every query</td></tr>
-    <tr><td>SQL analytics endpoint (DirectQuery)</td><td>its own execution format</td><td>every query</td></tr>
-    <tr><td><b>Direct Lake</b></td><td><b>VertiPaq segments</b>, the format of an import model</td><td><b>once per column</b>, kept in memory until the table is rewritten or memory runs short</td></tr>
-  </tbody>
-</table></div>
-<p class="claim">Direct Lake is the reader that keeps its translation. So it pays for the file's layout
-  mostly once, on first touch, and that one payment is where most of the read CU goes.</p>
+<p class="sub">Every engine translates what is on disk into its own in-memory format before it can
+  compute. In Power BI that step is called transcoding.</p>
+<p class="claim">Engines read many formats: their own, CSV, parquet, Delta, Iceberg. Whatever the format,
+  the bytes on disk are translated into the engine's in-memory representation first. Direct Lake
+  translates parquet into VertiPaq and keeps the result in memory, so for Power BI the file's layout is
+  paid for mostly on first touch.</p>
 <p>The rest of this tab follows one column through that first touch. Four facts carry it:</p>
 <ol class="rules">
   <li><b>Power BI never sees your engine.</b> It sees parquet. Spark, a warehouse or DuckDB only matter

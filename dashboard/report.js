@@ -791,12 +791,12 @@ const DIAGRAM = `<svg viewBox="0 0 760 250" class="diagram" role="img" aria-labe
   <text x="200" y="152" class="dh">DirectQuery</text>
   <path d="M140,145 C190,145 190,195 240,195" class="flow" marker-end="url(#arr)"/>
   <rect x="240" y="170" width="360" height="50" rx="8" class="box"/>
-  <text x="420" y="191" class="dt" text-anchor="middle">SQL analytics endpoint reads the parquet</text>
-  <text x="420" y="208" class="ds" text-anchor="middle">on every query, nothing kept in memory</text>
+  <text x="420" y="191" class="dt" text-anchor="middle">SQL analytics endpoint</text>
+  <text x="420" y="208" class="ds" text-anchor="middle">runs the query, outside VertiPaq</text>
   <path d="M600,195 L650,195" class="flow" marker-end="url(#arr)"/>
   <rect x="650" y="170" width="100" height="50" rx="8" class="box"/>
   <text x="700" y="191" class="dt" text-anchor="middle">queries</text>
-  <text x="700" y="208" class="ds" text-anchor="middle">every one pays</text>
+  <text x="700" y="208" class="ds" text-anchor="middle">runs in the endpoint</text>
 </svg>`;
 
 function methodSection(ctx) {
@@ -1073,7 +1073,7 @@ export const COLUMN_KEYS = ["ds", "writerLabel", "runId", "column", "type", "mb"
   "chunks", "runsPer1k", "cold", "warm", "coldRaw", "warmRaw"];
 
 const HOW = `
-  <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy. DirectQuery keeps nothing and goes back to the parquet through the SQL endpoint for every query.</p>
+  <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy. DirectQuery sends every query to the SQL endpoint instead.</p>
   ${DIAGRAM}
   <p>The whole mechanism, step by step with demos: <a href="intro.html">Introduction</a>, <a href="parquet.html">Parquet</a> and <a href="transcode.html">Transcoding</a>.</p>`;
 
@@ -1085,7 +1085,7 @@ export const LEARN = {
   sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
   "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#segments"]],
   "spark-vorder": [["Parquet · Global vs per-file", "parquet.html#global"]],
-  directquery: [["Introduction · Every query, or once", "intro.html#once"]],
+  directquery: [["Introduction · Kept in memory", "intro.html#once"]],
   "table-size": [["Transcoding · What it does not do", "transcode.html#noskip"]],
   "file-count": [["Transcoding · What it does not do", "transcode.html#noskip"]],
 };

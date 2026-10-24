@@ -18,8 +18,8 @@
   <a href="#start" role="tab" data-pane="start">Overview</a>
   <a href="#owned" role="tab" data-pane="owned">The engine owned the format</a>
   <a href="#lake" role="tab" data-pane="lake">The lakehouse</a>
-  <a href="#decode" role="tab" data-pane="decode">Every reader decodes</a>
-  <a href="#once" role="tab" data-pane="once">Every query, or once</a>
+  <a href="#decode" role="tab" data-pane="decode">Every reader translates</a>
+  <a href="#once" role="tab" data-pane="once">Kept in memory</a>
   <a href="#question" role="tab" data-pane="question">What we measured</a>
 </nav>
 </div>
@@ -99,7 +99,7 @@
     <button type="button" data-r="3">DuckDB</button>
   </div>
   <div class="scroll">
-  <svg viewBox="0 0 920 320" role="img" aria-label="Four writers write one copy of a Delta table in OneLake; four readers read it, and each one passes through its own decode step to turn parquet into its in-memory format.">
+  <svg viewBox="0 0 920 320" role="img" aria-label="Four writers write one copy of a Delta table in OneLake; four readers read it, and each one translates parquet into its own in-memory format.">
     <text class="d" x="105" y="22" text-anchor="middle">writers</text>
     <text class="d" x="815" y="22" text-anchor="middle">readers</text>
     <g id="lk-w"></g>
@@ -112,18 +112,18 @@
     <circle class="dot" id="lk-dot" r="7" cx="0" cy="0"/>
   </svg>
   </div>
-  <p class="say" id="lk-say">Pick a reader. Every path out of OneLake goes through a decode step.</p>
+  <p class="say" id="lk-say">Pick a reader. Every path out of OneLake goes through a translation step.</p>
 </div>
 <p>What you get is one copy and a free choice of engine. What you give up is that the file is no longer
   written for its reader. A writer's defaults are tuned for the writer: write fast, use little memory,
   make files of a convenient size. Nothing in the format makes it think about who reads next.</p>
 </section>
 
-<section class="pane" data-name="decode" aria-label="Every reader decodes">
-<h2>The price: every reader decodes</h2>
-<p class="claim">No engine computes on parquet bytes as they sit in the file. DuckDB turns them into its
-  vectors, Spark into its columnar batches, VertiPaq into segments. That translation is real work, and
-  three choices the writer made decide how much.</p>
+<section class="pane" data-name="decode" aria-label="Every reader translates">
+<h2>The price: every reader translates</h2>
+<p class="claim">Every engine translates what is on disk into its own in-memory format before it computes;
+  in Power BI that step is called transcoding. The translation is real work, and three choices the
+  writer made decide how much.</p>
 <div class="demo" id="dc">
   <div class="btns" role="group" aria-label="row groups">
     <span class="lbl">row groups:</span>
@@ -157,13 +157,13 @@
 <p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
 </section>
 
-<section class="pane" data-name="once" aria-label="Every query, or once">
-<h2>Pay on every query, or pay once</h2>
-<p class="claim">Most engines decode the parquet again on every query. Direct Lake decodes a column the
-  first time a query needs it, keeps the result in memory, and answers later queries from that copy. That
-  one difference is where <b>cold</b>, <b>warm</b> and <b>hot</b> come from.</p>
+<section class="pane" data-name="once" aria-label="Kept in memory">
+<h2>Direct Lake keeps its translation</h2>
+<p class="claim">Direct Lake translates a column the first time a query needs it and keeps the result in
+  memory, so later queries skip the translation. That is where <b>cold</b>, <b>warm</b> and <b>hot</b>
+  come from.</p>
 <div class="scroll">
-<svg viewBox="0 0 920 260" role="img" aria-label="Direct Lake transcodes parquet into VertiPaq segments on first touch (cold) and then answers warm and hot queries from memory; DirectQuery sends every query to the SQL endpoint, which reads the parquet each time.">
+<svg viewBox="0 0 920 260" role="img" aria-label="Direct Lake transcodes parquet into VertiPaq segments on first touch (cold) and then answers warm and hot queries from memory; DirectQuery sends every query to the SQL analytics endpoint.">
   <defs><marker id="on-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
   <rect class="bx" x="20" y="85" width="160" height="96" rx="8"/>
   <text class="b" x="100" y="112" text-anchor="middle">parquet in OneLake</text>
@@ -186,12 +186,12 @@
   <text class="b" x="250" y="166">DirectQuery</text>
   <path class="ln" d="M180,156 C220,156 220,206 258,206" marker-end="url(#on-a)"/>
   <rect class="bx" x="260" y="180" width="420" height="52" rx="8"/>
-  <text class="b" x="470" y="202" text-anchor="middle">SQL analytics endpoint reads the parquet</text>
-  <text class="d" x="470" y="221" text-anchor="middle">decodes again on every query, keeps nothing in VertiPaq</text>
+  <text class="b" x="470" y="202" text-anchor="middle">SQL analytics endpoint runs the query</text>
+  <text class="d" x="470" y="221" text-anchor="middle">outside VertiPaq</text>
   <path class="ln" d="M680,206 L738,206" marker-end="url(#on-a)"/>
   <rect class="bx" x="740" y="180" width="160" height="52" rx="8"/>
   <text class="b" x="820" y="202" text-anchor="middle">every query</text>
-  <text class="d" x="820" y="221" text-anchor="middle">pays the read again</text>
+  <text class="d" x="820" y="221" text-anchor="middle">runs in the endpoint</text>
 </svg>
 </div>
 <p>Measured in this project, the gap between first and later visits shows the difference:</p>
@@ -204,8 +204,8 @@
 </table>
 <p>So in Direct Lake the layout is paid for mostly <b>once</b>, at the cold load, and that is where the
   read CU goes. One part of it keeps paying after: the row order survives into memory, so a sorted table
-  is also cheaper to scan warm. DirectQuery pays for the file on every query; its read CU against Direct
-  Lake is on <a href="./?finding=directquery">the DirectQuery card</a>.</p>
+  is also cheaper to scan warm. DirectQuery runs every query in the SQL endpoint instead; its read CU against
+  Direct Lake is on <a href="./?finding=directquery">the DirectQuery card</a>.</p>
 <p class="note">A caution that holds for every number in this tour: a live model transcodes once per
   reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
@@ -283,10 +283,10 @@
   {
     const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
     const R = [
-      ["Direct Lake", "Power BI", "Direct Lake transcodes each column it needs into VertiPaq segments the first time, then keeps them in memory. It pays the decode once per column, until the table changes or memory runs short."],
-      ["SQL endpoint", "DirectQuery goes here", "The SQL analytics endpoint reads and decodes the parquet on every query. A DirectQuery model sends every visual's query here, so it pays the decode again each time."],
-      ["Fabric Spark", "notebooks, jobs", "Spark decodes the parquet into its own columnar batches on every query that reads it."],
-      ["DuckDB", "a laptop, a notebook", "DuckDB decodes the parquet into its own vectors on every query that reads it."],
+      ["Direct Lake", "Power BI", "Direct Lake transcodes each column it needs into VertiPaq on first use and keeps it in memory, until the table changes or memory runs short."],
+      ["SQL endpoint", "DirectQuery goes here", "The SQL analytics endpoint translates the parquet into its own in-memory format. A DirectQuery model sends its queries here."],
+      ["Fabric Spark", "notebooks, jobs", "Spark translates the parquet into its own in-memory format."],
+      ["DuckDB", "a laptop, a notebook", "DuckDB translates the parquet into its own in-memory format."],
     ];
     const ys = [40, 110, 180, 250];
     const gw = $("lk-w"), gr = $("lk-r");
@@ -303,7 +303,7 @@
       gr.append(p); paths.push(p);
       const d = el("rect", { class: "bx", x: 612, y: y - 15, width: 82, height: 30, rx: 6 });
       gr.append(d); dec.push(d);
-      gr.append(el("text", { class: "a", x: 653, y: y + 5, "text-anchor": "middle" }, "decode"));
+      gr.append(el("text", { class: "a", x: 653, y: y + 5, "text-anchor": "middle" }, "translate"));
       gr.append(el("rect", { class: "bx", x: 730, y: y - 25, width: 170, height: 50, rx: 8 }));
       gr.append(el("text", { class: "b", x: 815, y: y - 3, "text-anchor": "middle" }, name));
       gr.append(el("text", { class: "d", x: 815, y: y + 15, "text-anchor": "middle" }, sub));
