@@ -21,22 +21,17 @@ body { margin:0; background:var(--bg); color:var(--fg);
   font:17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 main { max-width:1000px; margin:0 auto; padding:2rem 16px 4rem; }
 h1 { font-size:2rem; line-height:1.2; margin:0 0 .4rem; }
-.sub { color:var(--dim); margin:0 0 .6rem; max-width:52rem; }
 nav { font-size:.9rem; color:var(--dim); }
 a { color:var(--c1); }
 h2 { font-size:1.4rem; margin:3rem 0 .6rem; padding-top:1rem; border-top:1px solid var(--line); }
 h3 { font-size:1.05rem; margin:1.8rem 0 .5rem; }
 p, li { max-width:52rem; }
-.claim { font-size:1.12rem; line-height:1.5; border-left:3px solid var(--c1); padding:.2rem 0 .2rem 1rem; }
 code, .mono { font-family:ui-monospace, "Cascadia Code", Consolas, monospace; }
 code { background:var(--code); padding:.05rem .3rem; border-radius:4px; font-size:.88em; }
 .dim, .note { color:var(--dim); }
 .note { font-size:.9rem; }
 ol.rules { padding-left:1.4rem; }
 ol.rules li { margin:.45rem 0; }
-.callout { border-left:3px solid var(--c1); padding:.1rem 0 .1rem 1rem; margin:1.2rem 0; }
-.callout p { margin:.5rem 0; }
-.callout.warn { border-left-color:var(--c2); }
 
 figure { margin:1.4rem 0; }
 .scroll { overflow-x:auto; }

@@ -29,12 +29,10 @@
 
 <section class="pane" data-name="overview" aria-label="Overview">
 <h1>What a reader does with the file</h1>
-<p class="sub">Every engine translates what is on disk into its own in-memory format before it can
-  compute. In Power BI that step is called transcoding.</p>
-<p class="claim">Engines read many formats: their own, CSV, parquet, Delta, Iceberg. Whatever the format,
-  the bytes on disk are translated into the engine's in-memory representation first. Direct Lake
-  translates parquet into VertiPaq and keeps the result in memory, so for Power BI the file's layout is
-  paid for mostly on first touch.</p>
+<p>Engines read many formats: their own, CSV, parquet, Delta, Iceberg. Whatever the format, the bytes on
+  disk are translated into the engine's in-memory format first; in Power BI that step is called
+  transcoding. Direct Lake keeps the result in memory, so the file's layout is paid for mostly on first
+  touch.</p>
 <p>The rest of this tab follows one column through that first touch. Four facts carry it:</p>
 <ol class="rules">
   <li><b>Power BI never sees your engine.</b> It sees parquet. Spark, a warehouse or DuckDB only matter
@@ -47,7 +45,7 @@
 
 <section class="pane" data-name="translate" aria-label="Writer's choices">
 <h2>The writer decides how much work it is</h2>
-<p class="claim">The translation is real work, and three choices the writer made decide how much: how many
+<p>The translation is real work, and three choices the writer made decide how much: how many
   row groups, whether each column is dictionary-encoded, and what order the rows are in.</p>
 <div class="demo" id="dc">
   <div class="btns" role="group" aria-label="row groups">
@@ -83,7 +81,7 @@
 
 <section class="pane" data-name="tiers" aria-label="Cold, warm, hot">
 <h2>Cold, warm, hot</h2>
-<p class="claim">Direct Lake reads each column once, converts it into VertiPaq's in-memory format, and
+<p>Direct Lake reads each column once, converts it into VertiPaq's in-memory format, and
   answers from memory after that. A query's cost depends on whether its columns are already there.</p>
 <div class="demo" id="tc">
   <div class="btns">
@@ -160,7 +158,7 @@
 
 <section class="pane" data-name="merge" aria-label="Row groups → segments">
 <h2>Row groups become segments, one to one</h2>
-<p class="claim">On a cold load, every row group brings its own little dictionary. VertiPaq merges them
+<p>On a cold load, every row group brings its own little dictionary. VertiPaq merges them
   into one dictionary for the whole column, then rewrites each row group's IDs into a segment.</p>
 <div class="demo" id="mg">
   <div class="btns">
@@ -230,7 +228,7 @@
 
 <section class="pane" data-name="swap" aria-label="ID swap or rebuild">
 <h2>The footer decides: swap IDs, or rebuild the column</h2>
-<p class="claim">If a chunk is dictionary-encoded, VertiPaq can keep the parquet's work and just swap
+<p>If a chunk is dictionary-encoded, VertiPaq can keep the parquet's work and just swap
   IDs. It only trusts that when the footer says so.</p>
 <div class="demo" id="ft">
   <div class="btns">
@@ -264,7 +262,7 @@
 
 <section class="pane" data-name="segments" aria-label="Segments vs threads">
 <h2>Segments vs threads: the warm scan wants enough of them</h2>
-<p class="claim">A warm query scans segments in parallel, one per thread at a time. With fewer segments
+<p>A warm query scans segments in parallel, one per thread at a time. With fewer segments
   than threads some threads sit idle, however big each segment is.</p>
 <div class="demo" id="sg">
   <div class="btns">
@@ -293,7 +291,7 @@
 
 <section class="pane" data-name="runs" aria-label="Runs in memory">
 <h2>The row order survives into memory</h2>
-<p class="claim">VertiPaq keeps the parquet's row order when it builds segments, and its scan works on the
+<p>VertiPaq keeps the parquet's row order when it builds segments, and its scan works on the
   compressed data directly. A run of equal values is stored as one pair and tested as one.</p>
 <div class="demo" id="rn">
   <div class="btns">
@@ -317,7 +315,7 @@
 
 <section class="pane" data-name="noskip" aria-label="What it does not do">
 <h2>What Direct Lake does not do</h2>
-<p class="claim">Direct Lake does no statistics-based file or row-group skipping when it loads a column.
+<p>Direct Lake does no statistics-based file or row-group skipping when it loads a column.
   It loads the whole column, so file count and file size are not levers.</p>
 <ul>
   <li><b>File count never separated writers</b> in the read CU data: the Warehouse ships 78 files and sits
@@ -337,8 +335,6 @@
 
 <section class="pane" data-name="recap" aria-label="Recap: three levers">
 <h2>Recap: three levers, any writer</h2>
-<p class="claim">Do these three things and the table reads cheaply in Power BI whatever wrote it. Every
-  writer that costs more in the experiments is missing one of them.</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>lever</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
   <tbody>

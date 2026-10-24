@@ -27,9 +27,9 @@
 
 <section class="pane" data-name="overview" aria-label="Overview">
 <h1>What the writer leaves on disk</h1>
-<p class="sub">A Delta table is a folder of parquet files plus a <code>_delta_log</code> that lists which
+<p>A Delta table is a folder of parquet files plus a <code>_delta_log</code> that lists which
   ones are live. Everything a reader pays for is decided inside those parquet files.</p>
-<p class="claim">Parquet stores a table column by column, not row by row. A query that needs two columns
+<p>Parquet stores a table column by column, not row by row. A query that needs two columns
   out of twenty reads two contiguous blocks and skips the other eighteen.</p>
 <div class="demo" id="lay">
   <div class="btns">
@@ -54,7 +54,7 @@
 
 <section class="pane" data-name="anatomy" aria-label="Anatomy">
 <h2>Inside one file</h2>
-<p class="claim">A parquet file is cut horizontally into row groups, and each row group stores every
+<p>A parquet file is cut horizontally into row groups, and each row group stores every
   column separately as a column chunk. The footer at the end describes all of it.</p>
 <div class="demo">
   <p class="note" style="margin:0 0 .6rem"><b>Click any column chunk, or the footer,</b> to open it.</p>
@@ -94,7 +94,7 @@
 
 <section class="pane" data-name="encodings" aria-label="Encodings">
 <h2>Encodings: values, or IDs into a dictionary</h2>
-<p class="claim">A column chunk stores either the values themselves (PLAIN), or a dictionary of the
+<p>A column chunk stores either the values themselves (PLAIN), or a dictionary of the
   distinct values once plus a small integer ID per row. Sorted IDs then collapse into runs.</p>
 <div class="demo" id="en">
   <div class="btns">
@@ -130,7 +130,7 @@
 
 <section class="pane" data-name="footer" aria-label="The footer">
 <h2>The footer: the file's table of contents</h2>
-<p class="claim">A reader opens the footer first. It holds the schema, every row group's row count, where
+<p>A reader opens the footer first. It holds the schema, every row group's row count, where
   every chunk starts, min/max per chunk, and which encodings each chunk's pages use. A reader can only
   trust what the footer declares.</p>
 <div class="demo" id="fo">
@@ -162,7 +162,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <section class="pane" data-name="rowgroups" aria-label="Row groups">
 <h2>Row groups: chosen by the writer, rarely the size you want</h2>
-<p class="claim">A writer closes a row group when it hits a row count or a byte budget, whichever comes
+<p>A writer closes a row group when it hits a row count or a byte budget, whichever comes
   first. Library defaults are sized for the writer's memory, not for the reader: DuckDB's is 122,880 rows.
   Power BI wants millions.</p>
 <p>Three ways a row group ends up the wrong size, each seen in this project:</p>
@@ -195,7 +195,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <section class="pane" data-name="sorting" aria-label="Sorting">
 <h2>Sorting turns values into runs</h2>
-<p class="claim">In arrival order, equal values are scattered and every row costs bits. Sorted, they sit
+<p>In arrival order, equal values are scattered and every row costs bits. Sorted, they sit
   next to each other and a whole run costs one pair.</p>
 <div class="demo" id="sortdemo">
   <div class="btns" role="group" aria-label="row order">
@@ -236,7 +236,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <section class="pane" data-name="global" aria-label="Global vs per-file">
 <h2>Sort the table, or sort each file</h2>
-<p class="claim">A global sort keeps each value in one long run that crosses row groups. Sorting each file
+<p>A global sort keeps each value in one long run that crosses row groups. Sorting each file
   on its own restarts every value in every row group.</p>
 <div class="demo" id="gs">
   <div class="btns">
@@ -251,13 +251,11 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 <p>A per-file sort is still far better than arrival order, which is why V-Order works, and a sort chosen
   for the whole table lands in the same place: in this project duckrun's per-table sort read at 0.90×
   V-Ordered Spark's Direct Lake CU, the same within noise.</p>
-<div class="callout">
-  <p><b>V-Order is these levers applied for you.</b> Microsoft describes it as four things: a sort within
+<p><b>V-Order is these levers applied for you.</b> Microsoft describes it as four things: a sort within
     each file, row-group distribution, dictionary encoding and compression. It is not a separate format;
     any reader can read a V-Ordered file. In Fabric Spark only the <code>readHeavyForPBI</code> resource
     profile turns it on (the default <code>writeHeavy</code> does not, nor does
     <code>readHeavyForSpark</code> despite its name); Fabric Warehouse has it on by default.</p>
-</div>
 <p>Next: what a reader actually does with all of this. <a href="transcode.html">Transcoding →</a></p>
 </section>
 
