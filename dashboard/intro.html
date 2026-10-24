@@ -88,8 +88,8 @@
 
 <section class="pane" data-name="question" aria-label="What we measured">
 <h2>What we measured</h2>
-<p>Same rows, different writers, then read the bill: five real public datasets, four writers producing
-  the same rows, one semantic model and one DAX suite per dataset, and the capacity units each read
+<p>Same rows, different writers, then read the bill: five real public datasets, four engines (Spark with and
+  without V-Order) producing the same rows, one semantic model and one DAX suite per dataset, and the capacity units each read
   session billed.</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>dataset</th><th>source</th><th>mart</th><th>why it is here</th></tr></thead>
@@ -107,7 +107,8 @@
     <tr><td>delta-rs</td><td>DuckDB in a Fabric notebook (duckrun)</td><td>delta-rs</td></tr>
     <tr><td>DuckDB → Iceberg</td><td>the same DuckDB, same notebook</td><td>DuckDB's own writer</td></tr>
     <tr><td>Fabric Warehouse</td><td>T-SQL</td><td>the warehouse's own, V-Order on</td></tr>
-    <tr><td>Fabric Spark</td><td>Livy sessions</td><td>V-Order only under the <code>readHeavyForPBI</code> profile</td></tr>
+    <tr><td>Fabric Spark, V-Order</td><td>Livy sessions, <code>readHeavyForPBI</code> profile</td><td>parquet-mr, V-Order on</td></tr>
+    <tr><td>Fabric Spark, no V-Order</td><td>Livy sessions, <code>writeHeavy</code> profile (the default)</td><td>parquet-mr, V-Order off</td></tr>
   </tbody>
 </table></div>
 <p>Not a ranking of writers: three properties of the file decide the read cost, whoever wrote it.</p>
