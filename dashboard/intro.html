@@ -7,7 +7,7 @@
 <!--
   Hand-written and static: no data is fetched. Published beside index.html by dashboard.yml. The first
   stop of the tour: why an open table format makes the WRITER decide what every reader pays. Numbers
-  are quoted from docs/FINDINGS.md or CLAUDE.md with their source named; the demos are illustrations.
+  are quoted from docs/FINDINGS.md or CLAUDE.md with their source named.
 -->
 <link rel="stylesheet" href="learn.css">
 </head>
@@ -69,15 +69,7 @@
 <section class="pane" data-name="lake" aria-label="The lakehouse">
 <h2>The lakehouse</h2>
 <p>One copy in OneLake. Any engine writes it, any engine reads it.</p>
-<div class="demo" id="lk">
-  <div class="btns" role="group" aria-label="pick a reader">
-    <span class="lbl">read it with:</span>
-    <button type="button" data-r="0">Direct Lake</button>
-    <button type="button" data-r="1">SQL endpoint</button>
-    <button type="button" data-r="2">Fabric Spark</button>
-    <button type="button" data-r="3">DuckDB</button>
-  </div>
-  <div class="scroll">
+<div class="scroll">
   <svg viewBox="0 0 920 320" role="img" aria-label="Four writers write one copy of a Delta table in OneLake; four readers read it, and each one translates parquet into its own in-memory format.">
     <text class="d" x="105" y="22" text-anchor="middle">writers</text>
     <text class="d" x="815" y="22" text-anchor="middle">readers</text>
@@ -88,10 +80,7 @@
     <text class="d" x="445" y="180" text-anchor="middle">parquet files + a log</text>
     <text class="d" x="445" y="200" text-anchor="middle">laid out by whoever wrote it</text>
     <g id="lk-r"></g>
-    <circle class="dot" id="lk-dot" r="7" cx="0" cy="0"/>
   </svg>
-  </div>
-  <p class="say" id="lk-say">Pick a reader. Every path out of OneLake goes through a translation step.</p>
 </div>
 <p>The trade-off: the file is not shaped for any particular reader. The writer's settings decide that,
   and most writers default to what suits the writer.</p>
@@ -147,31 +136,17 @@
 // An illustration, not data.
 (() => {
   const $ = (id) => document.getElementById(id);
-  const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const NS = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
-  function along(path, dot, ms) {
-    return new Promise((done) => {
-      const L = path.getTotalLength(), t0 = performance.now();
-      dot.classList.add("on");
-      const frame = (t) => {
-        const k = STILL ? 1 : Math.min(1, (t - t0) / ms);
-        const p = path.getPointAtLength((k < 0.5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2) * L);
-        dot.setAttribute("cx", p.x); dot.setAttribute("cy", p.y);
-        if (k < 1) requestAnimationFrame(frame); else { dot.classList.remove("on"); done(); }
-      };
-      requestAnimationFrame(frame);
-    });
-  }
 
   // ---- the lakehouse: four writers, one copy, four readers each translating it
   {
     const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
     const R = [
-      ["Direct Lake", "Power BI", "Direct Lake transcodes each column it needs into VertiPaq on first use and keeps it in memory, until the table changes or memory runs short."],
-      ["SQL endpoint", "DirectQuery goes here", "The SQL analytics endpoint translates the parquet into its own in-memory format. A DirectQuery model sends its queries here."],
-      ["Fabric Spark", "notebooks, jobs", "Spark translates the parquet into its own in-memory format."],
-      ["DuckDB", "a laptop, a notebook", "DuckDB translates the parquet into its own in-memory format."],
+      ["Direct Lake", "Power BI"],
+      ["SQL endpoint", "DirectQuery goes here"],
+      ["Fabric Spark", "notebooks, jobs"],
+      ["DuckDB", "a laptop, a notebook"],
     ];
     const ys = [40, 110, 180, 250];
     const gw = $("lk-w"), gr = $("lk-r");
@@ -181,31 +156,17 @@
       gw.append(el("text", { class: "b", x: 105, y: y + 30, "text-anchor": "middle" }, w));
       gw.append(el("path", { class: "lnd", d: `M190,${y + 25} C260,${y + 25} 260,165 328,165` }));
     });
-    const paths = [], dec = [];
     R.forEach(([name, sub], i) => {
       const y = ys[i] + 25;
-      const p = el("path", { class: "path", d: `M560,165 C590,165 580,${y} 610,${y} L728,${y}` });
-      gr.append(p); paths.push(p);
+      const p = el("path", { class: "ln", d: `M560,165 C590,165 580,${y} 610,${y} L728,${y}` });
+      gr.append(p);
       const d = el("rect", { class: "bx", x: 612, y: y - 15, width: 82, height: 30, rx: 6 });
-      gr.append(d); dec.push(d);
+      gr.append(d);
       gr.append(el("text", { class: "a", x: 653, y: y + 5, "text-anchor": "middle" }, "translate"));
       gr.append(el("rect", { class: "bx", x: 730, y: y - 25, width: 170, height: 50, rx: 8 }));
       gr.append(el("text", { class: "b", x: 815, y: y - 3, "text-anchor": "middle" }, name));
       gr.append(el("text", { class: "d", x: 815, y: y + 15, "text-anchor": "middle" }, sub));
     });
-    const bs = [...$("lk").querySelectorAll("button")];
-    let busy = false;
-    bs.forEach((b) => b.addEventListener("click", async () => {
-      if (busy) return; busy = true;
-      const i = Number(b.dataset.r);
-      bs.forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-      paths.forEach((p, j) => p.classList.toggle("lit", j === i));
-      dec.forEach((d) => d.classList.remove("lit"));
-      $("lk-say").textContent = R[i][2];
-      await along(paths[i], $("lk-dot"), 1100);
-      dec[i].classList.add("lit");
-      busy = false;
-    }));
   }
 
 })();
