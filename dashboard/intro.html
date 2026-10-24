@@ -16,35 +16,27 @@
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
   <a href="#start" role="tab" data-pane="start">Overview</a>
-  <a href="#owned" role="tab" data-pane="owned">The engine owned the format</a>
+  <a href="#owned" role="tab" data-pane="owned">Proprietary format</a>
   <a href="#lake" role="tab" data-pane="lake">The lakehouse</a>
   <a href="#question" role="tab" data-pane="question">What we measured</a>
 </nav>
 </div>
 
 <section class="pane" data-name="start" aria-label="Overview">
-<h1>Same rows, different files, different bill</h1>
-<p class="sub">Why the program that <b>writes</b> a Delta table decides what Power BI pays to <b>read</b> it,
-  and the three things any writer can do about it.</p>
-<p class="claim">For decades a database read only files it had written itself. The lakehouse broke that:
-  one engine writes the file, another reads it. The reader now has to translate a file it did not design,
-  and how much work that is was decided by the writer.</p>
-<p>The tour, one tab at a time:</p>
-<div class="cards">
-  <a class="card" href="#owned"><b>1. Introduction</b><span>Why an open format moves the cost to the reader. You are here.</span></a>
-  <a class="card" href="parquet.html"><b>2. Parquet</b><span>What the writer leaves on disk: row groups, encodings, the footer, row order.</span></a>
-  <a class="card" href="transcode.html"><b>3. Transcoding</b><span>What a reader does with it, and why Direct Lake does it once and keeps the result.</span></a>
-  <a class="card" href="./"><b>4. Experiments</b><span>Five real datasets, four writers, the same rows: what each layout property costs in read CU.</span></a>
-  <a class="card" href="./?page=perf"><b>5. Performance</b><span>Read CU per writer and dataset, over time.</span></a>
-  <a class="card" href="writers.html"><b>6. Third-party writers</b><span>The settings, for Databricks, delta-rs and DuckDB.</span></a>
-</div>
+<p>Every engine deals with two formats: the format on disk, and the format in memory where it actually
+  computes.</p>
+<p>With a proprietary format, the engine's developers design both. The disk format is made for that
+  engine, so it reads it directly, with minimal effort.</p>
+<p>The lakehouse decouples them. The disk format is open (Parquet, with Delta or Iceberg on top) and any
+  engine can write it. So every engine that reads it has to do some work to turn it into its own
+  in-memory format. In Power BI, that work is called <b>transcoding</b>.</p>
+<p>How much work depends on how the file was written. That is what this talk is about.</p>
 </section>
 
-<section class="pane" data-name="owned" aria-label="The engine owned the format">
-<h2>Before: the engine owned the format</h2>
-<p class="claim">SQL Server, a Power BI import model, Analysis Services: each one writes its own storage
-  format and reads it back exactly as written. The writer and the reader are the same program, so the
-  bytes are always in the shape the reader wants.</p>
+<section class="pane" data-name="owned" aria-label="Proprietary format">
+<h2>Proprietary format</h2>
+<p>SQL Server, an import-mode Power BI model: the engine writes its own format and reads it back as
+  written. No translation.</p>
 <div class="scroll">
 <svg viewBox="0 0 920 240" role="img" aria-label="One engine box contains both the query processor and storage in its own format; data goes in once and is read back as-is, with no translation step.">
   <rect class="bx" x="20" y="90" width="150" height="60" rx="8"/>
@@ -71,23 +63,12 @@
   <defs><marker id="ow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
 </svg>
 </div>
-<p>That is a trade-off, not a flaw:</p>
-<ul>
-  <li><b>What it buys:</b> the format is tuned for exactly one reader. An import-mode Power BI model
-    builds its VertiPaq segments at refresh, sorted and dictionary-encoded the way VertiPaq likes them,
-    and every query reads them as they are.</li>
-  <li><b>What it trades away:</b> the data is shared through that engine. Another tool queries it
-    through the engine, or keeps a copy of its own with its own load and refresh.</li>
-</ul>
-<p class="note">Keep the import model in mind: it is the same VertiPaq engine Direct Lake uses. What
-  changes in Direct Lake is only who wrote the file.</p>
+<p>The trade-off: the data is read through that engine, or copied for each other tool.</p>
 </section>
 
 <section class="pane" data-name="lake" aria-label="The lakehouse">
-<h2>Then: the lakehouse</h2>
-<p class="claim">Open table formats (Delta Lake or Iceberg, both made of parquet files plus a log) put
-  one copy of the data in OneLake that any engine can write and any engine can read. The format belongs
-  to nobody, so no reader gets a file shaped for it.</p>
+<h2>The lakehouse</h2>
+<p>One copy in OneLake. Any engine writes it, any engine reads it.</p>
 <div class="demo" id="lk">
   <div class="btns" role="group" aria-label="pick a reader">
     <span class="lbl">read it with:</span>
@@ -112,22 +93,15 @@
   </div>
   <p class="say" id="lk-say">Pick a reader. Every path out of OneLake goes through a translation step.</p>
 </div>
-<p>The lakehouse makes the opposite trade:</p>
-<ul>
-  <li><b>What it buys:</b> one copy, and a free choice of engine to write it and to read it.</li>
-  <li><b>What it trades away:</b> the file is no longer shaped for its reader. A writer's defaults suit
-    the writer (write fast, use little memory, make files of a convenient size), and the format leaves
-    the reader's needs to whoever configures the writer.</li>
-</ul>
-<p>Neither is better. They put the work in different places, and the rest of this tour is about doing
-  that work on the writer's side.</p>
+<p>The trade-off: the file is not shaped for any particular reader. The writer's settings decide that,
+  and most writers default to what suits the writer.</p>
 </section>
 
 <section class="pane" data-name="question" aria-label="What we measured">
-<h2>The question, and how it was measured</h2>
-<p class="claim">Keep the rows fixed, change only the writer, and read the bill. Five real public datasets,
-  four writers producing the <b>same rows</b> from the same landed files, one semantic model and one DAX
-  suite per dataset, and the capacity units each read session billed.</p>
+<h2>What we measured</h2>
+<p>Same rows, different writers, then read the bill: five real public datasets, four writers producing
+  the same rows, one semantic model and one DAX suite per dataset, and the capacity units each read
+  session billed.</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>dataset</th><th>source</th><th>mart</th><th>why it is here</th></tr></thead>
   <tbody>
@@ -147,8 +121,7 @@
     <tr><td>Fabric Spark</td><td>Livy sessions</td><td>V-Order only under the <code>readHeavyForPBI</code> profile</td></tr>
   </tbody>
 </table></div>
-<p><b>This is not a ranking of writers.</b> The finding is that three properties of the file decide the
-  read cost, and any writer that gets them right reads cheaply:</p>
+<p>Not a ranking of writers: three properties of the file decide the read cost, whoever wrote it.</p>
 <ol class="rules">
   <li><b>Dictionary encoding</b> on every column, declared in the footer. <a href="parquet.html#encodings">Parquet</a> · <a href="transcode.html#swap">Transcoding</a></li>
   <li><b>Sort order</b> that turns equal values into long runs. <a href="parquet.html#sorting">Parquet</a> · <a href="transcode.html#runs">Transcoding</a></li>
