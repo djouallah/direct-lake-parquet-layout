@@ -194,6 +194,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <section class="pane" data-name="sorting" aria-label="Sorting">
 <h2>Sorting</h2>
+<div class="sub" data-name="skew" aria-label="Real data is skewed">
 <h3>Real data is skewed</h3>
 <p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code, most
   flights are not cancelled, most CMS payments are of one kind. That holds well beyond these tables:
@@ -215,6 +216,9 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 </table></div>
 <p>Skew is what sorting feeds on: sorted, a value that covers 90% of the rows becomes one run.</p>
 
+</div>
+
+<div class="sub" data-name="runs" aria-label="Values into runs">
 <h3>Sorting turns values into runs</h3>
 <p>In arrival order, equal values are scattered and every row costs bits. Sorted, they sit next to each
   other and a whole run costs one pair.</p>
@@ -237,6 +241,9 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
   That is the whole sort trade-off: the first column takes the best runs, later ones get what is left,
   and a near-unique column (a timestamp, an amount) cannot form runs at all.</p>
 
+</div>
+
+<div class="sub" data-name="scope" aria-label="Table vs each file">
 <h3>Sort the whole table, or sort each file</h3>
 <p>A global sort keeps each value in one long run that crosses row groups. V-Order sorts within each
   file instead, so every value restarts in every row group.</p>
@@ -259,6 +266,9 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
   lands in the same place: in this project duckrun's global sort read at 0.90× V-Ordered Spark's Direct
   Lake CU, the same within noise.</p>
 
+</div>
+
+<div class="sub" data-name="vorder" aria-label="V-Order, measured">
 <h3>V-Order, measured</h3>
 <p>V-Order is these levers applied for you. Microsoft describes it as four things: a sort within each file,
   row-group distribution, dictionary encoding and compression. It is not a separate format; any reader can
@@ -281,7 +291,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 <p><b>Pick the key from the queries, not from the file size.</b> One alternative key on AEMO cut the file
   a further 30% (543 MB against 778, four runs each) and bought no measurable query time or CU. Here 9 of
   25 queries filter on the date, so the key leads with <code>date</code>.</p>
-<p>Next: what a reader actually does with all of this. <a href="transcode.html">Transcoding →</a></p>
+</div>
 </section>
 
 <footer>

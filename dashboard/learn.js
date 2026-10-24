@@ -41,17 +41,20 @@
   const prevTab = TABS[at - 1], nextTab = TABS[at + 1];
   // A learning page is entered at its LAST section when arriving backwards, so ← reads like a deck.
   const isLearn = (h) => /\.html$/.test(h);
-  panes.forEach((pane, i) => {
-    const prev = panes[i - 1], next = panes[i + 1];
+  // Steps: one per section, or one per part when a section is split into `.sub` parts (its own
+  // row of tabs). The hash names a step as `section` or `section/part`; the pager and the arrow
+  // keys walk the steps in order and roll over into the neighbouring tab.
+  const steps = [];
+  panes.forEach((pane) => {
+    const parts = [...pane.querySelectorAll(":scope > .sub")];
+    if (!parts.length) { steps.push({ pane, hash: pane.dataset.name, label: pane.getAttribute("aria-label") }); return; }
     const nav = document.createElement("nav");
-    nav.className = "pager";
-    const back = prev ? `<a class="prev" href="#${prev.dataset.name}">← ${prev.getAttribute("aria-label")}</a>`
-      : prevTab ? `<a class="prev cross" href="${prevTab[1]}${isLearn(prevTab[1]) ? "#last" : ""}">← ${prevTab[2]}</a>` : "";
-    const fwd = next ? `<a class="next" href="#${next.dataset.name}">${next.getAttribute("aria-label")} →</a>`
-      : nextTab ? `<a class="next cross" href="${nextTab[1]}">${nextTab[2]} →</a>` : "";
-    nav.innerHTML = back + fwd;
-    pane.append(nav);
+    nav.className = "subnav"; nav.setAttribute("aria-label", "parts");
+    nav.innerHTML = parts.map((s) => `<a href="#${pane.dataset.name}/${s.dataset.name}" data-sub="${s.dataset.name}">${s.getAttribute("aria-label")}</a>`).join("");
+    parts[0].before(nav);
+    parts.forEach((sub) => steps.push({ pane, sub, hash: `${pane.dataset.name}/${sub.dataset.name}`, label: sub.getAttribute("aria-label") }));
   });
+  panes.forEach((pane) => { const nav = document.createElement("nav"); nav.className = "pager"; pane.append(nav); });
   if (panes.length) {
     const k = document.createElement("p");
     k.className = "keys";
@@ -60,11 +63,21 @@
   }
   let current = null;
   function show() {
-    const id = location.hash.slice(1);
-    const pane = id === "last" ? panes[panes.length - 1] : panes.find((p) => p.dataset.name === id) || panes[0];
-    if (!pane) return;
+    const id = decodeURIComponent(location.hash.slice(1));
+    const step = id === "last" ? steps[steps.length - 1]
+      : steps.find((s) => s.hash === id) || steps.find((s) => s.pane.dataset.name === id.split("/")[0]) || steps[0];
+    if (!step) return;
+    const i = steps.indexOf(step), pane = step.pane;
     current = pane;
     panes.forEach((p) => p.classList.toggle("on", p === pane));
+    pane.querySelectorAll(":scope > .sub").forEach((s) => s.classList.toggle("on", s === step.sub));
+    pane.querySelectorAll(":scope > .subnav a").forEach((a) => a.setAttribute("aria-selected", String(step.sub && a.dataset.sub === step.sub.dataset.name)));
+    const prev = steps[i - 1], next = steps[i + 1];
+    pane.querySelector(":scope > .pager").innerHTML =
+      (prev ? `<a class="prev" href="#${prev.hash}">← ${prev.label}</a>`
+        : prevTab ? `<a class="prev cross" href="${prevTab[1]}${isLearn(prevTab[1]) ? "#last" : ""}">← ${prevTab[2]}</a>` : "")
+      + (next ? `<a class="next" href="#${next.hash}">${next.label} →</a>`
+        : nextTab ? `<a class="next cross" href="${nextTab[1]}">${nextTab[2]} →</a>` : "");
     subs.forEach((t) => {
       const on = t.dataset.pane === pane.dataset.name;
       t.setAttribute("aria-selected", String(on));
