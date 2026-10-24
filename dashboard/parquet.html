@@ -228,13 +228,19 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
     <button type="button" data-order="pay">sort by payment_type</button>
     <button type="button" data-order="payvendor">sort by payment_type, vendor</button>
     <button type="button" data-order="vendorpay">sort by vendor, payment_type</button>
+    <button type="button" data-order="vorder">V-Order: picks the columns and their order</button>
   </div>
   <div class="legend" id="legend"></div>
-  <div class="col"><div class="head"><span class="mono">payment_type</span><b id="r-pay"></b></div>
+  <div class="col"><div class="head"><span class="mono">payment_type</span></div>
     <div class="slide" id="s-pay"></div><div class="rle mono" id="rle-pay"></div></div>
-  <div class="col"><div class="head"><span class="mono">vendor</span><b id="r-vendor"></b></div>
+  <div class="col"><div class="head"><span class="mono">vendor</span></div>
     <div class="slide" id="s-vendor"></div><div class="rle mono" id="rle-vendor"></div></div>
-  <p class="note" id="expect" style="margin:0"></p>
+  <div class="stats">
+    <div class="stat" id="sd-pay"><b></b><span>runs in payment_type</span></div>
+    <div class="stat" id="sd-ven"><b></b><span>runs in vendor</span></div>
+    <div class="stat" id="sd-total"><b></b><span>runs in total</span></div>
+  </div>
+  <p class="say" id="sd-say"></p>
 </div>
 <p>Three things to try. Sort by one column and watch its runs collapse to one per value. Add a second
   key: it gets runs too, but only inside the first key's runs. Swap the order and the winner swaps.
@@ -496,7 +502,20 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
     const rows = shuffle(PAYN.flatMap((n, v) => Array.from({ length: n }, () => ({ p: v, v: rand() < 0.62 ? 0 : 1 }))));
     const N = rows.length;
     const by = (...ks) => [...rows].sort((a, b) => { for (const k of ks) if (a[k] !== b[k]) return a[k] - b[k]; return 0; });
+    const total = (o) => runs(o.map((r) => r.p)) + runs(o.map((r) => r.v));
     const ORDERS = { arrival: rows, pay: by("p"), payvendor: by("p", "v"), vendorpay: by("v", "p") };
+    // V-Order's algorithm is not published. The demo mimics the idea: a multi-column sort whose column
+    // order is chosen for compression, by trying both orders and keeping the one with fewer runs.
+    const vChoice = total(ORDERS.payvendor) <= total(ORDERS.vendorpay) ? "payvendor" : "vendorpay";
+    ORDERS.vorder = ORDERS[vChoice];
+    const SAY = {
+      arrival: "Rows as they arrived: both columns are scattered.",
+      pay: "Sorted by payment_type only: it gets one run per value, and vendor is left almost as scattered as before.",
+      payvendor: "payment_type first, vendor second: vendor gets runs too, but only inside each payment_type run.",
+      vendorpay: "vendor first: now vendor has the best runs and payment_type gets what is left.",
+      vorder: `V-Order sorts by several columns and chooses which ones, and in what order, itself: for compression, not for your queries. Its algorithm is not published; this demo mimics the idea by trying both orders and keeping the one with fewer runs in total (${vChoice === "payvendor" ? "payment_type, then vendor" : "vendor, then payment_type"}). On the real taxi table it shrank several columns at once: see V-Order, measured.`,
+    };
+    const best = Math.min(...Object.values(ORDERS).map(total)), worst = total(rows);
     const rle = (vals, names) => {
       const out = [];
       vals.forEach((v, i) => { if (i && v === vals[i - 1]) out[out.length - 1][1]++; else out.push([v, 1]); });
@@ -512,10 +531,6 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
     }
     $("legend").innerHTML = PAY.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("")
       + VEN.map((n, i) => `<span><i style="background:${PAL[i + 4]}"></i>vendor ${n}</span>`).join("");
-    const sumP2 = (counts) => counts.reduce((s, c) => s + (c / N) ** 2, 0);
-    const vCounts = [0, 1].map((v) => rows.filter((r) => r.v === v).length);
-    $("expect").textContent = `In arrival order a column breaks into about N·(1 − Σp²) runs: ${Math.round(N * (1 - sumP2(PAYN)))} for payment_type `
-      + `and ${Math.round(N * (1 - sumP2(vCounts)))} for vendor at N = ${N}. Sorted, the leading column has exactly one run per value.`;
     function place(order) {
       order.forEach((r, i) => {
         for (const k of ["p", "v"]) {
@@ -525,11 +540,15 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
         }
       });
       const p = order.map((r) => r.p), v = order.map((r) => r.v);
-      $("r-pay").textContent = `${runs(p)} runs`; $("r-vendor").textContent = `${runs(v)} runs`;
+      const rp = runs(p), rv = runs(v), rt = rp + rv;
+      const col = (r, distinct, arrival) => (r === distinct ? true : r >= arrival * 0.7 ? false : null);
+      setStat("sd-pay", rp, col(rp, 4, runs(rows.map((x) => x.p))));
+      setStat("sd-ven", rv, col(rv, 2, runs(rows.map((x) => x.v))));
+      setStat("sd-total", rt, rt === best ? true : rt === worst ? false : null);
       $("rle-pay").textContent = rle(p, PAY); $("rle-vendor").textContent = rle(v, VEN);
     }
-    buttons($("sortdemo"), "data-order", async (o) => { place(ORDERS[o]); await wait(750); });
-    place(ORDERS.arrival);
+    buttons($("sortdemo"), "data-order", async (o) => { place(ORDERS[o]); $("sd-say").textContent = SAY[o]; await wait(750); });
+    place(ORDERS.arrival); $("sd-say").textContent = SAY.arrival;
   }
 
   // ---- 5. global sort vs per-file sort: four row groups of 12, cells slide between them
