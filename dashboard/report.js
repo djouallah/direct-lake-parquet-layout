@@ -1084,7 +1084,7 @@ export const LEARN = {
   dictionary: [["Parquet · Encodings", "parquet.html#encodings"], ["Parquet · The footer", "parquet.html#footer"], ["Transcoding · ID swap or rebuild", "transcode.html#swap"]],
   sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
   "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#segments"]],
-  "spark-vorder": [["Parquet · Global vs per-file", "parquet.html#global"]],
+  "spark-vorder": [["Parquet · Sorting", "parquet.html#sorting"]],
   directquery: [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
   "table-size": [["Transcoding · What it does not do", "transcode.html#noskip"]],
   "file-count": [["Transcoding · What it does not do", "transcode.html#noskip"]],
