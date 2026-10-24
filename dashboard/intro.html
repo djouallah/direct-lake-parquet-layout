@@ -36,8 +36,8 @@
   one dictionary for the whole column.</p>
 <p>How much work depends on how the file was written.</p>
 <p>So optimise the file for the read, not the write. A table is written once and then read for days,
-  sometimes months, by every report that uses it. Writing is cheap and getting cheaper; every engine
-  does it well enough. Reading is what users wait on, where even 500 ms is noticed, and it costs
+  sometimes months, by every report that uses it. Writing a read-friendly file is cheap: any engine can
+  do it once it is configured for it, and the extra write cost over its defaults is small. Reading is what users wait on, where even 500 ms is noticed, and it costs
   capacity every time, whoever's engine runs it. In this project, V-Order cost about 8% more to write
   and up to 2.8× less to read.</p>
 <p>The core issue is not technical. Whoever writes the table sees how long the pipeline took; nobody
