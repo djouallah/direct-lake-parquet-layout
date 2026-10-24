@@ -18,8 +18,6 @@
   <a href="#start" role="tab" data-pane="start">Overview</a>
   <a href="#owned" role="tab" data-pane="owned">The engine owned the format</a>
   <a href="#lake" role="tab" data-pane="lake">The lakehouse</a>
-  <a href="#decode" role="tab" data-pane="decode">Every reader translates</a>
-  <a href="#once" role="tab" data-pane="once">Kept in memory</a>
   <a href="#question" role="tab" data-pane="question">What we measured</a>
 </nav>
 </div>
@@ -125,98 +123,6 @@
   that work on the writer's side.</p>
 </section>
 
-<section class="pane" data-name="decode" aria-label="Every reader translates">
-<h2>The price: every reader translates</h2>
-<p class="claim">Every engine translates what is on disk into its own in-memory format before it computes;
-  in Power BI that step is called transcoding. The translation is real work, and three choices the
-  writer made decide how much.</p>
-<div class="demo" id="dc">
-  <div class="btns" role="group" aria-label="row groups">
-    <span class="lbl">row groups:</span>
-    <button type="button" data-k="rg" data-v="8">8 small</button>
-    <button type="button" data-k="rg" data-v="2">2 big</button>
-  </div>
-  <div class="btns" role="group" aria-label="dictionary">
-    <span class="lbl">dictionary:</span>
-    <button type="button" data-k="dict" data-v="0">off</button>
-    <button type="button" data-k="dict" data-v="1">on, declared in the footer</button>
-  </div>
-  <div class="btns" role="group" aria-label="row order">
-    <span class="lbl">row order:</span>
-    <button type="button" data-k="sort" data-v="0">as it arrived</button>
-    <button type="button" data-k="sort" data-v="1">sorted</button>
-  </div>
-  <div class="legend" id="dc-legend"></div>
-  <div class="rgwrap" id="dc-wrap"></div>
-  <div class="stats">
-    <div class="stat" id="dc-seg"><b></b><span>row groups the reader opens, one segment each</span></div>
-    <div class="stat" id="dc-dict"><b></b><span>dictionary entries to merge</span></div>
-    <div class="stat" id="dc-raw"><b></b><span>values rebuilt one by one from raw bytes</span></div>
-    <div class="stat" id="dc-runs"><b></b><span>runs to scan, on every query after</span></div>
-  </div>
-  <p class="say" id="dc-say"></p>
-</div>
-<p>That box is the whole talk in miniature: a toy column of 48 rows, but every counter in it is a real
-  cost the next two tabs explain. The same three choices, <b>dictionary encoding</b>, <b>sort order</b>
-  and <b>row groups</b>, are what the experiments find decide Power BI's read CU on real tables, whatever
-  engine made them.</p>
-<p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
-</section>
-
-<section class="pane" data-name="once" aria-label="Kept in memory">
-<h2>Direct Lake keeps its translation</h2>
-<p class="claim">Direct Lake translates a column the first time a query needs it and keeps the result in
-  memory, so later queries skip the translation. That is where <b>cold</b>, <b>warm</b> and <b>hot</b>
-  come from.</p>
-<div class="scroll">
-<svg viewBox="0 0 920 260" role="img" aria-label="Direct Lake transcodes parquet into VertiPaq segments on first touch (cold) and then answers warm and hot queries from memory; DirectQuery sends every query to the SQL analytics endpoint.">
-  <defs><marker id="on-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
-  <rect class="bx" x="20" y="85" width="160" height="96" rx="8"/>
-  <text class="b" x="100" y="112" text-anchor="middle">parquet in OneLake</text>
-  <text class="d" x="100" y="134" text-anchor="middle">row groups</text>
-  <text class="d" x="100" y="151" text-anchor="middle">encodings · dictionary</text>
-  <text class="d" x="100" y="168" text-anchor="middle">row order</text>
-  <text class="b" x="250" y="26">Direct Lake</text>
-  <path class="ln" d="M180,110 C220,110 220,60 258,60" marker-end="url(#on-a)"/>
-  <rect class="acc" x="260" y="35" width="190" height="52" rx="8"/>
-  <text class="b" x="355" y="57" text-anchor="middle">transcode, first touch</text>
-  <text class="a" x="355" y="76" text-anchor="middle">COLD, once per column</text>
-  <path class="ln" d="M450,61 L498,61" marker-end="url(#on-a)"/>
-  <rect class="bx" x="500" y="35" width="180" height="52" rx="8"/>
-  <text class="b" x="590" y="57" text-anchor="middle">VertiPaq segments</text>
-  <text class="d" x="590" y="76" text-anchor="middle">kept in memory</text>
-  <path class="ln" d="M680,61 L738,61" marker-end="url(#on-a)"/>
-  <rect class="bx" x="740" y="35" width="160" height="52" rx="8"/>
-  <text class="b" x="820" y="57" text-anchor="middle">every later query</text>
-  <text class="d" x="820" y="76" text-anchor="middle">WARM, HOT: a scan</text>
-  <text class="b" x="250" y="166">DirectQuery</text>
-  <path class="ln" d="M180,156 C220,156 220,206 258,206" marker-end="url(#on-a)"/>
-  <rect class="bx" x="260" y="180" width="420" height="52" rx="8"/>
-  <text class="b" x="470" y="202" text-anchor="middle">SQL analytics endpoint runs the query</text>
-  <text class="d" x="470" y="221" text-anchor="middle">outside VertiPaq</text>
-  <path class="ln" d="M680,206 L738,206" marker-end="url(#on-a)"/>
-  <rect class="bx" x="740" y="180" width="160" height="52" rx="8"/>
-  <text class="b" x="820" y="202" text-anchor="middle">every query</text>
-  <text class="d" x="820" y="221" text-anchor="middle">runs in the endpoint</text>
-</svg>
-</div>
-<p>Measured in this project, the gap between first and later visits shows the difference:</p>
-<table>
-  <thead><tr><th>storage mode</th><th>cold ÷ warm, range across the datasets</th></tr></thead>
-  <tbody>
-    <tr><td>Direct Lake</td><td>3–27×</td></tr>
-    <tr><td>DirectQuery</td><td>1.6–3.3×</td></tr>
-  </tbody>
-</table>
-<p>So in Direct Lake the layout is paid for mostly <b>once</b>, at the cold load, and that is where the
-  read CU goes. One part of it keeps paying after: the row order survives into memory, so a sorted table
-  is also cheaper to scan warm. DirectQuery runs every query in the SQL endpoint instead; its read CU against
-  Direct Lake is on <a href="./?finding=directquery">the DirectQuery card</a>.</p>
-<p class="note">A caution that holds for every number in this tour: a live model transcodes once per
-  reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
-  model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
-</section>
-
 <section class="pane" data-name="question" aria-label="What we measured">
 <h2>The question, and how it was measured</h2>
 <p class="claim">Keep the rows fixed, change only the writer, and read the bill. Five real public datasets,
@@ -258,19 +164,19 @@
     the live numbers are on <a href="./">the experiments page</a>.</p>
 </footer>
 </main>
+<script>
+  // The "decode" and "once" sections moved to the Transcoding tab.
+  const MOVED = { decode: "transcode.html#translate", once: "transcode.html#tiers" };
+  if (MOVED[location.hash.slice(1)]) location.replace(MOVED[location.hash.slice(1)]);
+</script>
 <script src="learn.js"></script>
 <script>
-// Illustrations, not data. A fixed seed so the page draws the same rows every load.
+// An illustration, not data.
 (() => {
   const $ = (id) => document.getElementById(id);
-  const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
   const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const NS = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
-  let seed = 11;
-  const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
-  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-  const runs = (v) => v.reduce((n, x, i) => n + (i === 0 || x !== v[i - 1] ? 1 : 0), 0);
   function along(path, dot, ms) {
     return new Promise((done) => {
       const L = path.getTotalLength(), t0 = performance.now();
@@ -285,7 +191,7 @@
     });
   }
 
-  // ---- the lakehouse: four writers, one copy, four readers each behind a decode step
+  // ---- the lakehouse: four writers, one copy, four readers each translating it
   {
     const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
     const R = [
@@ -329,61 +235,6 @@
     }));
   }
 
-  // ---- every reader decodes: three writer choices on one toy column
-  {
-    const NAMES = ["card", "cash", "no charge", "dispute"], COUNTS = [20, 14, 9, 5];
-    const rows = shuffle(COUNTS.flatMap((n, v) => Array.from({ length: n }, () => v)));
-    const N = rows.length;
-    const st = { rg: 8, dict: 0, sort: 0 };
-    const wrap = $("dc-wrap");
-    $("dc-legend").innerHTML = NAMES.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("");
-    const cells = rows.map((v) => { const c = document.createElement("span"); c.className = "c"; c.dataset.v = v; wrap.append(c); return c; });
-    let boxes = [];
-    const worst = (() => { const g = 8, per = N / g; let d = 0, r = 0; for (let i = 0; i < g; i++) { const s = rows.slice(i * per, i * per + per); d += new Set(s).size; r += runs(s); } return { d, r }; })();
-    function draw() {
-      const G = st.rg, per = N / G, GAP = G > 4 ? 1.2 : 3, Wg = (100 - GAP * (G - 1)) / G;
-      // Each element of `order` is an index into rows; cells keep their identity so they slide.
-      const idx = rows.map((_, i) => i);
-      if (st.sort) idx.sort((a, b) => rows[a] - rows[b] || a - b);
-      boxes.forEach((b) => b.remove());
-      boxes = Array.from({ length: G }, (_, g) => {
-        const b = document.createElement("span"); b.className = "rgbox";
-        b.style.left = `calc(${g * (Wg + GAP)}% - 3px)`; b.style.width = `calc(${Wg}% + 6px)`;
-        wrap.prepend(b); return b;
-      });
-      let dict = 0, rr = 0;
-      for (let g = 0; g < G; g++) {
-        const grp = idx.slice(g * per, g * per + per);
-        const vals = grp.map((i) => rows[i]);
-        dict += new Set(vals).size; rr += runs(vals);
-        grp.forEach((ri, k) => {
-          const c = cells[ri];
-          c.style.left = `${g * (Wg + GAP) + k * Wg / per}%`;
-          c.style.width = `calc(${Wg / per}% + 1px)`;
-          c.style.background = st.dict ? PAL[rows[ri]]
-            : `repeating-linear-gradient(45deg, ${PAL[rows[ri]]} 0 3px, var(--bg) 3px 5px)`;
-          c.classList.toggle("rs", k > 0 && vals[k] !== vals[k - 1]);
-        });
-      }
-      const set = (id, v, worse) => { const s = $(id); s.querySelector("b").textContent = v; s.classList.toggle("up", worse === 1); s.classList.toggle("down", worse === -1); };
-      set("dc-seg", G, G > 2 ? 1 : -1);
-      set("dc-dict", st.dict ? dict : "—", st.dict ? (dict > 8 ? 1 : -1) : 0);
-      set("dc-raw", st.dict ? 0 : N, st.dict ? -1 : 1);
-      set("dc-runs", rr, rr > worst.r / 2 ? 1 : -1);
-      const parts = [];
-      parts.push(G > 2 ? `${G} row groups: the reader opens and sets up ${G} pieces${st.dict ? `, merging ${G} little dictionaries` : ""}.` : "2 big row groups: few pieces to open and set up.");
-      parts.push(st.dict ? "With a declared dictionary the reader adopts the IDs instead of rebuilding them." : "With no dictionary every one of the 48 values is decoded and re-encoded by the reader (the striped cells).");
-      parts.push(st.sort ? `Sorted, equal values sit together: ${rr} runs to scan.` : `In arrival order the values are scattered: ${rr} runs.`);
-      $("dc-say").textContent = parts.join(" ");
-    }
-    $("dc").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
-      st[b.dataset.k] = Number(b.dataset.v);
-      $("dc").querySelectorAll(`button[data-k="${b.dataset.k}"]`).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
-      draw();
-    }));
-    ["rg:8", "dict:0", "sort:0"].forEach((s) => { const [k, v] = s.split(":"); $("dc").querySelector(`button[data-k="${k}"][data-v="${v}"]`).setAttribute("aria-pressed", "true"); });
-    draw();
-  }
 })();
 </script>
 </body>

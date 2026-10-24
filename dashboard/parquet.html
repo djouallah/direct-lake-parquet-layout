@@ -146,16 +146,8 @@
 </div>
 <p>The field that matters is <code>encoding_stats</code>: per page type, which encoding and how many
   pages. It is the only structure that proves a chunk is entirely dictionary-encoded <b>without decoding
-  its pages</b>, so it decides whether Power BI swaps IDs or rebuilds the column. Two real cases from this
-  project, both on otherwise identical files:</p>
-<ul>
-  <li>DuckDB's writer wrote no <code>encoding_stats</code> until
-    <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>; that PR measures a 142M-row
-    string column's cold first touch at 10,857.5 ms before and 689.3 ms after.</li>
-  <li>delta-rs 1.6.3 and later list the dictionary page <b>last</b> instead of first, and the same table
-    reads at about 5× the read CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>,
-    <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>).</li>
-</ul>
+  its pages</b>, so it decides whether Power BI swaps IDs or rebuilds the column. What the reader does
+  with each case, and what it cost: <a href="transcode.html#swap">Transcoding · ID swap</a>.</p>
 <h3>Read it yourself</h3>
 <p>Writers ignore settings without telling you; twice in this project a declared setting never reached
   the file and only the footer showed it. DuckDB 2.0's <code>parquet_metadata()</code> shows the footer,

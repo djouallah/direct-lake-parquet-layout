@@ -1085,7 +1085,7 @@ export const LEARN = {
   sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
   "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#segments"]],
   "spark-vorder": [["Parquet · Global vs per-file", "parquet.html#global"]],
-  directquery: [["Introduction · Kept in memory", "intro.html#once"]],
+  directquery: [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
   "table-size": [["Transcoding · What it does not do", "transcode.html#noskip"]],
   "file-count": [["Transcoding · What it does not do", "transcode.html#noskip"]],
 };

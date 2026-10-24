@@ -16,6 +16,7 @@
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
   <a href="#overview" role="tab" data-pane="overview">Overview</a>
+  <a href="#translate" role="tab" data-pane="translate">Writer's choices</a>
   <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
   <a href="#merge" role="tab" data-pane="merge">Segments</a>
   <a href="#swap" role="tab" data-pane="swap">ID swap</a>
@@ -42,6 +43,42 @@
   <li><b>One parquet row group becomes one VertiPaq segment.</b> The writer picks the segment count for you.</li>
   <li><b>Sorted values become runs.</b> VertiPaq stores a run as one (value, count) pair and scans it as one.</li>
 </ol>
+</section>
+
+<section class="pane" data-name="translate" aria-label="Writer's choices">
+<h2>The writer decides how much work it is</h2>
+<p class="claim">The translation is real work, and three choices the writer made decide how much: how many
+  row groups, whether each column is dictionary-encoded, and what order the rows are in.</p>
+<div class="demo" id="dc">
+  <div class="btns" role="group" aria-label="row groups">
+    <span class="lbl">row groups:</span>
+    <button type="button" data-k="rg" data-v="8">8 small</button>
+    <button type="button" data-k="rg" data-v="2">2 big</button>
+  </div>
+  <div class="btns" role="group" aria-label="dictionary">
+    <span class="lbl">dictionary:</span>
+    <button type="button" data-k="dict" data-v="0">off</button>
+    <button type="button" data-k="dict" data-v="1">on, declared in the footer</button>
+  </div>
+  <div class="btns" role="group" aria-label="row order">
+    <span class="lbl">row order:</span>
+    <button type="button" data-k="sort" data-v="0">as it arrived</button>
+    <button type="button" data-k="sort" data-v="1">sorted</button>
+  </div>
+  <div class="legend" id="dc-legend"></div>
+  <div class="rgwrap" id="dc-wrap"></div>
+  <div class="stats">
+    <div class="stat" id="dc-seg"><b></b><span>row groups the reader opens, one segment each</span></div>
+    <div class="stat" id="dc-dict"><b></b><span>dictionary entries to merge</span></div>
+    <div class="stat" id="dc-raw"><b></b><span>values rebuilt one by one from raw bytes</span></div>
+    <div class="stat" id="dc-runs"><b></b><span>runs to scan, on every query after</span></div>
+  </div>
+  <p class="say" id="dc-say"></p>
+</div>
+<p>A toy column of 48 rows, but every counter in it is a real cost the next sections explain. The same
+  three choices, <b>dictionary encoding</b>, <b>sort order</b> and <b>row groups</b>, are what the
+  experiments find decide Power BI's read CU on real tables, whatever engine made them.</p>
+<p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
 </section>
 
 <section class="pane" data-name="tiers" aria-label="Cold, warm, hot">
@@ -103,9 +140,22 @@
   <li><b>hot</b>: the same query again, partly answered from caches.</li>
 </ul>
 <p>Two things send a column back to cold: the table is <b>rewritten</b> (new data, an
-  <code>OPTIMIZE</code>: a reframe), or the capacity runs short of <b>memory</b> and unloads segments. Across
-  the datasets here, cold is 3–27× warm. But a live model is mostly warm and hot, so read cold as the price
-  of first touch, not of every click.</p>
+  <code>OPTIMIZE</code>: a reframe), or the capacity runs short of <b>memory</b> and unloads segments.</p>
+<p><b>DirectQuery, for contrast,</b> runs every query in the SQL analytics endpoint, outside VertiPaq.
+  The gap between first and later visits shows the difference, measured in this project:</p>
+<table>
+  <thead><tr><th>storage mode</th><th>cold ÷ warm, range across the datasets</th></tr></thead>
+  <tbody>
+    <tr><td>Direct Lake</td><td>3–27×</td></tr>
+    <tr><td>DirectQuery</td><td>1.6–3.3×</td></tr>
+  </tbody>
+</table>
+<p>So in Direct Lake the layout is paid for mostly <b>once</b>, at the cold load, and that is where the
+  read CU goes. One part keeps paying after: the row order survives into memory (<a href="#runs">Runs</a>).
+  DirectQuery's read CU against Direct Lake is on <a href="./?finding=directquery">the DirectQuery card</a>.</p>
+<p class="note">A caution that holds for every number in this tour: a live model transcodes once per
+  reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
+  model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
 </section>
 
 <section class="pane" data-name="merge" aria-label="Row groups → segments">
@@ -328,6 +378,7 @@
   const $ = (id) => document.getElementById(id);
   const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
   const wait = (ms) => new Promise((r) => setTimeout(r, STILL ? 0 : ms));
+  const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
   let seed = 7;
   const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
   const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
@@ -360,6 +411,63 @@
       try { await handler(b.getAttribute(attr)); } finally { busy = false; bs.forEach((x) => (x.disabled = false)); }
     }));
     return bs;
+  }
+
+  // ---- the writer's choices: three switches on one toy column
+  {
+    seed = 11;
+    const NAMES = ["card", "cash", "no charge", "dispute"], COUNTS = [20, 14, 9, 5];
+    const rows = shuffle(COUNTS.flatMap((n, v) => Array.from({ length: n }, () => v)));
+    const N = rows.length;
+    const st = { rg: 8, dict: 0, sort: 0 };
+    const wrap = $("dc-wrap");
+    $("dc-legend").innerHTML = NAMES.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("");
+    const cells = rows.map((v) => { const c = document.createElement("span"); c.className = "c"; c.dataset.v = v; wrap.append(c); return c; });
+    let boxes = [];
+    const worst = (() => { const g = 8, per = N / g; let d = 0, r = 0; for (let i = 0; i < g; i++) { const s = rows.slice(i * per, i * per + per); d += new Set(s).size; r += runs(s); } return { d, r }; })();
+    function draw() {
+      const G = st.rg, per = N / G, GAP = G > 4 ? 1.2 : 3, Wg = (100 - GAP * (G - 1)) / G;
+      // Each element of `order` is an index into rows; cells keep their identity so they slide.
+      const idx = rows.map((_, i) => i);
+      if (st.sort) idx.sort((a, b) => rows[a] - rows[b] || a - b);
+      boxes.forEach((b) => b.remove());
+      boxes = Array.from({ length: G }, (_, g) => {
+        const b = document.createElement("span"); b.className = "rgbox";
+        b.style.left = `calc(${g * (Wg + GAP)}% - 3px)`; b.style.width = `calc(${Wg}% + 6px)`;
+        wrap.prepend(b); return b;
+      });
+      let dict = 0, rr = 0;
+      for (let g = 0; g < G; g++) {
+        const grp = idx.slice(g * per, g * per + per);
+        const vals = grp.map((i) => rows[i]);
+        dict += new Set(vals).size; rr += runs(vals);
+        grp.forEach((ri, k) => {
+          const c = cells[ri];
+          c.style.left = `${g * (Wg + GAP) + k * Wg / per}%`;
+          c.style.width = `calc(${Wg / per}% + 1px)`;
+          c.style.background = st.dict ? PAL[rows[ri]]
+            : `repeating-linear-gradient(45deg, ${PAL[rows[ri]]} 0 3px, var(--bg) 3px 5px)`;
+          c.classList.toggle("rs", k > 0 && vals[k] !== vals[k - 1]);
+        });
+      }
+      const set = (id, v, worse) => { const s = $(id); s.querySelector("b").textContent = v; s.classList.toggle("up", worse === 1); s.classList.toggle("down", worse === -1); };
+      set("dc-seg", G, G > 2 ? 1 : -1);
+      set("dc-dict", st.dict ? dict : "—", st.dict ? (dict > 8 ? 1 : -1) : 0);
+      set("dc-raw", st.dict ? 0 : N, st.dict ? -1 : 1);
+      set("dc-runs", rr, rr > worst.r / 2 ? 1 : -1);
+      const parts = [];
+      parts.push(G > 2 ? `${G} row groups: the reader opens and sets up ${G} pieces${st.dict ? `, merging ${G} little dictionaries` : ""}.` : "2 big row groups: few pieces to open and set up.");
+      parts.push(st.dict ? "With a declared dictionary the reader adopts the IDs instead of rebuilding them." : "With no dictionary every one of the 48 values is decoded and re-encoded by the reader (the striped cells).");
+      parts.push(st.sort ? `Sorted, equal values sit together: ${rr} runs to scan.` : `In arrival order the values are scattered: ${rr} runs.`);
+      $("dc-say").textContent = parts.join(" ");
+    }
+    $("dc").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      st[b.dataset.k] = Number(b.dataset.v);
+      $("dc").querySelectorAll(`button[data-k="${b.dataset.k}"]`).forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+      draw();
+    }));
+    ["rg:8", "dict:0", "sort:0"].forEach((s) => { const [k, v] = s.split(":"); $("dc").querySelector(`button[data-k="${k}"][data-v="${v}"]`).setAttribute("aria-pressed", "true"); });
+    draw();
   }
 
   // ---- cold, warm, reframe
