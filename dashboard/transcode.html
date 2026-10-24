@@ -92,7 +92,7 @@
     <button type="button" data-g="3">3 row groups</button>
     <button type="button" data-g="6">6 row groups</button>
   </div>
-  <div class="dgrid" id="mg-grid"></div>
+  <div id="mg-grid"></div>
   <div class="stats">
     <div class="stat" id="mg-seg"><b></b><span>segments VertiPaq builds</span></div>
     <div class="stat" id="mg-loc"><b></b><span>local dictionary entries to read and merge</span></div>
@@ -498,7 +498,9 @@
         local += d.length;
         return `<div class="dbox"><b>row group ${g + 1}</b>${d.map(chip).join("")}</div>`;
       });
-      $("mg-grid").innerHTML = boxes.join("") + `<span class="arrow">→</span><div class="dbox glob"><b>merged dictionary</b>${[0, 1, 2, 3].map(chip).join("")}</div>`;
+      $("mg-grid").innerHTML = `<div class="dgrid">${boxes.join("")}</div>`
+        + `<div class="arrow down">↓ merged on the cold load</div>`
+        + `<div class="dgrid"><div class="dbox glob"><b>merged dictionary, the whole column</b>${[0, 1, 2, 3].map(chip).join("")}</div></div>`;
       setStat("mg-seg", G, G === 1 ? null : G <= 3);
       setStat("mg-loc", local, local <= 4 ? true : local > 12 ? false : null);
       setStat("mg-glob", 4);

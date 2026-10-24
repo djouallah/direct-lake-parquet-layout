@@ -101,6 +101,7 @@ svg text.big { font-size:15px; font-weight:600; }
 .chip { display:inline-block; padding:.05rem .35rem; margin:.1rem .1rem 0 0; border-radius:4px; color:#fff;
   font-family:ui-monospace, "Cascadia Code", Consolas, monospace; font-size:.72rem; }
 .arrow { align-self:center; color:var(--c2); font-weight:700; font-size:1.2rem; }
+.arrow.down { display:block; font-size:.85rem; margin:.1rem 0 .1rem .3rem; }
 .id.meh { border-color:var(--meh); color:var(--meh); }
 
 /* click-driven svg demos */
