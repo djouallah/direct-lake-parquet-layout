@@ -253,6 +253,7 @@
     <button type="button" data-n="24u">24, uneven</button>
     <button type="button" data-n="96">96</button>
   </div>
+  <p class="note" style="margin:0">8 threads is a number picked for the demo. How many threads Direct Lake's scan gets is not documented.</p>
   <div class="lanes" id="sg-lanes"></div>
   <div class="stats">
     <div class="stat" id="sg-n"><b></b><span>segments</span></div>
@@ -266,7 +267,8 @@
   19 segments to 3,221 ms at 24, and 72 segments bought nothing over 24.</p>
 <p class="note">Read it as a floor, not a formula: a strict "segments ÷ threads" cost model was tested
   with a deliberate 8-segment run and did not hold, consistent with fetching and transcoding overlapping
-  the scan. The demo uses 8 threads and a small fixed cost per segment.</p>
+  the scan. The thread count itself is not documented, so the step from 19 to 24 segments is the only
+  measured hint of where it sits.</p>
 </section>
 
 <section class="pane" data-name="runs" aria-label="Runs in memory">
