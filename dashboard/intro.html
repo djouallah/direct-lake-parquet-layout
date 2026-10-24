@@ -73,13 +73,13 @@
   <defs><marker id="ow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
 </svg>
 </div>
-<p>That arrangement has one big advantage and one big cost.</p>
+<p>That is a trade-off, not a flaw:</p>
 <ul>
-  <li><b>The advantage:</b> the format is tuned for exactly one reader. An import-mode Power BI model
+  <li><b>What it buys:</b> the format is tuned for exactly one reader. An import-mode Power BI model
     builds its VertiPaq segments at refresh, sorted and dictionary-encoded the way VertiPaq likes them,
     and every query reads them as they are.</li>
-  <li><b>The cost:</b> the data is locked in. Every other tool that wants it needs its own copy, its own
-    load, its own refresh.</li>
+  <li><b>What it trades away:</b> the data is shared through that engine. Another tool queries it
+    through the engine, or keeps a copy of its own with its own load and refresh.</li>
 </ul>
 <p class="note">Keep the import model in mind: it is the same VertiPaq engine Direct Lake uses. What
   changes in Direct Lake is only who wrote the file.</p>
@@ -114,9 +114,15 @@
   </div>
   <p class="say" id="lk-say">Pick a reader. Every path out of OneLake goes through a translation step.</p>
 </div>
-<p>What you get is one copy and a free choice of engine. What you give up is that the file is no longer
-  written for its reader. A writer's defaults are tuned for the writer: write fast, use little memory,
-  make files of a convenient size. Nothing in the format makes it think about who reads next.</p>
+<p>The lakehouse makes the opposite trade:</p>
+<ul>
+  <li><b>What it buys:</b> one copy, and a free choice of engine to write it and to read it.</li>
+  <li><b>What it trades away:</b> the file is no longer shaped for its reader. A writer's defaults suit
+    the writer (write fast, use little memory, make files of a convenient size), and the format leaves
+    the reader's needs to whoever configures the writer.</li>
+</ul>
+<p>Neither is better. They put the work in different places, and the rest of this tour is about doing
+  that work on the writer's side.</p>
 </section>
 
 <section class="pane" data-name="decode" aria-label="Every reader translates">
