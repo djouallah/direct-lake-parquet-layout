@@ -18,6 +18,7 @@
   <a href="#start" role="tab" data-pane="start">Overview</a>
   <a href="#owned" role="tab" data-pane="owned">Proprietary format</a>
   <a href="#lake" role="tab" data-pane="lake">The lakehouse</a>
+  <a href="#skew" role="tab" data-pane="skew">Real data repeats</a>
   <a href="#question" role="tab" data-pane="question">What we measured</a>
 </nav>
 </div>
@@ -95,6 +96,20 @@
 </div>
 <p>The trade-off: the file is not shaped for any particular reader. The writer's settings decide that,
   and most writers default to what suits the writer.</p>
+</section>
+
+<section class="pane" data-name="skew" aria-label="Real data repeats">
+<h2>Real data repeats itself</h2>
+<p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code,
+  most flights are not cancelled, most CMS payments are of one kind. Uniformly distributed columns are
+  rare, and most columns have far fewer distinct values than rows.</p>
+<p>VertiPaq is built on that. A column becomes a dictionary plus small IDs, and a run of equal IDs is
+  stored as one pair and scanned as one. The more a column repeats, and the closer together the repeats
+  sit, the less there is to hold in memory and to scan.</p>
+<p>That is why the writer matters. Direct Lake keeps the row order of the parquet it reads, so the
+  repetition only pays off if the file was written with equal values next to each other. Benchmarks
+  that generate uniform data (TPC-H, TPC-DS, SSB) hide this; every dataset here is real.</p>
+<p class="note">The columns, and what sorting does with them: <a href="parquet.html#sorting">Parquet · Sorting</a>.</p>
 </section>
 
 <section class="pane" data-name="question" aria-label="What we measured">
