@@ -33,10 +33,10 @@
   disk are translated into the engine's in-memory format first; in Power BI that step is called
   transcoding. Direct Lake keeps the result in memory, so the file's layout is paid for mostly on first
   touch.</p>
-<p>The rest of this tab follows one column through that first touch. Four facts carry it:</p>
+<p>The rest of this tab follows one column through that first touch. Four facts:</p>
 <ol class="rules">
-  <li><b>Power BI never sees your engine.</b> It sees parquet. Spark, a warehouse or DuckDB only matter
-    through the files they leave behind.</li>
+  <li><b>Power BI reads parquet, not the engine.</b> Spark, a warehouse or DuckDB only matter through the
+    files they leave behind.</li>
   <li><b>The first query pays to load a column.</b> Every query after scans what that load built.</li>
   <li><b>One parquet row group becomes one VertiPaq segment.</b> The writer picks the segment count for you.</li>
   <li><b>Sorted values become runs.</b> VertiPaq stores a run as one (value, count) pair and scans it as one.</li>
@@ -73,8 +73,7 @@
   </div>
   <p class="say" id="dc-say"></p>
 </div>
-<p>A toy column of 48 rows, but every counter in it is a real cost the next sections explain. The same
-  three choices, <b>dictionary encoding</b>, <b>sort order</b> and <b>row groups</b>, are what the
+<p>The same three choices, <b>dictionary encoding</b>, <b>sort order</b> and <b>row groups</b>, are what the
   experiments find decide Power BI's read CU on real tables, whatever engine made them.</p>
 <p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
 </section>
@@ -216,7 +215,7 @@
 </div>
 <p>That gives three kinds of query, and this project measures each one:</p>
 <ul>
-  <li><b>cold</b>: the first touch. Pays for the transcode. This is the wait a report user feels on first click.</li>
+  <li><b>cold</b>: the first touch. Pays for the transcode.</li>
   <li><b>warm</b>: columns already in memory. Pays only for the scan.</li>
   <li><b>hot</b>: the same query again, partly answered from caches.</li>
 </ul>
@@ -262,10 +261,11 @@
   </div>
   <p class="say" id="sg-say"></p>
 </div>
-<p>Microsoft lays out row groups to match the capacity's cores and warns that uneven row-group sizes
+<p>Microsoft <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">lays
+  out row groups to match the capacity's cores</a> and warns that uneven row-group sizes
   unbalance the scan. Measured on the 144M-row AEMO mart: warm query time stepped down from ≈5,700 ms at
   19 segments to 3,221 ms at 24, and 72 segments bought nothing over 24.</p>
-<p class="note">Read it as a floor, not a formula: a strict "segments ÷ threads" cost model was tested
+<p class="note">A strict "segments ÷ threads" cost model was tested
   with a deliberate 8-segment run and did not hold, consistent with fetching and transcoding overlapping
   the scan. The thread count itself is not documented, so the step from 19 to 24 segments is the only
   measured hint of where it sits.</p>
@@ -303,7 +303,7 @@
   <li><b>File count never separated writers</b> in the read CU data: the Warehouse ships 78 files and sits
     mid-pack. See <a href="./?finding=file-count">the file count card</a>.</li>
   <li><b>A smaller file is not a faster one.</b> A sort key that cut the file 30% bought no query time.
-    Bytes on disk follow from dictionary and sort; they are a result, not a knob.</li>
+    Bytes on disk follow from dictionary and sort.</li>
   <li><b>The one file-size trap:</b> delta-rs truncates the row group in progress at the file-size cap
     (groups at 0.43× their declared rows). That makes segments small and uneven, which is exactly the
     unbalanced scan of the previous sections. Keep the file cap above one row group's bytes.</li>
@@ -332,7 +332,7 @@
 <div class="cards">
   <a class="card" href="./?finding=spark-vorder"><b>Writing in Fabric?</b><span>Turn V-Order on: the
     <code>readHeavyForPBI</code> profile on Spark, the default on Warehouse. Up to 2.8× less Direct Lake
-    CU for about 8% more build CU.</span></a>
+    CU (NYC taxi) for about 8% more build CU.</span></a>
   <a class="card" href="writers.html"><b>Writing anywhere else?</b><span>Set the three levers yourself:
     recipes for Databricks, delta-rs and DuckDB.</span></a>
   <a class="card" href="./"><b>The evidence</b><span>Five real datasets, four writers: what each property
@@ -341,9 +341,8 @@
 </section>
 
 <footer>
-  <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
-    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
-    the live numbers are on <a href="./">the experiments page</a>. Further reading:
+  <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    · live numbers: <a href="./">Experiments</a>. Further reading:
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">understand Direct Lake query performance</a> (Microsoft),
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-how-it-works">how Direct Lake works</a> (Microsoft).</p>
 </footer>

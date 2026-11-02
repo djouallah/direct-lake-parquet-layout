@@ -37,10 +37,9 @@
   one dictionary for the whole column.</p>
 <p>How much work depends on how the file was written.</p>
 <p>So optimise the file for the read, not the write. A table is written once and then read for days,
-  sometimes months, by every report that uses it. Writing a read-friendly file is cheap: any engine can
-  do it once it is configured for it, and the extra write cost over its defaults is small. Reading is what users wait on, where even 500 ms is noticed, and it costs
-  capacity every time, whoever's engine runs it. In this project, V-Order cost about 8% more to write
-  and up to 2.8× less to read.</p>
+  sometimes months, by every report that uses it. Reading is what users wait on (in my experience they
+  notice 500 ms), and it costs capacity every time. In this project V-Order cost about 8% more build CU
+  and cut read CU by up to 2.8× (NYC taxi).</p>
 <p>The core issue is not technical. Whoever writes the table sees how long the pipeline took; nobody
   shows them what it costs to read.</p>
 </section>
@@ -101,14 +100,13 @@
 <section class="pane" data-name="skew" aria-label="Real data repeats">
 <h2>Real data repeats itself</h2>
 <p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code,
-  most flights are not cancelled, most CMS payments are of one kind. Uniformly distributed columns are
-  rare, and most columns have far fewer distinct values than rows.</p>
-<p>VertiPaq is built on that. A column becomes a dictionary plus small IDs, and a run of equal IDs is
-  stored as one pair and scanned as one. The more a column repeats, and the closer together the repeats
-  sit, the less there is to hold in memory and to scan.</p>
-<p>That is why the writer matters. Direct Lake keeps the row order of the parquet it reads, so the
-  repetition only pays off if the file was written with equal values next to each other. Benchmarks
-  that generate uniform data (TPC-H, TPC-DS, SSB) hide this; every dataset here is real.</p>
+  most flights are not cancelled, most CMS payments are of one kind.</p>
+<p>VertiPaq stores a column as a dictionary plus small IDs, and a run of equal IDs as one pair, scanned
+  as one. The more a column repeats, and the closer together the repeats sit, the less there is to hold
+  in memory and to scan.</p>
+<p>Direct Lake keeps the row order of the parquet it reads, so the repetition only pays off if the
+  writer put equal values next to each other. TPC-H, TPC-DS and SSB generate uniform data and hide
+  this; every dataset here is real.</p>
 <p class="note">The columns, and what sorting does with them: <a href="parquet.html#sorting">Parquet · Sorting</a>.</p>
 </section>
 
@@ -148,9 +146,8 @@
 </section>
 
 <footer>
-  <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
-    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
-    the live numbers are on <a href="./">the experiments page</a>.</p>
+  <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    · live numbers: <a href="./">Experiments</a>.</p>
 </footer>
 </main>
 <script>

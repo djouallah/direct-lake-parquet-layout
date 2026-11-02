@@ -418,7 +418,7 @@ export function findDictionary(ctx) {
       ["warm, whole suite", "4.1 s", "3.0 s", "1.4×"],
       ["<code>DUID</code> cold, string, fully dictionary", "11,377 ms", "543 ms", "<b>21×</b>"],
       ["<code>mw</code> cold, 10 of 53 chunks <code>PLAIN</code>", "6,266 ms", "4,387 ms", "1.4×"]], "num")}
-    <p>The fully dictionary-encoded columns collapse; <code>mw</code>, whose <code>PLAIN</code> chunks cannot be remapped whatever the footer says, barely moves. One run per arm (32444969823, 33700004854), with geometry and dictionary pages identical. This page used to say the declaration did not move the cost: it compared the 2026-10-17 run with 2026-09-03 runs that were already on <code>dev379</code>, i.e. the fix against itself.</p>
+    <p>The fully dictionary-encoded columns collapse; <code>mw</code>, whose <code>PLAIN</code> chunks cannot be remapped whatever the footer says, barely moves. One run per arm (32444969823, 33700004854), with geometry and dictionary pages identical.</p>
     ${table(["writer", "encodings it writes (most common)", "chunks with a dictionary page"], rows)}
     ${gaps.length ? `<h4>Column-runs with chunks that have no dictionary page: certain hashing</h4>
     ${table(["column-run", "chunks with a dictionary page", "size", "extra cold time"],
@@ -749,7 +749,7 @@ export function propDirectQuery(ctx) {
     claim: s.med !== null ? `The same queries cost <b>${fmtX(s.med)} the read CU</b> through DirectQuery as through Direct Lake (${agree(s)}). Layout properties move DirectQuery's bill by little: ${sens.map(([n, x]) => `${n} ${pct(x)}`).join(", ")}.` : "Not measurable yet.",
     body: `${effectTable([["DirectQuery ÷ Direct Lake, read CU", s], ...sens.map(([n, x]) => [`DirectQuery read CU, ${n}`, x])])}
       ${groupStrips(ctx, [{ label: "Direct Lake", keep: (r) => r.cu.dl > 0, family: "delta-rs", filled: true }], M.cu.get, "Direct Lake read CU")}
-      <p>DirectQuery is not a layout property; it is the price of not loading the data into VertiPaq at all.</p>` });
+      <p>DirectQuery is not a layout property: every query runs in the SQL endpoint and nothing is loaded into VertiPaq.</p>` });
 }
 
 // The presentation's order (2026-10-18 framing): warm is fast on every writer, the cold load is where
@@ -1122,9 +1122,9 @@ export function render(records, opts = {}, ledger = null) {
   const frame = `<p class="framelinks">${Object.entries(PAGES).filter(([k]) => k !== "how").map(([k, v]) =>
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
-  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet. Writers differ on the <b>cold load</b>, when Direct Lake first turns each column into memory, and what that costs is the <b>read CU</b> the session bills. Three layout properties decide it: <b>dictionary encoding</b> (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), <b>sorting</b> (long runs of equal values) and <b>row groups</b> (millions of rows each). Everything else is small.</p>
-    <p><b>This is not a ranking of writers.</b> Do those three things and the table reads cheaply whatever wrote it: Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB. Every writer that costs more here is missing one of them, and the cards show which.</p>
-    <p class="dim">New to this? The <a href="intro.html">Introduction</a> tab explains why the writer decides the read cost.</p>
+  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet. Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
+    <p>Not a writer ranking: do those three things and the table reads cheaply whatever wrote it (Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB). The cards show which of the three each writer misses.</p>
+    <p class="dim">Background: <a href="intro.html">Introduction</a>.</p>
     <p class="dim">The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at about 5× the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>).</p></div>`;
   const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));

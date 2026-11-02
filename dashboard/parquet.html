@@ -48,7 +48,7 @@
   <li><b>What order the rows are in.</b> Sorted values sit next to each other and compress into runs.</li>
 </ol>
 <p class="note">None of these is a property of "parquet". Two writers given the same rows produce
-  different files, and the next tab shows why a reader cannot undo the difference.</p>
+  different files.</p>
 </section>
 
 <section class="pane" data-name="anatomy" aria-label="Anatomy">
@@ -87,8 +87,8 @@
 <p class="note">The shape of the AEMO mart in this project: 144M rows, five columns, sorted by date then
   time. The file stores IDs, not values; the dictionary maps them back.</p>
 <p>Compare <code>date</code> with <code>DUID</code>: same file, same row group, one is a handful of long
-  runs and the other is noise. That difference was made by the writer's row order, and it is the one
-  thing that is still paying after the data is in Power BI's memory.</p>
+  runs and the other is noise. The writer's row order made that difference, and of the three choices it
+  is the only one that still affects queries once the column is in memory.</p>
 </section>
 
 <section class="pane" data-name="encodings" aria-label="Encodings">
@@ -110,7 +110,6 @@
   </div>
   <p class="say" id="en-say"></p>
 </div>
-<p>Three things to take from it:</p>
 <ul>
   <li><b>Dictionary encoding is smaller</b> wherever values repeat. Measured on one real column, a
     144M-row <code>DECIMAL(18,4)</code>: 618.6 MB PLAIN against 423.1 MB dictionary-encoded.</li>
@@ -119,7 +118,7 @@
     <a href="transcode.html#swap">ID swap or rebuild</a>).</li>
   <li><b>Writers drop it silently.</b> Each writer has a dictionary size limit; past it, the rest of the
     chunk falls back to PLAIN. In this project the OSS-profile Spark writer and DuckDB's own parquet
-    writer dropped dictionaries on the widest columns, exactly where it hurts. The knob is never called
+    writer dropped dictionaries on the widest columns. The knob is never called
     the same thing: <code>dictionary_page_size_limit</code> (bytes) on delta-rs,
     <code>DICTIONARY_SIZE_LIMIT</code> (distinct values) on DuckDB.</li>
 </ul>
@@ -130,8 +129,7 @@
 <section class="pane" data-name="footer" aria-label="The footer">
 <h2>The footer: the file's table of contents</h2>
 <p>A reader opens the footer first. It holds the schema, every row group's row count, where
-  every chunk starts, min/max per chunk, and which encodings each chunk's pages use. A reader can only
-  trust what the footer declares.</p>
+  every chunk starts, min/max per chunk, and which encodings each chunk's pages use.</p>
 <div class="demo" id="fo">
   <div class="btns">
     <span class="lbl">one chunk's footer entry, as written by:</span>
@@ -197,12 +195,9 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 <div class="sub" data-name="skew" aria-label="Real data is skewed">
 <h3>Real data is skewed</h3>
 <p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code, most
-  flights are not cancelled, most CMS payments are of one kind. That holds well beyond these tables:
-  <b>uniformly distributed columns are rare in real data</b>. Most columns follow a gentle Zipf curve,
-  a large minority have a few values covering most rows, and most columns have far fewer distinct
-  values than rows.</p>
-<p>The standard benchmarks generate uniform data instead (TPC-H, TPC-DS and SSB all do), which is why
-  they hide what sorting is worth. The datasets in this project are real, and they show it:</p>
+  flights are not cancelled, most CMS payments are of one kind.</p>
+<p>TPC-H, TPC-DS and SSB generate uniform data, which hides what sorting is worth. The datasets here are
+  real:</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>dataset</th><th>column</th><th>skew</th></tr></thead>
   <tbody>
@@ -242,10 +237,9 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
   </div>
   <p class="say" id="sd-say"></p>
 </div>
-<p>Three things to try. Sort by one column and watch its runs collapse to one per value. Add a second
-  key: it gets runs too, but only inside the first key's runs. Swap the order and the winner swaps.
-  That is the whole sort trade-off: the first column takes the best runs, later ones get what is left,
-  and a near-unique column (a timestamp, an amount) cannot form runs at all.</p>
+<p>Sort by one column and its runs collapse to one per value. A second key gets runs only inside the
+  first key's runs; swap the order and the winner swaps. A near-unique column (a timestamp, an amount)
+  cannot form runs at all.</p>
 
 </div>
 
@@ -276,7 +270,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <div class="sub" data-name="vorder" aria-label="V-Order, measured">
 <h3>V-Order, measured</h3>
-<p>V-Order is these levers applied for you. Microsoft describes it as four things: a sort within each file,
+<p>Microsoft describes V-Order as four things: a sort within each file,
   row-group distribution, dictionary encoding and compression. It is not a separate format; any reader can
   read a V-Ordered file. In Fabric Spark only the <code>readHeavyForPBI</code> resource profile turns it on
   (the default <code>writeHeavy</code> does not, nor does <code>readHeavyForSpark</code> despite its
@@ -301,9 +295,8 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 </section>
 
 <footer>
-  <p>Everything on this page is a summary. The measurements, with run ids and caveats, are in
-    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>;
-    the live numbers are on <a href="./">the experiments page</a>. Further reading:
+  <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    · live numbers: <a href="./">Experiments</a>. Further reading:
     <a href="https://parquet.apache.org/docs/file-format/">the parquet file format</a>,
     <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun's parquet layout</a>.</p>
 </footer>
@@ -480,9 +473,9 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
       none: { w: "DuckDB's writer before duckdb#24957", stats: null,
         enc: "PLAIN, RLE_DICTIONARY", say: "The pages are dictionary-encoded, but nothing says that every page is. PLAIN appears in the list (it is the dictionary page's own encoding), and without encoding_stats the reader cannot tell it apart from a PLAIN data page. It rebuilds the column." },
       last: { w: "delta-rs 1.6.3 and later", stats: [["DATA_PAGE", "RLE_DICTIONARY", 12], ["DICTIONARY_PAGE", "PLAIN", 1, "hl"]],
-        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Byte-identical pages; only the order of the list changed. Read CU on the same table went up about 5× (duckrun#84). Nothing else in the file differs, so the order of this list is what the reader reacted to." },
+        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Byte-identical pages; only the order of the list changed. Read CU on the same table went up about 5× (duckrun#84). The list order is the only difference in the file." },
       spill: { w: "any writer whose dictionary filled up", stats: [["DICTIONARY_PAGE", "PLAIN", 1], ["DATA_PAGE", "RLE_DICTIONARY", 5], ["DATA_PAGE", "PLAIN", 7, "hl"]],
-        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Honestly declared, and it declares 7 PLAIN data pages. The chunk is not entirely dictionary-encoded, so the reader cannot just swap IDs." },
+        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Declared correctly: 7 data pages are PLAIN. The chunk is not entirely dictionary-encoded, so the reader cannot just swap IDs." },
     };
     buttons($("fo"), "data-f", async (f) => {
       const d = F[f];
