@@ -204,11 +204,17 @@ a.card:hover { border-color:var(--c1); }
 .subnav a[aria-selected="true"] { background:var(--c2); border-color:var(--c2); color:#fff; }
 .sub > h3:first-child { margin-top:0; }
 .pane > h1:first-child, .pane > h2:first-child { margin-top:0; padding-top:0; border-top:0; }
-.pager { display:flex; justify-content:space-between; gap:1rem; margin:2.2rem 0 0; }
+.pager { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin:2.2rem 0 0; }
+.pager .count { color:var(--dim); font-size:.85rem; font-variant-numeric:tabular-nums; }
+/* Presenter mode (press P): bigger type, the small print and footers out of the way. */
+.present body { font-size:21px; }
+.present main { max-width:1300px; }
+.present .note, .present footer, .present .keys { display:none; }
+.present svg text { font-size:14px; }
 .pager a { display:inline-flex; align-items:center; gap:.4rem; padding:.5rem 1rem; border-radius:999px;
   border:1px solid var(--line); background:var(--soft); color:var(--fg); text-decoration:none; font-weight:600; font-size:.95rem; }
 .pager a:hover { border-color:var(--fg); }
-.pager a.next { margin-left:auto; background:var(--fg); color:var(--bg); border-color:var(--fg); }
+.pager a.next { background:var(--fg); color:var(--bg); border-color:var(--fg); }
 .pager a.cross { border-style:dashed; }
 .keys { font-size:.8rem; color:var(--dim); text-align:center; margin:.8rem 0 0; }
 kbd { font-family:inherit; font-size:.8em; border:1px solid var(--line); border-bottom-width:2px; border-radius:4px; padding:0 .3rem; }

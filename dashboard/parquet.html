@@ -145,16 +145,8 @@
   pages. It is the only structure that proves a chunk is entirely dictionary-encoded <b>without decoding
   its pages</b>, so it decides whether Power BI swaps IDs or rebuilds the column. What the reader does
   with each case, and what it cost: <a href="transcode.html#swap">Transcoding · ID swap</a>.</p>
-<h3>Read it yourself</h3>
-<p>Writers ignore settings without telling you; twice in this project a declared setting never reached
-  the file and only the footer showed it. DuckDB 2.0's <code>parquet_metadata()</code> shows the footer,
-  <code>encoding_stats</code> included:</p>
-<pre><code>SELECT row_group_id, row_group_num_rows, path_in_schema,
-       encodings, encoding_stats, total_compressed_size
-FROM parquet_metadata('abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/&lt;lakehouse&gt;/Tables/&lt;table&gt;/*.parquet')
-ORDER BY path_in_schema, row_group_id;</code></pre>
-<p class="note">Older DuckDB releases and pyarrow do not expose <code>encoding_stats</code>; this project's
-  <code>stats.py</code> decodes the footer itself for that reason.</p>
+<p class="note">The query that reads a footer back: <a href="writers.html#check">Third-party writers · Check
+  the file</a>.</p>
 </section>
 
 <section class="pane" data-name="rowgroups" aria-label="Row groups">
@@ -192,30 +184,10 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <section class="pane" data-name="sorting" aria-label="Sorting">
 <h2>Sorting</h2>
-<div class="sub" data-name="skew" aria-label="Real data is skewed">
-<h3>Real data is skewed</h3>
-<p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code, most
-  flights are not cancelled, most CMS payments are of one kind.</p>
-<p>TPC-H, TPC-DS and SSB generate uniform data, which hides what sorting is worth. The datasets here are
-  real:</p>
-<div class="scroll"><table class="left">
-  <thead><tr><th>dataset</th><th>column</th><th>skew</th></tr></thead>
-  <tbody>
-    <tr><td>NYC taxi</td><td class="mono">store_and_fwd_flag</td><td>~99% one value</td></tr>
-    <tr><td>NYC taxi</td><td class="mono">RatecodeID</td><td>~97% one value</td></tr>
-    <tr><td>Green taxi</td><td class="mono">trip_type</td><td>~98% one value</td></tr>
-    <tr><td>CMS payments</td><td class="mono">Nature_of_Payment</td><td>92% one value</td></tr>
-    <tr><td>BTS flights</td><td class="mono">CancellationCode</td><td>~98% NULL</td></tr>
-    <tr><td>AEMO</td><td>all five columns</td><td>near-uniform: the control, nothing to gain</td></tr>
-  </tbody>
-</table></div>
-<p>Skew is what sorting feeds on: sorted, a value that covers 90% of the rows becomes one run.</p>
-
-</div>
-
 <div class="sub" data-name="runs" aria-label="Values into runs">
 <h3>Sorting turns values into runs</h3>
-<p>In arrival order, equal values are scattered and every row costs bits. Sorted, they sit next to each
+<p>Skew is what sorting feeds on (<a href="intro.html#skew">Introduction · Real data repeats</a>): sorted,
+  a value that covers 90% of the rows becomes one run. In arrival order, equal values are scattered and every row costs bits. Sorted, they sit next to each
   other and a whole run costs one pair.</p>
 <div class="demo" id="sortdemo">
   <div class="btns" role="group" aria-label="row order">
@@ -296,7 +268,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 
 <footer>
   <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
-    · live numbers: <a href="./">Experiments</a>. Further reading:
+    · live numbers: <a href="./">What matters</a>. Further reading:
     <a href="https://parquet.apache.org/docs/file-format/">the parquet file format</a>,
     <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun's parquet layout</a>.</p>
 </footer>

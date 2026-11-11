@@ -115,7 +115,9 @@ if (flag("snapshot")) {
     `<a id="daglink" href="${PAGES}/dag.html">`);
   if (linked === html) throw new Error("index.html no longer carries the relative dag.html link");
   // The static learning pages are siblings on the live site too; same reasoning.
-  html = linked.replace(/href="(intro|parquet|transcode|writers)\.html"/g, `href="${PAGES}/$1.html"`);
+  // A link may name a section (`transcode.html#last`, which the pager uses), so the hash is kept.
+  html = linked.replace(/href="(intro|parquet|transcode|writers)\.html(#[\w/-]*)?"/g,
+    (_, page, hash) => `href="${PAGES}/${page}.html${hash || ""}"`);
 }
 
 mkdirSync(dirname(resolve(out)), { recursive: true });

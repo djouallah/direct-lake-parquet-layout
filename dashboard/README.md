@@ -15,7 +15,7 @@ The home page is one card per finding: a headline number, the claim and a status
 finding's evidence (`?finding=<id>`), and each finding links to the learning-tab sections that explain
 it (`LEARN` in `report.js`). Method and the raw data are pages of their own (`?page=method|data`;
 `?page=how` still renders but is superseded by the learning tabs). The tab order is the talk order:
-Introduction · Parquet · Transcoding · Experiments · Performance · Third-party writers. It is written
+Introduction · Parquet · Transcoding · What matters · Writers compared · Third-party writers. It is written
 twice, in `index.html` and in `learn.js`. Every finding reports query time and
 **read CU**: the capacity units each benchmark session's own Direct Lake or DirectQuery items billed.
 Build CU is deliberately left out.

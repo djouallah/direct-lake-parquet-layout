@@ -15,38 +15,21 @@
 <main>
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
-  <a href="#overview" role="tab" data-pane="overview">Overview</a>
   <a href="#translate" role="tab" data-pane="translate">Writer's choices</a>
   <a href="#merge" role="tab" data-pane="merge">Segments</a>
   <a href="#swap" role="tab" data-pane="swap">ID swap</a>
   <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
-  <a href="#segments" role="tab" data-pane="segments">Threads</a>
   <a href="#runs" role="tab" data-pane="runs">Runs</a>
-  <a href="#noskip" role="tab" data-pane="noskip">Not levers</a>
   <a href="#recap" role="tab" data-pane="recap">Recap</a>
 </nav>
 </div>
 
-<section class="pane" data-name="overview" aria-label="Overview">
-<h1>What a reader does with the file</h1>
-<p>Engines read many formats: their own, CSV, parquet, Delta, Iceberg. Whatever the format, the bytes on
-  disk are translated into the engine's in-memory format first; in Power BI that step is called
-  transcoding. Direct Lake keeps the result in memory, so the file's layout is paid for mostly on first
-  touch.</p>
-<p>The rest of this tab follows one column through that first touch. Four facts:</p>
-<ol class="rules">
-  <li><b>Power BI reads parquet, not the engine.</b> Spark, a warehouse or DuckDB only matter through the
-    files they leave behind.</li>
-  <li><b>The first query pays to load a column.</b> Every query after scans what that load built.</li>
-  <li><b>One parquet row group becomes one VertiPaq segment.</b> The writer picks the segment count for you.</li>
-  <li><b>Sorted values become runs.</b> VertiPaq stores a run as one (value, count) pair and scans it as one.</li>
-</ol>
-</section>
-
 <section class="pane" data-name="translate" aria-label="Writer's choices">
-<h2>The writer decides how much work it is</h2>
-<p>The translation is real work, and three choices the writer made decide how much: how many
-  row groups, whether each column is dictionary-encoded, and what order the rows are in.</p>
+<h1>What a reader does with the file</h1>
+<p>Whatever the format on disk, an engine translates it into its in-memory format first; in Power BI
+  that step is called transcoding. Direct Lake keeps the result in memory, so the file's layout is paid
+  for mostly on first touch. Three choices the writer made decide how much work it is: how many row
+  groups, whether each column is dictionary-encoded, and what order the rows are in.</p>
 <div class="demo" id="dc">
   <div class="btns" role="group" aria-label="row groups">
     <span class="lbl">row groups:</span>
@@ -80,6 +63,7 @@
 
 <section class="pane" data-name="merge" aria-label="Row groups → segments">
 <h2>Row groups become segments, one to one</h2>
+<div class="sub" data-name="one" aria-label="One to one">
 <p>The first time a query touches a column (the cold load), every row group brings its own little
   dictionary. VertiPaq merges them into one dictionary for the whole column, then turns each row group
   into one segment. Row groups are never merged or split on the way in, so <b>the writer chose your
@@ -99,7 +83,11 @@
   </div>
   <p class="say" id="mg-say"></p>
 </div>
-<p>Now on a real table, the 144M-row AEMO mart, with what was measured at each size:</p>
+</div>
+
+<div class="sub" data-name="real" aria-label="On a real table">
+<h3>On a real table</h3>
+<p>The 144M-row AEMO mart, with what was measured at each size:</p>
 <div class="demo" id="rs">
   <div class="btns">
     <span class="lbl">rows per row group:</span>
@@ -119,7 +107,41 @@
 </div>
 <p class="note">Microsoft says 1–16M rows per segment. Across the datasets here, more row groups made
   columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5: a trade, with a wide flat
-  middle. Why the warm scan wants more of them: <a href="#segments">Threads</a>.</p>
+  middle. Why the warm scan wants more of them: <a href="#merge/threads">Threads</a>.</p>
+</div>
+
+<div class="sub" data-name="threads" aria-label="Threads">
+<h3>Segments vs threads: the warm scan wants enough of them</h3>
+<p>A warm query scans segments in parallel, one per thread at a time. With fewer segments
+  than threads some threads sit idle, however big each segment is.</p>
+<div class="demo" id="sg">
+  <div class="btns">
+    <span class="lbl">same rows, cut into:</span>
+    <button type="button" data-n="4">4 segments</button>
+    <button type="button" data-n="6">6</button>
+    <button type="button" data-n="8">8</button>
+    <button type="button" data-n="24">24</button>
+    <button type="button" data-n="24u">24, uneven</button>
+    <button type="button" data-n="96">96</button>
+  </div>
+  <p class="note" style="margin:0">8 threads is a number picked for the demo. How many threads Direct Lake's scan gets is not documented.</p>
+  <div class="lanes" id="sg-lanes"></div>
+  <div class="stats">
+    <div class="stat" id="sg-n"><b></b><span>segments</span></div>
+    <div class="stat" id="sg-idle"><b></b><span>threads with nothing to do</span></div>
+    <div class="stat" id="sg-time"><b></b><span>time to scan, in units (illustration)</span></div>
+  </div>
+  <p class="say" id="sg-say"></p>
+</div>
+<p>Microsoft <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">lays
+  out row groups to match the capacity's cores</a> and warns that uneven row-group sizes
+  unbalance the scan. Measured on the 144M-row AEMO mart: warm query time stepped down from ≈5,700 ms at
+  19 segments to 3,221 ms at 24, and 72 segments bought nothing over 24.</p>
+<p class="note">A strict "segments ÷ threads" cost model was tested
+  with a deliberate 8-segment run and did not hold, consistent with fetching and transcoding overlapping
+  the scan. The thread count itself is not documented, so the step from 19 to 24 segments is the only
+  measured hint of where it sits.</p>
+</div>
 </section>
 
 <section class="pane" data-name="swap" aria-label="ID swap or rebuild">
@@ -238,39 +260,6 @@
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
 </section>
 
-<section class="pane" data-name="segments" aria-label="Segments vs threads">
-<h2>Segments vs threads: the warm scan wants enough of them</h2>
-<p>A warm query scans segments in parallel, one per thread at a time. With fewer segments
-  than threads some threads sit idle, however big each segment is.</p>
-<div class="demo" id="sg">
-  <div class="btns">
-    <span class="lbl">same rows, cut into:</span>
-    <button type="button" data-n="4">4 segments</button>
-    <button type="button" data-n="6">6</button>
-    <button type="button" data-n="8">8</button>
-    <button type="button" data-n="24">24</button>
-    <button type="button" data-n="24u">24, uneven</button>
-    <button type="button" data-n="96">96</button>
-  </div>
-  <p class="note" style="margin:0">8 threads is a number picked for the demo. How many threads Direct Lake's scan gets is not documented.</p>
-  <div class="lanes" id="sg-lanes"></div>
-  <div class="stats">
-    <div class="stat" id="sg-n"><b></b><span>segments</span></div>
-    <div class="stat" id="sg-idle"><b></b><span>threads with nothing to do</span></div>
-    <div class="stat" id="sg-time"><b></b><span>time to scan, in units (illustration)</span></div>
-  </div>
-  <p class="say" id="sg-say"></p>
-</div>
-<p>Microsoft <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">lays
-  out row groups to match the capacity's cores</a> and warns that uneven row-group sizes
-  unbalance the scan. Measured on the 144M-row AEMO mart: warm query time stepped down from ≈5,700 ms at
-  19 segments to 3,221 ms at 24, and 72 segments bought nothing over 24.</p>
-<p class="note">A strict "segments ÷ threads" cost model was tested
-  with a deliberate 8-segment run and did not hold, consistent with fetching and transcoding overlapping
-  the scan. The thread count itself is not documented, so the step from 19 to 24 segments is the only
-  measured hint of where it sits.</p>
-</section>
-
 <section class="pane" data-name="runs" aria-label="Runs in memory">
 <h2>The row order survives into memory</h2>
 <p>VertiPaq keeps the parquet's row order when it builds segments, and its scan works on the
@@ -295,8 +284,10 @@
   sort order card</a>.</p>
 </section>
 
-<section class="pane" data-name="noskip" aria-label="What it does not do">
-<h2>What Direct Lake does not do</h2>
+<section class="pane" data-name="recap" aria-label="Recap: three levers">
+<h2>Recap</h2>
+<div class="sub" data-name="noskip" aria-label="What is not a lever">
+<h3>What Direct Lake does not do</h3>
 <p>Direct Lake does no statistics-based file or row-group skipping when it loads a column.
   It loads the whole column, so file count and file size are not levers.</p>
 <ul>
@@ -313,10 +304,10 @@
   <li><b>Memory is not forever.</b> Under memory pressure the engine unloads segments and join indexes
     and rebuilds them on the next query that needs them: back to cold.</li>
 </ul>
-</section>
+</div>
 
-<section class="pane" data-name="recap" aria-label="Recap: three levers">
-<h2>Recap: three levers, any writer</h2>
+<div class="sub" data-name="levers" aria-label="Three levers">
+<h3>Three levers, any writer</h3>
 <div class="scroll"><table class="left">
   <thead><tr><th>lever</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
   <tbody>
@@ -338,15 +329,20 @@
   <a class="card" href="./"><b>The evidence</b><span>Five real datasets, four writers: what each property
     costs in read CU.</span></a>
 </div>
+</div>
 </section>
 
 <footer>
   <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
-    · live numbers: <a href="./">Experiments</a>. Further reading:
+    · live numbers: <a href="./">What matters</a>. Further reading:
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">understand Direct Lake query performance</a> (Microsoft),
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-how-it-works">how Direct Lake works</a> (Microsoft).</p>
 </footer>
 </main>
+<script>
+  // Sections that became parts of another one keep their old links.
+  window.LEARN_ALIAS = { overview: "translate", segments: "merge/threads", noskip: "recap/noskip" };
+</script>
 <script src="learn.js"></script>
 <script>
 // Illustrations, not data: every number a demo prints is either computed from its own toy rows or

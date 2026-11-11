@@ -44,7 +44,10 @@ function mark(x, y, p, r = 4.5) {
     body = `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`;
   }
   // The hit target is bigger than the mark, so a tooltip does not demand pixel aim.
-  return `<g class="pt"${tip}>${body}<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="10" fill="transparent"/></g>`;
+  // `data-fam` names the series, so a click on its legend key can fade every other one.
+  const key = p.fam || p.family;
+  const famAttr = key ? ` data-fam="${esc(key)}"` : "";
+  return `<g class="pt"${famAttr}${tip}>${body}<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="10" fill="transparent"/></g>`;
 }
 
 // --------------------------------------------------------------------------------------- scales
@@ -172,9 +175,9 @@ export function strips({ rows, x, w = 760, rowH = 24 }) {
     const lo = Math.min(...v), hi = Math.max(...v), md = median(v);
     if (r.gap) parts.push(`<line x1="${m.l - 160}" x2="${w - m.r}" y1="${(yy - rowH / 2).toFixed(1)}" y2="${(yy - rowH / 2).toFixed(1)}" class="sep"/>`);
     parts.push(`<text x="${m.l - 10}" y="${(yy + 4).toFixed(1)}" class="row-label" text-anchor="end">${esc(r.label)}</text>`,
-      `<line x1="${sx.f(lo).toFixed(1)}" x2="${sx.f(hi).toFixed(1)}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="range" style="stroke:${fam(r.family).css}"/>`);
+      `<line x1="${sx.f(lo).toFixed(1)}" x2="${sx.f(hi).toFixed(1)}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="range" data-fam="${esc(r.fam || r.family)}" style="stroke:${fam(r.family).css}"/>`);
     for (const n of v) {
-      parts.push(mark(sx.f(n), yy, { family: r.family, filled: r.filled,
+      parts.push(mark(sx.f(n), yy, { family: r.family, fam: r.fam, filled: r.filled,
         tip: `${r.label}: ${fmtMsOr(n, x)} · median ${fmtMsOr(md, x)} · ${v.length} run${v.length === 1 ? "" : "s"}` }, 3.6));
     }
     parts.push(`<line x1="${sx.f(md).toFixed(1)}" x2="${sx.f(md).toFixed(1)}" y1="${(yy - 9).toFixed(1)}" y2="${(yy + 9).toFixed(1)}" class="median"/>`);
@@ -296,12 +299,12 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
     const rows = lines[ds];
     if (!rows) continue;
     const css = `var(--d${DS_ORDER.indexOf(ds) + 1})`;
-    parts.push(`<polyline points="${rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline thin" style="stroke:${css}"/>`);
+    parts.push(`<polyline points="${rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline thin" data-fam="${ds}" style="stroke:${css}"/>`);
     for (const x of rows) {
-      parts.push(`<g class="pt" data-tip="${esc(`${label(ds)} · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} its median · ${x.n} runs`)}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="3.4" fill="${css}" stroke="var(--bg)" stroke-width="1.2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="9" fill="transparent"/></g>`);
+      parts.push(`<g class="pt" data-fam="${ds}" data-tip="${esc(`${label(ds)} · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} its median · ${x.n} runs`)}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="3.4" fill="${css}" stroke="var(--bg)" stroke-width="1.2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="9" fill="transparent"/></g>`);
     }
     const last = rows[rows.length - 1];
-    labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: label(ds), cls: "small" });
+    labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: label(ds), cls: "small", key: ds });
   }
   // Every dataset together: the median of all runs per octave, the line the band is computed from.
   parts.push(`<polyline points="${t.rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline all"/>`);
@@ -312,7 +315,7 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
   labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: "all", cls: "strong" });
   labels.sort((a, b) => a.y - b.y);
   for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 12);
-  for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label ${l.cls}">${esc(l.name)}</text>`);
+  for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label ${l.cls}"${l.key ? ` data-key="${l.key}" data-fam="${l.key}"` : ""}>${esc(l.name)}</text>`);
   parts.push("</svg>");
   return parts.join("");
 }
@@ -325,8 +328,10 @@ export function bandPanels(pts, t, perDataset = true) {
   return `<div class="facets two">${["cold", "warm"].map((tier) => `<figure class="facet">${bandPanelSvg(lines, t, tier, xr)}</figure>`).join("")}</div>`;
 }
 
+const KEY_HINT = "Click to show only this one; click again for all";
+
 export function legend(families, { reorder = true, extra = "" } = {}) {
-  const items = families.map((f) => `<span class="key"><svg viewBox="0 0 12 12" width="12" height="12">${fam(f).shape === "square"
+  const items = families.map((f) => `<span class="key" data-key="${esc(f)}" role="button" tabindex="0" title="${KEY_HINT}"><svg viewBox="0 0 12 12" width="12" height="12">${fam(f).shape === "square"
     ? `<rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="${fam(f).css}"/>`
     : `<circle cx="6" cy="6" r="4.5" fill="${fam(f).css}"/>`}</svg>${esc(fam(f).label)}</span>`);
   if (reorder) {
@@ -563,9 +568,58 @@ function groupStrips(ctx, groups, metric, xLabel) {
   return strips({ rows: rows.filter((r) => r.values.length), x: { label: `${xLabel} ÷ its dataset's median`, fmt: fmtX } });
 }
 
+/**
+ * A before/after switch: buttons pick an arm, one bar per measure grows or shrinks. `sets` is
+ * `[{label, arms: [{label, runs}]}]`; with one set no set buttons are drawn. Each measure is the
+ * median over an arm's runs, its bar is its share of the largest arm in the set, and the caption
+ * states every measure against the set's first arm. All of it is computed here and carried in
+ * `data-pair`, so the page script (`applyPair`) only swaps text and widths.
+ */
+export function pairSwitch({ lead = "", sets, measures, start = 0 }) {
+  const live = sets.map((set) => {
+    if (set.arms.some((a) => !a.runs.length)) return null;
+    const vals = set.arms.map((a) => measures.map((m) => {
+      const v = a.runs.map(m.get).filter((x) => typeof x === "number" && x > 0);
+      return v.length ? median(v) : null;
+    }));
+    // A measure is shown when every arm of the set has it.
+    const keep = measures.map((_, j) => vals.every((v) => v[j] !== null)).map((k, j) => (k ? j : -1)).filter((j) => j >= 0);
+    if (!keep.length) return null;
+    const n = (a) => `median of ${a.runs.length} run${a.runs.length === 1 ? "" : "s"}`;
+    const arms = set.arms.map((a, i) => ({ label: a.label,
+      rows: keep.map((j) => {
+        const col = vals.map((v) => v[j]);
+        return { label: measures[j].label, w: +((vals[i][j] / Math.max(...col)) * 100).toFixed(1),
+          text: measures[j].fmt(vals[i][j]), hot: vals[i][j] > Math.min(...col) * 1.25 };
+      }),
+      say: i === 0 ? `${a.label}: ${n(a)}.`
+        : `${a.label}, against ${set.arms[0].label}: ${keep.map((j) => `${measures[j].label} ${fmtX(vals[i][j] / vals[0][j])}`).join(", ")} (${n(a)} against ${set.arms[0].runs.length}).` }));
+    return { label: set.label, arms };
+  }).filter(Boolean);
+  if (!live.length) return "";
+  const first = live[0], at = Math.min(start, first.arms.length - 1), arm = first.arms[at];
+  const setBtns = live.length > 1 ? `<div class="btns" role="group" aria-label="dataset"><span class="lbl">dataset:</span>${live.map((x, i) =>
+    `<button type="button" data-set="${i}" aria-pressed="${i === 0}">${esc(x.label)}</button>`).join("")}</div>` : "";
+  const armBtns = `<div class="btns" role="group" aria-label="what changed">${lead ? `<span class="lbl">${esc(lead)}</span>` : ""}${first.arms.map((a, i) =>
+    `<button type="button" data-arm="${i}" aria-pressed="${i === at}">${esc(a.label)}</button>`).join("")}</div>`;
+  const rows = arm.rows.map((r) => `<span>${esc(r.label)}</span><div class="track"><div class="fill${r.hot ? " hot" : ""}" style="width:${r.w}%"></div><span class="val">${esc(r.text)}</span></div>`).join("");
+  return `<div class="demo" data-pair="${esc(JSON.stringify({ sets: live }))}" data-at-set="0" data-at-arm="${at}">
+    ${setBtns}${armBtns}<div class="bars">${rows}</div><p class="say">${esc(arm.say)}</p></div>`;
+}
+
+const PAIR_MEASURES = [
+  { label: "Direct Lake read CU", get: (r) => r.cu && r.cu.dl, fmt: fmtCu },
+  { label: "cold, whole suite", get: (r) => r.dl && r.dl.cold, fmt: fmtMs },
+  { label: "warm, whole suite", get: (r) => r.dl && r.dl.warm, fmt: fmtMs },
+];
+const runsById = (ctx, ids) => ids.map((id) => ctx.runs.find((r) => r.id === id)).filter(Boolean);
+
+/** What a projector shows: `top` (a before/after switch) above the claim, `lead` (one chart) under
+ *  it. `body` is everything else, folded away. */
 function propertyCard(o) {
   return { status: o.status, id: o.id, title: o.title, head: o.head, card: o.card, short: o.card,
-    html: `<p class="claim">${o.claim}</p><p>${evidenceTag(o.evidence)}</p>${o.body}` };
+    html: `${o.top || ""}<p class="claim">${o.claim}</p><p>${evidenceTag(o.evidence)}</p>${o.lead || ""}`
+      + `<details class="more-evidence"><summary>All the evidence</summary>${o.body}</details>` };
 }
 
 // ---- the properties, ranked by what they do to read CU
@@ -578,11 +632,10 @@ export function propTableSize(ctx) {
     head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU each time the table doubles in size"],
     card: "The fewer bytes on disk, the less capacity Power BI spends reading them: true of the whole table, and of each column cold.",
     claim: s.cu.med !== null ? `Each doubling of the table's size on disk cost <b>${pct(s.cu)} Direct Lake read CU</b> and ${pct(s.cold)} cold time (${agree(s.cu)}). Column by column it holds too: twice the bytes cost <b>${pct(s.colCold)} cold</b> (${agree(s.colCold)}), ${pct(s.colWarm)} warm.` : "Not measurable yet.",
+    lead: `${legend(familiesIn(ctx.runs))}
+      ${normalisedScatter(ctx, M.mb.get, M.cu.get, "table size", "Direct Lake read CU")}`,
     body: `${effectTable([["Direct Lake read CU, per doubling of the table", s.cu], ["cold, per doubling of the table", s.cold], ["warm, per doubling of the table", s.warm], ["DirectQuery read CU, per doubling of the table", s.dq],
       ["column cold, per doubling of the column", s.colCold], ["column warm, per doubling of the column", s.colWarm]])}
-      <h3>The table</h3>
-      ${legend(familiesIn(ctx.runs))}
-      ${normalisedScatter(ctx, M.mb.get, M.cu.get, "table size", "Direct Lake read CU")}
       <h3>Each column, cold</h3>
       ${scatter({ points: ctx.columns.filter((c) => c.mb > 0 && c.cold > 0).map((c) => ({ x: c.mb, y: c.cold, family: c.family, filled: c.reorders,
         tip: `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)}` })),
@@ -595,8 +648,8 @@ export function propSort(ctx) {
     head: [s.mb.med !== null ? `${pct(s.mb)} size` : "—", "column size when equal values are split into twice as many runs"],
     card: "Sort so equal values sit together: columns shrink and load cheaper cold. It is the sort, not the engine: the same Spark writer costs clearly more with V-Order's sort turned off.",
     claim: s.mb.med !== null ? `Within the same column, twice as many runs of repeated values meant <b>${pct(s.mb)} more bytes</b> (${agree(s.mb)}), and each doubling of a column's bytes cost ${pct(s.cold)} cold time (${agree(s.cold)}).` : "Not measurable yet.",
-    body: `${effectTable([["column size, per doubling of runs", s.mb], ["column cold, per doubling of column size", s.cold]])}
-      ${legend(familiesIn(ctx.columns))}
+    body: effectTable([["column size, per doubling of runs", s.mb], ["column cold, per doubling of column size", s.cold]]),
+    lead: `${legend(familiesIn(ctx.columns))}
       ${scatter({ points: ctx.columns.filter((c) => c.runsPer1k > 0 && c.mb > 0).map((c) => ({ x: c.runsPer1k, y: c.mb, family: c.family, filled: c.reorders,
         tip: `${c.column} · ${c.writerLabel} · ${c.runsPer1k.toFixed(1)} runs per 1,000 rows · ${fmtMb(c.mb)}` })),
         x: { label: "runs of repeated values per 1,000 rows", log: true, fmt: (v) => (v >= 10 ? fmtInt(v) : v >= 1 ? v.toFixed(0) : String(+v.toPrecision(1))) },
@@ -613,10 +666,14 @@ export function propSparkVOrder(ctx) {
     head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU with V-Order on (readHeavyForPBI) against the default"],
     card: "If Spark writes your tables, use the readHeavyForPBI profile: cheaper to read, faster cold, smaller files.",
     claim: s.cu.med !== null ? `Same engine, same data, one switch: with V-Order on, Spark's tables cost <b>${pct(s.cu)} Direct Lake read CU</b> (${agree(s.cu)}), loaded ${pct(s.cold)} cold (${agree(s.cold)}) and took ${pct(s.mb)} on disk. DirectQuery's bill did not change (${pct(s.dq)}).${warmWorse ? ` The one cost: warm queries were ${pct(s.warm)} (${agree(s.warm)}), mixed across datasets, and warm is fast either way.` : ""}` : "Not measurable yet.",
-    body: `${effectTable([["Direct Lake read CU", s.cu], ["cold", s.cold], ["warm", s.warm], ["table size", s.mb], ["DirectQuery read CU", s.dq]])}
-      ${groupStrips(ctx, [
+    top: pairSwitch({ lead: "Spark writes the table with:", measures: [...PAIR_MEASURES, { label: "table size", get: (r) => r.mb, fmt: fmtMb }],
+      sets: dsList(ctx).map((ds) => ({ label: label(ds), arms: [
+        { label: "V-Order off (writeHeavy, the default)", runs: ctx.runs.filter((r) => r.ds === ds && plain(r)) },
+        { label: "V-Order on (readHeavyForPBI)", runs: ctx.runs.filter((r) => r.ds === ds && vo(r)) }] })) }),
+    lead: `${groupStrips(ctx, [
         { label: "Spark, V-Order", keep: vo, family: "spark", filled: true },
-        { label: "Spark, no V-Order", keep: plain, family: "spark", filled: false }], M.cu.get, "Direct Lake read CU")}
+        { label: "Spark, no V-Order", keep: plain, family: "spark", filled: false }], M.cu.get, "Direct Lake read CU")}`,
+    body: `${effectTable([["Direct Lake read CU", s.cu], ["cold", s.cold], ["warm", s.warm], ["table size", s.mb], ["DirectQuery read CU", s.dq]])}
       <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Build cost is not on this page; the repository's findings measured about +8% build CU.</p>` });
 }
 
@@ -670,8 +727,13 @@ export function propRowGroups(ctx) {
       <p>duckrun on aemo, the same writer versions and the same <code>date, time, price</code> sort; only <code>row_group_size</code> moved. Before is the median of two runs, after is one run, so read it as one sample per arm.</p>
       ${table(["aemo, duckrun", "default", "131,072 rows per group", "change"], ctl.rows, "num")}
       <p class="note">Every chunk has a dictionary page in both arms. <code>DUID</code> carries a separate, larger cold penalty on both arms of this pair that row-group size does not touch: it loaded in under a second on the September runs.</p>` : ""}
-      ${bandPanels(bandPts, bandT, false)}
-      <p class="note">The lines weigh every dataset equally: each dataset's own value per octave of rows per group, then the median across datasets.</p>` });
+      <p class="note">The lines weigh every dataset equally: each dataset's own value per octave of rows per group, then the median across datasets.</p>`,
+    top: pairSwitch({ lead: "AEMO, same writer and sort, row groups of:",
+      measures: [{ label: "row groups", get: (r) => r.rgs, fmt: fmtInt }, ...PAIR_MEASURES],
+      sets: [{ label: "AEMO", arms: [
+        { label: "millions of rows (the default)", runs: runsById(ctx, RG_PAIR.before) },
+        { label: "131,072 rows", runs: runsById(ctx, [RG_PAIR.after]) }] }] }),
+    lead: bandPanels(bandPts, bandT, false) });
 }
 
 /** Run ids of the controlled declaration pair: iceberg on aemo, DuckDB dev365 then dev379. */
@@ -719,6 +781,14 @@ export function propDictionary(ctx) {
       : [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
     card: "Every column dictionary-encoded, declared in the footer with the dictionary page first, so Power BI reuses it instead of rebuilding it. Any writer that does this reads cheaply; delta-rs lost it in 1.6.3 (dictionary listed last) and its read CU jumped on identical data.",
     claim: `${orderClaim}${paired ? `${oCu ? "And a second case: same" : "Same"} DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${fmtX(1 / cu)} lower</b> (${drop(cu)}), cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
+    top: `${pairSwitch({ lead: "AEMO, delta-rs, same pages; the footer lists the dictionary page:", measures: PAIR_MEASURES,
+      sets: [{ label: "AEMO", arms: [
+        { label: "first (deltalake 1.5.0)", runs: runsById(ctx, ORDER_PAIR.before) },
+        { label: "last (deltalake 1.6.x)", runs: runsById(ctx, ORDER_PAIR.after) }] }] })}
+      ${pairSwitch({ lead: "AEMO, DuckDB → Iceberg, same pages; the footer:", measures: PAIR_MEASURES,
+      sets: [{ label: "AEMO", arms: [
+        { label: "declares the dictionary (DuckDB dev379)", runs: runsById(ctx, [DECLARE_PAIR.after]) },
+        { label: "declares nothing (DuckDB dev365)", runs: runsById(ctx, [DECLARE_PAIR.before]) }] }] })}`,
     body: `${effectTable([["column cold, dictionary gaps ÷ full", s]])}${base.html}` });
 }
 
@@ -729,8 +799,8 @@ export function propFileCount(ctx) {
     head: [s.cu.med !== null ? pct(s.cu) : "—", "Direct Lake read CU each time the file count doubles"],
     card: "How many files the table is split into made no measurable difference.",
     claim: `Twice the files: Direct Lake read CU ${pct(s.cu)}, cold ${pct(s.cold)}, warm ${pct(s.warm)}. ${counts(s.cu) ? "" : "Inside the ±10% noise floor: no measurable effect."}`,
-    body: `${effectTable([["Direct Lake read CU, per doubling of files", s.cu], ["cold, per doubling", s.cold], ["warm, per doubling", s.warm]])}
-      ${legend(familiesIn(ctx.runs))}
+    body: effectTable([["Direct Lake read CU, per doubling of files", s.cu], ["cold, per doubling", s.cold], ["warm, per doubling", s.warm]]),
+    lead: `${legend(familiesIn(ctx.runs))}
       ${normalisedScatter(ctx, files, M.cu.get, "file count", "Direct Lake read CU")}` });
 }
 
@@ -747,6 +817,16 @@ export function propDirectQuery(ctx) {
     head: [s.med !== null ? `${fmtX(s.med)} CU` : "—", "read CU in DirectQuery against Direct Lake, same queries"],
     card: "DirectQuery costs several times the capacity of Direct Lake, and layout barely changes that.",
     claim: s.med !== null ? `The same queries cost <b>${fmtX(s.med)} the read CU</b> through DirectQuery as through Direct Lake (${agree(s)}). Layout properties move DirectQuery's bill by little: ${sens.map(([n, x]) => `${n} ${pct(x)}`).join(", ")}.` : "Not measurable yet.",
+    // The same sessions read two ways: each arm is the same runs, seen through one storage mode.
+    top: pairSwitch({ lead: "the same queries through:",
+      measures: [{ label: "read CU", get: (x) => x.cu, fmt: fmtCu }, { label: "cold, whole suite", get: (x) => x.cold, fmt: fmtMs },
+        { label: "warm, whole suite", get: (x) => x.warm, fmt: fmtMs }],
+      sets: dsList(ctx).map((ds) => {
+        const R = ctx.runs.filter((r) => r.ds === ds && r.cu.dl && r.cu.dq);
+        return { label: label(ds), arms: [
+          { label: "Direct Lake", runs: R.map((r) => ({ cu: r.cu.dl, cold: r.dl.cold, warm: r.dl.warm })) },
+          { label: "DirectQuery", runs: R.map((r) => ({ cu: r.cu.dq, cold: r.dq.cold, warm: r.dq.warm })) }] };
+      }) }),
     body: `${effectTable([["DirectQuery ÷ Direct Lake, read CU", s], ...sens.map(([n, x]) => [`DirectQuery read CU, ${n}`, x])])}
       ${groupStrips(ctx, [{ label: "Direct Lake", keep: (r) => r.cu.dl > 0, family: "delta-rs", filled: true }], M.cu.get, "Direct Lake read CU")}
       <p>DirectQuery is not a layout property: every query runs in the SQL endpoint and nothing is loaded into VertiPaq.</p>` });
@@ -799,6 +879,11 @@ const DIAGRAM = `<svg viewBox="0 0 760 250" class="diagram" role="img" aria-labe
   <text x="700" y="208" class="ds" text-anchor="middle">runs in the endpoint</text>
 </svg>`;
 
+// The framing the home page used to open with; it leads the Method page now.
+const FRAMING = `<p>Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
+  <p>Not a writer ranking: do those three things and the table reads cheaply whatever wrote it (Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB). The cards show which of the three each writer misses.</p>
+  <p>The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at several times the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>); the live number is on <a href="?finding=dictionary">the dictionary card</a>.</p>`;
+
 function methodSection(ctx) {
   const rows = dsList(ctx).map((ds) => {
     const R = ctx.runs.filter((r) => r.ds === ds);
@@ -808,7 +893,7 @@ function methodSection(ctx) {
       fmtRows(p.rows), fmtInt(R.length), fmtInt(R.filter((r) => r.dl.cold).length), fmtInt((p.queriesDl || []).length),
       esc(writers.join(", "))];
   });
-  return `
+  return `${FRAMING}
     <p>The same source data is written by four engines: <b>delta-rs</b> (through duckrun, DuckDB's dbt adapter for Delta), <b>Spark</b> (Fabric, with and without V-Order), <b>Fabric Warehouse</b>, and <b>DuckDB writing Iceberg</b>. One Power BI semantic model, the same for every writer, is then deployed over each output in Direct Lake mode and in DirectQuery mode. The same DAX suite runs against it six times in a row:</p>
     <ul>
       <li><b>cold</b>: pass 1, right after the model is created, so every column is transcoded from parquet;</li>
@@ -973,7 +1058,7 @@ const HISTORY_COLORS = { deltars_sorted: "var(--d1)", spark_vorder: "var(--d2)",
   spark_plain: "var(--d5)", iceberg: "var(--d6)" };
 const historyColor = (key) => HISTORY_COLORS[key] || "var(--c4)";
 const LEGEND_ORDER = ["spark_vorder", "dwh", "spark_plain", "deltars_sorted", "iceberg"];
-const historyDot = (x, y, css, tip, r = 3.8) => `<g class="pt"${tip ? ` data-tip="${esc(tip)}"` : ""}><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${css}" stroke="var(--bg)" stroke-width="1"/>${tip ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/>` : ""}</g>`;
+const historyDot = (x, y, css, tip, r = 3.8, key = "") => `<g class="pt"${key ? ` data-fam="${esc(key)}"` : ""}${tip ?` data-tip="${esc(tip)}"` : ""}><circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}" fill="${css}" stroke="var(--bg)" stroke-width="1"/>${tip ? `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="transparent"/>` : ""}</g>`;
 
 /** One dataset's panel: time across, read CU up (lower is better), one coloured dot per session. */
 function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
@@ -1003,12 +1088,12 @@ function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
     const css = historyColor(l.key);
     if (l.pts.length > 1) {
       const d = l.pts.map((q, i) => `${i ? "L" : "M"}${fx(q.t).toFixed(1)},${sy.f(q.cu).toFixed(1)}`).join("");
-      parts.push(`<path d="${d}" fill="none" stroke="${css}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
+      parts.push(`<path d="${d}" data-fam="${esc(l.key)}" fill="none" stroke="${css}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
     }
     for (const q of l.pts) {
       const who = q.n === 1 ? `run ${q.ids[0]}` : `${q.n} sessions`;
       parts.push(historyDot(fx(q.t), sy.f(q.cu), css,
-        `${l.label} · ${label(p.ds)} · ${q.day} · avg ${fmtCu(q.cu)} over ${who}${q.rg ? ` · row groups ${q.rg}` : ""}`, 2.6));
+        `${l.label} · ${label(p.ds)} · ${q.day} · avg ${fmtCu(q.cu)} over ${who}${q.rg ? ` · row groups ${q.rg}` : ""}`, 2.6, l.key));
     }
   }
   parts.push("</svg>");
@@ -1025,7 +1110,7 @@ export function perfHistory(ctx, phase = "dl") {
   for (const p of panels) for (const l of p.lines) if (!seen.has(l.key)) seen.set(l.key, l);
   // Legend order by the user's call (2026-10-21): the Fabric writers first, the DuckDB family last.
   const rank = (k) => { const i = LEGEND_ORDER.indexOf(k); return i < 0 ? LEGEND_ORDER.length : i; };
-  const key = [...seen.values()].sort((a, b) => rank(a.key) - rank(b.key)).map((l) => `<span class="key"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
+  const key = [...seen.values()].sort((a, b) => rank(a.key) - rank(b.key)).map((l) => `<span class="key" data-key="${esc(l.key)}" role="button" tabindex="0" title="${KEY_HINT}"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
   return `<div class="legend">${key}</div><div class="facets three history">${panels.map((p) =>
     `<figure class="facet">${historyPanel(p, span)}</figure>`).join("")}</div>`;
 }
@@ -1079,15 +1164,18 @@ const HOW = `
 
 const PAGES = { method: "Method", how: "How Power BI reads parquet", data: "The data" };
 
+// The two tabs this page serves, as the tab bar names them (index.html and learn.js: change all three).
+const TAB_HOME = "What matters", TAB_PERF = "Writers compared";
+
 /** Where the learning tabs explain why each finding happens: [label, href] per finding id. */
 export const LEARN = {
   dictionary: [["Parquet · Encodings", "parquet.html#encodings"], ["Parquet · The footer", "parquet.html#footer"], ["Transcoding · ID swap or rebuild", "transcode.html#swap"]],
   sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
-  "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#segments"]],
+  "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#merge/threads"]],
   "spark-vorder": [["Parquet · Sorting", "parquet.html#sorting"]],
   directquery: [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
-  "table-size": [["Transcoding · What it does not do", "transcode.html#noskip"]],
-  "file-count": [["Transcoding · What it does not do", "transcode.html#noskip"]],
+  "table-size": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
+  "file-count": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
 };
 const learnLine = (id) => (LEARN[id] ? `<p class="note">Why: ${LEARN[id].map(([l, h]) => `<a href="${h}">${esc(l)}</a>`).join(" · ")}</p>` : "");
 
@@ -1122,10 +1210,9 @@ export function render(records, opts = {}, ledger = null) {
   const frame = `<p class="framelinks">${Object.entries(PAGES).filter(([k]) => k !== "how").map(([k, v]) =>
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
-  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet. Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
-    <p>Not a writer ranking: do those three things and the table reads cheaply whatever wrote it (Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB). The cards show which of the three each writer misses.</p>
-    <p class="dim">Background: <a href="intro.html">Introduction</a>.</p>
-    <p class="dim">The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at about 5× the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>).</p></div>`;
+  // One sentence on the home page: by this tab the talk has already said the rest, which lives on
+  // the Method page (`FRAMING`) for a reader who lands here first.
+  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes, and three layout properties decide it: dictionary encoding, sorting and row groups.</p></div>`;
   const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
   const grouped = new Set(PROPERTY_GROUPS.flatMap((g) => g.ids));
@@ -1136,28 +1223,76 @@ export function render(records, opts = {}, ledger = null) {
     : `<h3 class="group">${esc(g.title)}</h3><div class="cards">${g.items.map(([f, i]) => card(f, i, opts)).join("")}</div>`).join("");
   const idx = found.findIndex((f) => f.id === opts.finding);
   const side = extra.find((f) => f.id === opts.finding);
+  // THE DECK: home, each finding, then the writers grid, continuing the learning tabs' tour on either
+  // side. The pager's `prev` / `next` links are what ← / → (or a clicker) press, as on those tabs.
+  const deck = [{ href: "?", label: TAB_HOME }, ...found.map((f) => ({ href: href({ finding: f.id }), label: f.title })),
+    { href: href({ page: "perf" }), label: TAB_PERF }];
+  const pagerAt = (i) => {
+    const prev = deck[i - 1] || { href: "transcode.html#last", label: "Transcoding", cross: true };
+    const next = deck[i + 1] || { href: "writers.html", label: "Third-party writers", cross: true };
+    return `<nav class="pager"><a class="prev${prev.cross ? " cross" : ""}" href="${prev.href}">← ${esc(prev.label)}</a>`
+      + `<span class="count">${i + 1} / ${deck.length}</span>`
+      + `<a class="next${next.cross ? " cross" : ""}" href="${next.href}">${esc(next.label)} →</a></nav>`;
+  };
   let body;
   if (side) {
     body = `${back}${switcher}<section id="${side.id}" class="finding"><h2>${esc(side.title)} ${badge(side.status)}</h2>${side.html}</section>`;
   } else if (idx >= 0) {
     const f = found[idx];
-    const prev = found[idx - 1], next = found[idx + 1];
-    const pager = `<nav class="pager">${prev ? `<a href="${href({ finding: prev.id })}">← ${esc(prev.title)}</a>` : "<span></span>"}${next ? `<a href="${href({ finding: next.id })}">${esc(next.title)} →</a>` : ""}</nav>`;
-    body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${learnLine(f.id)}${f.html}</section>${pager}`;
+    body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${learnLine(f.id)}${f.html}</section>${pagerAt(idx + 1)}`;
   } else if (opts.page === "perf") {
-    body = `<section id="perf" class="perf">${perfSection(ctx, opts)}</section>`;
+    body = `<section id="perf" class="perf">${perfSection(ctx, opts)}</section>${pagerAt(deck.length - 1)}`;
   } else if (PAGES[opts.page]) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
   } else {
-    body = `${intro}${home}${frame}${about}`;
+    body = `${intro}${home}${frame}${about}${pagerAt(0)}`;
   }
   return { html: body, ctx, found };
 }
 
 // ----------------------------------------------------------------------------------------- boot
 
-function wire(root, doc, ctx) {
+/** Show one arm of a `pairSwitch`: bars, values and the caption, from the JSON the demo carries. */
+function applyPair(demo, doc, setIdx, armIdx) {
+  const { sets } = JSON.parse(demo.getAttribute("data-pair"));
+  const set = sets[setIdx] || sets[0], arm = set.arms[armIdx] || set.arms[0];
+  demo.setAttribute("data-at-set", String(sets.indexOf(set)));
+  demo.setAttribute("data-at-arm", String(set.arms.indexOf(arm)));
+  for (const b of demo.querySelectorAll("button[data-set]")) b.setAttribute("aria-pressed", String(Number(b.dataset.set) === sets.indexOf(set)));
+  for (const b of demo.querySelectorAll("button[data-arm]")) b.setAttribute("aria-pressed", String(Number(b.dataset.arm) === set.arms.indexOf(arm)));
+  const bars = demo.querySelector(".bars"), tracks = [...bars.querySelectorAll(".track")];
+  if (tracks.length === arm.rows.length) {
+    // Same measures: move the bars that are there, so the change animates.
+    arm.rows.forEach((r, i) => {
+      const fill = tracks[i].querySelector(".fill");
+      fill.style.width = `${r.w}%`;
+      fill.classList.toggle("hot", r.hot);
+      tracks[i].querySelector(".val").textContent = r.text;
+      tracks[i].previousElementSibling.textContent = r.label;
+    });
+  } else {
+    bars.textContent = "";
+    for (const r of arm.rows) {
+      const name = doc.createElement("span"), track = doc.createElement("div"), fill = doc.createElement("div"), val = doc.createElement("span");
+      name.textContent = r.label; track.className = "track"; fill.className = `fill${r.hot ? " hot" : ""}`;
+      fill.style.width = `${r.w}%`; val.className = "val"; val.textContent = r.text;
+      track.append(fill, val); bars.append(name, track);
+    }
+  }
+  demo.querySelector(".say").textContent = arm.say;
+}
+
+/** A legend key clicked: fade every series but that one across the page; the same key again clears. */
+function focusSeries(root, key) {
+  const on = root.getAttribute("data-focus") === key ? "" : key;
+  root.setAttribute("data-focus", on);
+  for (const el of root.querySelectorAll("[data-fam]")) el.classList.toggle("faded", !!on && el.getAttribute("data-fam") !== on);
+  for (const el of root.querySelectorAll("[data-key]")) el.classList.toggle("on", !!on && el.getAttribute("data-key") === on);
+}
+
+// `state.ctx` is replaced on every in-page navigation, so the CSV buttons read the view on screen.
+function wire(root, doc, state) {
   const tip = doc.createElement("div");
   tip.className = "tooltip";
   doc.body.appendChild(tip);
@@ -1176,7 +1311,31 @@ function wire(root, doc, ctx) {
   root.addEventListener("mouseout", (e) => {
     if (e.target.closest && e.target.closest("[data-tip]")) tip.style.display = "none";
   });
+  root.addEventListener("keydown", (e) => {
+    const k = e.target.closest && e.target.closest("[data-key]");
+    if (k && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); focusSeries(root, k.getAttribute("data-key")); }
+  });
   root.addEventListener("click", (e) => {
+    const sw = e.target.closest && e.target.closest("button[data-arm], button[data-set]");
+    const demo = sw && sw.closest("[data-pair]");
+    if (demo) {
+      // A new dataset keeps the arm on screen; a new arm keeps the dataset.
+      applyPair(demo, doc, Number(sw.dataset.set ?? demo.getAttribute("data-at-set")), Number(sw.dataset.arm ?? demo.getAttribute("data-at-arm")));
+      return;
+    }
+    const k = e.target.closest && e.target.closest("[data-key]");
+    if (k) { focusSeries(root, k.getAttribute("data-key")); return; }
+    // A tap pins a point's tooltip where hovering is not available (a touch screen).
+    const pt = e.target.closest && e.target.closest("[data-tip]");
+    if (pt) {
+      tip.textContent = pt.getAttribute("data-tip");
+      tip.style.display = "block";
+      tip.style.left = `${Math.min(e.clientX + 14, doc.documentElement.clientWidth - tip.offsetWidth - 8)}px`;
+      tip.style.top = `${e.clientY + 14}px`;
+      return;
+    }
+    tip.style.display = "none";
+    const ctx = state.ctx;
     const btn = e.target.closest && e.target.closest("[data-csv]");
     if (btn) {
       const which = btn.getAttribute("data-csv");
@@ -1209,12 +1368,32 @@ function wire(root, doc, ctx) {
   });
 }
 
-export async function boot(doc = document, loc = location) {
-  const app = doc.getElementById("app"), status = doc.getElementById("status");
-  const q = new URLSearchParams(loc.search);
-  const opts = { dataset: DATASETS[q.get("dataset")] ? q.get("dataset") : "",
+export function optsOf(search) {
+  const q = new URLSearchParams(search);
+  return { dataset: DATASETS[q.get("dataset")] ? q.get("dataset") : "",
     finding: q.get("finding") || "", page: q.get("page") || "", phase: q.get("phase") || "",
     repo: q.get("repo") || DEFAULTS.repo, ref: q.get("ref") || DEFAULTS.ref };
+}
+
+/** Presenter mode: bigger type, notes and footers hidden. `P` toggles it; it follows the talk across
+ *  the tabs through localStorage, which may be unavailable, in which case it lasts one page. */
+const PRESENT_KEY = "present";
+function presenting(doc, set) {
+  const root = doc.documentElement;
+  if (set !== undefined) {
+    root.classList.toggle("present", set);
+    try { localStorage.setItem(PRESENT_KEY, set ? "1" : ""); } catch { /* one page only */ }
+  }
+  return root.classList.contains("present");
+}
+
+export async function boot(doc = document, loc = location) {
+  const app = doc.getElementById("app"), status = doc.getElementById("status");
+  const opts = optsOf(loc.search);
+  try {
+    if (new URLSearchParams(loc.search).has("present")) presenting(doc, true);
+    else if (localStorage.getItem(PRESENT_KEY)) doc.documentElement.classList.add("present");
+  } catch { /* no storage: the P key still works */ }
   try {
     let records, ledger, note;
     const snap = doc.getElementById("snapshot");
@@ -1228,17 +1407,50 @@ export async function boot(doc = document, loc = location) {
       ({ records, ledger } = await loadRemote(opts));
       note = `Live: ${records.length} run records read from ${opts.repo}@${opts.ref}. Reload for new runs.`;
     }
-    const { html, ctx } = render(records, opts, ledger);
-    app.innerHTML = html;
-    // The tabs are static HTML; the Performance tab is a view of this same page, so mark it here.
-    if (opts.page === "perf") {
+    const state = { ctx: null };
+    // One view of the page. The records are fetched once; every view after is drawn from memory, so
+    // stepping through the findings is instant and works with the network gone.
+    const draw = (search) => {
+      const o = optsOf(search);
+      const { html, ctx } = render(records, o, ledger);
+      state.ctx = ctx;
+      app.innerHTML = html;
+      app.removeAttribute("data-focus");
+      // The tabs are static HTML; the writers grid is a view of this same page, so mark it here.
+      const here = o.page === "perf" ? "./?page=perf" : "./";
       for (const t of doc.querySelectorAll(".tabs a")) {
-        if (t.getAttribute("href") === "./?page=perf") t.setAttribute("aria-current", "page");
+        if (t.getAttribute("href") === here) t.setAttribute("aria-current", "page");
         else t.removeAttribute("aria-current");
       }
-    }
+    };
+    draw(loc.search);
     if (status) status.textContent = note;
-    wire(app, doc, ctx);
+    wire(app, doc, state);
+    // Links between this page's own views (`?finding=…`, `?page=…`, `./`) are drawn in place.
+    const win = doc.defaultView;
+    doc.addEventListener("click", (e) => {
+      if (e.defaultPrevented || e.button || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const a = e.target.closest && e.target.closest("a[href]");
+      const h = a && a.getAttribute("href");
+      if (!h || a.target || !(h === "./" || h.startsWith("?") || h.startsWith("./?"))) return;
+      e.preventDefault();
+      const search = h.replace(/^\.\//, "").replace(/^\?$/, "");
+      // An offline copy opened off a disk may refuse a new URL; the view is drawn either way.
+      try { win.history.pushState(null, "", search || win.location.pathname); } catch { /* same URL */ }
+      draw(search);
+      win.scrollTo(0, 0);
+    });
+    win.addEventListener("popstate", () => draw(win.location.search));
+    // ← / → (or a clicker's PageUp / PageDown) press the pager, exactly as on the learning tabs.
+    doc.addEventListener("keydown", (e) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const t = e.target;
+      if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.key === "p" || e.key === "P") { presenting(doc, !presenting(doc)); return; }
+      const dir = { ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev" }[e.key];
+      const a = dir && app.querySelector(`.pager a.${dir}`);
+      if (a) { e.preventDefault(); a.click(); }
+    });
   } catch (ex) {
     app.innerHTML = `<p class="empty"><b>Could not read the run records.</b> ${esc(ex && ex.message || ex)}. ` +
       `The page reads <code>history/runs/</code> from raw.githubusercontent.com at view time.</p>`;

@@ -7,7 +7,7 @@
 <!--
   Hand-written and static: no data is fetched. Published beside index.html by dashboard.yml. The first
   stop of the tour: why an open table format makes the WRITER decide what every reader pays. Numbers
-  are quoted from docs/FINDINGS.md or CLAUDE.md with their source named.
+  are quoted from docs/FINDINGS.md, CLAUDE.md or the run records, with their source named.
 -->
 <link rel="stylesheet" href="learn.css">
 </head>
@@ -15,27 +15,35 @@
 <main>
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
-  <a href="#start" role="tab" data-pane="start">Overview</a>
-  <a href="#owned" role="tab" data-pane="owned">Proprietary format</a>
-  <a href="#lake" role="tab" data-pane="lake">The lakehouse</a>
+  <a href="#start" role="tab" data-pane="start">Why it matters</a>
+  <a href="#formats" role="tab" data-pane="formats">Two formats</a>
   <a href="#skew" role="tab" data-pane="skew">Real data repeats</a>
   <a href="#question" role="tab" data-pane="question">What we measured</a>
 </nav>
 </div>
 
-<section class="pane" data-name="start" aria-label="Overview">
-<p>Every engine deals with two formats: the format on disk, and the format in memory where it actually
-  computes.</p>
-<p>With a proprietary format, the engine's developers design both. The disk format is made for that
-  engine, so it reads it directly, with minimal effort.</p>
-<p>The lakehouse decouples them. The disk format is open (Parquet, with Delta or Iceberg on top) and any
-  engine can write it. So every engine that reads it has to do some work to turn it into its own
-  in-memory format. In Power BI, that work is called <b>transcoding</b>.</p>
-<p>The two formats are very close. Parquet and VertiPaq both store a table column by column, encode a
-  column as a dictionary plus small IDs, and cut it into pieces (row groups in parquet, segments in
-  VertiPaq). The main difference: parquet keeps a separate dictionary in every row group, VertiPaq keeps
-  one dictionary for the whole column.</p>
-<p>How much work depends on how the file was written.</p>
+<section class="pane" data-name="start" aria-label="Why it matters">
+<h1>The same table, four times the bill</h1>
+<p>One table, written twice by the same writer: same rows, same sort, same row groups, the same bytes
+  on disk. One list in the file footer is in a different order.</p>
+<div class="demo" id="hk">
+  <div class="btns" role="group" aria-label="writer version">
+    <span class="lbl">the table was written by:</span>
+    <button type="button" data-v="a">delta-rs 1.5.0</button>
+    <button type="button" data-v="b">delta-rs 1.6.x</button>
+  </div>
+  <div class="bars">
+    <span>Power BI read CU</span>
+    <div class="track"><div class="fill" id="hk-cu" style="width:0"></div><span class="val" id="hk-cu-v"></span></div>
+    <span>cold load, the whole query suite</span>
+    <div class="track"><div class="fill" id="hk-cold" style="width:0"></div><span class="val" id="hk-cold-v"></span></div>
+  </div>
+  <p class="say" id="hk-say"></p>
+</div>
+<p class="note">AEMO, 144M rows, Direct Lake. Median of three runs (34128354827, 34735629895,
+  35836350582) against two (38998148550, 39024032584). The live number is on
+  <a href="./?finding=dictionary">the dictionary card</a>; why it happens:
+  <a href="transcode.html#swap">Transcoding · ID swap</a>.</p>
 <p>So optimise the file for the read, not the write. A table is written once and then read for days,
   sometimes months, by every report that uses it. Reading is what users wait on (in my experience they
   notice 500 ms), and it costs capacity every time. In this project V-Order cost about 8% more build CU
@@ -44,12 +52,18 @@
   shows them what it costs to read.</p>
 </section>
 
-<section class="pane" data-name="owned" aria-label="Proprietary format">
-<h2>Proprietary format</h2>
-<p>SQL Server, an import-mode Power BI model: the engine writes its own format and reads it back as
-  written. No translation.</p>
-<div class="scroll">
-<svg viewBox="0 0 920 240" role="img" aria-label="One engine box contains both the query processor and storage in its own format; data goes in once and is read back as-is, with no translation step.">
+<section class="pane" data-name="formats" aria-label="Two formats">
+<h2>Two formats: on disk, and in memory</h2>
+<p>Every engine deals with two formats: the format on disk, and the format in memory where it actually
+  computes.</p>
+<div class="demo" id="fm">
+  <div class="btns" role="group" aria-label="storage">
+    <span class="lbl">the format on disk is:</span>
+    <button type="button" data-f="own">proprietary</button>
+    <button type="button" data-f="lake">open: the lakehouse</button>
+  </div>
+  <div class="scroll">
+<svg id="fm-own" viewBox="0 0 920 240" role="img" aria-label="One engine box contains both the query processor and storage in its own format; data goes in once and is read back as-is, with no translation step.">
   <rect class="bx" x="20" y="90" width="150" height="60" rx="8"/>
   <text class="b" x="95" y="116" text-anchor="middle">source data</text>
   <text class="d" x="95" y="135" text-anchor="middle">CSV, an app, a feed</text>
@@ -73,15 +87,7 @@
   <text class="b" x="840" y="125" text-anchor="middle">report</text>
   <defs><marker id="ow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
 </svg>
-</div>
-<p>The trade-off: the data is read through that engine, or copied for each other tool.</p>
-</section>
-
-<section class="pane" data-name="lake" aria-label="The lakehouse">
-<h2>The lakehouse</h2>
-<p>One copy in OneLake. Any engine writes it, any engine reads it.</p>
-<div class="scroll">
-  <svg viewBox="0 0 920 320" role="img" aria-label="Four writers write one copy of a Delta table in OneLake; four readers read it, and each one translates parquet into its own in-memory format.">
+  <svg id="fm-lake" viewBox="0 0 920 320" role="img" aria-label="Four writers write one copy of a Delta table in OneLake; four readers read it, and each one translates parquet into its own in-memory format.">
     <text class="d" x="105" y="22" text-anchor="middle">writers</text>
     <text class="d" x="815" y="22" text-anchor="middle">readers</text>
     <g id="lk-w"></g>
@@ -92,22 +98,62 @@
     <text class="d" x="445" y="200" text-anchor="middle">laid out by whoever wrote it</text>
     <g id="lk-r"></g>
   </svg>
+  </div>
+  <p class="say" id="fm-say"></p>
 </div>
-<p>The trade-off: the file is not shaped for any particular reader. The writer's settings decide that,
-  and most writers default to what suits the writer.</p>
+<p>The two formats are very close. Parquet and VertiPaq both store a table column by column, encode a
+  column as a dictionary plus small IDs, and cut it into pieces (row groups in parquet, segments in
+  VertiPaq). The main difference: parquet keeps a separate dictionary in every row group, VertiPaq keeps
+  one dictionary for the whole column.</p>
+<p>How much work the translation is depends on how the file was written.</p>
 </section>
 
 <section class="pane" data-name="skew" aria-label="Real data repeats">
 <h2>Real data repeats itself</h2>
 <p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code,
   most flights are not cancelled, most CMS payments are of one kind.</p>
+<div class="demo" id="sk">
+  <div class="btns" role="group" aria-label="column">
+    <span class="lbl">200 rows of:</span>
+    <button type="button" data-c="flag">store_and_fwd_flag · NYC taxi</button>
+    <button type="button" data-c="rate">RatecodeID · NYC taxi</button>
+    <button type="button" data-c="nature">Nature_of_Payment · CMS</button>
+    <button type="button" data-c="cancel">CancellationCode · BTS</button>
+    <button type="button" data-c="ts">pickup timestamp · NYC taxi</button>
+  </div>
+  <div class="btns" role="group" aria-label="row order">
+    <span class="lbl">written:</span>
+    <button type="button" data-o="arrival">as it arrived</button>
+    <button type="button" data-o="sorted">sorted</button>
+  </div>
+  <div class="slide" id="sk-strip" style="height:44px"></div>
+  <div class="stats">
+    <div class="stat" id="sk-share"><b></b><span>of the rows hold the most common value</span></div>
+    <div class="stat" id="sk-runs"><b></b><span>runs in the 200 rows shown</span></div>
+    <div class="stat" id="sk-big"><b></b><span>runs in 4 million rows like these</span></div>
+  </div>
+  <p class="say" id="sk-say"></p>
+</div>
 <p>VertiPaq stores a column as a dictionary plus small IDs, and a run of equal IDs as one pair, scanned
   as one. The more a column repeats, and the closer together the repeats sit, the less there is to hold
   in memory and to scan.</p>
 <p>Direct Lake keeps the row order of the parquet it reads, so the repetition only pays off if the
   writer put equal values next to each other. TPC-H, TPC-DS and SSB generate uniform data and hide
   this; every dataset here is real.</p>
-<p class="note">The columns, and what sorting does with them: <a href="parquet.html#sorting">Parquet · Sorting</a>.</p>
+<div class="scroll"><table class="left">
+  <thead><tr><th>dataset</th><th>column</th><th>skew</th></tr></thead>
+  <tbody>
+    <tr><td>NYC taxi</td><td class="mono">store_and_fwd_flag</td><td>~99% one value</td></tr>
+    <tr><td>NYC taxi</td><td class="mono">RatecodeID</td><td>~97% one value</td></tr>
+    <tr><td>Green taxi</td><td class="mono">trip_type</td><td>~98% one value</td></tr>
+    <tr><td>CMS payments</td><td class="mono">Nature_of_Payment</td><td>92% one value</td></tr>
+    <tr><td>BTS flights</td><td class="mono">CancellationCode</td><td>~98% NULL</td></tr>
+    <tr><td>AEMO</td><td>all five columns</td><td>near-uniform: the control, nothing to gain</td></tr>
+  </tbody>
+</table></div>
+<p class="note">An illustration: the share of each column's most common value is the measured one; the
+  200 rows and the run counts are computed from that share, as if values arrived in random order. What
+  sorting does on the real tables: <a href="parquet.html#sorting">Parquet · Sorting</a>.</p>
 </section>
 
 <section class="pane" data-name="question" aria-label="What we measured">
@@ -147,23 +193,53 @@
 
 <footer>
   <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
-    · live numbers: <a href="./">Experiments</a>.</p>
+    · live numbers: <a href="./">What matters</a>.</p>
 </footer>
 </main>
 <script>
   // The "decode" and "once" sections moved to the Transcoding tab.
   const MOVED = { decode: "transcode.html#translate", once: "transcode.html#tiers" };
   if (MOVED[location.hash.slice(1)]) location.replace(MOVED[location.hash.slice(1)]);
+  // "Proprietary format" and "The lakehouse" are one section with a switch now.
+  window.LEARN_ALIAS = { owned: "formats", lake: "formats" };
 </script>
 <script src="learn.js"></script>
 <script>
-// An illustration, not data.
+// Illustrations. The hook's numbers are measured (run ids on the page); the rest is computed from toy rows.
 (() => {
   const $ = (id) => document.getElementById(id);
   const NS = "http://www.w3.org/2000/svg";
   const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+  const fmt = (n) => Math.round(n).toLocaleString("en-US");
+  /** One row of buttons: mark the pressed one and call `handler` with its `attr` value. */
+  function pick(root, attr, handler, first) {
+    const bs = [...root.querySelectorAll(`button[${attr}]`)];
+    const press = (b) => { bs.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); handler(b.getAttribute(attr)); };
+    bs.forEach((b) => b.addEventListener("click", () => press(b)));
+    press(bs.find((b) => b.getAttribute(attr) === first) || bs[0]);
+  }
 
-  // ---- the lakehouse: four writers, one copy, four readers each translating it
+  // ---- the hook: one table, two versions of one writer. Medians of the runs named on the page.
+  {
+    const V = {
+      a: { cu: 1947, cold: 26963, say: "delta-rs 1.5.0 lists the dictionary page first in the footer. Power BI reuses the file's dictionaries." },
+      b: { cu: 8000, cold: 70718, say: "delta-rs 1.6.x writes the same pages and lists the dictionary page last. Power BI rebuilds every dictionary: 4.1× the read CU and 2.6× the cold load, for the same table. Warm queries show no clear change." },
+    };
+    const max = { cu: Math.max(V.a.cu, V.b.cu), cold: Math.max(V.a.cold, V.b.cold) };
+    pick($("hk"), "data-v", (v) => {
+      const d = V[v];
+      for (const k of ["cu", "cold"]) {
+        const bar = $(`hk-${k}`);
+        bar.style.width = `${d[k] / max[k] * 100}%`;
+        bar.className = `fill${v === "b" ? " hot" : ""}`;
+      }
+      $("hk-cu-v").textContent = `${fmt(d.cu)} CU`;
+      $("hk-cold-v").textContent = `${(d.cold / 1000).toFixed(1)} s`;
+      $("hk-say").textContent = d.say;
+    }, "a");
+  }
+
+  // ---- two formats: one engine that owns both, or the lakehouse where every reader translates
   {
     const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
     const R = [
@@ -182,17 +258,74 @@
     });
     R.forEach(([name, sub], i) => {
       const y = ys[i] + 25;
-      const p = el("path", { class: "ln", d: `M560,165 C590,165 580,${y} 610,${y} L728,${y}` });
-      gr.append(p);
-      const d = el("rect", { class: "bx", x: 612, y: y - 15, width: 82, height: 30, rx: 6 });
-      gr.append(d);
+      gr.append(el("path", { class: "ln", d: `M560,165 C590,165 580,${y} 610,${y} L728,${y}` }));
+      gr.append(el("rect", { class: "bx", x: 612, y: y - 15, width: 82, height: 30, rx: 6 }));
       gr.append(el("text", { class: "a", x: 653, y: y + 5, "text-anchor": "middle" }, "translate"));
       gr.append(el("rect", { class: "bx", x: 730, y: y - 25, width: 170, height: 50, rx: 8 }));
       gr.append(el("text", { class: "b", x: 815, y: y - 3, "text-anchor": "middle" }, name));
       gr.append(el("text", { class: "d", x: 815, y: y + 15, "text-anchor": "middle" }, sub));
     });
+    const SAY = {
+      own: "SQL Server, an import-mode Power BI model: the engine's developers design both formats. The disk format is made for that engine, so it reads it directly, with minimal effort. The trade-off: the data is read through that engine, or copied for each other tool.",
+      lake: "The lakehouse decouples them. The disk format is open (Parquet, with Delta or Iceberg on top) and any engine can write it, so every engine that reads it has to turn it into its own in-memory format. In Power BI, that work is called <b>transcoding</b>. The trade-off: the file is not shaped for any particular reader. The writer's settings decide that, and most writers default to what suits the writer.",
+    };
+    pick($("fm"), "data-f", (f) => {
+      $("fm-own").style.display = f === "own" ? "" : "none";
+      $("fm-lake").style.display = f === "lake" ? "" : "none";
+      $("fm-say").innerHTML = SAY[f];
+    }, "own");
   }
 
+  // ---- real data repeats: 200 rows at a column's measured skew, as they arrived or sorted
+  {
+    const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
+    const N = 200, BIG = 4e6;
+    // `counts`: how many of the 200 rows hold each value, most common first.
+    const COLS = {
+      flag: { share: "~99%", counts: [198, 2] },
+      rate: { share: "~97%", counts: [194, 4, 2] },
+      nature: { share: "92%", counts: [184, 10, 4, 2] },
+      cancel: { share: "~98%", counts: [196, 2, 1, 1] },
+      ts: { share: "~0%", counts: Array(N).fill(1) },
+    };
+    let seed = 7;
+    const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+    const runs = (vals) => vals.reduce((n, v, i) => n + (i === 0 || v !== vals[i - 1] ? 1 : 0), 0);
+    const strip = $("sk-strip");
+    const st = { col: "flag", order: "arrival", rows: [] };
+    function build() {
+      seed = 7;
+      const vals = shuffle(COLS[st.col].counts.flatMap((n, v) => Array(n).fill(v)));
+      strip.textContent = "";
+      st.rows = vals.map((v) => {
+        const c = document.createElement("span");
+        c.className = "c"; c.style.width = `calc(${100 / N}% + 1px)`; c.style.background = PAL[v % PAL.length];
+        strip.append(c);
+        return { v, c };
+      });
+    }
+    function place() {
+      const col = COLS[st.col], sorted = st.order === "sorted";
+      const order = sorted ? [...st.rows].sort((a, b) => a.v - b.v) : st.rows;
+      order.forEach((r, i) => { r.c.style.left = `${i * 100 / N}%`; r.c.classList.toggle("rs", i > 0 && r.v !== order[i - 1].v); });
+      const distinct = col.counts.length, unique = distinct === N;
+      const shown = runs(order.map((r) => r.v));
+      // Expected runs when values arrive in random order: 1 + (rows − 1) × the chance two neighbours differ.
+      const differ = 1 - col.counts.reduce((s, n) => s + (n / N) ** 2, 0);
+      const big = unique ? BIG : sorted ? distinct : Math.round(1 + (BIG - 1) * differ);
+      setStat("sk-share", col.share);
+      setStat("sk-runs", fmt(shown), unique ? false : sorted ? true : null);
+      setStat("sk-big", fmt(big), unique ? false : sorted ? true : false);
+      $("sk-say").textContent = unique
+        ? "A near-unique column: every row is its own run, sorted or not. Sorting cannot help it; it is the price of the table."
+        : sorted
+          ? `Sorted, the ${distinct} values become ${distinct} runs, however many rows the table has. A run is stored as one pair and scanned as one.`
+          : `As it arrived, the rare values are scattered through the common one and cut it into pieces: about ${fmt(big)} runs in 4 million rows, where sorting would leave ${distinct}.`;
+    }
+    pick($("sk"), "data-c", (c) => { st.col = c; build(); place(); }, "flag");
+    pick($("sk"), "data-o", (o) => { st.order = o; place(); }, "arrival");
+  }
 })();
 </script>
 </body>

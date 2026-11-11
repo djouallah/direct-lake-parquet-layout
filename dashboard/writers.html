@@ -18,6 +18,7 @@
   <a href="#databricks" role="tab" data-pane="databricks">Databricks</a>
   <a href="#deltars" role="tab" data-pane="deltars">delta-rs</a>
   <a href="#duckdb" role="tab" data-pane="duckdb">DuckDB</a>
+  <a href="#check" role="tab" data-pane="check">Check the file</a>
 </nav>
 </div>
 
@@ -185,6 +186,28 @@ con.sql("""
 """)</code></pre>
 <p class="note">In dbt it is the duckrun adapter and one config line, <code>sort_by='auto'</code>. Its
   global sort read at 0.90× V-Ordered Spark's Direct Lake CU in this repo.</p>
+</section>
+
+<section class="pane" data-name="check" aria-label="Check the file">
+<h2>Check the file: read the footer back</h2>
+<p>Writers ignore settings without telling you; twice in this project a declared setting never reached
+  the file and only the footer showed it. DuckDB 2.0's <code>parquet_metadata()</code> shows the footer,
+  <code>encoding_stats</code> included:</p>
+<pre><code>SELECT row_group_id, row_group_num_rows, path_in_schema,
+       encodings, encoding_stats, total_compressed_size
+FROM parquet_metadata('abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/&lt;lakehouse&gt;/Tables/&lt;table&gt;/*.parquet')
+ORDER BY path_in_schema, row_group_id;</code></pre>
+<p>What to look for, whatever wrote the table:</p>
+<ol class="rules">
+  <li><b>Row groups</b>: <code>row_group_num_rows</code> in the millions, and even.</li>
+  <li><b>Dictionary</b>: <code>encoding_stats</code> present on every chunk, the dictionary page listed
+    first, no <code>PLAIN</code> data pages.</li>
+  <li><b>Sort</b>: after a global sort, the min and max of the leading sort key step up from one row
+    group to the next. A per-file sort such as V-Order overlaps, and that is expected.</li>
+</ol>
+<p class="note">Older DuckDB releases and pyarrow do not expose <code>encoding_stats</code>; this project's
+  <code>stats.py</code> decodes the footer itself for that reason. What each field means:
+  <a href="parquet.html#footer">Parquet · The footer</a>.</p>
 </section>
 
 

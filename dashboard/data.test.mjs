@@ -500,8 +500,41 @@ test("every finding links to learning-tab sections that exist", () => {
     for (const [, href] of r.LEARN[f.id]) {
       const [file, hash] = href.split("#");
       const html = readFileSync(new URL(`./${file}`, import.meta.url), "utf8");
-      assert.match(html, new RegExp(`data-name="${hash}"`), href);
+      // A hash names a section, or `section/part` when the section is split into `.sub` parts.
+      for (const name of hash.split("/")) assert.match(html, new RegExp(`data-name="${name}"`), href);
     }
   }
   assert.match(r.render(vorderFixture(), { finding: "sort" }).html, /href="parquet\.html#sorting"/);
+});
+
+// ------------------------------------------------------------------------------- presenting
+
+test("every view of the deck has a pager, so the arrow keys never run out", () => {
+  const recs = vorderFixture();
+  const { found, html } = r.render(recs, {});
+  assert.match(html, /class="prev cross" href="transcode\.html#last"/);
+  assert.ok(html.includes(`class="next" href="?finding=${found[0].id}"`));
+  const last = r.render(recs, { finding: found[found.length - 1].id }).html;
+  assert.match(last, /class="next" href="\?page=perf"/);
+  const perf = r.render(recs, { page: "perf" }).html;
+  assert.ok(perf.includes(`class="prev" href="?finding=${found[found.length - 1].id}"`));
+  assert.match(perf, /class="next cross" href="writers\.html"/);
+});
+
+test("a before/after switch carries every arm, and leaves out a set with an empty arm", () => {
+  const run = (cu, cold) => ({ cu: { dl: cu }, dl: { cold, warm: 10 } });
+  const measures = [{ label: "CU", get: (x) => x.cu.dl, fmt: String }, { label: "cold", get: (x) => x.dl.cold, fmt: String }];
+  const html = r.pairSwitch({ measures, sets: [
+    { label: "A", arms: [{ label: "off", runs: [run(100, 50), run(300, 70), run(200, 60)] }, { label: "on", runs: [run(50, 60)] }] },
+    { label: "B", arms: [{ label: "off", runs: [] }, { label: "on", runs: [run(1, 1)] }] }] });
+  const data = JSON.parse(html.match(/data-pair="([^"]*)"/)[1].replace(/&quot;/g, '"').replace(/&amp;/g, "&"));
+  assert.deepEqual(data.sets.map((x) => x.label), ["A"]);
+  // The median of the arm, the bar as a share of the largest arm, the caption against the first arm.
+  assert.equal(data.sets[0].arms[0].rows[0].text, "200");
+  assert.equal(data.sets[0].arms[0].rows[0].w, 100);
+  assert.equal(data.sets[0].arms[1].rows[0].w, 25);
+  assert.equal(data.sets[0].arms[1].say, "on, against off: CU 0.3×, cold 1.0× (median of 1 run against 3).");
+  assert.equal(r.pairSwitch({ measures, sets: [{ label: "B", arms: [{ label: "off", runs: [] }] }] }), "");
+  // The V-Order finding leads with one, a dataset per set.
+  assert.match(r.render(vorderFixture(), { finding: "spark-vorder" }).html, /data-pair=.*<details class="more-evidence">/s);
 });
