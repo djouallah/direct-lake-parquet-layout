@@ -242,9 +242,9 @@
 
 <div class="sub" data-name="vorder" aria-label="V-Order, measured">
 <h3>V-Order, measured</h3>
-<p>Microsoft describes V-Order as four things: a sort within each file,
-  row-group distribution, dictionary encoding and compression. It is not a separate format; any reader can
-  read a V-Ordered file. In Fabric Spark only the <code>readHeavyForPBI</code> resource profile turns it on
+<p>V-Order is three things: dictionary encoding, row-group size, and a sort within each file that
+  shortens the runs. It is not a separate format; any reader can read a V-Ordered file, and any writer
+  can set the same three things. In Fabric Spark only the <code>readHeavyForPBI</code> resource profile turns it on
   (the default <code>writeHeavy</code> does not, nor does <code>readHeavyForSpark</code> despite its
   name); Fabric Warehouse has it on by default. Which columns it sorts by is not documented, but the
   result is measurable. NYC taxi, runs per 4M rows, Spark without and with V-Order:</p>
@@ -445,7 +445,7 @@
       none: { w: "DuckDB's writer before duckdb#24957", stats: null,
         enc: "PLAIN, RLE_DICTIONARY", say: "The pages are dictionary-encoded, but nothing says that every page is. PLAIN appears in the list (it is the dictionary page's own encoding), and without encoding_stats the reader cannot tell it apart from a PLAIN data page. It rebuilds the column." },
       last: { w: "delta-rs 1.6.3 and later", stats: [["DATA_PAGE", "RLE_DICTIONARY", 12], ["DICTIONARY_PAGE", "PLAIN", 1, "hl"]],
-        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Byte-identical pages; only the order of the list changed. Read CU on the same table went up about 5× (duckrun#84). The list order is the only difference in the file." },
+        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Byte-identical pages; only the order of the list changed. Read CU on the same table went up about 4× (duckrun#84). The list order is the only difference in the file." },
       spill: { w: "any writer whose dictionary filled up", stats: [["DICTIONARY_PAGE", "PLAIN", 1], ["DATA_PAGE", "RLE_DICTIONARY", 5], ["DATA_PAGE", "PLAIN", 7, "hl"]],
         enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Declared correctly: 7 data pages are PLAIN. The chunk is not entirely dictionary-encoded, so the reader cannot just swap IDs." },
     };

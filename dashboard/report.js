@@ -510,7 +510,6 @@ export function ratioEffect(ctx, on, off, metric) {
 
 const M = {
   cu: { label: "Direct Lake read CU", get: (r) => r.cu.dl },
-  dq: { label: "DirectQuery read CU", get: (r) => r.cu.dq },
   cold: { label: "cold", get: (r) => r.dl.cold },
   warm: { label: "warm", get: (r) => r.dl.warm },
   mb: { label: "table size", get: (r) => r.mb },
@@ -626,7 +625,7 @@ function propertyCard(o) {
 
 export function propTableSize(ctx) {
   const s = { cu: runSlope(ctx, M.mb.get, M.cu.get), cold: runSlope(ctx, M.mb.get, M.cold.get),
-    warm: runSlope(ctx, M.mb.get, M.warm.get), dq: runSlope(ctx, M.mb.get, M.dq.get),
+    warm: runSlope(ctx, M.mb.get, M.warm.get),
     colCold: columnSlope(ctx, (c) => c.mb, (c) => c.cold), colWarm: columnSlope(ctx, (c) => c.mb, (c) => c.warmRaw) };
   return propertyCard({ id: "table-size", title: "Bytes on disk", evidence: "observational", status: verdictOf(s.cu),
     head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU each time the table doubles in size"],
@@ -634,7 +633,7 @@ export function propTableSize(ctx) {
     claim: s.cu.med !== null ? `Each doubling of the table's size on disk cost <b>${pct(s.cu)} Direct Lake read CU</b> and ${pct(s.cold)} cold time (${agree(s.cu)}). Column by column it holds too: twice the bytes cost <b>${pct(s.colCold)} cold</b> (${agree(s.colCold)}), ${pct(s.colWarm)} warm.` : "Not measurable yet.",
     lead: `${legend(familiesIn(ctx.runs))}
       ${normalisedScatter(ctx, M.mb.get, M.cu.get, "table size", "Direct Lake read CU")}`,
-    body: `${effectTable([["Direct Lake read CU, per doubling of the table", s.cu], ["cold, per doubling of the table", s.cold], ["warm, per doubling of the table", s.warm], ["DirectQuery read CU, per doubling of the table", s.dq],
+    body: `${effectTable([["Direct Lake read CU, per doubling of the table", s.cu], ["cold, per doubling of the table", s.cold], ["warm, per doubling of the table", s.warm],
       ["column cold, per doubling of the column", s.colCold], ["column warm, per doubling of the column", s.colWarm]])}
       <h3>Each column, cold</h3>
       ${scatter({ points: ctx.columns.filter((c) => c.mb > 0 && c.cold > 0).map((c) => ({ x: c.mb, y: c.cold, family: c.family, filled: c.reorders,
@@ -646,7 +645,7 @@ export function propSort(ctx) {
   const s = { mb: columnSlope(ctx, (c) => c.runsPer1k, (c) => c.mb), cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold) };
   return propertyCard({ id: "sort", title: "Sort order", evidence: "observational", status: verdictOf(s.mb),
     head: [s.mb.med !== null ? `${pct(s.mb)} size` : "—", "column size when equal values are split into twice as many runs"],
-    card: "Sort so equal values sit together: columns shrink and load cheaper cold. It is the sort, not the engine: the same Spark writer costs clearly more with V-Order's sort turned off.",
+    card: "Sort so equal values sit together: runs get longer, columns shrink and load cheaper cold. V-Order does this for you inside each file; any other writer can sort before it writes.",
     claim: s.mb.med !== null ? `Within the same column, twice as many runs of repeated values meant <b>${pct(s.mb)} more bytes</b> (${agree(s.mb)}), and each doubling of a column's bytes cost ${pct(s.cold)} cold time (${agree(s.cold)}).` : "Not measurable yet.",
     body: effectTable([["column size, per doubling of runs", s.mb], ["column cold, per doubling of column size", s.cold]]),
     lead: `${legend(familiesIn(ctx.columns))}
@@ -656,15 +655,16 @@ export function propSort(ctx) {
         y: { label: "column compressed size", log: true, fmt: fmtMb }, w: 640, h: 360, trend: true })}` });
 }
 
-/** The one piece of engine advice on the page: in Spark, V-Order on. Controlled — same engine, one switch. */
+/** The headline card: a writer that has V-Order should turn it on. Controlled — same engine (Spark), one
+ * switch. Warehouse has V-Order on by default, so it has no off arm here to compare against. */
 export function propSparkVOrder(ctx) {
   const vo = (r) => r.writer === "spark_vorder", plain = (r) => r.writer === "spark_plain";
   const s = { cu: ratioEffect(ctx, vo, plain, M.cu.get), cold: ratioEffect(ctx, vo, plain, M.cold.get),
-    warm: ratioEffect(ctx, vo, plain, M.warm.get), mb: ratioEffect(ctx, vo, plain, M.mb.get), dq: ratioEffect(ctx, vo, plain, M.dq.get) };
+    warm: ratioEffect(ctx, vo, plain, M.warm.get), mb: ratioEffect(ctx, vo, plain, M.mb.get) };
   const warmWorse = s.warm.med !== null && s.warm.med > 1 + EFFECT_MIN;
-  return propertyCard({ id: "spark-vorder", title: "Spark: turn V-Order on", evidence: "controlled", status: verdictOf(s.cu),
+  return propertyCard({ id: "spark-vorder", title: "V-Order: turn it on", evidence: "controlled", status: verdictOf(s.cu),
     head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU with V-Order on (readHeavyForPBI) against the default"],
-    card: "If Spark writes your tables, use the readHeavyForPBI profile: cheaper to read, faster cold, smaller files.",
+    card: "If your writer has V-Order, turn it on. In Fabric Spark that is the readHeavyForPBI profile; Fabric Warehouse has it on by default. The write costs a little more and the read pays it back.",
     claim: s.cu.med !== null ? `Same engine, same data, one switch: with V-Order on, Spark's tables cost <b>${pct(s.cu)} Direct Lake read CU</b> (${agree(s.cu)}), loaded ${pct(s.cold)} cold (${agree(s.cold)}) and took ${pct(s.mb)} on disk.${warmWorse ? ` The one cost: warm queries were ${pct(s.warm)} (${agree(s.warm)}), mixed across datasets, and warm is fast either way.` : ""}` : "Not measurable yet.",
     top: pairSwitch({ lead: "Spark writes the table with:", measures: [...PAIR_MEASURES, { label: "table size", get: (r) => r.mb, fmt: fmtMb }],
       sets: dsList(ctx).map((ds) => ({ label: label(ds), arms: [
@@ -673,8 +673,9 @@ export function propSparkVOrder(ctx) {
     lead: `${groupStrips(ctx, [
         { label: "Spark, V-Order", keep: vo, family: "spark", filled: true },
         { label: "Spark, no V-Order", keep: plain, family: "spark", filled: false }], M.cu.get, "Direct Lake read CU")}`,
-    body: `${effectTable([["Direct Lake read CU", s.cu], ["cold", s.cold], ["warm", s.warm], ["table size", s.mb], ["DirectQuery read CU", s.dq]])}
-      <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Build cost is not on this page; the repository's findings measured about +8% build CU.</p>` });
+    body: `${effectTable([["Direct Lake read CU", s.cu], ["cold", s.cold], ["warm", s.warm], ["table size", s.mb]])}
+      <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Fabric Warehouse writes V-Order by default.</p>
+      <p>Build cost is not computed on this page. The repository's findings measured Spark's build CU with V-Order on against off at −23% (BTS flights), −11% (AEMO), +12% (CMS), +16% (NYC taxi) and +40% (Green taxi).</p>` });
 }
 
 /** The controlled row-group pair: duckrun on aemo, same versions, same `date, time, price` sort, only
@@ -804,26 +805,27 @@ export function propFileCount(ctx) {
       ${normalisedScatter(ctx, files, M.cu.get, "file count", "Direct Lake read CU")}` });
 }
 
-// The presentation's order (2026-10-18 framing): warm is fast on every writer, the cold load is where
-// read CU goes, and three layout properties decide it — dictionary encoding first, then sort, then row
-// groups. Then the Fabric writer switch, then the rest: bytes on disk follow from dictionary and sort rather than being a lever of their own, and file count has no effect. Reframing only: no card's
+// The presentation's order (the user's story, 2026-11-12): V-Order is three things — dictionary
+// encoding, a sort that shortens runs, row-group size. A writer that has it (Fabric Spark, Fabric
+// Warehouse) turns it on, so that card leads; a third-party writer (delta-rs, DuckDB, Databricks)
+// sets the three itself, so the three cards follow. Then the rest: bytes on disk follow from dictionary and sort rather than being a lever of their own, and file count has no effect. Reframing only: no card's
 // computation, headline or status depends on this order.
 //
 // NO CARD COMPARES DIRECT LAKE WITH DIRECTQUERY (the user's call, 2026-11-12): the subject is Direct
 // Lake. DirectQuery numbers are shown for information only — the pill on the writers tab and the
 // columns of the Data page — and never as a ratio against Direct Lake.
-export const PROPERTIES = [propDictionary, propSort, propRowGroups, propSparkVOrder, propTableSize, propFileCount];
+export const PROPERTIES = [propSparkVOrder, propDictionary, propSort, propRowGroups, propTableSize, propFileCount];
 
 // How the home page groups the cards, by finding id. `compact` groups render as a one-line list.
 export const PROPERTY_GROUPS = [
-  { title: "Do these three things, with any writer", ids: ["dictionary", "sort", "row-groups"] },
-  { title: "Writing in Fabric", ids: ["spark-vorder"] },
-  { title: "Secondary: a result of the levers, or no effect", ids: ["table-size", "file-count"], compact: true },
+  { title: "Your writer has V-Order: turn it on", ids: ["spark-vorder"] },
+  { title: "What V-Order does, and how to do it with any other writer", ids: ["dictionary", "sort", "row-groups"] },
+  { title: "Secondary: a result of the three, or no effect", ids: ["table-size", "file-count"], compact: true },
 ];
 
 // --------------------------------------------------------------------------------- frame sections
 
-const DIAGRAM = `<svg viewBox="0 0 760 250" class="diagram" role="img" aria-label="How Direct Lake and DirectQuery read parquet">
+const DIAGRAM = `<svg viewBox="0 0 760 185" class="diagram" role="img" aria-label="How Direct Lake reads parquet">
   <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="var(--dim)"/></marker></defs>
   <rect x="10" y="78" width="130" height="94" rx="8" class="box"/>
   <text x="75" y="104" class="dt" text-anchor="middle">parquet in OneLake</text>
@@ -843,15 +845,6 @@ const DIAGRAM = `<svg viewBox="0 0 760 250" class="diagram" role="img" aria-labe
   <rect x="650" y="30" width="100" height="50" rx="8" class="box"/>
   <text x="700" y="51" class="dt" text-anchor="middle">queries</text>
   <text x="700" y="68" class="ds" text-anchor="middle">WARM, HOT</text>
-  <text x="200" y="152" class="dh">DirectQuery</text>
-  <path d="M140,145 C190,145 190,195 240,195" class="flow" marker-end="url(#arr)"/>
-  <rect x="240" y="170" width="360" height="50" rx="8" class="box"/>
-  <text x="420" y="191" class="dt" text-anchor="middle">SQL analytics endpoint</text>
-  <text x="420" y="208" class="ds" text-anchor="middle">runs the query, outside VertiPaq</text>
-  <path d="M600,195 L650,195" class="flow" marker-end="url(#arr)"/>
-  <rect x="650" y="170" width="100" height="50" rx="8" class="box"/>
-  <text x="700" y="191" class="dt" text-anchor="middle">queries</text>
-  <text x="700" y="208" class="ds" text-anchor="middle">runs in the endpoint</text>
 </svg>`;
 
 // The framing the home page used to open with; it leads the Method page now.
@@ -1133,7 +1126,7 @@ export const COLUMN_KEYS = ["ds", "writerLabel", "runId", "column", "type", "mb"
   "chunks", "runsPer1k", "cold", "warm", "coldRaw", "warmRaw"];
 
 const HOW = `
-  <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy. DirectQuery sends every query to the SQL endpoint instead.</p>
+  <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy.</p>
   ${DIAGRAM}
   <p>The whole mechanism, step by step with demos: <a href="intro.html">Introduction</a>, <a href="parquet.html">Parquet</a> and <a href="transcode.html">Transcoding</a>.</p>`;
 
@@ -1186,7 +1179,7 @@ export function render(records, opts = {}, ledger = null) {
   const nds = ctx.datasets.length;
   // One sentence on the home page: by this tab the talk has already said the rest, which lives on
   // the Method page (`FRAMING`) for a reader who lands here first.
-  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes, and three layout properties decide it: dictionary encoding, sorting and row groups.</p></div>`;
+  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes. V-Order lowers it by doing three things: dictionary encoding, sorting so equal values form long runs, and row groups of millions of rows. If your writer has V-Order, turn it on. If it does not, set the three yourself.</p></div>`;
   const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
   const grouped = new Set(PROPERTY_GROUPS.flatMap((g) => g.ids));

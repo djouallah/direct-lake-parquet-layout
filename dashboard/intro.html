@@ -46,8 +46,11 @@
   <a href="transcode.html#swap">Transcoding · ID swap</a>.</p>
 <p>So optimise the file for the read, not the write. A table is written once and then read for days,
   sometimes months, by every report that uses it. Reading is what users wait on (in my experience they
-  notice 500 ms), and it costs capacity every time. In this project V-Order cost about 8% more build CU
-  and cut read CU by up to 2.8× (NYC taxi).</p>
+  notice 500 ms), and it costs capacity every time.</p>
+<p>Fabric's answer is V-Order, and it is three things: dictionary encoding, row groups of millions of
+  rows, and a sort that turns equal values into long runs. If your writer has it (Fabric Spark, Fabric
+  Warehouse), turn it on: the write costs a little more and the read pays it back. If your writer does
+  not (delta-rs, DuckDB, Databricks), you can set the same three things yourself.</p>
 <p>The core issue is not technical. Whoever writes the table sees how long the pipeline took; nobody
   shows them what it costs to read.</p>
 </section>
@@ -181,7 +184,9 @@
     <tr><td>Fabric Spark, no V-Order</td><td>Livy sessions, <code>writeHeavy</code> profile (the default)</td><td>parquet-mr, V-Order off</td></tr>
   </tbody>
 </table></div>
-<p>Not a ranking of writers: three properties of the file decide the read cost, whoever wrote it.</p>
+<p>Fabric Spark and Fabric Warehouse are the two writers that have V-Order. delta-rs and DuckDB do not,
+  and neither does Databricks; they have to set its three parts themselves.</p>
+<p>V-Order is three things, and they decide the read cost whoever wrote the file:</p>
 <ol class="rules">
   <li><b>Dictionary encoding</b> on every column, declared in the footer. <a href="parquet.html#encodings">Parquet</a> · <a href="transcode.html#swap">Transcoding</a></li>
   <li><b>Sort order</b> that turns equal values into long runs. <a href="parquet.html#sorting">Parquet</a> · <a href="transcode.html#runs">Transcoding</a></li>
@@ -244,7 +249,7 @@
     const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
     const R = [
       ["Direct Lake", "Power BI"],
-      ["SQL endpoint", "DirectQuery goes here"],
+      ["SQL endpoint", "T-SQL queries"],
       ["Fabric Spark", "notebooks, jobs"],
       ["DuckDB", "a laptop, a notebook"],
     ];

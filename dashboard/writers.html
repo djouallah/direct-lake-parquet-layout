@@ -24,6 +24,8 @@
 
 <section class="pane" data-name="databricks" aria-label="Databricks">
 <h2>Databricks</h2>
+<p>These writers have no V-Order switch, so each recipe on this page sets its three parts by hand:
+  dictionary encoding, row-group size and a sort that shortens the runs.</p>
 <p>Measured on TPC-DS SF100 and SF1000 with Microsoft's own Direct Lake benchmark protocol: the DAX
   from the paper <a href="https://raw.githubusercontent.com/microsoft/FabricCAT/main/Direct%20Lake_DirectQuery/Modern%20Power%20BI%20Architecture%20Choices.pdf">Modern
   Power BI Architecture Choices for Reporting on Azure Databricks</a>, 20 concurrent readers. Full
@@ -185,7 +187,8 @@ con.sql("""
     SELECT * FROM staging_sales
 """)</code></pre>
 <p class="note">In dbt it is the duckrun adapter and one config line, <code>sort_by='auto'</code>. Its
-  global sort read at 0.90× V-Ordered Spark's Direct Lake CU in this repo.</p>
+  global sort read at 0.90× V-Ordered Spark's Direct Lake CU in this repo; the number per dataset is on
+  <a href="./?page=perf">Writers compared</a>.</p>
 </section>
 
 <section class="pane" data-name="check" aria-label="Check the file">

@@ -167,7 +167,7 @@
   <thead><tr><th>the footer…</th><th>where it was measured</th></tr></thead>
   <tbody>
     <tr><td>declares nothing</td><td>DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>: a 142M-row string column's cold first touch, 10,857.5 → 689.3 ms once declared, same pages.</td></tr>
-    <tr><td>lists the dictionary last</td><td>delta-rs 1.6.3 and later, byte-identical pages otherwise: about 5× the read CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>). The live number is on <a href="./?finding=dictionary">the dictionary card</a>.</td></tr>
+    <tr><td>lists the dictionary last</td><td>delta-rs 1.6.3 and later, byte-identical pages otherwise: about 4× the read CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>). The live number is on <a href="./?finding=dictionary">the dictionary card</a>.</td></tr>
     <tr><td>declares PLAIN pages</td><td>the dictionary grew past the writer's limit and the rest of the chunk fell back to PLAIN; OSS-profile Spark and DuckDB's own writer did this on the widest columns.</td></tr>
   </tbody>
 </table></div>
@@ -275,7 +275,7 @@
   sort order card</a>.</p>
 </section>
 
-<section class="pane" data-name="recap" aria-label="Recap: three levers">
+<section class="pane" data-name="recap" aria-label="Recap: V-Order in three parts">
 <h2>Recap</h2>
 <div class="sub" data-name="noskip" aria-label="What is not a lever">
 <h3>What Direct Lake does not do</h3>
@@ -297,10 +297,10 @@
 </ul>
 </div>
 
-<div class="sub" data-name="levers" aria-label="Three levers">
-<h3>Three levers, any writer</h3>
+<div class="sub" data-name="levers" aria-label="V-Order in three parts">
+<h3>V-Order is three things, and any writer can set them</h3>
 <div class="scroll"><table class="left">
-  <thead><tr><th>lever</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
+  <thead><tr><th>part of V-Order</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
   <tbody>
     <tr><td><b>1. Dictionary encoding</b></td><td>every column dictionary-encoded, declared in
       <code>encoding_stats</code> with the dictionary page first, no fallback to PLAIN</td>
@@ -312,11 +312,11 @@
   </tbody>
 </table></div>
 <div class="cards">
-  <a class="card" href="./?finding=spark-vorder"><b>Writing in Fabric?</b><span>Turn V-Order on: the
-    <code>readHeavyForPBI</code> profile on Spark, the default on Warehouse. Up to 2.8× less Direct Lake
-    CU (NYC taxi) for about 8% more build CU.</span></a>
-  <a class="card" href="writers.html"><b>Writing anywhere else?</b><span>Set the three levers yourself:
-    recipes for Databricks, delta-rs and DuckDB.</span></a>
+  <a class="card" href="./?finding=spark-vorder"><b>Your writer has V-Order?</b><span>Turn it on: the
+    <code>readHeavyForPBI</code> profile on Fabric Spark, the default on Fabric Warehouse. The write costs
+    a little more and the read pays it back.</span></a>
+  <a class="card" href="writers.html"><b>Your writer does not?</b><span>Simulate it: set the three things yourself.
+    Recipes for Databricks, delta-rs and DuckDB.</span></a>
   <a class="card" href="./"><b>The evidence</b><span>Five real datasets, four writers: what each property
     costs in read CU.</span></a>
 </div>
@@ -558,8 +558,8 @@
           c.classList.remove("bad"); c.classList.add("done"); c.textContent = GLOBAL[LOCAL[i]];
         }
       } else {
-        setStat("ft-path", "slow path", false); setStat("ft-hash", "—"); setStat("ft-meas", "≈5× read CU", false);
-        say("The same pages and the same declaration, only listed in the other order. Measured on the same table: about 5× the read CU. How the engine handles it inside is not documented, so the cells are left unexplained.");
+        setStat("ft-path", "slow path", false); setStat("ft-hash", "—"); setStat("ft-meas", "≈4× read CU", false);
+        say("The same pages and the same declaration, only listed in the other order. Measured on the same table: about 4× the read CU. How the engine handles it inside is not documented, so the cells are left unexplained.");
         await wait(200);
         cells.forEach((c) => c.classList.add("meh"));
       }

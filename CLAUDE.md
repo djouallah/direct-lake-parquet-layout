@@ -1698,8 +1698,13 @@ runs let AEMO (half the runs) decide everything, which is how a 2M–8M row-grou
 then vanished under equal weighting. Each card says "N of M datasets agree". An effect counts beyond
 ±10% with most datasets agreeing (3 of 5 counts; fixed before the numbers were read, deliberately
 not tightened after). No dataset switcher, no per-dataset charts; runs are only on the Data page.
-**V-Order is four levers, not a thing:** a sort WITHIN each file (not global), row-group
-distribution, dictionary encoding, compression (Microsoft Learn). A per-table delta-rs sort reads at
+**THE PAGE'S STORY (the user's, 2026-11-12): V-Order is THREE things** — dictionary encoding,
+row-group size, a sort WITHIN each file (not global) that shortens RLE runs. A writer that has it
+(Fabric Spark, Fabric Warehouse — both FIRST party) turns it on: the write costs a little more, the
+read pays it back. A third-party writer (delta-rs, DuckDB, Databricks) simulates it by setting the
+three itself. The V-Order card leads the home page, the three cards follow. **No copy compares Direct
+Lake against DirectQuery**; DirectQuery is information only (the pill on Writers compared, Data-page
+columns). A per-table delta-rs sort reads at
 0.90× V-Ordered Spark's CU ("same within noise"); the honest difference is that duckrun's sort is
 chosen per table (byte-minimising picker, NOT query-aware), V-Order is one generic rule. Read CU
 excludes sessions whose semantic model was never billed or whose suite did not finish (runs

@@ -44,7 +44,8 @@ The rules, each measured in a section below:
   [Details](#3-keep-dictionary-encoding-on-every-column--and-declared-in-the-footer)
 - **Writing with a Fabric engine? Turn V-Order on.** On Spark only the `readHeavyForPBI`
   resource profile enables it — the default `writeHeavy` doesn't, and `readHeavyForSpark`
-  doesn't despite the name — measured at up to **2.8× less directlake CU** for ~8% build CU. The
+  doesn't despite the name — measured at **1.0× to 2.3× less directlake CU** per dataset (table below), for build CU between
+  −23% and +40%. The
   Warehouse has it on by default; leave it.
   [Details](#writing-with-a-fabric-engine-turn-v-order-on)
 - **File count and file size don't matter.** Direct Lake does no file or row-group skipping at
@@ -123,8 +124,8 @@ V-Order is the sort-and-encode pass done for you, and its worth tracks **surface
 count × categorical skew — not row count**: on the skewed 17-column taxi mart it collapsed the
 most repetitive column to 3,371× fewer runs; on the near-unique 5-column AEMO mart it left row
 order untouched and still shrank files 16%. It doesn't reorder what can't benefit, so it is
-safe to leave on. Measured cost: ~8% of build compute CU (~14% on taxi); return: up to **2.8×
-less directlake CU**.
+safe to leave on. Measured cost: build CU between −23% (bts) and +40% (green), per dataset in the table below; return:
+**1.0× (green) to 2.3× (aemo) less directlake CU**.
 
 - **Fabric Spark**: only the `readHeavyForPBI` resource profile enables it — the default
   `writeHeavy` turns it off, and `readHeavyForSpark` doesn't set it at all despite the name.

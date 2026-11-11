@@ -1,9 +1,11 @@
 # `dashboard/` — the report
 
 **One question: which layout properties matter, and by how much.** Power BI reads parquet and sees
-only the layout, so the home page is one card per layout property (bytes on disk, sort order, column
-size, row-group size, compression, dictionary encoding, file count), plus a controlled "Spark: turn
-V-Order on", the V-Order reproducibility check and DirectQuery as context. Every number is global:
+only the layout, and the story is: V-Order is three things (dictionary encoding, a sort that shortens runs,
+row-group size); a writer that has it turns it on, a third-party writer sets the three itself. The home
+page leads with the controlled "V-Order: turn it on" card, then one card per part (dictionary encoding,
+sort order, row-group size), then bytes on disk and file count as secondary. Nothing compares Direct
+Lake against DirectQuery. Every number is global:
 fitted per dataset ("×N per doubling" or a ratio of medians), then the median across datasets so each
 dataset weighs the same, with "N of M datasets agree" beside it. No dataset switcher.
 
@@ -24,8 +26,8 @@ The findings themselves are made of:
 
 - the short version;
 - the method;
-- how Direct Lake and DirectQuery read parquet;
-- nine findings, one variable each;
+- how Direct Lake reads parquet;
+- six findings, one variable each;
 - the takeaway;
 - the data itself.
 
