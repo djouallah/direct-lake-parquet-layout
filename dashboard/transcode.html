@@ -243,18 +243,9 @@
 </ul>
 <p>Two things send a column back to cold: the table is <b>rewritten</b> (new data, an
   <code>OPTIMIZE</code>: a reframe), or the capacity runs short of <b>memory</b> and unloads segments.</p>
-<p><b>DirectQuery, for contrast,</b> runs every query in the SQL analytics endpoint, outside VertiPaq.
-  The gap between first and later visits shows the difference, measured in this project:</p>
-<table>
-  <thead><tr><th>storage mode</th><th>cold ÷ warm, range across the datasets</th></tr></thead>
-  <tbody>
-    <tr><td>Direct Lake</td><td>3–27×</td></tr>
-    <tr><td>DirectQuery</td><td>1.6–3.3×</td></tr>
-  </tbody>
-</table>
-<p>So in Direct Lake the layout is paid for mostly <b>once</b>, at the cold load, and that is where the
-  read CU goes. One part keeps paying after: the row order survives into memory (<a href="#runs">Runs</a>).
-  DirectQuery's read CU against Direct Lake is on <a href="./?finding=directquery">the DirectQuery card</a>.</p>
+<p>Measured in this project, a cold pass of the query suite took 3–27× its warm pass, depending on the
+  dataset. So the layout is paid for mostly <b>once</b>, at the cold load, and that is where the read CU
+  goes. One part keeps paying after: the row order survives into memory (<a href="#runs">Runs</a>).</p>
 <p class="note">A caution that holds for every number in this tour: a live model transcodes once per
   reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>

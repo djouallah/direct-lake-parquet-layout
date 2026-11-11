@@ -665,7 +665,7 @@ export function propSparkVOrder(ctx) {
   return propertyCard({ id: "spark-vorder", title: "Spark: turn V-Order on", evidence: "controlled", status: verdictOf(s.cu),
     head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU with V-Order on (readHeavyForPBI) against the default"],
     card: "If Spark writes your tables, use the readHeavyForPBI profile: cheaper to read, faster cold, smaller files.",
-    claim: s.cu.med !== null ? `Same engine, same data, one switch: with V-Order on, Spark's tables cost <b>${pct(s.cu)} Direct Lake read CU</b> (${agree(s.cu)}), loaded ${pct(s.cold)} cold (${agree(s.cold)}) and took ${pct(s.mb)} on disk. DirectQuery's bill did not change (${pct(s.dq)}).${warmWorse ? ` The one cost: warm queries were ${pct(s.warm)} (${agree(s.warm)}), mixed across datasets, and warm is fast either way.` : ""}` : "Not measurable yet.",
+    claim: s.cu.med !== null ? `Same engine, same data, one switch: with V-Order on, Spark's tables cost <b>${pct(s.cu)} Direct Lake read CU</b> (${agree(s.cu)}), loaded ${pct(s.cold)} cold (${agree(s.cold)}) and took ${pct(s.mb)} on disk.${warmWorse ? ` The one cost: warm queries were ${pct(s.warm)} (${agree(s.warm)}), mixed across datasets, and warm is fast either way.` : ""}` : "Not measurable yet.",
     top: pairSwitch({ lead: "Spark writes the table with:", measures: [...PAIR_MEASURES, { label: "table size", get: (r) => r.mb, fmt: fmtMb }],
       sets: dsList(ctx).map((ds) => ({ label: label(ds), arms: [
         { label: "V-Order off (writeHeavy, the default)", runs: ctx.runs.filter((r) => r.ds === ds && plain(r)) },
@@ -804,45 +804,20 @@ export function propFileCount(ctx) {
       ${normalisedScatter(ctx, files, M.cu.get, "file count", "Direct Lake read CU")}` });
 }
 
-export function propDirectQuery(ctx) {
-  const ratio = {}, tot = {};
-  for (const ds of dsList(ctx)) {
-    const R = ctx.runs.filter((r) => r.ds === ds && r.cu.dl && r.cu.dq);
-    ratio[ds] = R.length >= 2 ? median(R.map((r) => r.cu.dq / r.cu.dl)) : null;
-  }
-  const s = acrossDatasets(ratio);
-  const sens = [["table size", runSlope(ctx, M.mb.get, M.dq.get)], ["rows per row group", runSlope(ctx, (r) => r.rowsPerRg, M.dq.get)],
-    ["V-Order on ÷ off", ratioEffect(ctx, (r) => r.writer === "spark_vorder", (r) => r.writer === "spark_plain", M.dq.get)]];
-  return propertyCard({ id: "directquery", title: "DirectQuery", evidence: "observational", status: verdictOf(s),
-    head: [s.med !== null ? `${fmtX(s.med)} CU` : "—", "read CU in DirectQuery against Direct Lake, same queries"],
-    card: "DirectQuery costs several times the capacity of Direct Lake, and layout barely changes that.",
-    claim: s.med !== null ? `The same queries cost <b>${fmtX(s.med)} the read CU</b> through DirectQuery as through Direct Lake (${agree(s)}). Layout properties move DirectQuery's bill by little: ${sens.map(([n, x]) => `${n} ${pct(x)}`).join(", ")}.` : "Not measurable yet.",
-    // The same sessions read two ways: each arm is the same runs, seen through one storage mode.
-    top: pairSwitch({ lead: "the same queries through:",
-      measures: [{ label: "read CU", get: (x) => x.cu, fmt: fmtCu }, { label: "cold, whole suite", get: (x) => x.cold, fmt: fmtMs },
-        { label: "warm, whole suite", get: (x) => x.warm, fmt: fmtMs }],
-      sets: dsList(ctx).map((ds) => {
-        const R = ctx.runs.filter((r) => r.ds === ds && r.cu.dl && r.cu.dq);
-        return { label: label(ds), arms: [
-          { label: "Direct Lake", runs: R.map((r) => ({ cu: r.cu.dl, cold: r.dl.cold, warm: r.dl.warm })) },
-          { label: "DirectQuery", runs: R.map((r) => ({ cu: r.cu.dq, cold: r.dq.cold, warm: r.dq.warm })) }] };
-      }) }),
-    body: `${effectTable([["DirectQuery ÷ Direct Lake, read CU", s], ...sens.map(([n, x]) => [`DirectQuery read CU, ${n}`, x])])}
-      ${groupStrips(ctx, [{ label: "Direct Lake", keep: (r) => r.cu.dl > 0, family: "delta-rs", filled: true }], M.cu.get, "Direct Lake read CU")}
-      <p>DirectQuery is not a layout property: every query runs in the SQL endpoint and nothing is loaded into VertiPaq.</p>` });
-}
-
 // The presentation's order (2026-10-18 framing): warm is fast on every writer, the cold load is where
 // read CU goes, and three layout properties decide it — dictionary encoding first, then sort, then row
-// groups. Then the two writer switches, then the rest: bytes on disk follow from dictionary and sort rather than being a lever of their own, and file count has no effect. Reframing only: no card's
+// groups. Then the Fabric writer switch, then the rest: bytes on disk follow from dictionary and sort rather than being a lever of their own, and file count has no effect. Reframing only: no card's
 // computation, headline or status depends on this order.
-export const PROPERTIES = [propDictionary, propSort, propRowGroups, propSparkVOrder, propDirectQuery,
-  propTableSize, propFileCount];
+//
+// NO CARD COMPARES DIRECT LAKE WITH DIRECTQUERY (the user's call, 2026-11-12): the subject is Direct
+// Lake. DirectQuery numbers are shown for information only — the pill on the writers tab and the
+// columns of the Data page — and never as a ratio against Direct Lake.
+export const PROPERTIES = [propDictionary, propSort, propRowGroups, propSparkVOrder, propTableSize, propFileCount];
 
 // How the home page groups the cards, by finding id. `compact` groups render as a one-line list.
 export const PROPERTY_GROUPS = [
   { title: "Do these three things, with any writer", ids: ["dictionary", "sort", "row-groups"] },
-  { title: "Writer switches", ids: ["spark-vorder", "directquery"] },
+  { title: "Writing in Fabric", ids: ["spark-vorder"] },
   { title: "Secondary: a result of the levers, or no effect", ids: ["table-size", "file-count"], compact: true },
 ];
 
@@ -1173,7 +1148,6 @@ export const LEARN = {
   sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
   "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#merge/threads"]],
   "spark-vorder": [["Parquet · Sorting", "parquet.html#sorting"]],
-  directquery: [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
   "table-size": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
   "file-count": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
 };
