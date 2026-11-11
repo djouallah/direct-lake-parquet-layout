@@ -185,28 +185,35 @@ def test_vorder_tags_count_live_files_and_report_what_the_log_cannot_say(stats):
         ["abfss://x/part-1.parquet"]) == {"tagged": 1, "files": 1, "unknown": 0}
 
 
-def test_a_warehouse_gets_no_vorder_files_key_at_all_not_a_zero(stats, monkeypatch):
-    """THE FALSE NEGATIVE THIS GUARD EXISTS FOR. `add.tags.VORDER` is a marker the Fabric SPARK writer
-    stamps. The warehouse writer stamps none and V-Orders BY DEFAULT, so the tag read came back
-    `{tagged: 0, files: 77, unknown: 0}` against dwh's genuinely V-Ordered parquet — a fully successful
-    read of a log with no such marker, which on the page is indistinguishable from a writer that did
-    not V-Order. `unknown: 0` even asserts the read was complete, which is what made it convincing.
+def test_the_warehouse_spells_the_tag_lowercase_and_it_counts(stats):
+    """THE FALSE NEGATIVE THAT STOOD FOR MONTHS. Fabric Spark stamps `tags.VORDER`; the Warehouse
+    stamps `tags.vorder`. Matching the Spark spelling alone read `0/77` on V-Ordered warehouse
+    parquet, and the repo concluded the warehouse wrote no marker. The actions below are the shape
+    measured on 2026-11-11 from two new warehouses: default, then `SET VORDER = OFF`."""
+    on = [{"add": {"path": "T/0/1069/a.parquet", "tags": {"cell": "284", "vorder": "true"}}},
+          {"add": {"path": "T/0/1069/b.parquet", "tags": {"cell": "231", "vorder": "true"}}}]
+    off = [{"add": {"path": "T/0/1202/a.parquet", "tags": {"cell": "649", "vorder": "false"}}},
+           {"add": {"path": "T/0/1202/b.parquet", "tags": {"cell": "861", "vorder": "false"}}}]
+    live = ["abfss://x/a.parquet", "abfss://x/b.parquet"]
+    assert stats._vorder_from_log(on, live) == {"tagged": 2, "files": 2, "unknown": 0}
+    assert stats._vorder_from_log(off, live) == {"tagged": 0, "files": 2, "unknown": 0}
 
-    Absent, not zero: absence reads as "this probe cannot see it", which is the truth, and the answer
-    arrives instead as `vorder_enabled` from the leg's own `sys.databases` query. A lakehouse must be
-    unaffected — that is where the tag means something."""
+
+def test_a_warehouse_records_its_vorder_files_like_any_other_engine(stats, monkeypatch):
+    """`ordering_for` used to skip the tag read for a warehouse, on the reading that the warehouse
+    stamps none. It stamps one, so the gate is gone: dwh carries `vorder_files` from the files AND
+    `vorder_enabled` from `sys.databases`, two answers that can be checked against each other."""
     monkeypatch.setattr(stats, "vorder_tags",
-                        lambda *a, **k: {"tagged": 0, "files": 77, "unknown": 0})
+                        lambda *a, **k: {"tagged": 77, "files": 77, "unknown": 0})
     # The two parquet metrics are stubbed out: what is under test is the gate, not the readers, and
     # `ordering_for` drops a document holding nothing but `table`.
     monkeypatch.setattr(stats, "rg_ordering", lambda *a, **k: {"date": {"rg_overlap_pct": 0.0}})
     monkeypatch.setattr(stats, "run_lengths", lambda *a, **k: {})
     at, rows = {"file_name": 0}, [("part-1.parquet",)]
     lake = stats.ordering_for(object(), "g", "mart", at, rows, "lakehouses")
-    assert lake["vorder_files"] == {"tagged": 0, "files": 77, "unknown": 0}
+    assert lake["vorder_files"] == {"tagged": 77, "files": 77, "unknown": 0}
     wh = stats.ordering_for(object(), "g", "mart", at, rows, "warehouses")
-    assert "vorder_files" not in wh, "a warehouse's tag read is meaningless, so it must not be recorded"
-    # Still a document — the two parquet metrics are dialect-neutral and dwh keeps them.
+    assert wh["vorder_files"] == {"tagged": 77, "files": 77, "unknown": 0}
     assert wh.get("table") == "mart.fct_summary"
     # The default must be the lakehouse behaviour: a caller that forgets the argument keeps measuring.
     assert "vorder_files" in stats.ordering_for(object(), "g", "mart", at, rows)
@@ -261,10 +268,9 @@ def test_the_step_summary_renders_without_the_parts_that_failed(stats, capsys):
     stats.ordering_table(order, ["duckrun", "dwh", "spark"])
     out = capsys.readouterr().out
     assert "| duckrun | 9/9 +2? | `part-1.parquet` · 4,000,000 rows |" in out
-    # A missing part is a dash, not a zero and not a crash — EXCEPT the V-Order tag on a WAREHOUSE,
-    # which reads `n/a`: a dash there says "not V-Ordered" about the one engine that always is, which
-    # is the misreading that cost this repo months. Its state comes from `vorder_enabled` instead.
-    assert "| dwh | n/a (warehouse) | — |" in out
+    # A missing part is a dash, not a zero and not a crash. A warehouse is no exception any more: its
+    # tag is read like any other engine's, so a dash means the log could not be read.
+    assert "| dwh | — | — |" in out
     assert "spark" not in out, "an engine that measured nothing gets no column"
     assert "| `date` | 0% RG overlap · 45 runs | 50% RG overlap |" in out
     assert "100%* RG overlap" in out, "a truncated statistic is flagged for the reader"

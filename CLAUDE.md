@@ -807,9 +807,10 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   are independent in principle — either can be set without the other — so they *can* disagree, and
   `vorder_files` is what to believe if they ever do. The by-hand recipe this file used to prescribe
   is gone: `layout.ordering` measures it every run.
-  **Everything in this bullet is about SPARK. Do not carry "believe `vorder_files`" over to dwh** —
-  there both signals are blind and the warehouse's own `sys.databases.is_vorder_enabled` is the only
-  authority. See the retraction under *V-Order only affects files written after it*.
+  **Everything in this bullet is about SPARK.** On dwh the table PROPERTY is still never set, but
+  `vorder_files` is readable there since 2026-11-12 (the warehouse's tag is lowercase `vorder`) and
+  sits beside `sys.databases.is_vorder_enabled`. See the retraction under *V-Order only affects
+  files written after it*.
 - **WHETHER THE ROWS WERE ACTUALLY REORDERED IS MEASURED NOW — `layout.ordering` in the run record,
   and one step-summary section in the `layout` job.** V-Order is documented as a row-reordering plus
   encoding pass and nothing here could say whether it happened; the record could state that a run
@@ -834,10 +835,10 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
     live set comes from the file list the metadata fetch already holds, so this cannot disagree with
     the rest of the document about which files exist. A live file no JSON commit describes is
     `unknown` (checkpointed away), never silently counted untagged.
-    **IT IS A SPARK-WRITER MARKER, so `ordering_for` SKIPS IT FOR dwh — see the retraction below.**
-    An absent `vorder_files` on a warehouse is now the honest "this probe cannot see it"; a
-    `tagged: 0` there was a successful read of a log that carries no such tag, which is a different
-    statement from "the writer did not V-Order" and read identically on the page.
+    **THE KEY IS MATCHED CASE-INSENSITIVELY: Spark stamps `tags.VORDER`, the Warehouse stamps
+    `tags.vorder`.** Matching the Spark spelling alone read `0/77` on V-Ordered warehouse parquet and
+    `ordering_for` then skipped dwh altogether; it reads dwh like any other engine now. See the
+    retraction below.
   **READ THE TWO PARQUET METRICS TOGETHER — neither alone says "sorted".** A secondary sort key
   repeats through the table, so its row-group ranges all span the domain (100% overlap) while its
   values stay perfectly grouped inside each row group (few runs); measured on a `date,time,DUID`
@@ -934,6 +935,20 @@ to `provision.py teardown`, which polls for a 404 and goes red if it is still li
   **every dwh run measured up to 2026-08-09 wrote V-Ordered parquet** — while the record said `false`
   and the page printed `·` and grouped dwh's layout bars as un-V-Ordered. The `dwh_vorder` dispatch
   input runs it now; see the bullet below.
+  ⚠️ **RETRACTED AGAIN, 2026-11-12: "THE WAREHOUSE ENGINE SETS NEITHER" WAS A STATEMENT ABOUT THE
+  PROBE.** The warehouse DOES mark its files: the Delta `add` action carries `tags.vorder`
+  (LOWERCASE; Spark's is `VORDER`) and the parquet footer carries
+  `com.microsoft.parquet.vorder.enabled`. `_vorder_from_log` matched the uppercase key only, which
+  is the whole of the "0 of 77". Measured on throwaway warehouses in workspace `tmp`, 2026-11-11,
+  20M scrambled rows by CTAS, default against `ALTER DATABASE CURRENT SET VORDER = OFF`: every file
+  tagged `vorder: "true"` against `"false"`; one 2,097,152-row file held `pay` (4 values) in **4
+  runs against 1,485,667**, `vendor` in 10 against 956,231, `zone` (263) in 8,086 against 2,097,152;
+  the off file's rows in generation order (ids 2, 4, 6…), the default's regrouped; table 202 MB
+  against 283. Both write ONE 2,097,152-row row group per file, `UNCOMPRESSED`. So: a new warehouse
+  V-Orders by default (checked against a Microsoft claim that it is off), the reorder is real and
+  large, and `vorder_files` is now read for dwh, beside `vorder_enabled`. The table PROPERTY is still
+  unset. The paragraphs below are kept as the history of the mistake; where they say the tag is
+  absent or that `ordering_for` skips a warehouse, this paragraph wins.
   Why it read false, and this is the part worth keeping: **both signals are SPARK-SHAPED.**
   `stats[dwh][*].vorder` is the Delta table property `delta.parquet.vorder.enabled`, a
   `TBLPROPERTIES` key; `ordering.dwh.vorder_files` was the Fabric **Spark** writer's per-file

@@ -138,6 +138,38 @@ safe to leave on. Measured cost: build CU between −23% (bts) and +40% (green),
   irreversible, and the one run measured with it off billed ~45% more directlake CU and wrote
   16% larger files (n=1 — indicative, not settled).
 
+### V-Order in action: one warehouse table, one switch
+
+The cleanest picture of what V-Order does, measured 2026-11-11. One month of NYC yellow-taxi trips
+(January 2019, 7,696,617 rows, 16 columns) loaded as published, by `CREATE TABLE … AS SELECT`, into
+two brand-new Fabric Warehouses: one untouched, one after `ALTER DATABASE CURRENT SET VORDER = OFF`.
+Runs of equal values in physical row order, counted over every row of every file:
+
+| column | distinct | runs, V-Order off | runs, V-Order on | fewer |
+|---|---:|---:|---:|---:|
+| `payment_type` | 5 | 3,064,003 | 9,025 | 340× |
+| `passenger_count` | 11 | 2,402,697 | 12,749 | 189× |
+| `RatecodeID` | 8 | 446,477 | 2,890 | 155× |
+| `VendorID` | 4 | 1,727,619 | 16,902 | 102× |
+| `fare_amount` | 6,475 | 7,424,858 | 296,743 | 25× |
+| `total_amount` | 12,193 | 7,611,817 | 663,052 | 11.5× |
+| `PULocationID` | 263 | 7,168,470 | 6,093,035 | 1.2× |
+| `tpep_pickup_datetime` | near-unique | 7,687,484 | 7,695,515 | 1.0× |
+
+Same rows, same engine, same four files of up to 2,097,152 rows (one row group each), the same
+`PLAIN,RLE,RLE_DICTIONARY` encodings on every column, uncompressed on both sides. The table is
+**101.8 MB with V-Order against 150.5 MB without (−32%)**, and the whole difference is row order: the
+off files hold the rows as the source published them, the default files hold them regrouped. The write
+took 35.5 s against 23.4 s, one run each.
+
+Three things this settles. **A new warehouse V-Orders by default**: `sys.databases.is_vorder_enabled`
+reads 1 on creation and the files show it. **The warehouse marks its files**: the Delta `add` action
+carries `tags.vorder` (lowercase; Spark's is `VORDER`) and the parquet footer carries
+`com.microsoft.parquet.vorder.enabled`; this repo's probe matched only the Spark spelling until
+2026-11-12 and so reported no marker. **The warehouse's row groups are 2M rows**, at the low end of
+the band in [rule 1](#1-row-groups-millions-of-rows-each-and-more-of-them-than-the-engine-has-threads),
+V-Order or not. This covers CTAS; `COPY INTO` and `INSERT` were not tested.
+
 ## Writing with a third-party writer?
 
 delta-rs, DuckDB, open-source Spark, Iceberg writers — none has V-Order. Good practice with

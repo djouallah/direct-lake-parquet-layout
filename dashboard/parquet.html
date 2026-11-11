@@ -240,6 +240,38 @@
 
 </div>
 
+<div class="sub" data-name="action" aria-label="V-Order in action">
+<h3>V-Order in action: one table, one switch</h3>
+<p>One month of NYC yellow-taxi trips (January 2019, 7,696,617 rows, 16 columns) loaded as published
+  into two new Fabric Warehouses. One is left alone; the other has V-Order turned off first. Then the
+  parquet each one wrote is read back.</p>
+<div class="demo" id="vo">
+  <div class="btns" role="group" aria-label="V-Order">
+    <span class="lbl">the warehouse writes with:</span>
+    <button type="button" data-v="off">V-Order off</button>
+    <button type="button" data-v="on">V-Order on (the default)</button>
+  </div>
+  <p class="note" style="margin:0 0 .5rem">Runs of equal values on disk, per column. A full bar is one
+    run per row: nothing repeats next to itself.</p>
+  <div class="bars" id="vo-bars"></div>
+  <div class="stats">
+    <div class="stat" id="vo-size"><b></b><span>table size on disk</span></div>
+    <div class="stat" id="vo-runs"><b></b><span>runs in the six repetitive columns</span></div>
+    <div class="stat" id="vo-time"><b></b><span>time to write (one run each)</span></div>
+  </div>
+  <div class="pagebox" id="vo-rows"></div>
+  <p class="say" id="vo-say"></p>
+</div>
+<p>Same rows, same engine, same four files of up to 2,097,152 rows, and the same encodings on every
+  column. What V-Order changed is the order of the rows inside each file, and that alone took a third
+  off the table. The columns that repeat collapse; the timestamp, which never repeats, cannot.</p>
+<p class="note">Measured 2026-11-11 on throwaway warehouses: <code>CREATE TABLE … AS SELECT</code> from the
+  TLC file, default against <code>ALTER DATABASE CURRENT SET VORDER = OFF</code>, runs counted over every
+  row of every file. The warehouse marks each file itself: <code>tags.vorder</code> in the Delta log and
+  <code>com.microsoft.parquet.vorder.enabled</code> in the parquet footer read <code>true</code> on one side and
+  <code>false</code> or absent on the other.</p>
+</div>
+
 <div class="sub" data-name="vorder" aria-label="V-Order, measured">
 <h3>V-Order, measured</h3>
 <p>V-Order is three things: dictionary encoding, row-group size, and a sort within each file that
@@ -514,6 +546,56 @@
     }
     buttons($("sortdemo"), "data-order", async (o) => { place(ORDERS[o]); $("sd-say").textContent = SAY[o]; await wait(750); });
     place(ORDERS.arrival); $("sd-say").textContent = SAY.arrival;
+  }
+
+  // ---- V-Order in action: MEASURED, not a toy. Two new Fabric Warehouses, the same 7,696,617 real
+  // taxi rows by CTAS, V-Order off against the default; runs counted over every row of every file.
+  {
+    const ROWS = 7696617;
+    // [column, runs with V-Order off, runs with V-Order on]
+    const COLS = [["payment_type", 3064003, 9025], ["passenger_count", 2402697, 12749], ["VendorID", 1727619, 16902],
+      ["RatecodeID", 446477, 2890], ["fare_amount", 7424858, 296743], ["total_amount", 7611817, 663052],
+      ["PULocationID", 7168470, 6093035], ["tpep_pickup_datetime", 7687484, 7695515]];
+    const SIX = COLS.slice(0, 6);
+    const S = {
+      off: { i: 1, mb: "150.5 MB", time: "23.4 s", good: false,
+        head: "first rows on disk: as the file arrived",
+        rows: ["2019-01-01 00:46:40 · payment 1 · rate 1 · 1 passenger", "2019-01-01 00:59:47 · payment 1 · rate 1 · 1 passenger",
+          "2018-12-21 13:48:30 · payment 1 · rate 1 · 3 passengers", "2018-11-28 15:52:25 · payment 2 · rate 1 · 5 passengers",
+          "2018-11-28 15:56:57 · payment 2 · rate 2 · 5 passengers", "2018-11-28 16:25:49 · payment 2 · rate 1 · 5 passengers"],
+        say: "V-Order off: the rows are stored in the order they came. Five payment types take 3,064,003 runs, because a card trip is followed by a cash trip is followed by a card trip." },
+      on: { i: 2, mb: "101.8 MB", time: "35.5 s", good: true,
+        head: "first rows on disk: regrouped by the writer",
+        rows: ["2019-01-02 16:06:40 · payment 1 · rate 2 · 1 passenger", "2019-01-02 16:04:41 · payment 1 · rate 2 · 1 passenger",
+          "2019-01-02 16:58:56 · payment 2 · rate 2 · 1 passenger", "2019-01-03 17:33:30 · payment 1 · rate 2 · 1 passenger",
+          "2019-01-03 19:07:59 · payment 3 · rate 2 · 1 passenger", "2019-01-04 16:05:21 · payment 2 · rate 2 · 1 passenger"],
+        say: "V-Order on: the same rows, regrouped. payment_type is 9,025 runs instead of 3,064,003 (340× fewer), passenger_count 189× fewer, fare_amount 25× fewer. The pickup time, unique on almost every row, does not move. The table is 32% smaller and took about half as long again to write." },
+    };
+    const bars = $("vo-bars");
+    const tracks = COLS.map(([name]) => {
+      const lab = document.createElement("span"); lab.className = "mono"; lab.textContent = name;
+      const track = document.createElement("div"); track.className = "track";
+      const fill = document.createElement("div"); fill.className = "fill";
+      const val = document.createElement("span"); val.className = "val";
+      track.append(fill, val); bars.append(lab, track);
+      return { fill, val };
+    });
+    buttons($("vo"), "data-v", async (v) => {
+      const s = S[v];
+      COLS.forEach((c, k) => {
+        const runs = c[s.i];
+        tracks[k].fill.style.width = `${Math.max(runs / ROWS * 100, 0.4)}%`;
+        tracks[k].fill.className = `fill${runs > ROWS / 20 ? " hot" : ""}`;
+        tracks[k].val.textContent = `${fmt(runs)} runs`;
+      });
+      setStat("vo-size", s.mb, s.good);
+      setStat("vo-runs", fmt(SIX.reduce((t, c) => t + c[s.i], 0)), s.good);
+      setStat("vo-time", s.time, !s.good);
+      $("vo-rows").innerHTML = `<span class="k">-- ${s.head}</span><br>${s.rows.join("<br>")}`;
+      $("vo-say").textContent = s.say;
+      await wait(500);
+    });
+    $("vo").querySelector('button[data-v="off"]').click();
   }
 
   // ---- 5. global sort vs per-file sort: four row groups of 12, cells slide between them
