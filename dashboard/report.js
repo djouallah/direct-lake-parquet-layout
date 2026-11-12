@@ -740,13 +740,6 @@ export function propRowGroups(ctx) {
 /** Run ids of the controlled declaration pair: iceberg on aemo, DuckDB dev365 then dev379. */
 const DECLARE_PAIR = { before: "32444969823", after: "33700004854" };
 
-/** The controlled dictionary-ORDER pair: duckrun on aemo, same 37 row groups, same ~608 MB, same
- *  `date, time, price` sort, a dictionary page in every chunk. Before: deltalake 1.5.0 (parquet-rs 57,
- *  dictionary listed first in `encoding_stats`). After: deltalake 1.6.x (parquet-rs 59, dictionary
- *  listed last) — duckrun#84, apache/arrow-rs#11659. The 36-row-group run of the same day is left out
- *  so the pair differs in nothing but the footer order. */
-const ORDER_PAIR = { before: ["34128354827", "34735629895", "35836350582"], after: ["38998148550", "39024032584"] };
-
 export function propDictionary(ctx) {
   const base = findDictionary(ctx);
   // Within the same column: chunks missing a dictionary page against fully dictionary-encoded.
@@ -770,23 +763,13 @@ export function propDictionary(ctx) {
   const cu = ratio((r) => r.cu && r.cu.dl), cold = ratio((r) => r.dl && r.dl.cold);
   const drop = (x) => `−${Math.round((1 - x) * 100)}%`;
   const paired = cu !== null && cold !== null;
-  // The order pair: median of each arm, after ÷ before.
-  const arm = (ids, m) => median(ids.map(run).filter(Boolean).map(m).filter((v) => v > 0));
-  const oCu = (() => { const b = arm(ORDER_PAIR.before, (r) => r.cu && r.cu.dl), a = arm(ORDER_PAIR.after, (r) => r.cu && r.cu.dl); return b && a ? { b, a, x: a / b } : null; })();
-  const oCold = (() => { const b = arm(ORDER_PAIR.before, (r) => r.dl && r.dl.cold), a = arm(ORDER_PAIR.after, (r) => r.dl && r.dl.cold); return b && a ? a / b : null; })();
-  const orderClaim = oCu ? `Same writer (duckrun on aemo), same 37 row groups, same sort, a dictionary page in every chunk; the only change is the footer listing the dictionary page <b>last</b> instead of first (deltalake 1.6.x, <a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>): Direct Lake read CU <b>${fmtX(oCu.x)}</b> (${fmtCu(oCu.b)} → ${fmtCu(oCu.a)}, median of ${ORDER_PAIR.before.length} and ${ORDER_PAIR.after.length} runs)${oCold ? `, cold load ${fmtX(oCold)}` : ""}. ` : "";
-  return propertyCard({ id: "dictionary", title: "Dictionary encoding", evidence: paired || oCu ? "controlled" : "observational",
-    status: paired || oCu ? "clear" : base.status === "clear" ? "clear" : "partial",
-    head: oCu ? [`${fmtX(oCu.x)} CU`, "Direct Lake read CU when the footer lists the dictionary page last instead of first: same writer, same files, same encodings"]
-      : paired ? [`${drop(cu)} CU`, "Direct Lake read CU once the file declares its dictionary: same table, same pages, one footer list"]
+  return propertyCard({ id: "dictionary", title: "Dictionary encoding", evidence: paired ? "controlled" : "observational",
+    status: paired ? "clear" : base.status === "clear" ? "clear" : "partial",
+    head: paired ? [`${drop(cu)} CU`, "Direct Lake read CU once the file declares its dictionary: same table, same pages, one footer list"]
       : [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
-    card: "Every column dictionary-encoded, declared in the footer with the dictionary page first, so Power BI reuses it instead of rebuilding it. Any writer that does this reads cheaply; delta-rs lost it in 1.6.3 (dictionary listed last) and its read CU jumped on identical data.",
-    claim: `${orderClaim}${paired ? `${oCu ? "And a second case: same" : "Same"} DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${fmtX(1 / cu)} lower</b> (${drop(cu)}), cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
-    top: `${pairSwitch({ lead: "AEMO, delta-rs, same pages; the footer lists the dictionary page:", measures: PAIR_MEASURES,
-      sets: [{ label: "AEMO", arms: [
-        { label: "first (deltalake 1.5.0)", runs: runsById(ctx, ORDER_PAIR.before) },
-        { label: "last (deltalake 1.6.x)", runs: runsById(ctx, ORDER_PAIR.after) }] }] })}
-      ${pairSwitch({ lead: "AEMO, DuckDB → Iceberg, same pages; the footer:", measures: PAIR_MEASURES,
+    card: "Every column dictionary-encoded and declared in the footer, so Power BI reuses the dictionary instead of rebuilding it. Any writer that does this reads cheaply.",
+    claim: `${paired ? `Same DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${fmtX(1 / cu)} lower</b> (${drop(cu)}), cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
+    top: `${pairSwitch({ lead: "AEMO, DuckDB → Iceberg, same pages; the footer:", measures: PAIR_MEASURES,
       sets: [{ label: "AEMO", arms: [
         { label: "declares the dictionary (DuckDB dev379)", runs: runsById(ctx, [DECLARE_PAIR.after]) },
         { label: "declares nothing (DuckDB dev365)", runs: runsById(ctx, [DECLARE_PAIR.before]) }] }] })}`,
@@ -848,9 +831,9 @@ const DIAGRAM = `<svg viewBox="0 0 760 185" class="diagram" role="img" aria-labe
 </svg>`;
 
 // The framing the home page used to open with; it leads the Method page now.
-const FRAMING = `<p>Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer with the dictionary page listed first), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
+const FRAMING = `<p>Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
   <p>Not a writer ranking: do those three things and the table reads cheaply whatever wrote it (Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB). The cards show which of the three each writer misses.</p>
-  <p>The clearest case: delta-rs 1.6.3 and later write byte-identical parquet except that the footer lists the dictionary page last, and the same table reads at several times the CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>); the live number is on <a href="?finding=dictionary">the dictionary card</a>.</p>`;
+  <p>The clearest case: DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> wrote the same dictionary pages without declaring them in the footer, and the same table read at about 2.5× the CU; the live number is on <a href="?finding=dictionary">the dictionary card</a>.</p>`;
 
 function methodSection(ctx) {
   const rows = dsList(ctx).map((ds) => {

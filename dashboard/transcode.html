@@ -150,9 +150,8 @@
 <div class="demo" id="ft">
   <div class="btns" role="group" aria-label="footer">
     <span class="lbl">the footer:</span>
-    <button type="button" data-mode="first">declares the dictionary, listed first</button>
+    <button type="button" data-mode="first">declares the dictionary</button>
     <button type="button" data-mode="none">declares nothing</button>
-    <button type="button" data-mode="last">lists the dictionary last</button>
   </div>
   <div class="ftrow"><span class="lbl">one column chunk, as loaded</span><div class="ids" id="ft-ids"></div></div>
   <div class="stats">
@@ -166,7 +165,6 @@
   <thead><tr><th>the footer…</th><th>where it was measured</th></tr></thead>
   <tbody>
     <tr><td>declares nothing</td><td>DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>: a 142M-row string column's cold first touch, 10,857.5 → 689.3 ms once declared, same pages.</td></tr>
-    <tr><td>lists the dictionary last</td><td>delta-rs 1.6.3 and later, byte-identical pages otherwise: about 4× the read CU (<a href="https://github.com/djouallah/duckrun/issues/84">duckrun#84</a>, <a href="https://github.com/apache/arrow-rs/issues/11659">arrow-rs#11659</a>). The live number is on <a href="./?finding=dictionary">the dictionary card</a>.</td></tr>
     <tr><td>declares PLAIN pages</td><td>the dictionary grew past the writer's limit and the rest of the chunk fell back to PLAIN; OSS-profile Spark and DuckDB's own writer did this on the widest columns.</td></tr>
   </tbody>
 </table></div>
@@ -279,7 +277,7 @@
   <thead><tr><th>part of V-Order</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
   <tbody>
     <tr><td><b>1. Dictionary encoding</b></td><td>every column dictionary-encoded, declared in
-      <code>encoding_stats</code> with the dictionary page first, no fallback to PLAIN</td>
+      <code>encoding_stats</code>, no fallback to PLAIN</td>
       <td>cold: ID swap instead of a rebuild</td><td>raise the writer's dictionary limit; read the footer back</td></tr>
     <tr><td><b>2. Sort order</b></td><td>a global sort on what reports filter (V-Order sorts per file)</td>
       <td>cold: cheaper encode · warm and hot: runs scanned as one</td><td><code>ORDER BY</code>, <code>CLUSTER BY</code>, or V-Order</td></tr>
@@ -512,7 +510,7 @@
     $("rs").querySelector('button[data-rows="122880"]').click();
   }
 
-  // ---- the footer: first, nothing, last
+  // ---- the footer: declared, or nothing
   {
     const LOCAL = [0, 0, 1, 2, 2, 2, 3, 0, 1, 1, 3, 3, 0, 2, 1, 0];
     const VALUE = ["BW01", "ER01", "LYA1", "MUR1"], GLOBAL = [2, 0, 3, 1];
@@ -523,10 +521,10 @@
       cells.forEach((c, i) => { c.className = "id"; c.textContent = LOCAL[i]; });
       if (m === "first") {
         setStat("ft-path", "ID swap", true); setStat("ft-hash", 0, true); setStat("ft-meas", "689 ms", true);
-        say("encoding_stats prove every page is dictionary-encoded and the dictionary comes first. VertiPaq maps the 4 dictionary entries once and swaps every ID in one pass. Measured: 689 ms cold first touch on a 142M-row column.");
+        say("encoding_stats prove every page is dictionary-encoded. VertiPaq maps the 4 dictionary entries once and swaps every ID in one pass. Measured: 689 ms cold first touch on a 142M-row column.");
         await wait(200);
         cells.forEach((c, i) => { c.classList.add("good"); c.textContent = GLOBAL[LOCAL[i]]; });
-      } else if (m === "none") {
+      } else {
         setStat("ft-path", "rebuild", false); setStat("ft-hash", cells.length, false); setStat("ft-meas", "10,858 ms", false);
         say("Nothing proves the pages are dictionary-encoded, so VertiPaq decodes every value and hashes it into its own dictionary, one by one. Same pages, same result: 10,858 ms on the same column, about 15× slower.");
         for (let i = 0; i < cells.length; i++) {
@@ -535,11 +533,6 @@
           await wait(45);
           c.classList.remove("bad"); c.classList.add("done"); c.textContent = GLOBAL[LOCAL[i]];
         }
-      } else {
-        setStat("ft-path", "slow path", false); setStat("ft-hash", "—"); setStat("ft-meas", "≈4× read CU", false);
-        say("The same pages and the same declaration, only listed in the other order. Measured on the same table: about 4× the read CU. How the engine handles it inside is not documented, so the cells are left unexplained.");
-        await wait(200);
-        cells.forEach((c) => c.classList.add("meh"));
       }
     });
     $("ft").querySelector('button[data-mode="first"]').click();

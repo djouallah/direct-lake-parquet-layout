@@ -133,9 +133,8 @@
 <div class="demo" id="fo">
   <div class="btns">
     <span class="lbl">one chunk's footer entry, as written by:</span>
-    <button type="button" data-f="first">dictionary declared, listed first</button>
+    <button type="button" data-f="first">dictionary declared</button>
     <button type="button" data-f="none">nothing declared</button>
-    <button type="button" data-f="last">dictionary listed last</button>
     <button type="button" data-f="spill">part of the chunk fell back</button>
   </div>
   <div class="pagebox" id="fo-box"></div>
@@ -456,12 +455,10 @@
   // ---- 3. the footer: four ways one chunk's entry can read
   {
     const F = {
-      first: { w: "Fabric Spark, Fabric Warehouse, delta-rs 1.5", stats: [["DICTIONARY_PAGE", "PLAIN", 1, "ok"], ["DATA_PAGE", "RLE_DICTIONARY", 12]],
-        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Declared and in the expected order: the reader can prove every data page is dictionary-encoded without opening one, and takes the cheap path." },
+      first: { w: "Fabric Spark, Fabric Warehouse, delta-rs", stats: [["DICTIONARY_PAGE", "PLAIN", 1, "ok"], ["DATA_PAGE", "RLE_DICTIONARY", 12]],
+        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Declared: the reader can prove every data page is dictionary-encoded without opening one, and takes the cheap path." },
       none: { w: "DuckDB's writer before duckdb#24957", stats: null,
         enc: "PLAIN, RLE_DICTIONARY", say: "The pages are dictionary-encoded, but nothing says that every page is. PLAIN appears in the list (it is the dictionary page's own encoding), and without encoding_stats the reader cannot tell it apart from a PLAIN data page. It rebuilds the column." },
-      last: { w: "delta-rs 1.6.3 and later", stats: [["DATA_PAGE", "RLE_DICTIONARY", 12], ["DICTIONARY_PAGE", "PLAIN", 1, "hl"]],
-        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Byte-identical pages; only the order of the list changed. Read CU on the same table went up about 4× (duckrun#84). The list order is the only difference in the file." },
       spill: { w: "any writer whose dictionary filled up", stats: [["DICTIONARY_PAGE", "PLAIN", 1], ["DATA_PAGE", "RLE_DICTIONARY", 5], ["DATA_PAGE", "PLAIN", 7, "hl"]],
         enc: "PLAIN, RLE, RLE_DICTIONARY", say: "Declared correctly: 7 data pages are PLAIN. The chunk is not entirely dictionary-encoded, so the reader cannot just swap IDs." },
     };

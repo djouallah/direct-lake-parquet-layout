@@ -22,14 +22,14 @@
 </div>
 
 <section class="pane" data-name="start" aria-label="Why it matters">
-<h1>The same table, four times the bill</h1>
-<p>One table, written twice by the same writer: same rows, same sort, same row groups, the same bytes
-  on disk. One list in the file footer is in a different order.</p>
+<h1>The same table, two and a half times the bill</h1>
+<p>One table, written twice by the same writer: same rows, same row groups, the same bytes on disk. One
+  version says in the file footer that its columns are dictionary-encoded; the other says nothing.</p>
 <div class="demo" id="hk">
   <div class="btns" role="group" aria-label="writer version">
     <span class="lbl">the table was written by:</span>
-    <button type="button" data-v="a">delta-rs 1.5.0</button>
-    <button type="button" data-v="b">delta-rs 1.6.x</button>
+    <button type="button" data-v="a">DuckDB, footer declares the dictionary</button>
+    <button type="button" data-v="b">DuckDB, footer declares nothing</button>
   </div>
   <div class="bars">
     <span>Power BI read CU</span>
@@ -39,8 +39,9 @@
   </div>
   <p class="say" id="hk-say"></p>
 </div>
-<p class="note">AEMO, 144M rows, Direct Lake. Median of three runs (34128354827, 34735629895,
-  35836350582) against two (38998148550, 39024032584). The live number is on
+<p class="note">AEMO, 144M rows, Direct Lake, DuckDB writing Iceberg before and after
+  <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>: one run each (32444969823,
+  33700004854), same 53 row groups, same 1,129 MB. The live number is on
   <a href="./?finding=dictionary">the dictionary card</a>; why it happens:
   <a href="transcode.html#swap">Transcoding · ID swap</a>.</p>
 <p>So optimise the file for the read, not the write. A table is written once and then read for days,
@@ -175,11 +176,11 @@
     press(bs.find((b) => b.getAttribute(attr) === first) || bs[0]);
   }
 
-  // ---- the hook: one table, two versions of one writer. Medians of the runs named on the page.
+  // ---- the hook: one table, two versions of one writer. The two runs named on the page.
   {
     const V = {
-      a: { cu: 1947, cold: 26963, say: "delta-rs 1.5.0 lists the dictionary page first in the footer. Power BI reuses the file's dictionaries." },
-      b: { cu: 8000, cold: 70718, say: "delta-rs 1.6.x writes the same pages and lists the dictionary page last. Power BI rebuilds every dictionary: 4.1× the read CU and 2.6× the cold load, for the same table. Warm queries show no clear change." },
+      a: { cu: 3132, cold: 40658, say: "The footer declares that every page is dictionary-encoded. Power BI reuses the file's dictionaries." },
+      b: { cu: 7923, cold: 80533, say: "The same pages, with nothing declared in the footer. Power BI cannot tell they are dictionary-encoded and rebuilds every dictionary: 2.5× the read CU and 2.0× the cold load, for the same table." },
     };
     const max = { cu: Math.max(V.a.cu, V.b.cu), cold: Math.max(V.a.cold, V.b.cold) };
     pick($("hk"), "data-v", (v) => {

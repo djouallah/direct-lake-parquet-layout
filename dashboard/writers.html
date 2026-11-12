@@ -203,8 +203,7 @@ ORDER BY path_in_schema, row_group_id;</code></pre>
 <p>What to look for, whatever wrote the table:</p>
 <ol class="rules">
   <li><b>Row groups</b>: <code>row_group_num_rows</code> in the millions, and even.</li>
-  <li><b>Dictionary</b>: <code>encoding_stats</code> present on every chunk, the dictionary page listed
-    first, no <code>PLAIN</code> data pages.</li>
+  <li><b>Dictionary</b>: <code>encoding_stats</code> present on every chunk, no <code>PLAIN</code> data pages.</li>
   <li><b>Sort</b>: after a global sort, the min and max of the leading sort key step up from one row
     group to the next. A per-file sort such as V-Order overlaps, and that is expected.</li>
 </ol>
