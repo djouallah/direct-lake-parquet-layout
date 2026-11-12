@@ -167,8 +167,6 @@
   </div>
   <div id="sd-cols"></div>
   <div class="stats">
-    <div class="stat" id="sd-named"><b></b><span>runs in the two columns named</span></div>
-    <div class="stat" id="sd-rest"><b></b><span>runs in the other three</span></div>
     <div class="stat" id="sd-total"><b></b><span>runs in total</span></div>
   </div>
   <p class="say" id="sd-say"></p>
@@ -424,12 +422,12 @@
     const auto = COLS.map((c) => c.k).sort((a, b) => card(a) - card(b));
     const ORDERS = { arrival: rows, pay: by("pay"), payvendor: by("pay", "vendor"), vorder: by(...auto) };
     const count = (o, ks) => ks.reduce((n, k) => n + runs(o.map((r) => r[k])), 0);
-    const ALL = COLS.map((c) => c.k), NAMED = ["pay", "vendor"], REST = ALL.filter((k) => !NAMED.includes(k));
+    const ALL = COLS.map((c) => c.k);
     const T = Object.fromEntries(Object.entries(ORDERS).map(([k, o]) => [k, count(o, ALL)]));
     const box = $("sd-cols");
     for (const c of COLS) {
       const col = document.createElement("div"); col.className = "col";
-      col.innerHTML = `<div class="head"><span class="mono">${c.name}</span><b id="sd-r-${c.k}"></b></div><div class="slide" id="sd-s-${c.k}"></div>`;
+      col.innerHTML = `<div class="head"><span class="mono">${c.name}</span></div><div class="slide" id="sd-s-${c.k}"></div>`;
       box.append(col);
       const strip = col.querySelector(".slide");
       rows.forEach((r) => {
@@ -454,10 +452,7 @@
           e.classList.toggle("rs", i > 0 && r[c.k] !== order[i - 1][c.k]);
         }
       });
-      for (const c of COLS) $(`sd-r-${c.k}`).textContent = `${runs(order.map((r) => r[c.k]))} runs`;
       const best = key === "vorder", worst = key === "arrival";
-      setStat("sd-named", count(order, NAMED), worst ? false : true);
-      setStat("sd-rest", count(order, REST), best ? true : false);
       setStat("sd-total", T[key], best ? true : worst ? false : null);
       $("sd-say").textContent = SAY[key];
     }
