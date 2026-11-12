@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Power BI のための parquet</title>
+<!--
+  Hand-written and static: no data is fetched. Published beside index.html by dashboard.yml. The first
+  stop of the tour: why an open table format makes the WRITER decide what every reader pays. Numbers
+  are quoted from docs/FINDINGS.md, CLAUDE.md or the run records, with their source named.
+-->
+<link rel="stylesheet" href="../learn.css">
+</head>
+<body data-tab="intro">
+<main>
+<div class="topbar">
+<nav class="subtabs" aria-label="セクション" role="tablist">
+  <a href="#start" role="tab" data-pane="start">なぜ重要か</a>
+  <a href="#formats" role="tab" data-pane="formats">2 つのフォーマット</a>
+  <a href="#question" role="tab" data-pane="question">測定内容</a>
+</nav>
+</div>
+
+<section class="pane" data-name="start" aria-label="なぜ重要か">
+<h1>同じテーブルで、読み取りコストが 2.5 倍</h1>
+<p>同じライターが同じテーブルを 2 回書き出しました。行も行グループも同じで、ディスク上のバイト数も同じです。
+  ただし一方はファイルのフッターで列が辞書エンコーディングされていることを宣言し、もう一方は何も宣言していません。</p>
+<div class="demo" id="hk">
+  <div class="btns" role="group" aria-label="ライターのバージョン">
+    <span class="lbl">テーブルを書き出したライター:</span>
+    <button type="button" data-v="a">DuckDB（フッターで辞書を宣言）</button>
+    <button type="button" data-v="b">DuckDB（フッターで宣言なし）</button>
+  </div>
+  <div class="bars">
+    <span>Power BI 読み取り CU</span>
+    <div class="track"><div class="fill" id="hk-cu" style="width:0"></div><span class="val" id="hk-cu-v"></span></div>
+    <span>コールドロード（クエリスイート全体）</span>
+    <div class="track"><div class="fill" id="hk-cold" style="width:0"></div><span class="val" id="hk-cold-v"></span></div>
+  </div>
+  <p class="say" id="hk-say"></p>
+</div>
+<p class="note">AEMO、1 億 4,400 万行、Direct Lake。DuckDB による Iceberg 書き込みを
+  <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> の前後で比較：各 1 回の実行（32444969823、
+  33700004854）、行グループはどちらも 53、サイズはどちらも 1,129 MB。最新の数値は
+  <a href="./?finding=dictionary">辞書カード</a>に、その理由は
+  <a href="transcode.html#swap">トランスコード · ID の置き換え</a>にあります。</p>
+<p>だからこそ、ファイルは書き込みではなく読み取りに合わせて最適化すべきです。テーブルは一度書き出されたあと、
+  それを使うすべてのレポートから数日、ときには数か月にわたって読まれ続けます。ユーザーが待たされるのは読み取りであり
+  （私の経験では 500 ms の差でも気づかれます）、読み取りのたびに容量を消費します。</p>
+<p>Fabric の答えは V-Order です。その中身は 3 つ：辞書エンコーディング、数百万行単位の行グループ、
+  そして同じ値を長いランにまとめるソートです。お使いのライターが V-Order に対応しているなら（Fabric Spark、
+  Fabric Warehouse）、有効にしてください。書き込みのコストは少し増えますが、読み取りで回収できます。
+  対応していないライター（delta-rs、DuckDB、Databricks）でも、同じ 3 つを自分で設定できます。</p>
+<p>本当の問題は技術ではありません。テーブルを書き出す側にはパイプラインの所要時間は見えても、
+  読み取りにいくらかかるかは誰も見せてくれないのです。</p>
+</section>
+
+<section class="pane" data-name="formats" aria-label="2 つのフォーマット">
+<h2>2 つのフォーマット：ディスク上とメモリ上</h2>
+<p>どのエンジンも 2 つのフォーマットを扱います。ディスク上のフォーマットと、実際に計算を行うメモリ上のフォーマットです。</p>
+<div class="demo" id="fm">
+  <div class="btns" role="group" aria-label="ストレージ">
+    <span class="lbl">ディスク上のフォーマット:</span>
+    <button type="button" data-f="own">独自形式</button>
+    <button type="button" data-f="lake">オープン：レイクハウス</button>
+  </div>
+  <div class="scroll">
+<svg id="fm-own" viewBox="0 0 920 240" role="img" aria-label="1 つのエンジンの中に、クエリ処理と独自形式のストレージの両方があります。データは一度取り込まれ、そのまま読み戻されるため、変換の工程はありません。">
+  <rect class="bx" x="20" y="90" width="150" height="60" rx="8"/>
+  <text class="b" x="95" y="116" text-anchor="middle">ソースデータ</text>
+  <text class="d" x="95" y="135" text-anchor="middle">CSV、アプリ、フィード</text>
+  <path class="ln" d="M170,120 L268,120" marker-end="url(#ow-a)"/>
+  <text class="d" x="219" y="110" text-anchor="middle">取り込み / 更新</text>
+  <rect class="acc" x="270" y="20" width="420" height="200" rx="12"/>
+  <text class="b big" x="290" y="48">1 つのエンジン</text>
+  <rect class="bx2" x="290" y="66" width="180" height="134" rx="8"/>
+  <text class="b" x="380" y="92" text-anchor="middle">独自のストレージ</text>
+  <text class="d" x="380" y="114" text-anchor="middle">ページ、セグメント</text>
+  <text class="d" x="380" y="131" text-anchor="middle">エンジン独自の形式で</text>
+  <text class="d" x="380" y="148" text-anchor="middle">自分の読み取り向けに配置</text>
+  <rect class="bx2" x="500" y="66" width="170" height="134" rx="8"/>
+  <text class="b" x="585" y="92" text-anchor="middle">クエリ処理</text>
+  <text class="d" x="585" y="114" text-anchor="middle">自分のバイトを</text>
+  <text class="d" x="585" y="131" text-anchor="middle">そのまま読む</text>
+  <path class="lna" d="M470,160 L498,160"/>
+  <text class="a" x="585" y="180" text-anchor="middle">変換なし</text>
+  <path class="ln" d="M690,120 L778,120" marker-end="url(#ow-a)"/>
+  <rect class="bx" x="780" y="90" width="120" height="60" rx="8"/>
+  <text class="b" x="840" y="125" text-anchor="middle">レポート</text>
+  <defs><marker id="ow-a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="currentColor"/></marker></defs>
+</svg>
+  <svg id="fm-lake" viewBox="0 0 920 320" role="img" aria-label="4 つのライターが OneLake 上の 1 つの Delta テーブルに書き込み、4 つのリーダーがそれを読みます。どのリーダーも parquet を自分のメモリ上のフォーマットに変換します。">
+    <text class="d" x="105" y="22" text-anchor="middle">ライター</text>
+    <text class="d" x="815" y="22" text-anchor="middle">リーダー</text>
+    <g id="lk-w"></g>
+    <rect class="acc" x="330" y="100" width="230" height="130" rx="10"/>
+    <text class="b big" x="445" y="132" text-anchor="middle">OneLake：コピーは 1 つ</text>
+    <text x="445" y="158" text-anchor="middle">Delta / Iceberg テーブル</text>
+    <text class="d" x="445" y="180" text-anchor="middle">parquet ファイル + ログ</text>
+    <text class="d" x="445" y="200" text-anchor="middle">配置は書いた側次第</text>
+    <g id="lk-r"></g>
+  </svg>
+  </div>
+  <p class="say" id="fm-say"></p>
+</div>
+<p>2 つのフォーマットはよく似ています。parquet も VertiPaq もテーブルを列ごとに格納し、列を辞書と小さな ID で
+  エンコードし、それを分割して持ちます（parquet では行グループ、VertiPaq ではセグメント）。主な違いは、parquet が
+  行グループごとに別々の辞書を持つのに対し、VertiPaq は列全体で 1 つの辞書を持つ点です。</p>
+<p>変換の手間がどれだけかかるかは、ファイルがどう書かれたかで決まります。</p>
+</section>
+
+<section class="pane" data-name="question" aria-label="測定内容">
+<h2>測定内容</h2>
+<p>同じ行を異なるライターで書き出し、読み取りの請求を比べました。実在する 5 つの公開データセットについて、4 つのエンジン
+  （Spark は V-Order あり・なしの 2 通り）が同じ行を出力し、データセットごとに 1 つのセマンティックモデルと 1 つの DAX
+  スイートを用意して、各読み取りセッションで課金された容量ユニット（CU）を測定しています。</p>
+<div class="scroll"><table class="left">
+  <thead><tr><th>データセット</th><th>ソース</th><th>マート</th><th>採用理由</th></tr></thead>
+  <tbody>
+    <tr><td>AEMO</td><td>オーストラリア電力市場</td><td>1 億 4,400 万行、細い列 5 つ</td><td>ほぼ一様分布：対照群</td></tr>
+    <tr><td>NYC taxi</td><td>ニューヨーク市イエローキャブの乗車記録</td><td>5 億 9,200 万行、17 列</td><td>極端な偏り、カテゴリ列の 97–99% が単一の値</td></tr>
+    <tr><td>BTS flights</td><td>米国の定時運航実績</td><td>1 億 8,000 万行、22 列</td><td>中程度に偏った多数の列が 1 つのソートを奪い合う</td></tr>
+    <tr><td>Green taxi</td><td>ニューヨーク市グリーンキャブの乗車記録</td><td>8,400 万行、20 列</td><td>taxi と同じ偏りを 1/7 の行数で</td></tr>
+    <tr><td>CMS payments</td><td>CMS Open Payments</td><td>8,800 万行、91 列</td><td>横に広く疎：54 列で半分以上が NULL</td></tr>
+  </tbody>
+</table></div>
+<div class="scroll"><table class="left">
+  <thead><tr><th>ライター</th><th>エンジン</th><th>parquet ライター</th></tr></thead>
+  <tbody>
+    <tr><td>delta-rs</td><td>Fabric ノートブック上の DuckDB（duckrun）</td><td>delta-rs</td></tr>
+    <tr><td>DuckDB → Iceberg</td><td>同じ DuckDB、同じノートブック</td><td>DuckDB 自身のライター</td></tr>
+    <tr><td>Fabric Warehouse</td><td>T-SQL</td><td>Warehouse 自身のライター、V-Order 有効</td></tr>
+    <tr><td>Fabric Spark、V-Order あり</td><td>Livy セッション、<code>readHeavyForPBI</code> プロファイル</td><td>parquet-mr、V-Order 有効</td></tr>
+    <tr><td>Fabric Spark、V-Order なし</td><td>Livy セッション、<code>writeHeavy</code> プロファイル（既定）</td><td>parquet-mr、V-Order 無効</td></tr>
+  </tbody>
+</table></div>
+<p>V-Order を持つライターは Fabric Spark と Fabric Warehouse の 2 つです。delta-rs と DuckDB、そして Databricks は
+  V-Order を持たないため、その 3 つの要素を自分で設定する必要があります。</p>
+<p>V-Order は 3 つの要素からなり、誰がファイルを書いたかにかかわらず、それが読み取りコストを決めます：</p>
+<ol class="rules">
+  <li>全列に<b>辞書エンコーディング</b>を適用し、フッターで宣言する。 <a href="parquet.html#encodings">Parquet</a> · <a href="transcode.html#swap">トランスコード</a></li>
+  <li>同じ値を長いランにまとめる<b>ソート順</b>。 <a href="parquet.html#sorting">Parquet</a></li>
+  <li>1 つあたり数百万行の<b>行グループ</b>。 <a href="parquet.html#rowgroups">Parquet</a> · <a href="transcode.html#merge">トランスコード</a></li>
+</ol>
+<p class="note">手法、注意事項、すべての実行 ID：<a href="./?page=method">手法</a>と
+  <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>。</p>
+</section>
+
+<footer>
+  <p>出典：<a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    · 要点：<a href="./">まとめ</a>。</p>
+</footer>
+</main>
+<script>
+  // The "decode" and "once" sections moved to the Transcoding tab; sorting is told once, on Parquet.
+  const MOVED = { decode: "transcode.html#translate", once: "transcode.html#tiers", skew: "parquet.html#sorting" };
+  if (MOVED[location.hash.slice(1)]) location.replace(MOVED[location.hash.slice(1)]);
+  // "Proprietary format" and "The lakehouse" are one section with a switch now.
+  window.LEARN_ALIAS = { owned: "formats", lake: "formats" };
+</script>
+<script src="../learn.js"></script>
+<script>
+// Illustrations. The hook's numbers are measured (run ids on the page); the rest is computed from toy rows.
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const NS = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+  const fmt = (n) => Math.round(n).toLocaleString("en-US");
+  /** One row of buttons: mark the pressed one and call `handler` with its `attr` value. */
+  function pick(root, attr, handler, first) {
+    const bs = [...root.querySelectorAll(`button[${attr}]`)];
+    const press = (b) => { bs.forEach((x) => x.setAttribute("aria-pressed", String(x === b))); handler(b.getAttribute(attr)); };
+    bs.forEach((b) => b.addEventListener("click", () => press(b)));
+    press(bs.find((b) => b.getAttribute(attr) === first) || bs[0]);
+  }
+
+  // ---- the hook: one table, two versions of one writer. The two runs named on the page.
+  {
+    const V = {
+      a: { cu: 3132, cold: 40658, say: "フッターで、すべてのページが辞書エンコーディングされていることを宣言しています。Power BI はファイルの辞書をそのまま再利用します。" },
+      b: { cu: 7923, cold: 80533, say: "ページの中身は同じですが、フッターでは何も宣言していません。Power BI は辞書エンコーディング済みだと判断できず、すべての辞書を作り直します。同じテーブルなのに、読み取り CU は 2.5 倍、コールドロードは 2.0 倍になります。" },
+    };
+    const max = { cu: Math.max(V.a.cu, V.b.cu), cold: Math.max(V.a.cold, V.b.cold) };
+    pick($("hk"), "data-v", (v) => {
+      const d = V[v];
+      for (const k of ["cu", "cold"]) {
+        const bar = $(`hk-${k}`);
+        bar.style.width = `${d[k] / max[k] * 100}%`;
+        bar.className = `fill${v === "b" ? " hot" : ""}`;
+      }
+      $("hk-cu-v").textContent = `${fmt(d.cu)} CU`;
+      $("hk-cold-v").textContent = `${(d.cold / 1000).toFixed(1)} 秒`;
+      $("hk-say").textContent = d.say;
+    }, "a");
+  }
+
+  // ---- two formats: one engine that owns both, or the lakehouse where every reader translates
+  {
+    const W = ["Fabric Spark", "Fabric Warehouse", "DuckDB / delta-rs", "Databricks"];
+    const R = [
+      ["Direct Lake", "Power BI"],
+      ["SQL エンドポイント", "T-SQL クエリ"],
+      ["Fabric Spark", "ノートブック、ジョブ"],
+      ["DuckDB", "ノート PC、ノートブック"],
+    ];
+    const ys = [40, 110, 180, 250];
+    const gw = $("lk-w"), gr = $("lk-r");
+    W.forEach((w, i) => {
+      const y = ys[i];
+      gw.append(el("rect", { class: "bx", x: 20, y, width: 170, height: 50, rx: 8 }));
+      gw.append(el("text", { class: "b", x: 105, y: y + 30, "text-anchor": "middle" }, w));
+      gw.append(el("path", { class: "lnd", d: `M190,${y + 25} C260,${y + 25} 260,165 328,165` }));
+    });
+    R.forEach(([name, sub], i) => {
+      const y = ys[i] + 25;
+      gr.append(el("path", { class: "ln", d: `M560,165 C590,165 580,${y} 610,${y} L728,${y}` }));
+      gr.append(el("rect", { class: "bx", x: 612, y: y - 15, width: 82, height: 30, rx: 6 }));
+      gr.append(el("text", { class: "a", x: 653, y: y + 5, "text-anchor": "middle" }, "変換"));
+      gr.append(el("rect", { class: "bx", x: 730, y: y - 25, width: 170, height: 50, rx: 8 }));
+      gr.append(el("text", { class: "b", x: 815, y: y - 3, "text-anchor": "middle" }, name));
+      gr.append(el("text", { class: "d", x: 815, y: y + 15, "text-anchor": "middle" }, sub));
+    });
+    const SAY = {
+      own: "SQL Server やインポートモードの Power BI モデルでは、エンジンの開発者が 2 つのフォーマットの両方を設計します。ディスク上のフォーマットはそのエンジン専用に作られているので、最小限の手間でそのまま読めます。その代わり、データはそのエンジン経由で読むか、ほかのツールごとにコピーすることになります。",
+      lake: "レイクハウスはこの 2 つを切り離します。ディスク上のフォーマットはオープン（Parquet の上に Delta または Iceberg）で、どのエンジンでも書き込めます。そのため、読み取る側のエンジンはすべて、それを自分のメモリ上のフォーマットに変換しなければなりません。Power BI ではこの処理を<b>トランスコード</b>と呼びます。その代わり、ファイルは特定のリーダー向けの形にはなっていません。形を決めるのはライターの設定であり、ほとんどのライターは既定でライター自身に都合のよい形を選びます。",
+    };
+    pick($("fm"), "data-f", (f) => {
+      $("fm-own").style.display = f === "own" ? "" : "none";
+      $("fm-lake").style.display = f === "lake" ? "" : "none";
+      $("fm-say").innerHTML = SAY[f];
+    }, "own");
+  }
+
+})();
+</script>
+</body>
+</html>

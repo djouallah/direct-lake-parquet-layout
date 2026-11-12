@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>parquet ファイルの内部</title>
+<!--
+  Hand-written and static: no data is fetched. Published beside index.html by dashboard.yml. The second
+  stop of the tour: what the writer leaves on disk. Every number is quoted from docs/FINDINGS.md or
+  CLAUDE.md with its run or source named in place; the demos are illustrations, not data.
+-->
+<link rel="stylesheet" href="../learn.css">
+</head>
+<body data-tab="parquet">
+<main>
+<div class="topbar">
+<nav class="subtabs" aria-label="セクション" role="tablist">
+  <a href="#anatomy" role="tab" data-pane="anatomy">構造</a>
+  <a href="#encodings" role="tab" data-pane="encodings">エンコーディング</a>
+  <a href="#footer" role="tab" data-pane="footer">フッター</a>
+  <a href="#rowgroups" role="tab" data-pane="rowgroups">行グループ</a>
+  <a href="#sorting" role="tab" data-pane="sorting">ソート</a>
+</nav>
+</div>
+
+<section class="pane" data-name="anatomy" aria-label="構造">
+<h2>1 つのファイルの内部</h2>
+<p>parquet ファイルは横方向に行グループへ分割され、各行グループはすべての列を列チャンクとして個別に格納します。
+  末尾のフッターが、その全体を記述しています。</p>
+<div class="demo">
+  <p class="note" style="margin:0 0 .6rem"><b>任意の列チャンク、またはフッターをクリック</b>すると、中身を表示します。</p>
+  <div class="scroll">
+  <svg viewBox="0 0 920 400" role="img" aria-label="parquet ファイルは行グループを持ち、各行グループは列ごとに 1 つのチャンクを持ちます。チャンクは辞書ページと、ID を格納したデータページから成ります。フッターにはスキーマ、統計情報、エンコーディングが格納されます。チャンクをクリックすると中身を表示します。">
+    <rect class="bx" x="20" y="14" width="500" height="380" rx="10"/>
+    <text class="b m" x="36" y="38">part-00000.parquet</text>
+    <g id="pq-file"></g>
+    <rect class="bx2 pick" id="pq-footer" data-col="footer" x="36" y="336" width="468" height="50" rx="6"/>
+    <text class="b" x="48" y="356" pointer-events="none">フッター</text>
+    <text class="d" x="48" y="375" pointer-events="none">スキーマ · チャンクごと: min / max、encodings、encoding_stats</text>
+
+    <rect class="acc" x="570" y="50" width="330" height="336" rx="8"/>
+    <text class="b" x="586" y="74" id="pq-title"></text>
+    <rect class="bx2" x="586" y="88" width="298" height="92" rx="4"/>
+    <text class="d" x="598" y="108" id="pq-dl"></text>
+    <text class="m" x="598" y="132" id="pq-d0"></text>
+    <text class="m" x="598" y="151" id="pq-d1"></text>
+    <text class="m" x="598" y="170" id="pq-d2"></text>
+    <rect class="bx2" x="586" y="192" width="298" height="86" rx="4"/>
+    <text class="d" x="598" y="212" id="pq-pl"></text>
+    <text class="m" x="598" y="238" id="pq-p"></text>
+    <text class="d" x="598" y="262" id="pq-pn"></text>
+    <rect class="bx2" x="586" y="290" width="298" height="84" rx="4"/>
+    <text class="d" x="598" y="310" id="pq-fl"></text>
+    <text x="598" y="336" id="pq-f1"></text>
+    <text class="d" x="598" y="360" id="pq-f2"></text>
+  </svg>
+  </div>
+</div>
+<p class="note">このプロジェクトの AEMO マートの形状です: 1 億 4,400 万行、5 列、date、次に time でソート。
+  ファイルに格納されているのは値ではなく ID で、辞書がそれを値に戻します。</p>
+<p><code>date</code> と <code>DUID</code> を比べてください。同じファイル、同じ行グループなのに、一方は少数の長いランで、
+  もう一方はノイズです。この違いを生んだのはライターの行の順序です。ライターが選べる 3 つのこと（行グループのサイズ、エンコーディング、行の順序）のうち、
+  列がメモリに載った後もクエリに影響し続けるのはこれだけです。</p>
+</section>
+
+<section class="pane" data-name="encodings" aria-label="エンコーディング">
+<h2>エンコーディング: 値そのものか、辞書への ID か</h2>
+<p>列チャンクには、値そのもの（PLAIN）を格納するか、異なる値を 1 回ずつ並べた辞書と、
+  行ごとの小さな整数 ID を格納します。ソートされた ID は、さらにランへとまとまります。</p>
+<div class="demo" id="en">
+  <div class="btns">
+    <button type="button" data-m="plain">PLAIN</button>
+    <button type="button" data-m="dict">辞書</button>
+    <button type="button" data-m="rle">辞書（ソート済み）</button>
+    <button type="button" data-m="spill">辞書のオーバーフロー</button>
+  </div>
+  <div class="pagebox" id="en-dict"></div>
+  <div class="ftrow"><span class="lbl" id="en-lbl">データページ</span><div class="ids" id="en-ids"></div></div>
+  <div class="bars" style="margin-top:.9rem">
+    <span>このサンプルチャンクのバイト数</span>
+    <div class="track"><div class="fill" id="en-bar" style="width:0"></div><span class="val" id="en-val"></span></div>
+  </div>
+  <p class="say" id="en-say"></p>
+</div>
+<ul>
+  <li><b>値が繰り返す箇所では、辞書エンコーディングのほうが小さくなります。</b>実際の 1 列
+    （1 億 4,400 万行の <code>DECIMAL(18,4)</code>）での測定値: PLAIN の 618.6 MB に対し、辞書エンコーディングでは 423.1 MB。</li>
+  <li><b>Power BI が再利用できるのも辞書です。</b>VertiPaq 自体が辞書エンコーディングを用いるため、parquet の
+    辞書はロード時に作り直さず、そのまま採用できます（トランスコード:
+    <a href="transcode.html#swap">ID の差し替えか再構築か</a>）。</li>
+  <li><b>ライターは辞書を黙って捨てます。</b>各ライターには辞書サイズの上限があり、それを超えるとチャンクの残りは
+    PLAIN にフォールバックします。このプロジェクトでは、OSS プロファイルの Spark ライターと DuckDB 自身の parquet
+    ライターが、最も幅の広い列で辞書を捨てていました。この設定の名前はライターごとに異なります:
+    delta-rs では <code>dictionary_page_size_limit</code>（バイト数）、
+    DuckDB では <code>DICTIONARY_SIZE_LIMIT</code>（異なる値の数）。</li>
+</ul>
+<p class="note">このサンプルでは、値 1 つを 4 バイト、ID 1 つを 2 ビット、ラン 1 つを 2 バイトとして数えています。実際のページには
+  ヘッダーと圧縮が加わりますが、4 つの方式の大小関係は変わりません。</p>
+</section>
+
+<section class="pane" data-name="footer" aria-label="フッター">
+<h2>フッター: ファイルの目次</h2>
+<p>リーダーは最初にフッターを開きます。フッターには、スキーマ、各行グループの行数、各チャンクの開始位置、
+  チャンクごとの min/max、そして各チャンクのページがどのエンコーディングを使っているかが格納されています。</p>
+<div class="demo" id="fo">
+  <div class="btns">
+    <span class="lbl">1 チャンク分のフッターエントリ:</span>
+    <button type="button" data-f="first">辞書を宣言済み</button>
+    <button type="button" data-f="none">宣言なし</button>
+    <button type="button" data-f="spill">チャンクの一部がフォールバック</button>
+  </div>
+  <div class="pagebox" id="fo-box"></div>
+  <p class="say" id="fo-say"></p>
+</div>
+<p>重要なフィールドは <code>encoding_stats</code> です。ページ種別ごとに、どのエンコーディングのページがいくつあるかを示します。
+  <b>ページをデコードせずに</b>チャンク全体が辞書エンコーディングであることを証明できる唯一の構造であり、
+  Power BI が ID を差し替えるか列を再構築するかは、これで決まります。それぞれの場合にリーダーが何をし、
+  どれだけのコストがかかったか: <a href="transcode.html#swap">トランスコード · ID の差し替え</a>。</p>
+<p class="note">フッターを読み戻すクエリ: <a href="writers.html#check">サードパーティのライター · ファイルを
+  確認する</a>。</p>
+</section>
+
+<section class="pane" data-name="rowgroups" aria-label="行グループ">
+<h2>行グループ: 決めるのはライター、望むサイズになることはまれ</h2>
+<p>ライターは、行数かバイト予算のどちらか先に達した時点で行グループを閉じます。
+  ライブラリの既定値はリーダーではなくライターのメモリに合わせたサイズで、DuckDB の既定値は 122,880 行です。
+  Power BI が求めるのは数百万行です。</p>
+<p>行グループが不適切なサイズになる 2 つの経路。どちらもこのプロジェクトで実際に発生しました:</p>
+<div class="scroll"><table class="left">
+  <thead><tr><th>起きたこと</th><th>どう見えたか</th></tr></thead>
+  <tbody>
+    <tr><td>ライブラリの既定値が OneLake まで届いた</td><td>DuckDB の行グループあたり 122,880 行: 1 億 4,400 万行の AEMO
+      マートが、約 25 ではなく 1,172 の行グループになりました。</td></tr>
+    <tr><td>隠れたバイト予算が優先された</td><td>DuckDB の Iceberg ライターは、<i>非圧縮</i>で 128 MB に達した時点でも
+      グループを閉じていました。NYC taxi では行グループあたり約 812,815 行、728 グループとなり、
+      行数を指定していても、先にバイト予算に達していました。</td></tr>
+  </tbody>
+</table></div>
+<p>両方を解消するルール: <b>行数を数百万単位で宣言し</b>、バイト予算は 1 行グループを十分に上回る値にして、
+  フッターを読み戻して確認します。各サイズがリーダーにもたらすコストは、次のタブの 1 つのチャートで示します:
+  <a href="transcode.html#merge/real">コールドとウォームの比較</a>。</p>
+<div class="scroll"><table class="left">
+  <thead><tr><th>書き込みに使うもの</th><th>行グループの設定</th></tr></thead>
+  <tbody>
+    <tr><td>Databricks</td><td><code>maxRecordsPerFile</code></td></tr>
+    <tr><td>delta-rs / Python</td><td><code>max_row_group_size</code></td></tr>
+    <tr><td>DuckDB → Iceberg</td><td><code>write.parquet.row-group-size</code> と、2 つのバイト上限をともに 1 GiB に</td></tr>
+  </tbody>
+</table></div>
+<p class="note">完全なレシピ: <a href="writers.html">サードパーティのライター</a>。</p>
+</section>
+
+<section class="pane" data-name="sorting" aria-label="ソート">
+<h2>ソート</h2>
+<div class="sub" data-name="runs" aria-label="値がランになる">
+<h3>ソートで値がランになる</h3>
+<p>ソートすると等しい値が隣り合い、ラン全体を、行ごとの 1 エントリではなく 1 組の値として格納できます。
+  Direct Lake は読み込んだ parquet の行の順序を保持するので、ライターが作ったランが、
+  その後のすべてのクエリがスキャンするランになります。</p>
+<div class="demo" id="sortdemo">
+  <div class="btns" role="group" aria-label="行の順序">
+    <span class="lbl">同じ 80 件のタクシー乗車を、次の順で書き込み:</span>
+    <button type="button" data-order="arrival" aria-pressed="true">到着順</button>
+    <button type="button" data-order="pay">ORDER BY payment_type</button>
+    <button type="button" data-order="payvendor">ORDER BY payment_type, vendor</button>
+    <button type="button" data-order="vorder">V-Order: 自動</button>
+  </div>
+  <div id="sd-cols"></div>
+  <div class="stats">
+    <div class="stat" id="sd-total"><b></b><span>ラン数の合計</span></div>
+  </div>
+  <p class="say" id="sd-say"></p>
+</div>
+<p><b>V-Order は自動のソートです。</b>すべての列を同時にソート対象とし、最も繰り返しの多い列から並べるため、
+  ランを作れる列はすべてランになり、誰もキーを指定する必要がありません。</p>
+<p><b>手動のソートは、指定した列だけを並べます。</b>実際のデータは組み合わせで繰り返す（同じ種類の
+  乗車が何度も現れる）ため、指定しなかった列は到着時と同じくばらばらのままです。</p>
+<p class="note">8 つの乗車パターンから抽出した 80 行のサンプルによる図解です。V-Order のアルゴリズムは
+  公開されておらず、最後のボタンはその考え方を模したものです。実際のテーブルでの結果は次のステップで示します。</p>
+</div>
+
+<div class="sub" data-name="action" aria-label="V-Order の実例">
+<h3>V-Order の実例: 1 つのテーブル、1 つのスイッチ</h3>
+<p>NYC イエロータクシーの乗車データ 1 か月分（2019 年 1 月、7,696,617 行、16 列）を、公開されたままの形で
+  2 つの新しい Fabric Warehouse にロードしました。一方はそのまま、もう一方は先に V-Order をオフにしています。
+  その後、それぞれが書き込んだ parquet を読み戻しました。</p>
+<div class="demo" id="vo">
+  <div class="btns" role="group" aria-label="V-Order">
+    <span class="lbl">Warehouse の書き込み設定:</span>
+    <button type="button" data-v="off">V-Order オフ</button>
+    <button type="button" data-v="on">V-Order オン（既定）</button>
+  </div>
+  <p class="note" style="margin:0 0 .5rem">列ごとの、ディスク上の等しい値のラン数。バーが満杯なら
+    1 行につき 1 ラン、つまり同じ値が隣り合うことが一度もありません。</p>
+  <div class="bars" id="vo-bars"></div>
+  <div class="stats">
+    <div class="stat" id="vo-size"><b></b><span>ディスク上のテーブルサイズ</span></div>
+    <div class="stat" id="vo-runs"><b></b><span>繰り返しの多い 6 列のラン数</span></div>
+    <div class="stat" id="vo-time"><b></b><span>書き込み時間（各 1 回実行）</span></div>
+  </div>
+  <div class="pagebox" id="vo-rows"></div>
+  <p class="say" id="vo-say"></p>
+</div>
+<p>同じ行、同じエンジン、最大 2,097,152 行の同じ 4 ファイル、そしてすべての列で同じエンコーディング。
+  V-Order が変えたのは各ファイル内の行の順序だけで、それだけでテーブルが 3 分の 1 小さくなりました。
+  繰り返す列はまとまり、値が一度も繰り返さないタイムスタンプはまとまりません。</p>
+<p class="note">2026-11-11 に使い捨ての Warehouse で測定: TLC ファイルからの <code>CREATE TABLE … AS SELECT</code>、
+  既定と <code>ALTER DATABASE CURRENT SET VORDER = OFF</code> の比較で、ランはすべてのファイルのすべての
+  行で数えています。Warehouse は各ファイルに自ら印を付けます: Delta ログの <code>tags.vorder</code> と
+  parquet フッターの <code>com.microsoft.parquet.vorder.enabled</code> が、一方では <code>true</code>、
+  もう一方では <code>false</code> または存在しません。</p>
+</div>
+
+<div class="sub" data-name="scope" aria-label="グローバルとファイル単位">
+<h3>グローバルソートか、ファイルごとのソートか</h3>
+<p>グローバルソートはテーブル全体を並べるため、各値は行グループやファイルをまたぐ 1 本の長いランになります。
+  ファイルごとのソート（V-Order が行うもの）は各ファイル内の行を並べるため、どの値もすべての行グループで
+  改めて始まります。</p>
+<div class="demo" id="gs">
+  <div class="btns">
+    <span class="lbl">同じ 48 行を、次の形で書き込み:</span>
+    <button type="button" data-o="arrival">到着順</button>
+    <button type="button" data-o="local">V-Order: ファイルごとにソート</button>
+    <button type="button" data-o="global">グローバルソート</button>
+  </div>
+  <div class="rgwrap" id="gs-wrap"></div>
+  <div class="rgcaps" id="gs-caps"></div>
+  <div class="stats">
+    <div class="stat" id="gs-runs"><b></b><span>スキャンするラン数</span></div>
+    <div class="stat" id="gs-dict"><b></b><span>マージするローカル辞書のエントリ数</span></div>
+  </div>
+  <p class="say" id="gs-say"></p>
+</div>
+<p>圧縮の点では両者に大差はなく、どちらも到着順よりはるかに優れています。</p>
+
+</div>
+
+<div class="sub" data-name="advice" aria-label="実践的なアドバイス">
+<h3>実践的なアドバイス: 箱の中の箱</h3>
+<p>複数列でのソートは、箱の中の箱です。第 1 キーがテーブルを少数の大きな箱に分け、その列に長いランを
+  与えます。第 2 キーはそれぞれの箱の中だけで並べ、第 3 キーは第 2 キーが残した箱の中だけで並べる、
+  というように続きます。</p>
+<figure>
+<div class="scroll"><svg viewBox="0 0 860 252" role="img" aria-label="date、payment_type、pickup_zone の順にソートした 30 件のタクシー乗車。date は 3 ラン、payment_type は date の箱の中で 9 ラン、pickup_zone は 21 ラン（ソートなしでは 28）。">
+  <text x="0" y="46" class="b m">date</text><text x="0" y="64" class="d">第 1 キー</text><rect x="151.5" y="26" width="197.0" height="46" rx="4" style="fill:var(--d1);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="250.0" y="54" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">月</text><rect x="351.5" y="26" width="197.0" height="46" rx="4" style="fill:var(--d2);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="450.0" y="54" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">火</text><rect x="551.5" y="26" width="197.0" height="46" rx="4" style="fill:var(--d3);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="650.0" y="54" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">水</text><text x="762" y="46" class="big">3 ラン</text><text x="762" y="64" class="d">ソートなし: 19</text><text x="0" y="126" class="b m">payment_type</text><text x="0" y="144" class="d">第 2 キー</text><rect x="151.5" y="106" width="77.0" height="46" rx="4" style="fill:var(--d4);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="190.0" y="134" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">card</text><rect x="231.5" y="106" width="97.0" height="46" rx="4" style="fill:var(--d5);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="280.0" y="134" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">cash</text><rect x="331.5" y="106" width="17.0" height="46" rx="4" style="fill:var(--d6);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="351.5" y="106" width="137.0" height="46" rx="4" style="fill:var(--d4);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="420.0" y="134" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">card</text><rect x="491.5" y="106" width="17.0" height="46" rx="4" style="fill:var(--d5);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="511.5" y="106" width="37.0" height="46" rx="4" style="fill:var(--d6);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="551.5" y="106" width="137.0" height="46" rx="4" style="fill:var(--d4);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="620.0" y="134" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">card</text><rect x="691.5" y="106" width="37.0" height="46" rx="4" style="fill:var(--d5);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="731.5" y="106" width="17.0" height="46" rx="4" style="fill:var(--d6);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="762" y="126" class="big">9 ラン</text><text x="762" y="144" class="d">ソートなし: 19</text><text x="0" y="206" class="b m">pickup_zone</text><text x="0" y="224" class="d">第 3 キー</text><rect x="151.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d3);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="171.5" y="186" width="37.0" height="46" rx="4" style="fill:var(--d4);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="211.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--line);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="231.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d1);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="251.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d3);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="271.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d4);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="291.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d6);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="311.5" y="186" width="37.0" height="46" rx="4" style="fill:var(--dim);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="351.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d1);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="371.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d2);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="391.5" y="186" width="77.0" height="46" rx="4" style="fill:var(--d4);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="430.0" y="214" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">Harlem</text><rect x="471.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--line);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="491.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d5);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="511.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d1);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="531.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d3);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="551.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d1);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="571.5" y="186" width="37.0" height="46" rx="4" style="fill:var(--d3);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="611.5" y="186" width="77.0" height="46" rx="4" style="fill:var(--d6);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="650.0" y="214" text-anchor="middle" style="fill:#fff;font-weight:600;font-size:12px">Chelsea</text><rect x="691.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--d3);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="711.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--line);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><rect x="731.5" y="186" width="17.0" height="46" rx="4" style="fill:var(--dim);opacity:.8;stroke:var(--fg);stroke-width:1.5"/><text x="762" y="206" class="big">21 ラン</text><text x="762" y="224" class="d">ソートなし: 28</text><line x1="350.0" y1="18" x2="350.0" y2="240" style="stroke:var(--fg);stroke-width:2.5;stroke-dasharray:5 4"/><line x1="550.0" y1="18" x2="550.0" y2="240" style="stroke:var(--fg);stroke-width:2.5;stroke-dasharray:5 4"/>
+</svg></div>
+<figcaption class="note">30 件の乗車、<code>ORDER BY date, payment_type, pickup_zone</code>。破線は
+  date の箱です。payment_type はその中だけでソートされ、pickup_zone は、すでに小さくなった
+  payment_type の箱の中だけでソートされます。第 1 キーは 19 ランから 3 ランへ、
+  第 2 キーは 19 から 9 へ、第 3 キーは 28 から 21 へ。ほとんど変わりません。</figcaption>
+</figure>
+<ul>
+  <li><b>最も重要なのは第 1 列、第 2 列は少し、それ以降は効果が急速に小さくなります。</b>
+    4 つ目、5 つ目のキーを加えると、書き込みのたびにソート時間がかかるのに、得られるものはほぼありません。</li>
+  <li><b>そのため、手動でソートするなら第 1 キーを慎重に選んでください。</b>長いランが保証されるのは
+    その列だけです。</li>
+  <li><b>迷ったら日付を使いましょう。</b>ほぼすべてのレポートが日付でフィルターしますし、データはたいてい
+    もともと日付順に到着するうえ、期待を裏切ることはまずありません。</li>
+</ul>
+</div>
+</section>
+
+<footer>
+  <p>出典: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    · 要点: <a href="./">まとめ</a>。参考資料:
+    <a href="https://parquet.apache.org/docs/file-format/">parquet ファイル形式</a>、
+    <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun の parquet レイアウト</a>。</p>
+</footer>
+</main>
+<script src="../learn.js"></script>
+<script>
+// Illustrations, not data: every number a demo prints is either computed from its own toy rows or
+// quoted from a measurement named on the page. A fixed seed so the page draws the same rows every load.
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
+  const STILL = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const wait = (ms) => new Promise((r) => setTimeout(r, STILL ? 0 : ms));
+  let seed = 7;
+  const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
+  const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const runs = (vals) => vals.reduce((n, v, i) => n + (i === 0 || v !== vals[i - 1] ? 1 : 0), 0);
+  const fmt = (n) => n.toLocaleString("en-US");
+  /** Buttons inside `root`: mark the pressed one, and refuse clicks while an animation runs. */
+  function buttons(root, attr, handler) {
+    const bs = [...root.querySelectorAll(`button[${attr}]`)];
+    let busy = false;
+    bs.forEach((b) => b.addEventListener("click", async () => {
+      if (busy) return;
+      busy = true;
+      bs.forEach((x) => { x.setAttribute("aria-pressed", String(x === b)); x.disabled = x !== b; });
+      try { await handler(b.getAttribute(attr)); } finally { busy = false; bs.forEach((x) => (x.disabled = false)); }
+    }));
+    return bs;
+  }
+
+  // ---- 1. parquet anatomy: click a chunk
+  {
+    const COLS = ["date", "time", "mw", "price", "DUID"];
+    const RGS = [["行グループ 1 · 数百万行", 50, 1], ["行グループ 2", 136, 2], ["行グループ 9", 250, 9]];
+    const INFO = {
+      date: { dict: ["0 → 2024-01-01", "1 → 2024-01-02", "… 1 日につき 1 エントリ"], page: "データページ · ランレングスエンコーディング",
+        ids: "0 ×49,600 · 1 ×49,600 · 2 ×49,600 …", note: "第 1 ソートキー: 1 日分が 1 つのラン",
+        f1: "辞書、encoding_stats で宣言済み", f2: "ID の差し替えでロード" },
+      time: { dict: ["0 → 00:05", "1 → 00:10", "… 288 エントリ、間隔ごとに 1 つ"], page: "データページ · ランレングスエンコーディング",
+        ids: "0 ×172 · 1 ×172 · 2 ×172 …", note: "第 2 ソートキー: 各日の中でラン",
+        f1: "辞書、encoding_stats で宣言済み", f2: "ID の差し替えでロード" },
+      mw: { dict: ["0 → 12.4071", "1 → 0.0000", "… 膨大な数の値"], page: "データページ · ビットパック",
+        ids: "8812 41 90233 7 15502 …", note: "ほぼ一意: ランはほとんどない",
+        f1: "delta-rs では辞書、DuckDB の既定では PLAIN", f2: "PLAIN ページはロード時に再エンコード" },
+      price: { dict: ["0 → 54.12", "1 → 61.80", "… 数千の値"], page: "データページ · ビットパック、短いラン",
+        ids: "17 4 4 9 17 17 2 9 …", note: "少し繰り返す: 短いランがいくつか",
+        f1: "辞書、encoding_stats で宣言済み", f2: "ID の差し替えでロード" },
+      DUID: { dict: ["0 → BW01", "1 → ER01", "… 644 ユニット"], page: "データページ · ビットパック",
+        ids: "0 3 1 4 2 0 2 1 3 0 4 …", note: "ソートキーではない: 全行がビット分を消費",
+        f1: "辞書、encoding_stats で宣言済み", f2: "ID の差し替えでロード" },
+      footer: { title: "フッター（最初に読まれる）", dl: "スキーマ", dict: ["5 つの列とその型", "9 つの行グループとその行数", "各チャンクの開始位置と終了位置"],
+        page: "統計情報（チャンクごと）", ids: "min · max · null 数", note: "他のエンジンはこれで行グループを読み飛ばすが、Direct Lake はしない",
+        fl: "encodings + encoding_stats", f1: "チャンクごと: どのページが辞書か", f2: "ロード時に差し替えか再エンコードかを決める" },
+    };
+    const NS = "http://www.w3.org/2000/svg";
+    const el = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text) e.textContent = text; return e; };
+    const g = $("pq-file");
+    RGS.forEach(([label, y, n]) => {
+      g.append(el("rect", { class: "bx2", x: 36, y, width: 468, height: 76, rx: 6 }));
+      g.append(el("text", { class: "d", x: 48, y: y + 18 }, label));
+      COLS.forEach((c, i) => {
+        const x = 48 + i * 90;
+        g.append(el("rect", { class: "ck pick", x, y: y + 26, width: 82, height: 40, "data-col": c, "data-rg": n, tabindex: 0, role: "button", "aria-label": `${c}、行グループ ${n}` }));
+        g.append(el("text", { class: "m", x: x + 41, y: y + 51, "text-anchor": "middle", "pointer-events": "none" }, c));
+      });
+    });
+    g.append(el("text", { class: "d", x: 270, y: 236, "text-anchor": "middle" }, "⋮"));
+    const set = (id, t) => ($(id).textContent = t);
+    function open(target) {
+      document.querySelectorAll(".pick.sel").forEach((x) => x.classList.remove("sel"));
+      target.classList.add("sel");
+      const c = target.dataset.col, d = INFO[c];
+      set("pq-title", d.title || `列チャンク: ${c} · 行グループ ${target.dataset.rg}`);
+      set("pq-dl", d.dl || "辞書ページ · 異なる値を 1 回ずつ");
+      d.dict.forEach((t, i) => set(`pq-d${i}`, t));
+      set("pq-pl", d.page); set("pq-p", d.ids); set("pq-pn", d.note);
+      set("pq-fl", d.fl || "フッターに書かれている内容");
+      set("pq-f1", d.f1); set("pq-f2", d.f2);
+    }
+    document.querySelectorAll(".pick").forEach((p) => {
+      p.addEventListener("click", () => open(p));
+      p.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(p); } });
+    });
+    open(document.querySelector('.pick[data-col="date"][data-rg="2"]'));
+  }
+
+  // ---- 2. encodings: one toy chunk of 48 values, four ways
+  {
+    const VALUE = ["BW01", "ER01", "LYA1", "MUR1"];
+    const raw = shuffle([...Array(18).fill(0), ...Array(14).fill(1), ...Array(10).fill(2), ...Array(6).fill(3)]);
+    const N = raw.length, LIMIT = 2;
+    const box = $("en-ids");
+    const cells = raw.map(() => { const s = document.createElement("span"); s.className = "id"; box.append(s); return s; });
+    const PLAIN = N * 4;
+    const MODES = {
+      plain() {
+        cells.forEach((c, i) => { c.className = "id done"; c.textContent = VALUE[raw[i]]; });
+        return { dict: `<span class="k">辞書ページなし</span>`, lbl: "データページ · PLAIN: すべての値をそのまま書き込み", bytes: PLAIN,
+          say: `48 個の値 × 4 バイト = ${PLAIN} バイト。BW01 は繰り返すたびに改めて格納されます。` };
+      },
+      dict() {
+        cells.forEach((c, i) => { c.className = "id good"; c.textContent = raw[i]; });
+        const b = 16 + Math.ceil(N * 2 / 8);
+        return { dict: `<span class="k">辞書ページ ·</span> 0→BW01 · 1→ER01 · 2→LYA1 · 3→MUR1`, lbl: "データページ · ID、各 2 ビット", bytes: b,
+          say: `4 つの値を 1 回ずつ（16 バイト）と、2 ビットの ID が 48 個（12 バイト）: ${b} バイト。情報は同じです。` };
+      },
+      rle() {
+        const s = [...raw].sort((a, b) => a - b);
+        cells.forEach((c, i) => { c.className = "id good"; c.textContent = s[i]; c.classList.toggle("hit", i === 0 || s[i] !== s[i - 1]); });
+        const b = 16 + runs(s) * 2;
+        return { dict: `<span class="k">辞書ページ ·</span> 0→BW01 · 1→ER01 · 2→LYA1 · 3→MUR1`, lbl: "データページ · ランレングスエンコーディング: ランごとに (ID, 個数)", bytes: b,
+          say: `ソートすると、48 個の ID は ${runs(s)} 個のランになります: 0×18、1×14、2×10、3×6。${b} バイトで、リーダーは 1 つのランを 1 ステップでスキャンできます。` };
+      },
+      spill() {
+        // The writer allows LIMIT distinct values; the first value past it switches the rest of the chunk to PLAIN.
+        const seen = new Set(); let cut = N;
+        for (let i = 0; i < N; i++) { seen.add(raw[i]); if (seen.size > LIMIT) { cut = i; break; } }
+        cells.forEach((c, i) => {
+          if (i < cut) { c.className = "id good"; c.textContent = raw[i]; } else { c.className = "id done"; c.textContent = VALUE[raw[i]]; }
+        });
+        const known = [...new Set(raw.slice(0, cut))].map((v, j) => `${j}→${VALUE[v]}`).join(" · ");
+        const b = LIMIT * 4 + Math.ceil(cut / 8) + (N - cut) * 4;
+        return { dict: `<span class="k">辞書ページ（${LIMIT} エントリで満杯） ·</span> ${known}`, lbl: `データページ · ${cut} 個の ID、その後 <span class="hl">${cut + 1} 行目から PLAIN</span>`, bytes: b,
+          say: `${cut + 1} 行目で辞書が満杯になったため、ライターはチャンクの残りを PLAIN に切り替えました: ${b} バイト。チャンクはもはや全体が辞書エンコーディングではありません。リーダーが安価な経路を取るには、まさにそれが必要でした。` };
+      },
+    };
+    const bar = $("en-bar");
+    buttons($("en"), "data-m", async (m) => {
+      const r = MODES[m]();
+      $("en-dict").innerHTML = r.dict; $("en-lbl").innerHTML = r.lbl;
+      bar.className = `fill${r.bytes > PLAIN / 2 ? " hot" : ""}`;
+      bar.style.width = `${r.bytes / PLAIN * 100}%`;
+      $("en-val").textContent = `${fmt(r.bytes)} バイト`;
+      $("en-say").textContent = r.say;
+      await wait(300);
+    });
+    $("en").querySelector('button[data-m="plain"]').click();
+  }
+
+  // ---- 3. the footer: four ways one chunk's entry can read
+  {
+    const F = {
+      first: { w: "Fabric Spark、Fabric Warehouse、delta-rs", stats: [["DICTIONARY_PAGE", "PLAIN", 1, "ok"], ["DATA_PAGE", "RLE_DICTIONARY", 12]],
+        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "宣言済み: リーダーはページを 1 つも開かずに、すべてのデータページが辞書エンコーディングであることを証明でき、安価な経路を取ります。" },
+      none: { w: "duckdb#24957 以前の DuckDB のライター", stats: null,
+        enc: "PLAIN, RLE_DICTIONARY", say: "ページは辞書エンコーディングですが、すべてのページがそうだとはどこにも書かれていません。リストには PLAIN が含まれ（辞書ページ自体のエンコーディング）、encoding_stats がなければ、リーダーはそれを PLAIN のデータページと区別できません。そのため列を再構築します。" },
+      spill: { w: "辞書が満杯になったライター（種類を問わず）", stats: [["DICTIONARY_PAGE", "PLAIN", 1], ["DATA_PAGE", "RLE_DICTIONARY", 5], ["DATA_PAGE", "PLAIN", 7, "hl"]],
+        enc: "PLAIN, RLE, RLE_DICTIONARY", say: "正しく宣言されています: 7 つのデータページが PLAIN です。チャンク全体が辞書エンコーディングではないため、リーダーは ID を差し替えるだけでは済みません。" },
+    };
+    buttons($("fo"), "data-f", async (f) => {
+      const d = F[f];
+      const st = d.stats ? `[${d.stats.map(([t, e, n, c]) => `<span class="${c || ""}">{page_type: ${t}, encoding: ${e}, count: ${n}}</span>`).join(",<br>&nbsp;")}]`
+        : `<span class="hl">（なし）</span>`;
+      $("fo-box").innerHTML = `<span class="k">-- 書き込み元: ${d.w}</span><br>path_in_schema: DUID<br>encodings: ${d.enc}<br>encoding_stats: ${st}`;
+      $("fo-say").textContent = d.say;
+      await wait(200);
+    });
+    $("fo").querySelector('button[data-f="first"]').click();
+  }
+
+  // ---- 4. sorting: five columns, 80 rows drawn from eight trip profiles, four orders. Real data
+  // repeats in COMBINATIONS, which is what a sort over every column finds and a two-key sort misses.
+  // V-Order's algorithm is not published; the demo mimics it: every column, fewest distinct values first.
+  {
+    const COLS = [
+      { k: "flag", name: "store_and_fwd_flag", vals: ["N", "Y"], off: 0 },
+      { k: "rate", name: "RatecodeID", vals: ["standard", "JFK"], off: 2 },
+      { k: "vendor", name: "vendor", vals: ["v1", "v2"], off: 4 },
+      { k: "pay", name: "payment_type", vals: ["card", "cash", "no charge"], off: 0 },
+      { k: "pc", name: "passenger_count", vals: ["1", "2", "3", "4"], off: 3 },
+    ];
+    // [rows, flag, rate, vendor, pay, pc]
+    const PROFILES = [[22, 0, 0, 0, 0, 0], [16, 0, 0, 1, 0, 1], [12, 0, 0, 0, 1, 0], [10, 0, 0, 1, 1, 2],
+      [8, 0, 1, 0, 0, 3], [6, 0, 0, 1, 2, 0], [4, 1, 0, 0, 0, 1], [2, 0, 1, 1, 1, 0]];
+    seed = 4;
+    const rows = shuffle(PROFILES.flatMap(([n, ...v]) => Array.from({ length: n }, () => Object.fromEntries(COLS.map((c, i) => [c.k, v[i]])))));
+    const N = rows.length;
+    const by = (...ks) => [...rows].sort((a, b) => { for (const k of ks) if (a[k] !== b[k]) return a[k] - b[k]; return 0; });
+    const card = (k) => new Set(rows.map((r) => r[k])).size;
+    const auto = COLS.map((c) => c.k).sort((a, b) => card(a) - card(b));
+    const ORDERS = { arrival: rows, pay: by("pay"), payvendor: by("pay", "vendor"), vorder: by(...auto) };
+    const count = (o, ks) => ks.reduce((n, k) => n + runs(o.map((r) => r[k])), 0);
+    const ALL = COLS.map((c) => c.k);
+    const T = Object.fromEntries(Object.entries(ORDERS).map(([k, o]) => [k, count(o, ALL)]));
+    const box = $("sd-cols");
+    for (const c of COLS) {
+      const col = document.createElement("div"); col.className = "col";
+      col.innerHTML = `<div class="head"><span class="mono">${c.name}</span></div><div class="slide" id="sd-s-${c.k}"></div>`;
+      box.append(col);
+      const strip = col.querySelector(".slide");
+      rows.forEach((r) => {
+        const e = document.createElement("span");
+        e.className = "c"; e.style.width = `calc(${100 / N}% + 1px)`; e.style.background = PAL[(r[c.k] + c.off) % PAL.length];
+        e.title = c.vals[r[c.k]];
+        (r.cells ||= {})[c.k] = e; strip.append(e);
+      });
+    }
+    const SAY = {
+      arrival: `到着順: すべての列がばらばらで、80 行に対して ${T.arrival} ラン。`,
+      pay: `ORDER BY payment_type: その列は 3 ランにまとまりますが、他の列はすべてばらばらのままです。合計 ${T.pay} ラン。`,
+      payvendor: `手動で 2 キー: payment_type と vendor はまとまりますが、誰も指定しなかった 3 列はばらばらのままです。合計 ${T.payvendor} ラン。`,
+      vorder: `V-Order は、最も繰り返しの多い列から順に、すべての列でソートします: 乗車パターンが揃い、すべての列がまとまります。合計 ${T.vorder} ランで、2 キーのソートの ${(T.payvendor / T.vorder).toFixed(1)} 分の 1。誰もキーを指定していません。`,
+    };
+    function place(key) {
+      const order = ORDERS[key];
+      order.forEach((r, i) => {
+        for (const c of COLS) {
+          const e = r.cells[c.k];
+          e.style.left = `${i * 100 / N}%`;
+          e.classList.toggle("rs", i > 0 && r[c.k] !== order[i - 1][c.k]);
+        }
+      });
+      const best = key === "vorder", worst = key === "arrival";
+      setStat("sd-total", T[key], best ? true : worst ? false : null);
+      $("sd-say").textContent = SAY[key];
+    }
+    buttons($("sortdemo"), "data-order", async (o) => { place(o); await wait(750); });
+    place("arrival");
+  }
+
+  // ---- V-Order in action: MEASURED, not a toy. Two new Fabric Warehouses, the same 7,696,617 real
+  // taxi rows by CTAS, V-Order off against the default; runs counted over every row of every file.
+  {
+    const ROWS = 7696617;
+    // [column, runs with V-Order off, runs with V-Order on]
+    const COLS = [["payment_type", 3064003, 9025], ["passenger_count", 2402697, 12749], ["VendorID", 1727619, 16902],
+      ["RatecodeID", 446477, 2890], ["fare_amount", 7424858, 296743], ["total_amount", 7611817, 663052],
+      ["PULocationID", 7168470, 6093035], ["tpep_pickup_datetime", 7687484, 7695515]];
+    const SIX = COLS.slice(0, 6);
+    const S = {
+      off: { i: 1, mb: "150.5 MB", time: "23.4 s", good: false,
+        head: "ディスク上の先頭行: ファイルが届いたままの順序",
+        rows: ["2019-01-01 00:46:40 · 支払い 1 · レート 1 · 乗客 1 名", "2019-01-01 00:59:47 · 支払い 1 · レート 1 · 乗客 1 名",
+          "2018-12-21 13:48:30 · 支払い 1 · レート 1 · 乗客 3 名", "2018-11-28 15:52:25 · 支払い 2 · レート 1 · 乗客 5 名",
+          "2018-11-28 15:56:57 · 支払い 2 · レート 2 · 乗客 5 名", "2018-11-28 16:25:49 · 支払い 2 · レート 1 · 乗客 5 名"],
+        say: "V-Order オフ: 行は届いた順序のまま格納されます。5 種類の支払い方法が 3,064,003 ランになります。カードの乗車の次に現金の乗車、その次にまたカードの乗車、と続くためです。" },
+      on: { i: 2, mb: "101.8 MB", time: "35.5 s", good: true,
+        head: "ディスク上の先頭行: ライターが並べ替えた順序",
+        rows: ["2019-01-02 16:06:40 · 支払い 1 · レート 2 · 乗客 1 名", "2019-01-02 16:04:41 · 支払い 1 · レート 2 · 乗客 1 名",
+          "2019-01-02 16:58:56 · 支払い 2 · レート 2 · 乗客 1 名", "2019-01-03 17:33:30 · 支払い 1 · レート 2 · 乗客 1 名",
+          "2019-01-03 19:07:59 · 支払い 3 · レート 2 · 乗客 1 名", "2019-01-04 16:05:21 · 支払い 2 · レート 2 · 乗客 1 名"],
+        say: "V-Order オン: 同じ行が並べ替えられています。payment_type は 3,064,003 ランではなく 9,025 ラン（340 分の 1）、passenger_count は 189 分の 1、fare_amount は 25 分の 1 になります。ほぼすべての行で一意な乗車時刻は変わりません。テーブルは 32% 小さくなり、書き込みには約 1.5 倍の時間がかかりました。" },
+    };
+    const bars = $("vo-bars");
+    const tracks = COLS.map(([name]) => {
+      const lab = document.createElement("span"); lab.className = "mono"; lab.textContent = name;
+      const track = document.createElement("div"); track.className = "track";
+      const fill = document.createElement("div"); fill.className = "fill";
+      const val = document.createElement("span"); val.className = "val";
+      track.append(fill, val); bars.append(lab, track);
+      return { fill, val };
+    });
+    buttons($("vo"), "data-v", async (v) => {
+      const s = S[v];
+      COLS.forEach((c, k) => {
+        const runs = c[s.i];
+        tracks[k].fill.style.width = `${Math.max(runs / ROWS * 100, 0.4)}%`;
+        tracks[k].fill.className = `fill${runs > ROWS / 20 ? " hot" : ""}`;
+        tracks[k].val.textContent = `${fmt(runs)} ラン`;
+      });
+      setStat("vo-size", s.mb, s.good);
+      setStat("vo-runs", fmt(SIX.reduce((t, c) => t + c[s.i], 0)), s.good);
+      setStat("vo-time", s.time, !s.good);
+      $("vo-rows").innerHTML = `<span class="k">-- ${s.head}</span><br>${s.rows.join("<br>")}`;
+      $("vo-say").textContent = s.say;
+      await wait(500);
+    });
+    $("vo").querySelector('button[data-v="off"]').click();
+  }
+
+  // ---- 5. global sort vs per-file sort: four row groups of 12, cells slide between them
+  {
+    const COUNTS = [20, 14, 9, 5], G = 4, PER = 12, W = 23.5, GAP = (100 - G * W) / (G - 1);
+    const items = shuffle(COUNTS.flatMap((n, v) => Array.from({ length: n }, () => ({ v }))));
+    const wrap = $("gs-wrap");
+    for (let g = 0; g < G; g++) {
+      const b = document.createElement("span"); b.className = "rgbox"; b.style.left = `calc(${g * (W + GAP)}% - 4px)`; b.style.width = `calc(${W}% + 8px)`; wrap.append(b);
+    }
+    items.forEach((it) => { const c = document.createElement("span"); c.className = "c"; c.style.width = `calc(${W / PER}% + 1px)`; c.style.background = PAL[it.v]; it.el = c; wrap.append(c); });
+    $("gs-caps").innerHTML = Array.from({ length: G }, (_, g) => `<span id="gs-cap${g}"></span>`).join("");
+    const groups = {
+      arrival: Array.from({ length: G }, (_, g) => items.slice(g * PER, g * PER + PER)),
+      local: Array.from({ length: G }, (_, g) => items.slice(g * PER, g * PER + PER).sort((a, b) => a.v - b.v)),
+      global: (() => { const s = [...items].sort((a, b) => a.v - b.v); return Array.from({ length: G }, (_, g) => s.slice(g * PER, g * PER + PER)); })(),
+    };
+    const SAY = {
+      arrival: "到着順の行、行グループあたり 12 行。どの行グループにも、すべての値がばらばらに含まれています。",
+      local: "各ファイルを個別にソート（V-Order と同じ方式）: どの行グループの中にもランができますが、どの値もすべての行グループで改めて始まります。",
+      global: "テーブル全体を 1 回ソートしてから行グループに分割: ランは境界をまたいで続き、ほとんどの行グループは 1 つか 2 つの値しか持ちません。",
+    };
+    const totals = (o) => groups[o].reduce((t, grp) => { const v = grp.map((x) => x.v); return { r: t.r + runs(v), d: t.d + new Set(v).size }; }, { r: 0, d: 0 });
+    function place(o) {
+      let tr = 0, td = 0;
+      groups[o].forEach((grp, g) => {
+        const vals = grp.map((x) => x.v);
+        grp.forEach((it, i) => {
+          it.el.style.left = `${g * (W + GAP) + i * W / PER}%`;
+          it.el.classList.toggle("rs", i > 0 && it.v !== grp[i - 1].v);
+        });
+        const r = runs(vals), d = new Set(vals).size;
+        tr += r; td += d;
+        $(`gs-cap${g}`).textContent = `行グループ ${g + 1}: ${r} ラン · 辞書 ${d} 件`;
+      });
+      const all = Object.keys(groups).map((k) => totals(k));
+      const rate = (v, key) => (v === Math.min(...all.map((x) => x[key])) ? true : v === Math.max(...all.map((x) => x[key])) ? false : null);
+      setStat("gs-runs", tr, rate(tr, "r")); setStat("gs-dict", td, rate(td, "d"));
+      $("gs-say").textContent = SAY[o];
+    }
+    buttons($("gs"), "data-o", async (o) => { place(o); await wait(850); });
+    $("gs").querySelector('button[data-o="arrival"]').setAttribute("aria-pressed", "true");
+    place("arrival");
+  }
+})();
+</script>
+</body>
+</html>

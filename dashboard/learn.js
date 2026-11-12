@@ -13,14 +13,17 @@
     perf: '<path d="M3 3v18h18"/><circle cx="8" cy="15" r="1.6"/><circle cx="12" cy="9" r="1.6"/><circle cx="17" cy="12" r="1.6"/><circle cx="19" cy="5" r="1.6"/>',
     writers: '<path d="M4 20l4-1 11-11-3-3L5 16z"/><path d="M14 7l3 3"/>',
   };
+  // The page language is the PATH (`ja/` pages carry `<html lang="ja">`), never the browser's setting.
+  const JA = document.documentElement.lang === "ja";
+  const T = (en, ja) => (JA ? ja : en);
   // [key, href, label]. Order is the order of the talk.
   const TABS = [
-    ["intro", "intro.html", "Introduction"],
+    ["intro", "intro.html", T("Introduction", "はじめに")],
     ["parquet", "parquet.html", "Parquet"],
-    ["transcode", "transcode.html", "Transcoding"],
-    ["exp", "./", "Recap"],
-    ["perf", "./?page=perf", "Writers compared"],
-    ["writers", "writers.html", "Third-party writers"],
+    ["transcode", "transcode.html", T("Transcoding", "トランスコード")],
+    ["exp", "./", T("Recap", "まとめ")],
+    ["perf", "./?page=perf", T("Writers compared", "ライターの比較")],
+    ["writers", "writers.html", T("Third-party writers", "サードパーティのライター")],
   ];
   const GH = '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>';
   const here = document.body.dataset.tab;
@@ -28,10 +31,19 @@
 
   const bar = document.querySelector(".topbar");
   const tabs = document.createElement("nav");
-  tabs.className = "tabs"; tabs.setAttribute("aria-label", "pages");
+  tabs.className = "tabs"; tabs.setAttribute("aria-label", T("pages", "ページ"));
   tabs.innerHTML = TABS.map(([k, h, l]) => `<a href="${h}"${k === here ? ' aria-current="page"' : ""}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I[k]}</svg>${l}</a>`).join("")
-    + `<a class="gh" href="https://github.com/djouallah/direct-lake-parquet-layout" title="Source on GitHub" aria-label="Source on GitHub">${GH}</a>`;
+    + `<a class="lang" id="langlink" href="#" lang="${JA ? "en" : "ja"}">${JA ? "English" : "日本語"}</a>`
+    + `<a class="gh" href="https://github.com/djouallah/direct-lake-parquet-layout" title="${T("Source on GitHub", "GitHub のソース")}" aria-label="${T("Source on GitHub", "GitHub のソース")}">${GH}</a>`;
   bar.prepend(tabs);
+  // The same section in the other language: `x.html#h` <-> `ja/x.html#h`.
+  const langLink = tabs.querySelector("#langlink");
+  const syncLang = () => {
+    const file = location.pathname.replace(/^.*\//, "") || "index.html";
+    langLink.setAttribute("href", `${JA ? "../" : "ja/"}${file}${location.search}${location.hash}`);
+  };
+  syncLang();
+  addEventListener("hashchange", syncLang);
   const cur = tabs.querySelector('[aria-current="page"]');
   if (cur) tabs.scrollLeft = cur.offsetLeft - 16;
 
@@ -49,7 +61,7 @@
     const parts = [...pane.querySelectorAll(":scope > .sub")];
     if (!parts.length) { steps.push({ pane, hash: pane.dataset.name, label: pane.getAttribute("aria-label") }); return; }
     const nav = document.createElement("nav");
-    nav.className = "subnav"; nav.setAttribute("aria-label", "parts");
+    nav.className = "subnav"; nav.setAttribute("aria-label", T("parts", "パート"));
     nav.innerHTML = parts.map((s) => `<a href="#${pane.dataset.name}/${s.dataset.name}" data-sub="${s.dataset.name}">${s.getAttribute("aria-label")}</a>`).join("");
     parts[0].before(nav);
     parts.forEach((sub) => steps.push({ pane, sub, hash: `${pane.dataset.name}/${sub.dataset.name}`, label: sub.getAttribute("aria-label") }));
@@ -58,7 +70,8 @@
   if (panes.length) {
     const k = document.createElement("p");
     k.className = "keys";
-    k.innerHTML = "<kbd>←</kbd> <kbd>→</kbd> to step through, like slides · <kbd>P</kbd> presenter mode";
+    k.innerHTML = T("<kbd>←</kbd> <kbd>→</kbd> to step through, like slides · <kbd>P</kbd> presenter mode",
+      "<kbd>←</kbd> <kbd>→</kbd> でスライドのように進む · <kbd>P</kbd> プレゼンターモード");
     panes[panes.length - 1].parentElement.insertBefore(k, document.querySelector("footer"));
   }
   // Presenter mode: bigger type, notes and footers hidden. `P` toggles it and localStorage carries it
@@ -125,11 +138,12 @@
   // Copy buttons on code blocks.
   document.querySelectorAll("pre").forEach((pre) => {
     const b = document.createElement("button");
-    b.className = "copy"; b.type = "button"; b.textContent = "copy";
+    const COPY = T("copy", "コピー");
+    b.className = "copy"; b.type = "button"; b.textContent = COPY;
     b.addEventListener("click", async () => {
-      try { await navigator.clipboard.writeText(pre.querySelector("code").innerText); b.textContent = "copied"; }
-      catch { b.textContent = "select + copy"; }
-      setTimeout(() => (b.textContent = "copy"), 1500);
+      try { await navigator.clipboard.writeText(pre.querySelector("code").innerText); b.textContent = T("copied", "コピーしました"); }
+      catch { b.textContent = T("select + copy", "選択してコピー"); }
+      setTimeout(() => (b.textContent = COPY), 1500);
     });
     pre.append(b);
   });

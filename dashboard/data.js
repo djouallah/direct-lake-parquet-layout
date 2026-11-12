@@ -11,19 +11,22 @@
 // The rules that keep runs comparable are stated where they are applied: one source generation per
 // dataset (`generationOf`), and one query set per dataset (`querySet`).
 
+import { tr } from "./i18n.js";
+
 export const DEFAULTS = { repo: "djouallah/direct-lake-parquet-layout", ref: "main" };
 
+// `label` and `blurb` are getters so they read in the page's current language (i18n.js).
 export const DATASETS = {
-  aemo: { label: "AEMO", mart: "fct_summary",
-    blurb: "electricity dispatch, 5 narrow columns on a regular 5-minute grid" },
-  nyc: { label: "NYC taxi", mart: "fct_trips",
-    blurb: "yellow taxi trips, 17 columns, several ~99%-one-value categoricals" },
-  bts: { label: "BTS flights", mart: "fct_flights",
-    blurb: "US on-time flights, 22 columns of independent moderate skew" },
-  green: { label: "Green taxi", mart: "fct_green_trips",
-    blurb: "green taxi trips, 20 columns, nyc's skew on a smaller table" },
-  cms: { label: "CMS payments", mart: "fct_cms_payments",
-    blurb: "Open Payments, 91 columns, 54 of them more than half NULL" },
+  aemo: { get label() { return "AEMO"; }, mart: "fct_summary",
+    get blurb() { return tr("electricity dispatch, 5 narrow columns on a regular 5-minute grid", "電力需給データ。5 分刻みの規則的なグリッド上の細い 5 列"); } },
+  nyc: { get label() { return tr("NYC taxi", "NYC タクシー"); }, mart: "fct_trips",
+    get blurb() { return tr("yellow taxi trips, 17 columns, several ~99%-one-value categoricals", "イエローキャブの乗車記録。17 列、約 99% が単一値のカテゴリ列を複数含む"); } },
+  bts: { get label() { return tr("BTS flights", "BTS 航空便"); }, mart: "fct_flights",
+    get blurb() { return tr("US on-time flights, 22 columns of independent moderate skew", "米国の定時運航データ。互いに独立した中程度の偏りを持つ 22 列"); } },
+  green: { get label() { return tr("Green taxi", "グリーンタクシー"); }, mart: "fct_green_trips",
+    get blurb() { return tr("green taxi trips, 20 columns, nyc's skew on a smaller table", "グリーンタクシーの乗車記録。20 列、NYC と同じ偏りを持つより小さいテーブル"); } },
+  cms: { get label() { return tr("CMS payments", "CMS 支払い"); }, mart: "fct_cms_payments",
+    get blurb() { return tr("Open Payments, 91 columns, 54 of them more than half NULL", "Open Payments。91 列、うち 54 列は半分以上が NULL"); } },
 };
 
 // Below this many runs a range is one lucky dispatch away from saying anything.
@@ -44,7 +47,7 @@ export function writerOf(rec) {
   if (e === "duckrun") {
     const sorted = cfg.sorted === true || cfg.sorted === "true";
     return { key: sorted ? "deltars_sorted" : "deltars_unsorted", family: "delta-rs",
-      label: sorted ? "delta-rs, autosort" : "delta-rs, unsorted", vorder: false, sorted,
+      label: sorted ? tr("delta-rs, autosort", "delta-rs、自動ソート") : tr("delta-rs, unsorted", "delta-rs、ソートなし"), vorder: false, sorted,
       rgSetting: cfg.row_group_size ? String(cfg.row_group_size) : "16000000" };
   }
   if (e === "iceberg") {
@@ -58,20 +61,20 @@ export function writerOf(rec) {
         profile: p };
     }
     if (p === "writeHeavy") {
-      return { key: "spark_plain", family: "spark", label: "Spark, no V-Order", vorder: false,
+      return { key: "spark_plain", family: "spark", label: tr("Spark, no V-Order", "Spark、V-Order なし"), vorder: false,
         profile: p };
     }
     // A record with no profile recorded predates the input; what it wrote is not knowable from
     // the record, so it is its own writer rather than a guess.
     return { key: p ? `spark_${p}` : "spark_unknown", family: "spark",
-      label: p ? `Spark, ${p}` : "Spark, profile not recorded", vorder: p ? false : null,
+      label: p ? `Spark, ${p}` : tr("Spark, profile not recorded", "Spark、プロファイル未記録"), vorder: p ? false : null,
       profile: p };
   }
   if (e === "dwh") {
     const v = typeof ord.vorder_enabled === "boolean" ? ord.vorder_enabled
       : cfg.vorder === "false" ? false : true;
     return { key: v ? "dwh" : "dwh_novorder", family: "warehouse",
-      label: v ? "Warehouse" : "Warehouse, V-Order off", vorder: v };
+      label: v ? "Warehouse" : tr("Warehouse, V-Order off", "Warehouse、V-Order オフ"), vorder: v };
   }
   return { key: e || "unknown", family: e || "unknown", label: e || "unknown", vorder: null };
 }
@@ -311,7 +314,7 @@ export function build(records, probeMap, ledger = null) {
     if (!mine.length) continue;
     const gen = generationOf(mine);
     const kept = mine.filter((r) => r.rows === null || gen === null || r.rows === gen);
-    for (const r of mine) if (!kept.includes(r)) excluded.push({ ...r, reason: `${fmtInt(r.rows)} rows, not ${fmtInt(gen)}` });
+    for (const r of mine) if (!kept.includes(r)) excluded.push({ ...r, reason: tr(`${fmtInt(r.rows)} rows, not ${fmtInt(gen)}`, `${fmtInt(r.rows)} 行（基準は ${fmtInt(gen)} 行）`) });
     const qDl = querySet(kept, "dl"), qDq = querySet(kept, "dq");
     for (const r of kept) {
       r.dl = { cold: totalOf(r, "dl", "cold", qDl), warm: totalOf(r, "dl", "warm", qDl),
@@ -368,9 +371,9 @@ export function spearman(xs, ys) {
 
 /** Plain words for a correlation, so a claim sentence never prints a bare ρ. */
 export function strength(rho) {
-  if (rho === null) return "too few points";
+  if (rho === null) return tr("too few points", "点が少なすぎる");
   const a = Math.abs(rho);
-  return a >= 0.7 ? "strong" : a >= 0.4 ? "moderate" : a >= 0.2 ? "weak" : "none";
+  return a >= 0.7 ? tr("strong", "強い") : a >= 0.4 ? tr("moderate", "中程度") : a >= 0.2 ? tr("weak", "弱い") : tr("none", "なし");
 }
 
 /**

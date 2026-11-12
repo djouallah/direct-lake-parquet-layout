@@ -37,14 +37,35 @@ each Benchmark run. It cannot quote a number the records no longer support.
 The shape follows
 [Writing parquet that VertiPaq likes](https://datamonkeysite.com/2026/08/29/writing-parquet-that-vertipaq-likes/).
 
+## Two languages: English, and Japanese at `/ja/`
+
+A Japanese customer asked for the page in Japanese (2026-11-12). **English is the default, always**:
+the language is the PATH and nothing else — `/` is English, `/ja/` is Japanese — never the browser's
+language setting and never remembered in storage. The `日本語` / `English` pill at the right of the tab
+bar links to the same view in the other language (query and hash kept).
+
+- **The report** (`report.js`, `data.js`) is bilingual inline: `tr(english, japanese)` at every string,
+  so a sentence built around live numbers interpolates them in both and the two sit side by side.
+  `build.mjs --lang ja` builds the same shell as `site/ja/index.html` with `<html lang="ja">`, which is
+  what `report.js` reads.
+- **The learning tabs** are hand-translated copies in `ja/`, loading `../learn.css` and `../learn.js`.
+- **Every copy edit has a Japanese twin.** `i18n.test.mjs` fails when a `ja/` page's ids, sections or
+  scripts drift from the English page, and when English prose (4+ words outside the glossary) appears
+  on a Japanese page or in the Japanese report. It cannot judge the wording. The glossary is the
+  comment at the top of `i18n.js`.
+- The offline `dashboard.html` snapshot stays English.
+
 ```
 index.html         the shell: styles, a header, three empty elements
+i18n.js            the language switch: tr(en, ja), and the glossary
+ja/                the Japanese learning tabs (intro, parquet, transcode, writers), one per English page
 data.js            records -> flat runs[] and columns[]; generation filter, query set, statistics
 report.js          the findings, the SVG charts, the page, boot
 probe_columns.js   GENERATED: which column each probe_<name> query touches (from benchmark/xmla_compare.py)
 probe_columns.mjs  regenerates it: node dashboard/probe_columns.mjs
 build.mjs          index.html + the three modules -> one file, twice (live, and offline with data inlined)
 data.test.mjs      offline tests, no browser, no network
+i18n.test.mjs      the Japanese pages keep the English structure; no untranslated English leaks
 dag.html           the dbt DAG, `dbt docs generate --static` output
 intro.html         the learning tabs, static, no data: Introduction (why an open format makes the
 parquet.html         writer decide the read cost), Parquet (what is on disk), Transcoding (what a

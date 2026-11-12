@@ -3,6 +3,7 @@
  *
  *     node dashboard/build.mjs --out site/index.html               # live: fetches history/ at load time
  *     node dashboard/build.mjs --out dashboard.html --snapshot     # offline: history/ inlined
+ *     node dashboard/build.mjs --out site/ja/index.html --lang ja  # the Japanese live page, served at /ja/
  *
  * The live page carries no data: it reads `history/runs/` from GitHub on every load, so a Benchmark
  * run reaches readers with no redeploy. The snapshot copy inlines the records so it opens off a disk.
@@ -75,7 +76,7 @@ if (!out || out === true) {
 }
 
 let html = readFileSync(join(HERE, "index.html"), "utf8");
-const MODULES = ["data.js", "probe_columns.js", "report.js"];
+const MODULES = ["i18n.js", "data.js", "probe_columns.js", "report.js"];
 const LOCAL_IMPORT = /^import [^\n]* from "\.\/[\w.]+";\r?\n/gm;
 const app = refuseScriptClose("report modules", MODULES.map((m) =>
   readFileSync(join(HERE, m), "utf8").replace(LOCAL_IMPORT, "")).join("\n"));
@@ -119,6 +120,40 @@ if (flag("snapshot")) {
   html = linked.replace(/href="(intro|parquet|transcode|writers)\.html(#[\w/-]*)?"/g,
     (_, page, hash) => `href="${PAGES}/${page}.html${hash || ""}"`);
 }
+
+// THE JAPANESE PAGE (`--lang ja`): the same shell, served from `/ja/` beside the translated learning
+// pages, so every relative link stays inside the Japanese site. `<html lang="ja">` is what report.js
+// reads to pick the language. Each swap must hit exactly as counted, or the build fails rather than
+// shipping a half-English shell.
+const LANG = flag("lang", "en");
+if (LANG === "ja") {
+  if (flag("snapshot")) throw new Error("--lang ja builds the live page only; the offline copy stays English");
+  const JA = [
+    ['<html lang="en">', '<html lang="ja">', 1],
+    ["<title>Parquet for Power BI</title>", "<title>Power BI のための parquet</title>", 1],
+    ['<nav class="tabs" aria-label="pages">', '<nav class="tabs" aria-label="ページ">', 1],
+    ["</svg>Introduction</a>", "</svg>はじめに</a>", 1],
+    ["</svg>Transcoding</a>", "</svg>トランスコード</a>", 1],
+    ["</svg>Recap</a>", "</svg>まとめ</a>", 1],
+    ["</svg>Writers compared</a>", "</svg>ライターの比較</a>", 1],
+    ["</svg>Third-party writers</a>", "</svg>サードパーティのライター</a>", 1],
+    ['<a class="lang" id="langlink" href="ja/" lang="ja">日本語</a>', '<a class="lang" id="langlink" href="../" lang="en">English</a>', 1],
+    ['title="Source on GitHub" aria-label="Source on GitHub"', 'title="GitHub のソース" aria-label="GitHub のソース"', 1],
+    ["<h1>Writing parquet that Power BI likes</h1>", "<h1>Power BI が好む parquet の書き方</h1>", 1],
+    ['<p class="note">Loading…</p>', '<p class="note">読み込み中…</p>', 1],
+    [`<p>The same data written by four engines, then read by Power BI in Direct Lake.
+      Every number on this page is computed in your browser from the run records under
+      <code>history/runs/</code>.</p>`, `<p>同じデータを 4 つのエンジンで書き出し、Power BI の Direct Lake で読み取っています。
+      このページの数値はすべて、<code>history/runs/</code> の実行記録からブラウザー上で計算されています。</p>`, 1],
+    ['<a href="intro.html">how it works</a>', '<a href="intro.html">仕組み</a>', 1],
+    ['<a id="daglink" href="dag.html">the dbt DAG</a>', '<a id="daglink" href="../dag.html">dbt の DAG</a>', 1],
+  ];
+  for (const [en, ja, n] of JA) {
+    const hits = html.split(en).length - 1;
+    if (hits !== n) throw new Error(`--lang ja: expected ${n} of ${JSON.stringify(en.slice(0, 60))} in index.html, found ${hits}`);
+    html = html.split(en).join(ja);
+  }
+} else if (LANG !== "en") throw new Error(`--lang ${LANG}: only en and ja exist`);
 
 mkdirSync(dirname(resolve(out)), { recursive: true });
 writeFileSync(resolve(out), html, "utf8");

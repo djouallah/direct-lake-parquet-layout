@@ -183,6 +183,11 @@ a.card:hover { border-color:var(--c1); }
 .tabs a[aria-current="page"] { background:var(--fg); color:var(--bg); border-color:var(--fg); }
 .tabs svg { width:17px; height:17px; min-width:0; flex:none; }
 .tabs a.gh { margin-left:auto; padding:.45rem; border-radius:50%; }
+/* The language switch sits just left of the GitHub icon (learn.js / report.js set its href). */
+.tabs a.lang { margin-left:auto; font-weight:600; }
+.tabs a.lang + a.gh { margin-left:0; }
+:lang(ja) body, body:lang(ja) { font-family:system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", sans-serif;
+  line-break:strict; }
 @media (max-width:760px) {
   .tabs { flex-wrap:nowrap; overflow-x:auto; scrollbar-width:none; }
   .tabs::-webkit-scrollbar { display:none; }

@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>サードパーティのライター</title>
+<!--
+  Hand-written and static, no data fetched. Published beside index.html by dashboard.yml
+  (`cp dashboard/writers.html site/writers.html`). Numbers are quoted from docs/FINDINGS.md and from
+  github.com/djouallah/parquet_layout_vertipaq_spark, named in place.
+-->
+<link rel="stylesheet" href="../learn.css">
+</head>
+<body data-tab="writers">
+<main>
+<div class="topbar">
+<nav class="subtabs" aria-label="セクション" role="tablist">
+  <a href="#databricks" role="tab" data-pane="databricks">Databricks</a>
+  <a href="#deltars" role="tab" data-pane="deltars">delta-rs</a>
+  <a href="#duckdb" role="tab" data-pane="duckdb">DuckDB</a>
+  <a href="#check" role="tab" data-pane="check">ファイルの確認</a>
+</nav>
+</div>
+
+<section class="pane" data-name="databricks" aria-label="Databricks">
+<h2>Databricks</h2>
+<p>これらのライターには V-Order のスイッチがありません。そのため、このページの各レシピでは V-Order を構成する
+  3 つの要素、すなわち辞書エンコーディング、行グループのサイズ、ランを短くするソートを手作業で設定します。</p>
+<p>測定は TPC-DS SF100 と SF1000 で、Microsoft 自身の Direct Lake ベンチマーク手順に従って行いました。DAX は論文
+  <a href="https://raw.githubusercontent.com/microsoft/FabricCAT/main/Direct%20Lake_DirectQuery/Modern%20Power%20BI%20Architecture%20Choices.pdf">Modern
+  Power BI Architecture Choices for Reporting on Azure Databricks</a> のもので、同時読み取りユーザーは 20 です。リポジトリ全体:
+  <a href="https://github.com/djouallah/parquet_layout_vertipaq_spark">djouallah/parquet_layout_vertipaq_spark</a>。</p>
+
+<h3>結果: SF100、20 ユーザー、ウォーム</h3>
+<div class="bars" role="img" aria-label="スイート所要時間: 設定のみ 7.9 秒、設定 + CLUSTER BY 2.5 秒、Fabric V-Order 2.4 秒。">
+  <span>Databricks、設定のみ</span>
+  <div class="track"><div class="fill hot" style="width:100%"></div><span class="val">7.9 秒</span></div>
+  <span>Databricks、設定 + 日付で <code>CLUSTER BY</code></span>
+  <div class="track"><div class="fill" style="width:31.6%"></div><span class="val">2.5 秒</span></div>
+  <span>Fabric Spark、V-Order + 日付でパーティション</span>
+  <div class="track"><div class="fill" style="width:30.4%"></div><span class="val">2.4 秒</span></div>
+</div>
+<div class="scroll"><table>
+  <thead><tr><th>SF100、20 ユーザー</th><th>行グループあたりの行数</th><th>スイート</th><th>p50</th><th>p95</th><th>最も遅いクエリ</th></tr></thead>
+  <tbody>
+    <tr><td>設定のみ</td><td>5.6–5.9M</td><td>7.9 秒</td><td>207 ms</td><td>2.8 秒</td><td>8.3 秒</td></tr>
+    <tr><td>設定 + 日付で <code>CLUSTER BY</code></td><td>1.1–2.0M</td><td><b>2.5 秒</b></td><td>124 ms</td><td>0.35 秒</td><td>0.71 秒</td></tr>
+    <tr><td>Fabric Spark、V-Order（論文のレイアウト）</td><td>78k–144k</td><td>2.4 秒</td><td>119 ms</td><td>0.37 秒</td><td>0.80 秒</td></tr>
+  </tbody>
+</table></div>
+<p class="note">SF1000 では、設定のみの場合はまったくウォームアップしなくなります（3 回の実行で 814 → 875 → 1,045 秒と、
+  回を追うごとに遅くなる）。一方、ソート済みのレイアウトはどれも安定します。これが
+  <code>CLUSTER BY</code> を 1 つ入れる理由です。</p>
+
+<h3>ステップ 1: クラスター設定（これらのテーブルを書き込むすべてのクラスターで同一にする）</h3>
+<pre><code>spark.sql.files.maxRecordsPerFile                                      6000000     # 既定値 0 = 上限なし
+spark.hadoop.parquet.block.size                                        2147483648  # 既定値 128 MB
+spark.databricks.delta.optimizeWrite.enabled                           true        # 既定値 false
+spark.databricks.delta.optimizeWrite.binSize                           4096        # 既定値 512
+
+spark.hadoop.parquet.page.row.count.limit                              16000000    # 既定値 20000
+spark.hadoop.parquet.page.size                                         67108864    # 既定値 1 MB
+spark.hadoop.parquet.dictionary.page.size                              67108864    # 既定値 1 MB
+spark.hadoop.parquet.enable.dictionary                                 true        # 既定値 true
+
+spark.databricks.delta.properties.defaults.checkpointPolicy            classic     # CLUSTER BY 使用時の既定値は v2
+spark.databricks.delta.properties.defaults.autoOptimize.optimizeWrite  true
+spark.databricks.delta.properties.defaults.autoOptimize.autoCompact    false</code></pre>
+<p><code>maxRecordsPerFile</code> がセグメントを決めます。テーブルの列数にかかわらず、1 ファイル = 1 行グループ = 600 万行です。
+  ページサイズと辞書サイズの設定により、幅の広い列でも辞書エンコーディングが維持されます。さらに、
+  省略できないクラスター設定が 3 つあります。</p>
+<ul>
+  <li><b>Photon をオフにする</b>（<code>runtime_engine: STANDARD</code>）。Photon のライターは <code>parquet.*</code> キーをすべて無視します。</li>
+  <li><b>最新のランタイムを使う</b>（DBR 19 で測定）。古いランタイムは、実装していない parquet キーも黙って受け付けます。</li>
+  <li><b>予測最適化をオフにする</b>: <code>ALTER SCHEMA … DISABLE PREDICTIVE OPTIMIZATION</code>。この設定なしでファイルを書き直す処理は、すべてレイアウトを元に戻してしまいます。</li>
+</ul>
+
+<h3>ステップ 2: ファクトテーブルごとに、レポートがフィルターする列で <code>CLUSTER BY</code></h3>
+<pre><code>fq  = "catalog.schema.store_sales"
+key = "ss_sold_date_sk"          # レポートがフィルターする唯一の列
+
+df.limit(0).write.format("delta").saveAsTable(fq)                                    # 空のテーブル、スキーマのみ
+spark.sql(f"ALTER TABLE {fq} SET TBLPROPERTIES ('delta.checkpointPolicy' = 'classic')")
+spark.sql(f"ALTER TABLE {fq} CLUSTER BY ({key})")
+df.write.format("delta").mode("append").saveAsTable(fq)                              # 書き込み自体は変更なし</code></pre>
+<p>ディメンションは通常の <code>saveAsTable</code> で構いません。これを崩す要因は以下のとおりで、いずれも測定で確認しています。</p>
+<ul>
+  <li><b>キーは 1 つだけ。</b>キーを 2 つにすると Hilbert 曲線になり、どの列も単独では順序付けられません。</li>
+  <li><b>キーを設定する前に <code>checkpointPolicy = classic</code> にする。</b>Direct Lake は v2 チェックポイントを読み取れません。</li>
+  <li><b><code>df.orderBy(key)</code> は使わない。</b>Optimized Writes がそのソートを捨ててしまいます。ファイルに順序を届ける手段は <code>CLUSTER BY</code> です。</li>
+  <li><b>この設定のないコンピューティングから <code>OPTIMIZE</code> を実行しない。</b>SQL ウェアハウスもそうしたコンピューティングに該当します。</li>
+  <li><b>ファイルごとに検証する。</b>書き込み時のクラスタリングはサイズ条件付きで、スキップしても何も通知されません。各ファイルでキーの最小値と最大値を確認してください。</li>
+</ul>
+<p class="note">Claude Code をお使いですか？このレシピはスキルとして提供されているため、アシスタントが
+  <code>orderBy</code> や <code>repartition</code> に頼らず、測定どおりに適用します:
+  <code>/plugin marketplace add djouallah/parquet_layout_vertipaq_spark</code>。</p>
+</section>
+
+<section class="pane" data-name="deltars" aria-label="delta-rs">
+<h2>delta-rs（Python、Rust、duckrun）</h2>
+<p>これは <a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun</a> が既定として提供しているプロファイルです。
+  各値は、Spark の V-Order を基準とし、DAX の所要時間を指標にして調整したものです。</p>
+<pre><code>from deltalake import write_deltalake, WriterProperties, ColumnProperties
+
+wp = WriterProperties(
+    compression="SNAPPY",                     # トランスコードはデコード律速
+    max_row_group_size=4_000_000,             # ルール 1（行数で指定）: 測定上の 2-6M の中央
+    dictionary_page_size_limit=32 * 1024**2,  # ルール 2: 最重要の設定。約 1 MB の既定値では幅の広い列が PLAIN に落ちる
+    data_page_size_limit=1024**2,
+    data_page_row_count_limit=1_000_000,      # 圧縮率の高い列が巨大な 1 ページになるのを防ぐ
+    statistics_truncate_length=64,
+    default_column_properties=ColumnProperties(
+        dictionary_enabled=True, statistics_enabled="CHUNK"),
+)
+
+# ルール 3: `table` はフィルター列で事前にソートしておくこと。ライターの設定ではソートされない
+write_deltalake(path, table, writer_properties=wp,
+                target_file_size=256 * 1024**2)   # 行グループはファイルをまたげない: 1 グループのバイト数より大きく保つ</code></pre>
+<ul>
+  <li><b>覚えておくべきは辞書の上限です。</b>1 億 4,400 万行の <code>DECIMAL(18,4)</code> 列 1 つで、
+    PLAIN では 618.6 MB、辞書エンコーディングでは 423.1 MB でした。</li>
+  <li><b>上限を上げるとライターのメモリを消費します</b>（リーダー側ではありません）。1,800 万行のマージで、
+    上限 128 MB では約 25 GB、8 MB では約 4 GB に達しました。</li>
+  <li><b>delta-rs はすでに <code>encoding_stats</code> を書き込みます</b>。そのため、その辞書は高速なリマップ経路に乗ります。</li>
+</ul>
+</section>
+
+<section class="pane" data-name="duckdb" aria-label="DuckDB">
+<h2>DuckDB</h2>
+<h3>DuckDB → Delta: レイアウトの観点では行き止まり</h3>
+<p>DuckDB の delta 拡張は Delta を書き込めますが、parquet の設定を一切公開していません。行グループのサイズも、
+  辞書の上限も、維持されるソートもありません。既定値で生成されたものがそのまま Power BI に渡り、
+  それを直す設定項目はありません。</p>
+
+<h3>DuckDB → Iceberg</h3>
+<p>DuckDB の iceberg 拡張は、OneLake を含む Iceberg REST カタログを通じて書き込みます。OneLake は
+  そのテーブルを Direct Lake に公開します。こちらではジオメトリを設定<i>できます</i>。設定は
+  <b>テーブル作成時に指定する Iceberg テーブルプロパティ</b>で行います。</p>
+<pre><code>ATTACH '&lt;warehouse&gt;' AS lake (TYPE iceberg, ENDPOINT '&lt;rest endpoint&gt;', TOKEN '&lt;token&gt;');
+
+CREATE TABLE lake.dbo.fct_sales WITH (
+    'write.parquet.row-group-size'       = '4000000',      -- rows: DuckDB's own key
+    'write.parquet.row-group-size-bytes' = '1073741824',   -- 1 GiB: otherwise a 128 MB cap closes the group first
+    'write.target-file-size-bytes'       = '1073741824',   -- 1 GiB: must be at least the row-group budget, see below
+    'write.parquet.page-size-bytes'      = '1048576'       -- 1 MB pages; the default is one ~100 MB page per column chunk
+) AS
+SELECT * FROM staging_sales ORDER BY order_date;           -- the sort: ORDER BY in the CTAS</code></pre>
+<ul>
+  <li><b>これらの設定がもたらすルール（どのテーブルでも同じ）:</b> 行グループは 400 万行または非圧縮データ 1 GiB の
+    いずれか早い方で閉じ、ファイルは 1 GiB を超えた後の最初の行グループ境界で閉じます。ファイルは約 1 GB になり、
+    行の幅が広いテーブルでは、ファイルが大きくなるのではなく行グループが 400 万行未満になります。</li>
+  <li><b>幅の広いテーブルでは、行数だけを設定しても効果はありません。</b>ライターは既定で
+    <i>非圧縮</i>で 128 MB に達した時点でも行グループを閉じ、17 列のテーブルではそれが約 81.3 万行に相当します。
+    上記のように、バイト上限も合わせて引き上げてください。</li>
+  <li><b>ファイルサイズが行グループの上限になります。</b>ライターは行グループのバイト上限がファイルの目標サイズを
+    超えることを許さないため、ファイルの目標を小さく（たとえば 128 MB）すると、気づかないうちに小さな行グループに戻ります。両者は同じ値にしてください。</li>
+  <li><b>1 ファイル 1 行グループには、まだできません。</b><code>write.parquet.row-groups-per-file</code> は
+    受け付けられますが何もしません（<a href="https://github.com/duckdb/duckdb-iceberg/issues/1606">duckdb-iceberg#1606</a>）。
+    そのため、大きな行グループは常に複数の行グループを持つファイルになります。</li>
+  <li><b>プロパティは作成時に設定する必要があります。</b>最初の書き込みの後で設定しても、書き込み済みのデータは何も変わりません。</li>
+  <li><b>以降の INSERT:</b> <code>ALTER TABLE … SET SORTED BY (order_date)</code> を設定すると、すべての INSERT がソートを守ります。</li>
+  <li><b>辞書はまだ制御できません。</b><code>dictionary_size_limit</code> も parquet の
+    バージョンもテーブルプロパティに対応付けられていません（<code>write.parquet.dict-size-bytes</code> は別の設定で、
+    かえって悪化します）。ここでの測定では、幅の広い数値列が 53 チャンク中 10 チャンクで依然として PLAIN に落ちました。</li>
+  <li><b>ページサイズには新しい拡張が必要です。</b><code>write.parquet.page-size-bytes</code> は
+    <a href="https://github.com/duckdb/duckdb-iceberg/pull/1365">duckdb-iceberg#1365</a> 以降で対応付けられています。古い拡張では
+    プロパティは保存されますが無視されます。ファイルのフッターでページ数を確認してください。</li>
+  <li><b>結果を確認する。</b>書き込み後に、フッターから行グループ数とファイル数を読み取ってください。
+    受け付けられたのに無視された設定は、効いた設定とまったく同じに見えます。</li>
+  <li><b>新しい DuckDB を使う。</b>フッターでの宣言（<a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>）は
+    プレリリース版にしかありません。このリポジトリでは、それだけでコールドロードが半分になり、読み取り CU が 2.5 分の 1 になりました。</li>
+</ul>
+
+<h3>または duckrun に任せる</h3>
+<p><a href="https://djouallah.github.io/duckrun/parquet-layout.html">duckrun</a> は、これを簡単にする補助プロジェクトです。
+  SQL はこれまでどおり DuckDB で実行されますが、Delta テーブルは
+  <a href="#deltars">delta-rs のプロファイル</a>を適用済みの delta-rs で書き込まれます（行グループあたり数百万行、
+  辞書は維持・宣言済み）。残る判断はソートだけです。</p>
+<pre><code>import duckrun
+
+con = duckrun.connect(
+    "abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/&lt;lakehouse&gt;.Lakehouse/Tables/dbo",
+    read_only=False)
+
+con.sql("""
+    CREATE OR REPLACE TABLE fct_sales SORTED BY (order_date) AS   -- or SORTED BY AUTO
+    SELECT * FROM staging_sales
+""")</code></pre>
+<p class="note">dbt では duckrun アダプターを使い、設定 1 行 <code>sort_by='auto'</code> で済みます。このリポジトリでは、
+  そのグローバルソートの Direct Lake CU は、V-Order を適用した Spark の 0.90 倍でした。データセットごとの数値は
+  <a href="./?page=perf">ライターの比較</a>にあります。</p>
+</section>
+
+<section class="pane" data-name="check" aria-label="ファイルの確認">
+<h2>ファイルの確認: フッターを読み戻す</h2>
+<p>ライターは設定を無視しても何も知らせません。このプロジェクトでも 2 回、宣言した設定がファイルに反映されておらず、
+  それを示したのはフッターだけでした。DuckDB 2.0 の <code>parquet_metadata()</code> は、
+  <code>encoding_stats</code> を含めてフッターを表示します。</p>
+<pre><code>SELECT row_group_id, row_group_num_rows, path_in_schema,
+       encodings, encoding_stats, total_compressed_size
+FROM parquet_metadata('abfss://&lt;workspace&gt;@onelake.dfs.fabric.microsoft.com/&lt;lakehouse&gt;/Tables/&lt;table&gt;/*.parquet')
+ORDER BY path_in_schema, row_group_id;</code></pre>
+<p>どのライターで書いたテーブルでも、確認するポイントは次のとおりです。</p>
+<ol class="rules">
+  <li><b>行グループ</b>: <code>row_group_num_rows</code> が数百万行規模で、かつ均等であること。</li>
+  <li><b>辞書</b>: すべてのチャンクに <code>encoding_stats</code> があり、<code>PLAIN</code> のデータページがないこと。</li>
+  <li><b>ソート</b>: グローバルソートの後は、先頭のソートキーの最小値と最大値が行グループごとに
+    段階的に増加すること。V-Order のようなファイル単位のソートでは範囲が重なりますが、それは想定どおりです。</li>
+</ol>
+<p class="note">古い DuckDB リリースや pyarrow は <code>encoding_stats</code> を公開していません。そのため、このプロジェクトの
+  <code>stats.py</code> はフッターを自前でデコードしています。各フィールドの意味:
+  <a href="parquet.html#footer">Parquet · フッター</a>。</p>
+</section>
+
+
+<footer>
+  <p>すべてのルールの裏付けとなる測定（実行 ID と注意事項付き）:
+    <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
+    および <a href="https://github.com/djouallah/parquet_layout_vertipaq_spark">parquet_layout_vertipaq_spark</a>。
+    ルールが効く理由: <a href="parquet.html">Parquet</a> と <a href="transcode.html">トランスコード</a>。</p>
+</footer>
+</main>
+<script src="../learn.js"></script>
+</body>
+</html>

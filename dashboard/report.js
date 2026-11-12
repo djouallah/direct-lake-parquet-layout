@@ -7,6 +7,19 @@
 // pages of their own (`?page=`). Speed AND read CU: what the layout costs to query is half the answer.
 import { DATASETS, MIN_RUNS, WRITERS, build, median, spearman, strength, verdict, fmtInt, fmtMs, fmtMb, fmtX, fmtRows, fmtCu, loadRemote, DEFAULTS } from "./data.js";
 import { PROBE_COLUMNS } from "./probe_columns.js";
+import { tr, pick, setLang, lang } from "./i18n.js";
+
+/** A tier name in the page language. */
+const TIER = (t) => tr(t, { cold: "コールド", warm: "ウォーム", hot: "ホット" }[t]);
+/** Recurring measure names, in the page language. */
+const READ_CU = () => tr("Direct Lake read CU", "Direct Lake 読み取り CU");
+const COLD_SUITE = () => tr("cold, whole suite", "コールド、スイート全体");
+const WARM_SUITE = () => tr("warm, whole suite", "ウォーム、スイート全体");
+const TABLE_SIZE = () => tr("table size", "テーブルサイズ");
+const COL_SIZE = () => tr("column compressed size", "列の圧縮後サイズ");
+const ROW_GROUPS = () => tr("row groups", "行グループ数");
+const NOT_YET = () => tr("Not measurable yet.", "まだ測定できません。");
+const notEnough = () => `<p class="empty">${tr("Not enough measured points yet.", "測定点がまだ足りません。")}</p>`;
 
 // --------------------------------------------------------------------------------------- marks
 //
@@ -104,12 +117,12 @@ function scale(values, log, lo, hi) {
 export function scatter({ points, x, y, w = 520, h = 320, guides = [], trend = false }) {
   const pts = points.filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y)
     && (!x.log || p.x > 0) && (!y.log || p.y > 0));
-  if (pts.length < 2) return `<p class="empty">Not enough measured points yet.</p>`;
+  if (pts.length < 2) return notEnough();
   const m = { l: 62, r: 14, t: 10, b: 42 };
   const sx = scale(pts.map((p) => p.x), x.log, m.l, w - m.r);
   const sy = scale(pts.map((p) => p.y), y.log, h - m.b, m.t);
   const fx = x.fmt || String, fy = y.fmt || String;
-  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(`${y.label} against ${x.label}`)}">`];
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(tr(`${y.label} against ${x.label}`, `${x.label} に対する ${y.label}`))}">`];
   for (const t of sy.ticks) {
     const yy = sy.f(t);
     parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="grid"/>`,
@@ -126,7 +139,7 @@ export function scatter({ points, x, y, w = 520, h = 320, guides = [], trend = f
     if (x1 <= x0) continue;
     const X0 = sx.f(x0), Y0 = sy.f(x0 * k), X1 = sx.f(x1), Y1 = sy.f(x1 * k);
     parts.push(`<line x1="${X0.toFixed(1)}" y1="${Y0.toFixed(1)}" x2="${X1.toFixed(1)}" y2="${Y1.toFixed(1)}" class="guide"/>`,
-      `<text x="${(X1 - 4).toFixed(1)}" y="${(Y1 + 12).toFixed(1)}" class="guide-label" text-anchor="end">${k === 1 ? "equal" : `${k}×`}</text>`);
+      `<text x="${(X1 - 4).toFixed(1)}" y="${(Y1 + 12).toFixed(1)}" class="guide-label" text-anchor="end">${k === 1 ? tr("equal", "等倍") : `${k}×`}</text>`);
   }
   parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 6}" class="axis" text-anchor="middle">${esc(x.label)}</text>`,
     `<text transform="translate(13,${(m.t + h - m.b) / 2}) rotate(-90)" class="axis" text-anchor="middle">${esc(y.label)}</text>`);
@@ -157,7 +170,7 @@ export function scatter({ points, x, y, w = 520, h = 320, guides = [], trend = f
  */
 export function strips({ rows, x, w = 760, rowH = 24 }) {
   const live = rows.filter((r) => r.values.some((v) => v > 0));
-  if (!live.length) return `<p class="empty">Not enough measured points yet.</p>`;
+  if (!live.length) return notEnough();
   const m = { l: 168, r: 16, t: 8, b: 40 };
   const h = m.t + m.b + live.length * rowH;
   const all = live.flatMap((r) => r.values.filter((v) => v > 0));
@@ -178,7 +191,7 @@ export function strips({ rows, x, w = 760, rowH = 24 }) {
       `<line x1="${sx.f(lo).toFixed(1)}" x2="${sx.f(hi).toFixed(1)}" y1="${yy.toFixed(1)}" y2="${yy.toFixed(1)}" class="range" data-fam="${esc(r.fam || r.family)}" style="stroke:${fam(r.family).css}"/>`);
     for (const n of v) {
       parts.push(mark(sx.f(n), yy, { family: r.family, fam: r.fam, filled: r.filled,
-        tip: `${r.label}: ${fmtMsOr(n, x)} · median ${fmtMsOr(md, x)} · ${v.length} run${v.length === 1 ? "" : "s"}` }, 3.6));
+        tip: tr(`${r.label}: ${fmtMsOr(n, x)} · median ${fmtMsOr(md, x)} · ${v.length} run${v.length === 1 ? "" : "s"}`, `${r.label}: ${fmtMsOr(n, x)} · 中央値 ${fmtMsOr(md, x)} · ${v.length} 回の実行`) }, 3.6));
     }
     parts.push(`<line x1="${sx.f(md).toFixed(1)}" x2="${sx.f(md).toFixed(1)}" y1="${(yy - 9).toFixed(1)}" y2="${(yy + 9).toFixed(1)}" class="median"/>`);
   });
@@ -257,8 +270,8 @@ export function bandTrend(pts, minDatasets = 2) {
 }
 
 const octaveText = (x) => fmtRows(x).replace(/\.0(?=[KMB])/, "");
-export const bandText = (t) => (!t || !t.band ? null : t.band.from.k === t.band.to.k ? `around ${octaveText(t.band.from.x)}`
-  : `${octaveText(t.band.from.x)} to ${octaveText(t.band.to.x)}`);
+export const bandText = (t) => (!t || !t.band ? null : t.band.from.k === t.band.to.k ? tr(`around ${octaveText(t.band.from.x)}`, `${octaveText(t.band.from.x)} 前後`)
+  : tr(`${octaveText(t.band.from.x)} to ${octaveText(t.band.to.x)}`, `${octaveText(t.band.from.x)}〜${octaveText(t.band.to.x)}`));
 
 /** Per dataset: its own octaves (at least two runs each), cold and warm against its median run. */
 export function datasetLines(pts) {
@@ -277,8 +290,8 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
   const fx = (v) => m.l + ((Math.log2(v) - Math.log2(lo)) / (Math.log2(hi) - Math.log2(lo))) * (w - m.l - m.r);
   const bot = 0.6, top = 1.8;
   const fy = (v) => h - m.b - ((Math.log(Math.min(Math.max(v, bot), top)) - Math.log(bot)) / (Math.log(top) - Math.log(bot))) * (h - m.b - m.t);
-  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${tier} against rows per row group, one line per dataset">`,
-    `<text x="${m.l}" y="16" class="panel-title">${tier}</text>`];
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(tr(`${tier} against rows per row group, one line per dataset`, `行グループあたりの行数に対する${TIER(tier)}。データセットごとに 1 本の線`))}">`,
+    `<text x="${m.l}" y="16" class="panel-title">${TIER(tier)}</text>`];
   if (t.band) {
     // The band covers its octaves whole: from half an octave below the first to half above the last.
     const x0 = fx(t.band.from.x / Math.SQRT2), x1 = fx(t.band.to.x * Math.SQRT2);
@@ -293,7 +306,7 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
     parts.push(`<line x1="${fx(octaveRows(k)).toFixed(1)}" x2="${fx(octaveRows(k)).toFixed(1)}" y1="${m.t}" y2="${h - m.b}" class="grid"/>`,
       `<text x="${fx(octaveRows(k)).toFixed(1)}" y="${h - m.b + 16}" class="tick" text-anchor="middle">${fmtRows(octaveRows(k))}</text>`);
   }
-  parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 10}" class="axis" text-anchor="middle">rows per row group (fewer, bigger groups →)</text>`);
+  parts.push(`<text x="${(m.l + w - m.r) / 2}" y="${h - 10}" class="axis" text-anchor="middle">${tr("rows per row group (fewer, bigger groups →)", "行グループあたりの行数（少なく大きいグループ →）")}</text>`);
   const labels = [];
   for (const ds of DS_ORDER) {
     const rows = lines[ds];
@@ -301,7 +314,7 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
     const css = `var(--d${DS_ORDER.indexOf(ds) + 1})`;
     parts.push(`<polyline points="${rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline thin" data-fam="${ds}" style="stroke:${css}"/>`);
     for (const x of rows) {
-      parts.push(`<g class="pt" data-fam="${ds}" data-tip="${esc(`${label(ds)} · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} its median · ${x.n} runs`)}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="3.4" fill="${css}" stroke="var(--bg)" stroke-width="1.2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="9" fill="transparent"/></g>`);
+      parts.push(`<g class="pt" data-fam="${ds}" data-tip="${esc(tr(`${label(ds)} · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} its median · ${x.n} runs`, `${label(ds)} · グループあたり約 ${fmtRows(x.x)} 行 · ${TIER(tier)}は中央値の ${fmtX(x[tier])} · ${x.n} 回の実行`))}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="3.4" fill="${css}" stroke="var(--bg)" stroke-width="1.2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="9" fill="transparent"/></g>`);
     }
     const last = rows[rows.length - 1];
     labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: label(ds), cls: "small", key: ds });
@@ -309,10 +322,10 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
   // Every dataset together: the median of all runs per octave, the line the band is computed from.
   parts.push(`<polyline points="${t.rows.map((x) => `${fx(x.x).toFixed(1)},${fy(x[tier]).toFixed(1)}`).join(" ")}" class="tline all"/>`);
   for (const x of t.rows) {
-    parts.push(`<g class="pt" data-tip="${esc(`all datasets · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} the median · ${x.n} runs from ${x.datasets} datasets${x.thin ? " · too few runs to count toward the band" : ""}`)}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="5" fill="${x.thin ? "var(--bg)" : "var(--fg)"}" stroke="var(--fg)" stroke-width="2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="11" fill="transparent"/></g>`);
+    parts.push(`<g class="pt" data-tip="${esc(tr(`all datasets · ~${fmtRows(x.x)} rows per group · ${tier} ${fmtX(x[tier])} the median · ${x.n} runs from ${x.datasets} datasets${x.thin ? " · too few runs to count toward the band" : ""}`, `全データセット · グループあたり約 ${fmtRows(x.x)} 行 · ${TIER(tier)}は中央値の ${fmtX(x[tier])} · ${x.datasets} データセットから ${x.n} 回の実行${x.thin ? " · 帯の判定に使うには実行回数が不足" : ""}`))}"><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="5" fill="${x.thin ? "var(--bg)" : "var(--fg)"}" stroke="var(--fg)" stroke-width="2"/><circle cx="${fx(x.x).toFixed(1)}" cy="${fy(x[tier]).toFixed(1)}" r="11" fill="transparent"/></g>`);
   }
   const last = t.rows[t.rows.length - 1];
-  labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: "all", cls: "strong" });
+  labels.push({ x: fx(last.x) + 8, y: fy(last[tier]) + 4, name: tr("all", "全体"), cls: "strong" });
   labels.sort((a, b) => a.y - b.y);
   for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 12);
   for (const l of labels) parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y.toFixed(1)}" class="row-label ${l.cls}"${l.key ? ` data-key="${l.key}" data-fam="${l.key}"` : ""}>${esc(l.name)}</text>`);
@@ -321,22 +334,22 @@ export function bandPanelSvg(lines, t, tier, xr, { w = 470, h = 360 } = {}) {
 }
 
 export function bandPanels(pts, t, perDataset = true) {
-  if (!t) return `<p class="empty">Not enough runs at different row-group sizes yet.</p>`;
+  if (!t) return `<p class="empty">${tr("Not enough runs at different row-group sizes yet.", "異なる行グループサイズでの実行がまだ足りません。")}</p>`;
   const lines = perDataset ? datasetLines(pts) : {};
   const xs = [...Object.values(lines).flatMap((rows) => rows.map((x) => x.x)), ...t.rows.map((x) => x.x)];
   const xr = [Math.min(...xs) / 1.6, Math.max(...xs) * 1.6];
   return `<div class="facets two">${["cold", "warm"].map((tier) => `<figure class="facet">${bandPanelSvg(lines, t, tier, xr)}</figure>`).join("")}</div>`;
 }
 
-const KEY_HINT = "Click to show only this one; click again for all";
+const KEY_HINT = () => tr("Click to show only this one; click again for all", "クリックでこの系列だけを表示、もう一度クリックで全表示");
 
 export function legend(families, { reorder = true, extra = "" } = {}) {
-  const items = families.map((f) => `<span class="key" data-key="${esc(f)}" role="button" tabindex="0" title="${KEY_HINT}"><svg viewBox="0 0 12 12" width="12" height="12">${fam(f).shape === "square"
+  const items = families.map((f) => `<span class="key" data-key="${esc(f)}" role="button" tabindex="0" title="${KEY_HINT()}"><svg viewBox="0 0 12 12" width="12" height="12">${fam(f).shape === "square"
     ? `<rect x="1.5" y="1.5" width="9" height="9" rx="1" fill="${fam(f).css}"/>`
     : `<circle cx="6" cy="6" r="4.5" fill="${fam(f).css}"/>`}</svg>${esc(fam(f).label)}</span>`);
   if (reorder) {
-    items.push(`<span class="key"><svg viewBox="0 0 12 12" width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--fg)"/></svg>filled: rows reordered (V-Order or a global sort)</span>`,
-      `<span class="key"><svg viewBox="0 0 12 12" width="12" height="12"><circle cx="6" cy="6" r="4" fill="none" stroke="var(--fg)" stroke-width="1.6"/></svg>hollow: written as it came</span>`);
+    items.push(`<span class="key"><svg viewBox="0 0 12 12" width="12" height="12"><circle cx="6" cy="6" r="4.5" fill="var(--fg)"/></svg>${tr("filled: rows reordered (V-Order or a global sort)", "塗りつぶし: 行を並べ替え済み（V-Order またはグローバルソート）")}</span>`,
+      `<span class="key"><svg viewBox="0 0 12 12" width="12" height="12"><circle cx="6" cy="6" r="4" fill="none" stroke="var(--fg)" stroke-width="1.6"/></svg>${tr("hollow: written as it came", "白抜き: 入力順のまま書き込み")}</span>`);
   }
   return `<div class="legend">${items.join("")}${extra}</div>`;
 }
@@ -345,7 +358,7 @@ const familiesIn = (rows) => Object.keys(FAMILIES).filter((f) => rows.some((r) =
 
 function facets(items, cls = "") {
   const live = items.filter((i) => i.html);
-  if (!live.length) return `<p class="empty">Not enough measured points yet.</p>`;
+  if (!live.length) return notEnough();
   return `<div class="facets${live.length === 1 ? " one" : ""}${cls ? ` ${cls}` : ""}">${live.map((i) =>
     `<figure class="facet"><figcaption>${esc(i.title)}</figcaption>${i.html}</figure>`).join("")}</div>`;
 }
@@ -356,9 +369,12 @@ export function table(head, rows, cls = "") {
     `<tr>${r.map((c) => `<td>${c ?? "—"}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
 }
 
-const STATUS = { clear: "clear", noise: "inside the noise", few: "too few datasets", partial: "partly measured",
-  none: "no measurable effect", parity: "same within noise" };
-const badge = (s) => `<span class="badge ${s}">${STATUS[s]}</span>`;
+const STATUS = () => pick({
+  en: { clear: "clear", noise: "inside the noise", few: "too few datasets", partial: "partly measured",
+    none: "no measurable effect", parity: "same within noise" },
+  ja: { clear: "明確", noise: "ノイズの範囲内", few: "データセット不足", partial: "一部のみ測定",
+    none: "測定可能な効果なし", parity: "ノイズの範囲で同等" } });
+const badge = (s) => `<span class="badge ${s}">${STATUS()[s]}</span>`;
 const rhoText = (r) => (r === null ? "—" : `${r >= 0 ? "" : "−"}${Math.abs(r).toFixed(2)}`);
 const range = (xs, f) => {
   const v = xs.filter((n) => typeof n === "number" && Number.isFinite(n));
@@ -370,7 +386,7 @@ const label = (ds) => (DATASETS[ds] || {}).label || ds;
 const dsList = (ctx) => Object.keys(DATASETS).filter((ds) => ctx.datasets.includes(ds));
 
 function runTip(r, extra = "") {
-  return `${r.writerLabel} · ${label(r.ds)} · run ${r.id} (${r.when})${extra}`;
+  return `${r.writerLabel} · ${label(r.ds)} · ${tr("run", "実行")} ${r.id} (${r.when})${extra}`;
 }
 
 // ------------------------------------------------------------------------------------- findings
@@ -403,13 +419,33 @@ export function findDictionary(ctx) {
   const gap = remapRel.length && hashRel.length ? median(hashRel) / median(remapRel) : null;
   const declRows = fams.map((f) => {
     const mine = C.filter((c) => c.family === f && c.declared !== null);
-    if (!mine.length) return [esc(fam(f).label), "not recorded yet", "—"];
+    if (!mine.length) return [esc(fam(f).label), tr("not recorded yet", "未記録"), "—"];
     const ch = mine.reduce((s2, c) => s2 + (c.chunks || 0), 0);
     const dcl = mine.reduce((s2, c) => s2 + (c.declared || 0), 0), dd = mine.reduce((s2, c) => s2 + (c.dictDeclared || 0), 0);
     return [esc(fam(f).label), `${((dcl / ch) * 100).toFixed(0)}%`, `${((dd / ch) * 100).toFixed(0)}%`];
   });
-  const short = `Direct Lake loads a column chunk two ways: a cheap remap when the chunk is entirely dictionary-encoded AND its footer's encoding_stats say so, or hashing every value when not. ${gaps.length ? `${fmtInt(gaps.length)} column-runs had chunks with no dictionary page at all.` : ""} ${measured.length ? "" : "The records do not yet capture the footer declaration."}`;
-  const html = `
+  const short = tr(`Direct Lake loads a column chunk two ways: a cheap remap when the chunk is entirely dictionary-encoded AND its footer's encoding_stats say so, or hashing every value when not. ${gaps.length ? `${fmtInt(gaps.length)} column-runs had chunks with no dictionary page at all.` : ""} ${measured.length ? "" : "The records do not yet capture the footer declaration."}`,
+    `Direct Lake は列チャンクを 2 通りの方法で読み込みます。チャンク全体が辞書エンコードされ、かつフッターの encoding_stats がそれを宣言していれば安価なリマップ、そうでなければ全値のハッシュ化です。${gaps.length ? `辞書ページをまったく持たないチャンクを含む列×実行が ${fmtInt(gaps.length)} 件ありました。` : ""}${measured.length ? "" : "実行記録にはまだフッターの宣言が含まれていません。"}`);
+  const html = lang() === "ja" ? `
+    <p class="claim">Direct Lake は parquet の列チャンクを <b>2 通りの方法</b>でトランスコードします。チャンクのすべてのページが辞書エンコードされ、フッターの <code>encoding_stats</code> がそれを証明していれば、parquet の辞書 ID を VertiPaq の辞書 ID にそのまま<b>リマップ</b>します。安価な ID の置き換えです。そうでなければ<b>全値をハッシュ化</b>して新しい辞書を作ります。辞書を持っていてもフッターが宣言していないチャンクもこちらになります。</p>
+    <p>フッターの <code>encodings</code> リストでは判定できません。辞書エンコードされたチャンクは辞書ページについて <code>PLAIN</code> を列挙し、途中で <code>PLAIN</code> にフォールバックしたチャンクも同じく列挙するからです。どのページがどれかを、デコードせずに示せるのは <code>encoding_stats</code>（<code>PageEncodingStats</code>）だけです。宣言の価値: <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> は DuckDB のライターにこれを追加し、1 億 4,200 万行の辞書文字列列のコールドの初回アクセスが <b>10,857.5 ms から 689.3 ms</b> に下がったと測定しています。ページは同じで、違うのはフッターのリスト 1 つだけです。</p>
+    ${measured.length ? `<h4>測定結果: リマップとハッシュ化</h4>
+    <p>${gap !== null ? `すべてのチャンクが完全な辞書エンコードを宣言した列は、その列の典型的なコールドコストに対する中央値 <b>${fmtX(median(remapRel))}</b> で読み込まれました。ハッシュ化の経路の列は <b>${fmtX(median(hashRel))}</b> で、${gap >= 1 ? `${fmtX(gap)} 遅い` : `${fmtX(1 / gap)} 速い`}結果です（それぞれ ${fmtInt(remapRel.length)} 件と ${fmtInt(hashRel.length)} 件の列×実行）。` : `フッターの宣言を持つ列×実行は ${fmtInt(measured.length)} 件ですが、すべて${remapRel.length ? "リマップ" : "ハッシュ化"}の経路にあるため、まだ比較できません。`}</p>
+    ${table(["ライター", "encoding_stats を宣言するチャンク", "完全な辞書エンコードを宣言したチャンク"], declRows, "num")}` : ""}
+    <h4>実行記録からわかること、わからないこと</h4>
+    <p>すべての実行は、列チャンクごとに辞書ページの有無を記録しています。辞書ページのないチャンクは確実にハッシュ化の経路です。2026-10-17 以降の実行はフッターの <code>encoding_stats</code> も記録しています（上の表）。それ以前の実行は記録していないため、辞書ページを持つチャンクがどちらの経路かは判別できません。DuckDB 自身のライターでは宣言の効果が直接測定されています。iceberg レッグの DuckDB wheel が、同じ 3 ファイル・53 行グループ・1,130 MB・全列で同じ辞書ページを書き出した 2 回の aemo 実行の間に、<code>1.6.0.dev365</code>（#24957 以前）から <code>1.6.0.dev379</code>（以後）へ移りました。変わったのはフッターのリストだけです。</p>
+    ${table(["aemo、DuckDB → Iceberg", "dev365、未宣言", "dev379、宣言あり", "変化"], [
+      ["コールド、スイート全体", "80.5 s", "40.7 s", "<b>2.0×</b>"],
+      ["Direct Lake 読み取り CU", "7,923", "3,132", "<b>2.5×</b>"],
+      ["ウォーム、スイート全体", "4.1 s", "3.0 s", "1.4×"],
+      ["<code>DUID</code> コールド、文字列、完全な辞書", "11,377 ms", "543 ms", "<b>21×</b>"],
+      ["<code>mw</code> コールド、53 チャンク中 10 が <code>PLAIN</code>", "6,266 ms", "4,387 ms", "1.4×"]], "num")}
+    <p>完全に辞書エンコードされた列は大幅に下がります。<code>PLAIN</code> チャンクを含む <code>mw</code> は、フッターが何を言ってもリマップできないため、ほとんど動きません。各条件 1 回ずつの実行（32444969823、33700004854）で、ジオメトリと辞書ページは同一です。</p>
+    ${table(["ライター", "書き出すエンコーディング（多い順）", "辞書ページを持つチャンク"], rows)}
+    ${gaps.length ? `<h4>辞書ページのないチャンクを含む列×実行: 確実にハッシュ化</h4>
+    ${table(["列×実行", "辞書ページを持つチャンク", "サイズ", "追加のコールド時間"],
+      gaps.slice(0, 12).map((g) => [`<code>${esc(g.column)}</code> · ${esc(label(g.ds))} · ${esc(g.writerLabel)}`, `${g.chunks} 中 ${g.dictPages}`, fmtMb(g.mb), fmtMs(g.cold)]), "num")}` : ""}
+    <p class="note">このために <code>stats.py</code> は各マートファイルのフッター Thrift を直接読みます（DuckDB の <code>parquet_metadata()</code> も pyarrow も <code>encoding_stats</code> を公開していません）。列ごとに、エンコーディングを宣言するチャンクと、完全な辞書エンコードを宣言したチャンクを記録します。</p>` : `
     <p class="claim">Direct Lake transcodes a parquet column chunk one of <b>two ways</b>. If every page of the chunk is dictionary-encoded and the footer's <code>encoding_stats</code> prove it, it <b>remaps</b> the parquet dictionary IDs straight onto VertiPaq's: a cheap ID swap. Otherwise it <b>hashes every value</b> into a new dictionary. That includes a chunk that does have a dictionary but whose footer does not declare it.</p>
     <p>The footer's <code>encodings</code> list cannot settle it. A dictionary-encoded chunk lists <code>PLAIN</code> for its dictionary page, and so does one whose pages fell back to <code>PLAIN</code> midway. Only <code>encoding_stats</code> (<code>PageEncodingStats</code>) says which pages are which, without decoding them. How much the declaration is worth: <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> added it to DuckDB's writer and measured a 142M-row dictionary string column's cold first-touch falling from <b>10,857.5 ms to 689.3 ms</b>. Same pages, one footer list.</p>
     ${measured.length ? `<h4>Measured: remap against hashing</h4>
@@ -431,9 +467,10 @@ export function findDictionary(ctx) {
     <p class="note"><code>stats.py</code> reads each mart file's footer Thrift directly for this (neither DuckDB's <code>parquet_metadata()</code> nor pyarrow exposes <code>encoding_stats</code>) and records, per column, the chunks that declare their encodings and the chunks declared entirely dictionary-encoded.</p>`;
   const status = !measured.length ? "partial" : gap === null || remapRel.length < MIN_RUNS || hashRel.length < MIN_RUNS ? "few"
     : gap >= 1.3 ? "clear" : "noise";
-  return { id: "dictionary", title: "Dictionary encoding, declared", short, status, html,
-    head: ["2 ways", "to load a column: reuse its dictionary, or rebuild it"],
-    card: "A column stored fully as a dictionary, with the file saying so, loads fast. Otherwise Power BI rebuilds the dictionary value by value." };
+  return { id: "dictionary", title: tr("Dictionary encoding, declared", "辞書エンコーディングとその宣言"), short, status, html,
+    head: [tr("2 ways", "2 通り"), tr("to load a column: reuse its dictionary, or rebuild it", "列の読み込み方: 辞書を再利用するか、作り直すか")],
+    card: tr("A column stored fully as a dictionary, with the file saying so, loads fast. Otherwise Power BI rebuilds the dictionary value by value.",
+      "列全体が辞書として格納され、ファイルがそれを宣言していれば高速に読み込まれます。そうでなければ Power BI は値を 1 つずつ処理して辞書を作り直します。") };
 }
 
 // ----------------------------------------------------------------------------- layout properties
@@ -509,29 +546,31 @@ export function ratioEffect(ctx, on, off, metric) {
 }
 
 const M = {
-  cu: { label: "Direct Lake read CU", get: (r) => r.cu.dl },
-  cold: { label: "cold", get: (r) => r.dl.cold },
-  warm: { label: "warm", get: (r) => r.dl.warm },
-  mb: { label: "table size", get: (r) => r.mb },
+  cu: { get label() { return READ_CU(); }, get: (r) => r.cu.dl },
+  cold: { get label() { return TIER("cold"); }, get: (r) => r.dl.cold },
+  warm: { get label() { return TIER("warm"); }, get: (r) => r.dl.warm },
+  mb: { get label() { return TABLE_SIZE(); }, get: (r) => r.mb },
 };
 
 /** "×1.37" / "0.75×", or a dash. */
 const eff = (s) => (s && s.med !== null ? (s.med >= 1 ? `×${s.med.toFixed(2)}` : `${s.med.toFixed(2)}×`) : "—");
 /** "−25%" / "+37%". */
 const pct = (s) => (s && s.med !== null ? `${s.med >= 1 ? "+" : "−"}${Math.abs((s.med - 1) * 100).toFixed(0)}%` : "—");
-const agree = (s) => (s && s.n ? `${Math.max(s.up, s.down)} of ${s.n} datasets agree` : "not measurable");
+const agree = (s) => (s && s.n ? tr(`${Math.max(s.up, s.down)} of ${s.n} datasets agree`, `${s.n} データセット中 ${Math.max(s.up, s.down)} が一致`) : tr("not measurable", "測定不能"));
 const counts = (s) => !!s && s.med !== null && Math.abs(s.med - 1) > EFFECT_MIN && Math.max(s.up, s.down) * 2 > s.n && s.n >= 2;
 const verdictOf = (s) => (!s || s.n < 2 ? "few" : counts(s) ? "clear" : "none");
 
-const EVIDENCE = {
-  controlled: "controlled: one switch, everything else equal",
-  observational: "observational: compared across runs and engines",
-  confounded: "confounded: moves together with the engine",
-};
-const evidenceTag = (k) => `<span class="evidence ${k}">${esc(EVIDENCE[k])}</span>`;
+const EVIDENCE = () => pick({
+  en: { controlled: "controlled: one switch, everything else equal",
+    observational: "observational: compared across runs and engines",
+    confounded: "confounded: moves together with the engine" },
+  ja: { controlled: "対照実験: スイッチ 1 つだけ、他はすべて同じ",
+    observational: "観察: 実行とエンジンをまたいで比較",
+    confounded: "交絡あり: エンジンと一緒に変わる" } });
+const evidenceTag = (k) => `<span class="evidence ${k}">${esc(EVIDENCE()[k])}</span>`;
 
 function effectTable(rows) {
-  return table(["measure", "effect", "datasets"], rows.filter(([, s]) => s).map(([lab, s, unit]) =>
+  return table([tr("measure", "指標"), tr("effect", "効果"), tr("datasets", "データセット")], rows.filter(([, s]) => s).map(([lab, s, unit]) =>
     [esc(lab), `<b>${eff(s)}</b>${unit ? ` <span class="dim">${esc(unit)}</span>` : ""} ${badge(verdictOf(s))}`, esc(agree(s))]), "num");
 }
 
@@ -551,8 +590,8 @@ function normalisedScatter(ctx, prop, metric, xLabel, yLabel, keep) {
   const pts = normalisedPoints(ctx, prop, metric, keep);
   return scatter({ points: pts.map((p) => ({ x: p.x, y: p.y, family: p.r.family, filled: p.r.reorders,
     tip: `${p.r.writerLabel} · ${label(p.r.ds)} · ${xLabel} ${fmtX(p.x)} · ${yLabel} ${fmtX(p.y)}` })),
-  x: { label: `${xLabel} ÷ its dataset's median`, log: true, fmt: fmtX },
-  y: { label: `${yLabel} ÷ its dataset's median`, log: true, fmt: fmtX }, w: 640, h: 360, trend: true });
+  x: { label: tr(`${xLabel} ÷ its dataset's median`, `${xLabel} ÷ データセットの中央値`), log: true, fmt: fmtX },
+  y: { label: tr(`${yLabel} ÷ its dataset's median`, `${yLabel} ÷ データセットの中央値`), log: true, fmt: fmtX }, w: 640, h: 360, trend: true });
 }
 
 /** Strips of groups of runs, each run divided by its dataset's median over every group shown. */
@@ -564,7 +603,7 @@ function groupStrips(ctx, groups, metric, xLabel) {
     const mm = median(all.map(metric));
     groups.forEach((g, i) => { for (const r of all) if (g.keep(r)) rows[i].values.push(metric(r) / mm); });
   }
-  return strips({ rows: rows.filter((r) => r.values.length), x: { label: `${xLabel} ÷ its dataset's median`, fmt: fmtX } });
+  return strips({ rows: rows.filter((r) => r.values.length), x: { label: tr(`${xLabel} ÷ its dataset's median`, `${xLabel} ÷ データセットの中央値`), fmt: fmtX } });
 }
 
 /**
@@ -584,22 +623,23 @@ export function pairSwitch({ lead = "", sets, measures, start = 0 }) {
     // A measure is shown when every arm of the set has it.
     const keep = measures.map((_, j) => vals.every((v) => v[j] !== null)).map((k, j) => (k ? j : -1)).filter((j) => j >= 0);
     if (!keep.length) return null;
-    const n = (a) => `median of ${a.runs.length} run${a.runs.length === 1 ? "" : "s"}`;
+    const n = (a) => tr(`median of ${a.runs.length} run${a.runs.length === 1 ? "" : "s"}`, `${a.runs.length} 回の実行の中央値`);
     const arms = set.arms.map((a, i) => ({ label: a.label,
       rows: keep.map((j) => {
         const col = vals.map((v) => v[j]);
         return { label: measures[j].label, w: +((vals[i][j] / Math.max(...col)) * 100).toFixed(1),
           text: measures[j].fmt(vals[i][j]), hot: vals[i][j] > Math.min(...col) * 1.25 };
       }),
-      say: i === 0 ? `${a.label}: ${n(a)}.`
-        : `${a.label}, against ${set.arms[0].label}: ${keep.map((j) => `${measures[j].label} ${fmtX(vals[i][j] / vals[0][j])}`).join(", ")} (${n(a)} against ${set.arms[0].runs.length}).` }));
+      say: i === 0 ? tr(`${a.label}: ${n(a)}.`, `${a.label}: ${n(a)}。`)
+        : tr(`${a.label}, against ${set.arms[0].label}: ${keep.map((j) => `${measures[j].label} ${fmtX(vals[i][j] / vals[0][j])}`).join(", ")} (${n(a)} against ${set.arms[0].runs.length}).`,
+          `${a.label}（${set.arms[0].label} 比）: ${keep.map((j) => `${measures[j].label} ${fmtX(vals[i][j] / vals[0][j])}`).join("、")}（${n(a)}、比較側は ${set.arms[0].runs.length} 回）。`) }));
     return { label: set.label, arms };
   }).filter(Boolean);
   if (!live.length) return "";
   const first = live[0], at = Math.min(start, first.arms.length - 1), arm = first.arms[at];
-  const setBtns = live.length > 1 ? `<div class="btns" role="group" aria-label="dataset"><span class="lbl">dataset:</span>${live.map((x, i) =>
+  const setBtns = live.length > 1 ? `<div class="btns" role="group" aria-label="${tr("dataset", "データセット")}"><span class="lbl">${tr("dataset:", "データセット:")}</span>${live.map((x, i) =>
     `<button type="button" data-set="${i}" aria-pressed="${i === 0}">${esc(x.label)}</button>`).join("")}</div>` : "";
-  const armBtns = `<div class="btns" role="group" aria-label="what changed">${lead ? `<span class="lbl">${esc(lead)}</span>` : ""}${first.arms.map((a, i) =>
+  const armBtns = `<div class="btns" role="group" aria-label="${tr("what changed", "変えたもの")}">${lead ? `<span class="lbl">${esc(lead)}</span>` : ""}${first.arms.map((a, i) =>
     `<button type="button" data-arm="${i}" aria-pressed="${i === at}">${esc(a.label)}</button>`).join("")}</div>`;
   const rows = arm.rows.map((r) => `<span>${esc(r.label)}</span><div class="track"><div class="fill${r.hot ? " hot" : ""}" style="width:${r.w}%"></div><span class="val">${esc(r.text)}</span></div>`).join("");
   return `<div class="demo" data-pair="${esc(JSON.stringify({ sets: live }))}" data-at-set="0" data-at-arm="${at}">
@@ -607,9 +647,9 @@ export function pairSwitch({ lead = "", sets, measures, start = 0 }) {
 }
 
 const PAIR_MEASURES = [
-  { label: "Direct Lake read CU", get: (r) => r.cu && r.cu.dl, fmt: fmtCu },
-  { label: "cold, whole suite", get: (r) => r.dl && r.dl.cold, fmt: fmtMs },
-  { label: "warm, whole suite", get: (r) => r.dl && r.dl.warm, fmt: fmtMs },
+  { get label() { return READ_CU(); }, get: (r) => r.cu && r.cu.dl, fmt: fmtCu },
+  { get label() { return COLD_SUITE(); }, get: (r) => r.dl && r.dl.cold, fmt: fmtMs },
+  { get label() { return WARM_SUITE(); }, get: (r) => r.dl && r.dl.warm, fmt: fmtMs },
 ];
 const runsById = (ctx, ids) => ids.map((id) => ctx.runs.find((r) => r.id === id)).filter(Boolean);
 
@@ -618,7 +658,7 @@ const runsById = (ctx, ids) => ids.map((id) => ctx.runs.find((r) => r.id === id)
 function propertyCard(o) {
   return { status: o.status, id: o.id, title: o.title, head: o.head, card: o.card, short: o.card,
     html: `${o.top || ""}<p class="claim">${o.claim}</p><p>${evidenceTag(o.evidence)}</p>${o.lead || ""}`
-      + `<details class="more-evidence"><summary>All the evidence</summary>${o.body}</details>` };
+      + `<details class="more-evidence"><summary>${tr("All the evidence", "すべての根拠")}</summary>${o.body}</details>` };
 }
 
 // ---- the properties, ranked by what they do to read CU
@@ -627,32 +667,37 @@ export function propTableSize(ctx) {
   const s = { cu: runSlope(ctx, M.mb.get, M.cu.get), cold: runSlope(ctx, M.mb.get, M.cold.get),
     warm: runSlope(ctx, M.mb.get, M.warm.get),
     colCold: columnSlope(ctx, (c) => c.mb, (c) => c.cold), colWarm: columnSlope(ctx, (c) => c.mb, (c) => c.warmRaw) };
-  return propertyCard({ id: "table-size", title: "Bytes on disk", evidence: "observational", status: verdictOf(s.cu),
-    head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU each time the table doubles in size"],
-    card: "The fewer bytes on disk, the less capacity Power BI spends reading them: true of the whole table, and of each column cold.",
-    claim: s.cu.med !== null ? `Each doubling of the table's size on disk cost <b>${pct(s.cu)} Direct Lake read CU</b> and ${pct(s.cold)} cold time (${agree(s.cu)}). Column by column it holds too: twice the bytes cost <b>${pct(s.colCold)} cold</b> (${agree(s.colCold)}), ${pct(s.colWarm)} warm.` : "Not measurable yet.",
+  return propertyCard({ id: "table-size", title: tr("Bytes on disk", "ディスク上のバイト数"), evidence: "observational", status: verdictOf(s.cu),
+    head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", tr("Direct Lake read CU each time the table doubles in size", "テーブルサイズが 2 倍になるごとの Direct Lake 読み取り CU")],
+    card: tr("The fewer bytes on disk, the less capacity Power BI spends reading them: true of the whole table, and of each column cold.",
+      "ディスク上のバイト数が少ないほど、Power BI が読み取りに使う容量も少なくなります。テーブル全体でも、列ごとのコールドでも成り立ちます。"),
+    claim: s.cu.med !== null ? tr(`Each doubling of the table's size on disk cost <b>${pct(s.cu)} Direct Lake read CU</b> and ${pct(s.cold)} cold time (${agree(s.cu)}). Column by column it holds too: twice the bytes cost <b>${pct(s.colCold)} cold</b> (${agree(s.colCold)}), ${pct(s.colWarm)} warm.`,
+      `ディスク上のテーブルサイズが 2 倍になるごとに、<b>Direct Lake 読み取り CU は ${pct(s.cu)}</b>、コールド時間は ${pct(s.cold)} でした（${agree(s.cu)}）。列単位でも同様で、バイト数が 2 倍になると<b>コールドは ${pct(s.colCold)}</b>（${agree(s.colCold)}）、ウォームは ${pct(s.colWarm)} でした。`) : NOT_YET(),
     lead: `${legend(familiesIn(ctx.runs))}
-      ${normalisedScatter(ctx, M.mb.get, M.cu.get, "table size", "Direct Lake read CU")}`,
-    body: `${effectTable([["Direct Lake read CU, per doubling of the table", s.cu], ["cold, per doubling of the table", s.cold], ["warm, per doubling of the table", s.warm],
-      ["column cold, per doubling of the column", s.colCold], ["column warm, per doubling of the column", s.colWarm]])}
-      <h3>Each column, cold</h3>
+      ${normalisedScatter(ctx, M.mb.get, M.cu.get, TABLE_SIZE(), READ_CU())}`,
+    body: `${effectTable([[tr("Direct Lake read CU, per doubling of the table", "Direct Lake 読み取り CU、テーブル 2 倍あたり"), s.cu], [tr("cold, per doubling of the table", "コールド、テーブル 2 倍あたり"), s.cold], [tr("warm, per doubling of the table", "ウォーム、テーブル 2 倍あたり"), s.warm],
+      [tr("column cold, per doubling of the column", "列のコールド、列 2 倍あたり"), s.colCold], [tr("column warm, per doubling of the column", "列のウォーム、列 2 倍あたり"), s.colWarm]])}
+      <h3>${tr("Each column, cold", "列ごとのコールド")}</h3>
       ${scatter({ points: ctx.columns.filter((c) => c.mb > 0 && c.cold > 0).map((c) => ({ x: c.mb, y: c.cold, family: c.family, filled: c.reorders,
-        tip: `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)}` })),
-        x: { label: "column compressed size", log: true, fmt: fmtMb }, y: { label: "extra cold time to load it", log: true, fmt: fmtMs }, w: 640, h: 360, trend: true })}
-      <p class="note">Table size is measured where it varied enough within a dataset to fit a slope; a dataset where every engine wrote a similar size does not vote. A column's cost is its probe query minus the row-count probe in the same pass; read CU is billed per session, not per column, so the column chart is cold time.</p>` });
+        tip: tr(`${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · cold +${fmtMs(c.cold)}`, `${c.column} · ${c.writerLabel} · ${fmtMb(c.mb)} · コールド +${fmtMs(c.cold)}`) })),
+        x: { label: COL_SIZE(), log: true, fmt: fmtMb }, y: { label: tr("extra cold time to load it", "読み込みにかかる追加のコールド時間"), log: true, fmt: fmtMs }, w: 640, h: 360, trend: true })}
+      <p class="note">${tr("Table size is measured where it varied enough within a dataset to fit a slope; a dataset where every engine wrote a similar size does not vote. A column's cost is its probe query minus the row-count probe in the same pass; read CU is billed per session, not per column, so the column chart is cold time.",
+        "テーブルサイズは、データセット内で傾きを当てはめられるほど変動した場合にのみ測定しています。どのエンジンも同程度のサイズを書き出したデータセットは判定に加わりません。列のコストは、そのプローブクエリから同じパスの行数プローブを差し引いたものです。読み取り CU は列ごとではなくセッションごとに課金されるため、列のグラフはコールド時間で示しています。")}</p>` });
 }
 export function propSort(ctx) {
   const s = { mb: columnSlope(ctx, (c) => c.runsPer1k, (c) => c.mb), cold: columnSlope(ctx, (c) => c.mb, (c) => c.cold) };
-  return propertyCard({ id: "sort", title: "Sort order", evidence: "observational", status: verdictOf(s.mb),
-    head: [s.mb.med !== null ? `${pct(s.mb)} size` : "—", "column size when equal values are split into twice as many runs"],
-    card: "Sort so equal values sit together: runs get longer, columns shrink and load cheaper cold. V-Order does this for you inside each file; any other writer can sort before it writes.",
-    claim: s.mb.med !== null ? `Within the same column, twice as many runs of repeated values meant <b>${pct(s.mb)} more bytes</b> (${agree(s.mb)}), and each doubling of a column's bytes cost ${pct(s.cold)} cold time (${agree(s.cold)}).` : "Not measurable yet.",
-    body: effectTable([["column size, per doubling of runs", s.mb], ["column cold, per doubling of column size", s.cold]]),
+  return propertyCard({ id: "sort", title: tr("Sort order", "ソート順"), evidence: "observational", status: verdictOf(s.mb),
+    head: [s.mb.med !== null ? tr(`${pct(s.mb)} size`, `サイズ ${pct(s.mb)}`) : "—", tr("column size when equal values are split into twice as many runs", "同じ値が 2 倍の数のランに分かれたときの列サイズ")],
+    card: tr("Sort so equal values sit together: runs get longer, columns shrink and load cheaper cold. V-Order does this for you inside each file; any other writer can sort before it writes.",
+      "同じ値が隣り合うようにソートすると、ランが長くなり、列が小さくなり、コールドの読み込みが安くなります。V-Order は各ファイルの中でこれを自動で行います。他のライターでも書き込み前にソートできます。"),
+    claim: s.mb.med !== null ? tr(`Within the same column, twice as many runs of repeated values meant <b>${pct(s.mb)} more bytes</b> (${agree(s.mb)}), and each doubling of a column's bytes cost ${pct(s.cold)} cold time (${agree(s.cold)}).`,
+      `同じ列の中で、繰り返し値のランが 2 倍になると<b>バイト数は ${pct(s.mb)}</b>（${agree(s.mb)}）、列のバイト数が 2 倍になるごとにコールド時間は ${pct(s.cold)} でした（${agree(s.cold)}）。`) : NOT_YET(),
+    body: effectTable([[tr("column size, per doubling of runs", "列サイズ、ラン 2 倍あたり"), s.mb], [tr("column cold, per doubling of column size", "列のコールド、列サイズ 2 倍あたり"), s.cold]]),
     lead: `${legend(familiesIn(ctx.columns))}
       ${scatter({ points: ctx.columns.filter((c) => c.runsPer1k > 0 && c.mb > 0).map((c) => ({ x: c.runsPer1k, y: c.mb, family: c.family, filled: c.reorders,
-        tip: `${c.column} · ${c.writerLabel} · ${c.runsPer1k.toFixed(1)} runs per 1,000 rows · ${fmtMb(c.mb)}` })),
-        x: { label: "runs of repeated values per 1,000 rows", log: true, fmt: (v) => (v >= 10 ? fmtInt(v) : v >= 1 ? v.toFixed(0) : String(+v.toPrecision(1))) },
-        y: { label: "column compressed size", log: true, fmt: fmtMb }, w: 640, h: 360, trend: true })}` });
+        tip: tr(`${c.column} · ${c.writerLabel} · ${c.runsPer1k.toFixed(1)} runs per 1,000 rows · ${fmtMb(c.mb)}`, `${c.column} · ${c.writerLabel} · 1,000 行あたり ${c.runsPer1k.toFixed(1)} ラン · ${fmtMb(c.mb)}`) })),
+        x: { label: tr("runs of repeated values per 1,000 rows", "1,000 行あたりの繰り返し値のラン数"), log: true, fmt: (v) => (v >= 10 ? fmtInt(v) : v >= 1 ? v.toFixed(0) : String(+v.toPrecision(1))) },
+        y: { label: COL_SIZE(), log: true, fmt: fmtMb }, w: 640, h: 360, trend: true })}` });
 }
 
 /** The headline card: a writer that has V-Order should turn it on. Controlled — same engine (Spark), one
@@ -662,20 +707,24 @@ export function propSparkVOrder(ctx) {
   const s = { cu: ratioEffect(ctx, vo, plain, M.cu.get), cold: ratioEffect(ctx, vo, plain, M.cold.get),
     warm: ratioEffect(ctx, vo, plain, M.warm.get), mb: ratioEffect(ctx, vo, plain, M.mb.get) };
   const warmWorse = s.warm.med !== null && s.warm.med > 1 + EFFECT_MIN;
-  return propertyCard({ id: "spark-vorder", title: "V-Order: turn it on", evidence: "controlled", status: verdictOf(s.cu),
-    head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", "Direct Lake read CU with V-Order on (readHeavyForPBI) against the default"],
-    card: "If your writer has V-Order, turn it on. In Fabric Spark that is the readHeavyForPBI profile; Fabric Warehouse has it on by default. The write costs a little more and the read pays it back.",
-    claim: s.cu.med !== null ? `Same engine, same data, one switch: with V-Order on, Spark's tables cost <b>${pct(s.cu)} Direct Lake read CU</b> (${agree(s.cu)}), loaded ${pct(s.cold)} cold (${agree(s.cold)}) and took ${pct(s.mb)} on disk.${warmWorse ? ` The one cost: warm queries were ${pct(s.warm)} (${agree(s.warm)}), mixed across datasets, and warm is fast either way.` : ""}` : "Not measurable yet.",
-    top: pairSwitch({ lead: "Spark writes the table with:", measures: [...PAIR_MEASURES, { label: "table size", get: (r) => r.mb, fmt: fmtMb }],
+  return propertyCard({ id: "spark-vorder", title: tr("V-Order: turn it on", "V-Order: オンにする"), evidence: "controlled", status: verdictOf(s.cu),
+    head: [s.cu.med !== null ? `${pct(s.cu)} CU` : "—", tr("Direct Lake read CU with V-Order on (readHeavyForPBI) against the default", "V-Order オン（readHeavyForPBI）時の Direct Lake 読み取り CU、既定値との比較")],
+    card: tr("If your writer has V-Order, turn it on. In Fabric Spark that is the readHeavyForPBI profile; Fabric Warehouse has it on by default. The write costs a little more and the read pays it back.",
+      "ライターに V-Order があるなら、オンにしてください。Fabric Spark では readHeavyForPBI プロファイル、Fabric Warehouse では既定でオンです。書き込みは少し高くなりますが、読み取りで元が取れます。"),
+    claim: s.cu.med !== null ? tr(`Same engine, same data, one switch: with V-Order on, Spark's tables cost <b>${pct(s.cu)} Direct Lake read CU</b> (${agree(s.cu)}), loaded ${pct(s.cold)} cold (${agree(s.cold)}) and took ${pct(s.mb)} on disk.${warmWorse ? ` The one cost: warm queries were ${pct(s.warm)} (${agree(s.warm)}), mixed across datasets, and warm is fast either way.` : ""}`,
+      `同じエンジン、同じデータ、スイッチ 1 つ。V-Order をオンにすると、Spark のテーブルは <b>Direct Lake 読み取り CU が ${pct(s.cu)}</b>（${agree(s.cu)}）、コールドの読み込みが ${pct(s.cold)}（${agree(s.cold)}）、ディスク上のサイズが ${pct(s.mb)} になりました。${warmWorse ? `唯一のコストはウォームクエリで ${pct(s.warm)}（${agree(s.warm)}）でしたが、データセットによってまちまちで、ウォームはどちらでも高速です。` : ""}`) : NOT_YET(),
+    top: pairSwitch({ lead: tr("Spark writes the table with:", "Spark がテーブルを書き込む設定:"), measures: [...PAIR_MEASURES, { label: TABLE_SIZE(), get: (r) => r.mb, fmt: fmtMb }],
       sets: dsList(ctx).map((ds) => ({ label: label(ds), arms: [
-        { label: "V-Order off (writeHeavy, the default)", runs: ctx.runs.filter((r) => r.ds === ds && plain(r)) },
-        { label: "V-Order on (readHeavyForPBI)", runs: ctx.runs.filter((r) => r.ds === ds && vo(r)) }] })) }),
+        { label: tr("V-Order off (writeHeavy, the default)", "V-Order オフ（writeHeavy、既定値）"), runs: ctx.runs.filter((r) => r.ds === ds && plain(r)) },
+        { label: tr("V-Order on (readHeavyForPBI)", "V-Order オン（readHeavyForPBI）"), runs: ctx.runs.filter((r) => r.ds === ds && vo(r)) }] })) }),
     lead: `${groupStrips(ctx, [
         { label: "Spark, V-Order", keep: vo, family: "spark", filled: true },
-        { label: "Spark, no V-Order", keep: plain, family: "spark", filled: false }], M.cu.get, "Direct Lake read CU")}`,
-    body: `${effectTable([["Direct Lake read CU", s.cu], ["cold", s.cold], ["warm", s.warm], ["table size", s.mb]])}
-      <p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Fabric Warehouse writes V-Order by default.</p>
-      <p>Build cost is not computed on this page. The repository's findings measured Spark's build CU with V-Order on against off at −23% (BTS flights), −11% (AEMO), +12% (CMS), +16% (NYC taxi) and +40% (Green taxi).</p>` });
+        { label: tr("Spark, no V-Order", "Spark、V-Order なし"), keep: plain, family: "spark", filled: false }], M.cu.get, READ_CU())}`,
+    body: `${effectTable([[READ_CU(), s.cu], [TIER("cold"), s.cold], [TIER("warm"), s.warm], [TABLE_SIZE(), s.mb]])}
+      ${tr(`<p>In Fabric Spark, V-Order comes with the <code>readHeavyForPBI</code> resource profile; the workspace default, <code>writeHeavy</code>, leaves it off, and <code>readHeavyForSpark</code> does not turn it on despite its name. The profile also changes optimizeWrite's bin size, so file geometry moves with it. Fabric Warehouse writes V-Order by default.</p>
+      <p>Build cost is not computed on this page. The repository's findings measured Spark's build CU with V-Order on against off at −23% (BTS flights), −11% (AEMO), +12% (CMS), +16% (NYC taxi) and +40% (Green taxi).</p>`,
+      `<p>Fabric Spark では、V-Order は <code>readHeavyForPBI</code> リソースプロファイルに含まれます。ワークスペースの既定値 <code>writeHeavy</code> ではオフで、<code>readHeavyForSpark</code> も名前に反して V-Order をオンにしません。このプロファイルは optimizeWrite のビンサイズも変えるため、ファイルのジオメトリも一緒に変わります。Fabric Warehouse は既定で V-Order を書き込みます。</p>
+      <p>このページではビルドコストを計算していません。リポジトリの調査結果では、V-Order オンとオフで比べた Spark のビルド CU は −23%（BTS 航空便）、−11%（AEMO）、+12%（CMS）、+16%（NYC タクシー）、+40%（グリーンタクシー）でした。</p>`)}` });
 }
 
 /** The controlled row-group pair: duckrun on aemo, same versions, same `date, time, price` sort, only
@@ -692,19 +741,19 @@ function rgControlled(ctx) {
     return b > 0 && a > 0 ? [lab, fmt(b), fmt(a), `<b>${a >= b ? fmtX(a / b) : `÷${Math.round(b / a)}`}</b>`] : null;
   };
   const rows = [
-    row("rows per row group", (r) => r.rowsPerRg, fmtRows),
-    row("row groups", (r) => r.rgs, fmtInt),
-    row("size on disk", (r) => r.mb, fmtMb),
-    row("cold, whole suite", (r) => r.dl && r.dl.cold, fmtMs),
-    row("warm, whole suite", (r) => r.dl && r.dl.warm, fmtMs),
-    row("Direct Lake read CU", (r) => r.cu && r.cu.dl, fmtCu),
+    row(tr("rows per row group", "行グループあたりの行数"), (r) => r.rowsPerRg, fmtRows),
+    row(ROW_GROUPS(), (r) => r.rgs, fmtInt),
+    row(tr("size on disk", "ディスク上のサイズ"), (r) => r.mb, fmtMb),
+    row(COLD_SUITE(), (r) => r.dl && r.dl.cold, fmtMs),
+    row(WARM_SUITE(), (r) => r.dl && r.dl.warm, fmtMs),
+    row(READ_CU(), (r) => r.cu && r.cu.dl, fmtCu),
   ];
   const colCold = (id, col) => { const c = ctx.columns.find((x) => x.runId === id && x.column === col); return c ? c.cold : null; };
   const cols = [...new Set(ctx.columns.filter((c) => c.runId === after.id).map((c) => c.column))];
   const colRatios = [];
   for (const col of cols) {
     const b = median(RG_PAIR.before.map((id) => colCold(id, col)).filter((v) => v > 0)), a = colCold(after.id, col);
-    if (b > 0 && a > 0) { rows.push([`<code>${esc(col)}</code> cold`, fmtMs(b), fmtMs(a), `<b>${fmtX(a / b)}</b>`]); colRatios.push(a / b); }
+    if (b > 0 && a > 0) { rows.push([`<code>${esc(col)}</code> ${TIER("cold")}`, fmtMs(b), fmtMs(a), `<b>${fmtX(a / b)}</b>`]); colRatios.push(a / b); }
   }
   return { rows: rows.filter(Boolean), colMed: colRatios.length ? median(colRatios) : null,
     cold: after.dl && mid((r) => r.dl && r.dl.cold) ? after.dl.cold / mid((r) => r.dl && r.dl.cold) : null,
@@ -718,22 +767,28 @@ export function propRowGroups(ctx) {
     col: columnSlope(ctx, (c) => rg[c.runId], (c) => c.cold), drs: runSlope(ctx, rpr, M.cu.get, (r) => r.family === "delta-rs") };
   const bandPts = bandPoints(ctx), bandT = bandTrend(bandPts, 2);
   const ctl = rgControlled(ctx);
-  const ctlClaim = ctl && ctl.colMed ? ` One controlled run, same writer and sort, only the row-group size moved: ${fmtX(ctl.rgX)} the row groups (131,072 rows each) made a column's cold load <b>${fmtX(ctl.colMed)}</b> (median over columns) and the whole cold suite ${fmtX(ctl.cold)}; warm did not move.` : "";
-  return propertyCard({ id: "row-groups", title: "Row-group size", evidence: "observational", status: verdictOf(s.col),
-    head: [s.col.med !== null ? `${pct(s.col)} cold` : "—", "a column's cold cost each time row groups double in rows"],
-    card: "Millions of rows per row group: fewer, bigger segments are cheaper to load cold, whoever wrote them. Below about a million rows per group the cost climbs fast; warm barely moves.",
-    claim: s.col.med !== null ? `Twice the rows per row group: a column's cold cost <b>${pct(s.col)}</b> (${agree(s.col)}), Direct Lake read CU ${pct(s.cu)} (${agree(s.cu)}), warm ${pct(s.warm)}. ${bandT && bandT.band ? `Both cold and warm stay near the median from ${esc(bandText(bandT))} rows per group.` : "No single band of row-group sizes stands out across datasets."}${ctlClaim}` : "Not measurable yet.",
-    body: `${effectTable([["column cold, per doubling of rows per group", s.col], ["Direct Lake read CU, per doubling", s.cu], ["cold suite, per doubling", s.cold], ["warm suite, per doubling", s.warm], ["Direct Lake read CU, delta-rs only", s.drs]])}
-      ${ctl ? `<h3>Controlled: one switch</h3>
-      <p>duckrun on aemo, the same writer versions and the same <code>date, time, price</code> sort; only <code>row_group_size</code> moved. Before is the median of two runs, after is one run, so read it as one sample per arm.</p>
-      ${table(["aemo, duckrun", "default", "131,072 rows per group", "change"], ctl.rows, "num")}
-      <p class="note">Every chunk has a dictionary page in both arms. <code>DUID</code> carries a separate, larger cold penalty on both arms of this pair that row-group size does not touch: it loaded in under a second on the September runs.</p>` : ""}
-      <p class="note">The lines weigh every dataset equally: each dataset's own value per octave of rows per group, then the median across datasets.</p>`,
-    top: pairSwitch({ lead: "AEMO, same writer and sort, row groups of:",
-      measures: [{ label: "row groups", get: (r) => r.rgs, fmt: fmtInt }, ...PAIR_MEASURES],
+  const ctlClaim = ctl && ctl.colMed ? tr(` One controlled run, same writer and sort, only the row-group size moved: ${fmtX(ctl.rgX)} the row groups (131,072 rows each) made a column's cold load <b>${fmtX(ctl.colMed)}</b> (median over columns) and the whole cold suite ${fmtX(ctl.cold)}; warm did not move.`,
+    `ライターとソートを同じにし、行グループサイズだけを変えた対照実行が 1 つあります。行グループを ${fmtX(ctl.rgX)}（各 131,072 行）にすると、列のコールド読み込みは <b>${fmtX(ctl.colMed)}</b>（列の中央値）、コールドのスイート全体は ${fmtX(ctl.cold)} になり、ウォームは変わりませんでした。`) : "";
+  return propertyCard({ id: "row-groups", title: tr("Row-group size", "行グループサイズ"), evidence: "observational", status: verdictOf(s.col),
+    head: [s.col.med !== null ? tr(`${pct(s.col)} cold`, `コールド ${pct(s.col)}`) : "—", tr("a column's cold cost each time row groups double in rows", "行グループの行数が 2 倍になるごとの列のコールドコスト")],
+    card: tr("Millions of rows per row group: fewer, bigger segments are cheaper to load cold, whoever wrote them. Below about a million rows per group the cost climbs fast; warm barely moves.",
+      "行グループあたり数百万行に。どのライターが書いても、少なく大きいセグメントのほうがコールドの読み込みは安くなります。グループあたり約 100 万行を下回るとコストは急増し、ウォームはほとんど変わりません。"),
+    claim: s.col.med !== null ? tr(`Twice the rows per row group: a column's cold cost <b>${pct(s.col)}</b> (${agree(s.col)}), Direct Lake read CU ${pct(s.cu)} (${agree(s.cu)}), warm ${pct(s.warm)}. ${bandT && bandT.band ? `Both cold and warm stay near the median from ${esc(bandText(bandT))} rows per group.` : "No single band of row-group sizes stands out across datasets."}${ctlClaim}`,
+      `行グループあたりの行数を 2 倍にすると、列のコールドコストは <b>${pct(s.col)}</b>（${agree(s.col)}）、Direct Lake 読み取り CU は ${pct(s.cu)}（${agree(s.cu)}）、ウォームは ${pct(s.warm)} でした。${bandT && bandT.band ? `グループあたり ${esc(bandText(bandT))} 行では、コールドもウォームも中央値付近にとどまります。` : "データセット全体で際立つ行グループサイズの帯は見つかりません。"}${ctlClaim}`) : NOT_YET(),
+    body: `${effectTable([[tr("column cold, per doubling of rows per group", "列のコールド、グループあたり行数 2 倍あたり"), s.col], [tr("Direct Lake read CU, per doubling", "Direct Lake 読み取り CU、2 倍あたり"), s.cu], [tr("cold suite, per doubling", "コールドのスイート、2 倍あたり"), s.cold], [tr("warm suite, per doubling", "ウォームのスイート、2 倍あたり"), s.warm], [tr("Direct Lake read CU, delta-rs only", "Direct Lake 読み取り CU、delta-rs のみ"), s.drs]])}
+      ${ctl ? `<h3>${tr("Controlled: one switch", "対照実験: スイッチ 1 つ")}</h3>
+      <p>${tr("duckrun on aemo, the same writer versions and the same <code>date, time, price</code> sort; only <code>row_group_size</code> moved. Before is the median of two runs, after is one run, so read it as one sample per arm.",
+        "aemo 上の duckrun で、ライターのバージョンも <code>date, time, price</code> のソートも同じ、<code>row_group_size</code> だけを変えています。変更前は 2 回の実行の中央値、変更後は 1 回の実行なので、各条件 1 サンプルとして読んでください。")}</p>
+      ${table([tr("aemo, duckrun", "aemo、duckrun"), tr("default", "既定値"), tr("131,072 rows per group", "グループあたり 131,072 行"), tr("change", "変化")], ctl.rows, "num")}
+      <p class="note">${tr("Every chunk has a dictionary page in both arms. <code>DUID</code> carries a separate, larger cold penalty on both arms of this pair that row-group size does not touch: it loaded in under a second on the September runs.",
+        "両方の条件で、すべてのチャンクが辞書ページを持っています。<code>DUID</code> には、このペアの両条件に共通する、行グループサイズとは無関係の別の大きなコールドペナルティがあります。9 月の実行では 1 秒未満で読み込まれていました。")}</p>` : ""}
+      <p class="note">${tr("The lines weigh every dataset equally: each dataset's own value per octave of rows per group, then the median across datasets.",
+        "線はすべてのデータセットを等しく重み付けしています。グループあたり行数のオクターブごとに各データセット自身の値を取り、その中央値をデータセット全体で取っています。")}</p>`,
+    top: pairSwitch({ lead: tr("AEMO, same writer and sort, row groups of:", "AEMO、ライターとソートは同じ、行グループ:"),
+      measures: [{ label: ROW_GROUPS(), get: (r) => r.rgs, fmt: fmtInt }, ...PAIR_MEASURES],
       sets: [{ label: "AEMO", arms: [
-        { label: "millions of rows (the default)", runs: runsById(ctx, RG_PAIR.before) },
-        { label: "131,072 rows", runs: runsById(ctx, [RG_PAIR.after]) }] }] }),
+        { label: tr("millions of rows (the default)", "数百万行（既定値）"), runs: runsById(ctx, RG_PAIR.before) },
+        { label: tr("131,072 rows", "131,072 行"), runs: runsById(ctx, [RG_PAIR.after]) }] }] }),
     lead: bandPanels(bandPts, bandT, false) });
 }
 
@@ -763,29 +818,32 @@ export function propDictionary(ctx) {
   const cu = ratio((r) => r.cu && r.cu.dl), cold = ratio((r) => r.dl && r.dl.cold);
   const drop = (x) => `−${Math.round((1 - x) * 100)}%`;
   const paired = cu !== null && cold !== null;
-  return propertyCard({ id: "dictionary", title: "Dictionary encoding", evidence: paired ? "controlled" : "observational",
+  return propertyCard({ id: "dictionary", title: tr("Dictionary encoding", "辞書エンコーディング"), evidence: paired ? "controlled" : "observational",
     status: paired ? "clear" : base.status === "clear" ? "clear" : "partial",
-    head: paired ? [`${drop(cu)} CU`, "Direct Lake read CU once the file declares its dictionary: same table, same pages, one footer list"]
-      : [s.med !== null ? `${pct(s)} cold` : "—", "a column whose chunks lack a dictionary page, against the same column fully encoded"],
-    card: "Every column dictionary-encoded and declared in the footer, so Power BI reuses the dictionary instead of rebuilding it. Any writer that does this reads cheaply.",
-    claim: `${paired ? `Same DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${fmtX(1 / cu)} lower</b> (${drop(cu)}), cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
-    top: `${pairSwitch({ lead: "AEMO, DuckDB → Iceberg, same pages; the footer:", measures: PAIR_MEASURES,
+    head: paired ? [`${drop(cu)} CU`, tr("Direct Lake read CU once the file declares its dictionary: same table, same pages, one footer list", "ファイルが辞書を宣言したときの Direct Lake 読み取り CU。テーブルもページも同じ、違うのはフッターのリスト 1 つ")]
+      : [s.med !== null ? tr(`${pct(s)} cold`, `コールド ${pct(s)}`) : "—", tr("a column whose chunks lack a dictionary page, against the same column fully encoded", "辞書ページを欠くチャンクを含む列と、完全にエンコードされた同じ列の比較")],
+    card: tr("Every column dictionary-encoded and declared in the footer, so Power BI reuses the dictionary instead of rebuilding it. Any writer that does this reads cheaply.",
+      "すべての列を辞書エンコードし、フッターで宣言します。そうすれば Power BI は辞書を作り直さず再利用します。これを行うライターなら、どれでも安く読み取れます。"),
+    claim: tr(`${paired ? `Same DuckDB-written table, same files, row groups and dictionary pages; the only change is the footer declaring the dictionary (duckdb#24957): Direct Lake read CU <b>${fmtX(1 / cu)} lower</b> (${drop(cu)}), cold load <b>${drop(cold)}</b>. ` : ""}A column with chunks that have no dictionary page at all cost ${pct(s)} cold against the same column fully encoded (${agree(s)}).`,
+      `${paired ? `DuckDB が書いた同じテーブルで、ファイルも行グループも辞書ページも同じ。違いはフッターが辞書を宣言しているかどうかだけです（duckdb#24957）。Direct Lake 読み取り CU は <b>${fmtX(1 / cu)} 低く</b>（${drop(cu)}）、コールドの読み込みは <b>${drop(cold)}</b> でした。` : ""}辞書ページをまったく持たないチャンクを含む列は、完全にエンコードされた同じ列に比べてコールドが ${pct(s)} でした（${agree(s)}）。`),
+    top: `${pairSwitch({ lead: tr("AEMO, DuckDB → Iceberg, same pages; the footer:", "AEMO、DuckDB → Iceberg、ページは同じ。フッターは:"), measures: PAIR_MEASURES,
       sets: [{ label: "AEMO", arms: [
-        { label: "declares the dictionary (DuckDB dev379)", runs: runsById(ctx, [DECLARE_PAIR.after]) },
-        { label: "declares nothing (DuckDB dev365)", runs: runsById(ctx, [DECLARE_PAIR.before]) }] }] })}`,
-    body: `${effectTable([["column cold, dictionary gaps ÷ full", s]])}${base.html}` });
+        { label: tr("declares the dictionary (DuckDB dev379)", "辞書を宣言する（DuckDB dev379）"), runs: runsById(ctx, [DECLARE_PAIR.after]) },
+        { label: tr("declares nothing (DuckDB dev365)", "何も宣言しない（DuckDB dev365）"), runs: runsById(ctx, [DECLARE_PAIR.before]) }] }] })}`,
+    body: `${effectTable([[tr("column cold, dictionary gaps ÷ full", "列のコールド、辞書の欠落あり ÷ 完全"), s]])}${base.html}` });
 }
 
 export function propFileCount(ctx) {
   const files = (r) => r.files;
   const s = { cu: runSlope(ctx, files, M.cu.get), cold: runSlope(ctx, files, M.cold.get), warm: runSlope(ctx, files, M.warm.get) };
-  return propertyCard({ id: "file-count", title: "File count", evidence: "observational", status: counts(s.cu) ? "clear" : "none",
-    head: [s.cu.med !== null ? pct(s.cu) : "—", "Direct Lake read CU each time the file count doubles"],
-    card: "How many files the table is split into made no measurable difference.",
-    claim: `Twice the files: Direct Lake read CU ${pct(s.cu)}, cold ${pct(s.cold)}, warm ${pct(s.warm)}. ${counts(s.cu) ? "" : "Inside the ±10% noise floor: no measurable effect."}`,
-    body: effectTable([["Direct Lake read CU, per doubling of files", s.cu], ["cold, per doubling", s.cold], ["warm, per doubling", s.warm]]),
+  return propertyCard({ id: "file-count", title: tr("File count", "ファイル数"), evidence: "observational", status: counts(s.cu) ? "clear" : "none",
+    head: [s.cu.med !== null ? pct(s.cu) : "—", tr("Direct Lake read CU each time the file count doubles", "ファイル数が 2 倍になるごとの Direct Lake 読み取り CU")],
+    card: tr("How many files the table is split into made no measurable difference.", "テーブルを何ファイルに分けるかによる、測定可能な差はありませんでした。"),
+    claim: tr(`Twice the files: Direct Lake read CU ${pct(s.cu)}, cold ${pct(s.cold)}, warm ${pct(s.warm)}. ${counts(s.cu) ? "" : "Inside the ±10% noise floor: no measurable effect."}`,
+      `ファイル数を 2 倍にすると、Direct Lake 読み取り CU は ${pct(s.cu)}、コールドは ${pct(s.cold)}、ウォームは ${pct(s.warm)} でした。${counts(s.cu) ? "" : "±10% のノイズの範囲内で、測定可能な効果はありません。"}`),
+    body: effectTable([[tr("Direct Lake read CU, per doubling of files", "Direct Lake 読み取り CU、ファイル 2 倍あたり"), s.cu], [tr("cold, per doubling", "コールド、2 倍あたり"), s.cold], [tr("warm, per doubling", "ウォーム、2 倍あたり"), s.warm]]),
     lead: `${legend(familiesIn(ctx.runs))}
-      ${normalisedScatter(ctx, files, M.cu.get, "file count", "Direct Lake read CU")}` });
+      ${normalisedScatter(ctx, files, M.cu.get, tr("file count", "ファイル数"), READ_CU())}` });
 }
 
 // The presentation's order (the user's story, 2026-11-12): V-Order is three things — dictionary
@@ -801,37 +859,39 @@ export const PROPERTIES = [propSparkVOrder, propDictionary, propSort, propRowGro
 
 // How the home page groups the cards, by finding id. `compact` groups render as a one-line list.
 export const PROPERTY_GROUPS = [
-  { title: "Your writer has V-Order: turn it on", ids: ["spark-vorder"] },
-  { title: "What V-Order does, and how to do it with any other writer", ids: ["dictionary", "sort", "row-groups"] },
-  { title: "Secondary: a result of the three, or no effect", ids: ["table-size", "file-count"], compact: true },
+  { get title() { return tr("Your writer has V-Order: turn it on", "ライターに V-Order があるなら: オンにする"); }, ids: ["spark-vorder"] },
+  { get title() { return tr("What V-Order does, and how to do it with any other writer", "V-Order が行うこと、そして他のライターでそれを実現する方法"); }, ids: ["dictionary", "sort", "row-groups"] },
+  { get title() { return tr("Secondary: a result of the three, or no effect", "副次的: 3 つの結果として決まるもの、または効果なし"); }, ids: ["table-size", "file-count"], compact: true },
 ];
 
 // --------------------------------------------------------------------------------- frame sections
 
-const DIAGRAM = `<svg viewBox="0 0 760 185" class="diagram" role="img" aria-label="How Direct Lake reads parquet">
+const DIAGRAM = () => `<svg viewBox="0 0 760 185" class="diagram" role="img" aria-label="${tr("How Direct Lake reads parquet", "Direct Lake が parquet を読む仕組み")}">
   <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10Z" fill="var(--dim)"/></marker></defs>
   <rect x="10" y="78" width="130" height="94" rx="8" class="box"/>
-  <text x="75" y="104" class="dt" text-anchor="middle">parquet in OneLake</text>
-  <text x="75" y="124" class="ds" text-anchor="middle">row groups</text>
-  <text x="75" y="140" class="ds" text-anchor="middle">encodings · dictionary</text>
-  <text x="75" y="156" class="ds" text-anchor="middle">sort order</text>
+  <text x="75" y="104" class="dt" text-anchor="middle">${tr("parquet in OneLake", "OneLake 上の parquet")}</text>
+  <text x="75" y="124" class="ds" text-anchor="middle">${tr("row groups", "行グループ")}</text>
+  <text x="75" y="140" class="ds" text-anchor="middle">${tr("encodings · dictionary", "エンコーディング · 辞書")}</text>
+  <text x="75" y="156" class="ds" text-anchor="middle">${tr("sort order", "ソート順")}</text>
   <text x="200" y="22" class="dh">Direct Lake</text>
   <path d="M140,105 C190,105 190,55 240,55" class="flow" marker-end="url(#arr)"/>
   <rect x="240" y="30" width="160" height="50" rx="8" class="box hl"/>
-  <text x="320" y="51" class="dt" text-anchor="middle">transcode, first touch</text>
-  <text x="320" y="68" class="ds" text-anchor="middle">this is COLD</text>
+  <text x="320" y="51" class="dt" text-anchor="middle">${tr("transcode, first touch", "初回アクセスでトランスコード")}</text>
+  <text x="320" y="68" class="ds" text-anchor="middle">${tr("this is COLD", "ここがコールド")}</text>
   <path d="M400,55 L450,55" class="flow" marker-end="url(#arr)"/>
   <rect x="450" y="30" width="150" height="50" rx="8" class="box"/>
-  <text x="525" y="51" class="dt" text-anchor="middle">VertiPaq segments</text>
-  <text x="525" y="68" class="ds" text-anchor="middle">resident in memory</text>
+  <text x="525" y="51" class="dt" text-anchor="middle">${tr("VertiPaq segments", "VertiPaq セグメント")}</text>
+  <text x="525" y="68" class="ds" text-anchor="middle">${tr("resident in memory", "メモリに常駐")}</text>
   <path d="M600,55 L650,55" class="flow" marker-end="url(#arr)"/>
   <rect x="650" y="30" width="100" height="50" rx="8" class="box"/>
-  <text x="700" y="51" class="dt" text-anchor="middle">queries</text>
-  <text x="700" y="68" class="ds" text-anchor="middle">WARM, HOT</text>
+  <text x="700" y="51" class="dt" text-anchor="middle">${tr("queries", "クエリ")}</text>
+  <text x="700" y="68" class="ds" text-anchor="middle">${tr("WARM, HOT", "ウォーム、ホット")}</text>
 </svg>`;
 
 // The framing the home page used to open with; it leads the Method page now.
-const FRAMING = `<p>Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
+const FRAMING = () => lang() === "ja" ? `<p>ライターによって違いが出るのはコールドの読み込み、つまり Direct Lake が各列を初めてメモリに載せるときで、そのコストがセッションの課金する読み取り CU です。それを決めるレイアウトの性質は 3 つあります。辞書エンコーディング（すべての列を辞書エンコードし、ファイルのフッターで宣言する）、ソート（同じ値の長いラン）、行グループ（それぞれ数百万行）です。それ以外の影響は小さなものです。</p>
+  <p>ライターのランキングではありません。この 3 つを行えば、何が書いたテーブルでも（Fabric Spark、Fabric Warehouse、Databricks、delta-rs、DuckDB）安く読み取れます。カードは各ライターが 3 つのうち何を欠いているかを示します。</p>
+  <p>最もわかりやすい例: <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> 以前の DuckDB のライターは、同じ辞書ページをフッターで宣言せずに書き出しており、同じテーブルの読み取りに約 2.5 倍の CU がかかっていました。最新の数値は<a href="?finding=dictionary">辞書のカード</a>にあります。</p>` : `<p>Writers differ on the cold load, when Direct Lake first turns each column into memory, and what that costs is the read CU the session bills. Three layout properties decide it: dictionary encoding (every column dictionary-encoded, declared in the file footer), sorting (long runs of equal values) and row groups (millions of rows each). Everything else is small.</p>
   <p>Not a writer ranking: do those three things and the table reads cheaply whatever wrote it (Fabric Spark, Fabric Warehouse, Databricks, delta-rs or DuckDB). The cards show which of the three each writer misses.</p>
   <p>The clearest case: DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a> wrote the same dictionary pages without declaring them in the footer, and the same table read at about 2.5× the CU; the live number is on <a href="?finding=dictionary">the dictionary card</a>.</p>`;
 
@@ -844,7 +904,19 @@ function methodSection(ctx) {
       fmtRows(p.rows), fmtInt(R.length), fmtInt(R.filter((r) => r.dl.cold).length), fmtInt((p.queriesDl || []).length),
       esc(writers.join(", "))];
   });
-  return `${FRAMING}
+  if (lang() === "ja") return `${FRAMING()}
+    <p>同じソースデータを 4 つのエンジンが書き出します。<b>delta-rs</b>（DuckDB の Delta 用 dbt アダプター duckrun 経由）、<b>Spark</b>（Fabric、V-Order あり・なし）、<b>Fabric Warehouse</b>、そして <b>Iceberg を書く DuckDB</b> です。次に、すべてのライターで共通の Power BI セマンティックモデルを 1 つ、各出力の上に Direct Lake モードと DirectQuery モードでデプロイします。同じ DAX スイートをこれに対して 6 回続けて実行します。</p>
+    <ul>
+      <li><b>コールド</b>: パス 1。モデルを作成した直後なので、すべての列が parquet からトランスコードされます。</li>
+      <li><b>ウォーム</b>: パス 2。パス 1 が触れた列はすでにメモリ上にあります。</li>
+      <li><b>ホット</b>: パス 3〜6 の中央値。</li>
+    </ul>
+    <p><b>読み取り CU</b> は、各セッション自身のアイテムが課金した容量ユニットです。セマンティックモデル、その読み取り元のショートカット lakehouse、その lakehouse の SQL エンドポイントの分を、Capacity Metrics アプリから読み取ります。セッション全体（6 パスすべて）を、Direct Lake と DirectQuery で別々に集計します。テーブルの構築に使った CU はこのレポートに含まれません。</p>
+    <p><b>数値の作り方。</b> 連続的な性質（サイズ、行グループあたりの行数、ファイル数、ソートのラン）は、その性質が 2 倍になるごとの指標の変化として、データセットごとに当てはめます。オン/オフの性質（V-Order）は、データセットごとの中央値の比です。カードの数値はそのデータセットごとの値の中央値なので、実行回数の多いデータセットも少ないデータセットも同じ重みで数えられます。各カードには、方向が一致したデータセットの数を示しています。効果は ±10% を超え、かつ大半のデータセットが一致した場合にのみ有効とし、そうでなければ測定可能な効果なしと表示します。</p>
+    <p>合計は、そのデータセットの実行に共通するクエリの和です。実行の比較は同じデータセット内、かつ同じソース行数の場合に限ります。差を<b>明確</b>とするのは、勝者のすべての実行が敗者のすべての実行を上回り、それぞれ ${MIN_RUNS} 回以上の実行がある場合だけです。そうでなければ<b>ノイズの範囲内</b>または<b>実行回数不足</b>です。すべてを 1 つの Fabric 容量で実行しており、その負荷は実行ごとに変わるためです。</p>
+    <p>ライターは複数のことを同時に変えます。エンコーディング、ソート、行グループサイズ、圧縮です。ある調査結果ではライターを固定し（行グループサイズ、delta-rs の対照ペア）、別の調査結果ではスイッチ 1 つに絞っています（Spark の V-Order オンとオフ）。それ以外はすべてライター間の相関であり、そう明記しています。</p>
+    ${table(["データセット", "行数", "実行", "計測済みの実行", "クエリ", "ライター"], rows)}`;
+  return `${FRAMING()}
     <p>The same source data is written by four engines: <b>delta-rs</b> (through duckrun, DuckDB's dbt adapter for Delta), <b>Spark</b> (Fabric, with and without V-Order), <b>Fabric Warehouse</b>, and <b>DuckDB writing Iceberg</b>. One Power BI semantic model, the same for every writer, is then deployed over each output in Direct Lake mode and in DirectQuery mode. The same DAX suite runs against it six times in a row:</p>
     <ul>
       <li><b>cold</b>: pass 1, right after the model is created, so every column is transcoded from parquet;</li>
@@ -872,7 +944,7 @@ function methodSection(ctx) {
 // and on every other page, so an improvement over time remains visible there, while the grid
 // describes the writer as it is now. That replaces parking superseded runs in `legacy/`.
 
-export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };
+export const PERF_PHASES = { dl: "Direct Lake", dq: "DirectQuery" };  // product names: the same in every language
 export const PERF_LAST_RUNS = 2;
 
 // The grid counts only sessions started on or after this date, per storage mode. DirectQuery's bill
@@ -931,13 +1003,13 @@ export function perfGrid(groups, measure, fmt) {
     const v = groups.filter((g) => g.ds === ds && g[measure] > 0).map((g) => g[measure]);
     return [ds, v.length ? Math.min(...v) : null];
   }));
-  const head = `<tr><th>writer</th>${datasets.map((ds) => `<th>${esc(label(ds))}</th>`).join("")}</tr>`;
+  const head = `<tr><th>${tr("writer", "ライター")}</th>${datasets.map((ds) => `<th>${esc(label(ds))}</th>`).join("")}</tr>`;
   const body = writers.map(([key, name]) => `<tr><th scope="row">${esc(name)}</th>${datasets.map((ds) => {
     const g = groups.find((x) => x.ds === ds && x.key === key);
     if (!g || !(g[measure] > 0)) return `<td class="na">—</td>`;
     const x = g[measure] / best[ds];
     const cls = x < 1.0005 ? "best" : x >= 2 ? "slow" : "";
-    return `<td class="${cls}" title="${esc(`${g.label} on ${g.dsLabel}: ${fmt(g[measure])}, median of the last ${g.runs} of ${g.total} run${g.total === 1 ? "" : "s"} (${g.ids.join(", ")})`)}"><b>${x.toFixed(1)}×</b><span>${esc(fmt(g[measure]))}</span></td>`;
+    return `<td class="${cls}" title="${esc(tr(`${g.label} on ${g.dsLabel}: ${fmt(g[measure])}, median of the last ${g.runs} of ${g.total} run${g.total === 1 ? "" : "s"} (${g.ids.join(", ")})`, `${g.dsLabel} の ${g.label}: ${fmt(g[measure])}、${g.total} 回中直近 ${g.runs} 回の中央値（${g.ids.join(", ")}）`))}"><b>${x.toFixed(1)}×</b><span>${esc(fmt(g[measure]))}</span></td>`;
   }).join("")}</tr>`).join("");
   return `<div class="tablewrap"><table class="grid"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
 }
@@ -948,17 +1020,18 @@ export function perfSection(ctx, opts = {}) {
   const phPills = Object.entries(PERF_PHASES).map(([k, v]) =>
     pill(k === phase, href({ page: "perf", phase: k === "dl" ? "" : k }), esc(v))).join("");
   const groups = perfGroups(ctx, phase);
-  if (!groups.length) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No timed runs yet.</p>`;
+  if (!groups.length) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">${tr("No timed runs yet.", "計測済みの実行はまだありません。")}</p>`;
   const mode = esc(PERF_PHASES[phase]);
-  if (!groups.some((g) => g.cu)) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">No read CU measured yet.</p>`;
+  if (!groups.some((g) => g.cu)) return `<div class="filters"><div class="pills">${phPills}</div></div><p class="empty">${tr("No read CU measured yet.", "読み取り CU はまだ測定されていません。")}</p>`;
   return `
-    <div class="filters"><div class="pills" aria-label="storage mode">${phPills}</div></div>
-    <h3>Read CU over time</h3>
+    <div class="filters"><div class="pills" aria-label="${tr("storage mode", "ストレージモード")}">${phPills}</div></div>
+    <h3>${tr("Read CU over time", "読み取り CU の推移")}</h3>
     ${perfHistory(ctx, phase)}
-    <h3>Cheapest writer per dataset</h3>
+    <h3>${tr("Cheapest writer per dataset", "データセットごとの最も安いライター")}</h3>
     ${perfGrid(groups, "cu", fmtCu)}
-    <p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
-    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.${PERF_SINCE[phase] ? ` Only sessions since ${esc(PERF_SINCE[phase])} count here, because the SQL endpoint's price changed before then; an empty cell is a writer not yet run since.` : ""}</p>`;
+    ${lang() === "ja" ? `<p class="dim">${mode} の読み取り CU の日次平均です。データセットごとに 1 パネル、ライターごとに 1 本の線です。線が上下に段差を描くのは、ライター自身、その設定、あるいはサービスによって、そのライターの読み取りコストが変わったことを示します。各パネルの CU 軸はそのデータセットの範囲に合わせており、ゼロから始まりません。時間軸は共通です。点にカーソルを合わせると、その日のセッションが表示されます。</p>
+    <p class="dim">読み取り CU は、${mode} のセッション全体が課金した量です。クエリスイート全体についての、セマンティックモデルとその読み取り元の lakehouse の分です。各セルは、そのデータセットでのライターの直近 ${PERF_LAST_RUNS} セッションの中央値を、同じデータセットで最も安いライターに対する倍率で示しています。<b>1.0×</b> が最安（緑）、2.0× はその 2 倍のコストです。その下が CU です。${PERF_SINCE[phase] ? `SQL エンドポイントの価格がそれ以前に変わったため、ここでは ${esc(PERF_SINCE[phase])} 以降のセッションだけを数えています。空のセルは、それ以降まだ実行されていないライターです。` : ""}</p>` : `<p class="dim">${mode} read CU averaged per day, one panel per dataset, one line per writer. A line stepping up or down is that writer's read cost changing, whether from the writer, its settings or the service. Each panel's CU axis fits that dataset's range and does not start at zero; the time axis is shared. Hover a point for the day's sessions.</p>
+    <p class="dim">Read CU is what the whole ${mode} session billed: the semantic model and the lakehouse it reads through, for the full query suite. Each cell is the median of a writer's last ${PERF_LAST_RUNS} sessions on that dataset, as a multiple of the cheapest writer on the same dataset: <b>1.0×</b> is the cheapest (green), 2.0× costs twice as much. The CU is under it.${PERF_SINCE[phase] ? ` Only sessions since ${esc(PERF_SINCE[phase])} count here, because the SQL endpoint's price changed before then; an empty cell is a writer not yet run since.` : ""}</p>`}`;
 }
 
 /** A run's start as epoch ms: `run.started`, or the `2026-10-17T1526Z-…` prefix of its record file. */
@@ -1001,7 +1074,8 @@ export function perfHistoryPoints(ctx, phase = "dl") {
 }
 
 const DAY = 86400000;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const monthName = (i) => tr(MONTHS_EN[i], `${i + 1}月`);
 
 // Dots only, one colour per writer: the two Spark profiles share a hue in the family colours used
 // elsewhere, so this chart takes the validated categorical palette instead.
@@ -1020,9 +1094,9 @@ function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
   const ya = Math.max(0, lo - pad), yb = hi + pad;
   const sy = { f: (v) => (h - m.b) + ((v - ya) / (yb - ya)) * (m.t - (h - m.b)), ticks: linTicks(ya, yb) };
   const fx = (t) => m.l + ((t - t0) / (t1 - t0 || 1)) * (w - m.l - m.r);
-  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(`read CU over time on ${label(p.ds)}`)}">`,
+  const parts = [`<svg viewBox="0 0 ${w} ${h}" class="chart" role="img" aria-label="${esc(tr(`read CU over time on ${label(p.ds)}`, `${label(p.ds)} の読み取り CU の推移`))}">`,
     `<text x="${m.l}" y="15" class="panel-title">${esc(label(p.ds))}</text>`,
-    `<text transform="translate(13,${((m.t + h - m.b) / 2).toFixed(1)}) rotate(-90)" class="axis" text-anchor="middle">read CU · lower is better</text>`];
+    `<text transform="translate(13,${((m.t + h - m.b) / 2).toFixed(1)}) rotate(-90)" class="axis" text-anchor="middle">${tr("read CU · lower is better", "読み取り CU · 低いほど良い")}</text>`];
   for (const v of sy.ticks) {
     const y = sy.f(v);
     parts.push(`<line x1="${m.l}" x2="${w - m.r}" y1="${y.toFixed(1)}" y2="${y.toFixed(1)}" class="grid"/>`,
@@ -1033,7 +1107,7 @@ function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
   for (d.setUTCMonth(d.getUTCMonth() + 1); d.getTime() <= t1; d.setUTCMonth(d.getUTCMonth() + 1)) {
     const x = fx(d.getTime());
     parts.push(`<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${m.t}" y2="${h - m.b}" class="grid"/>`,
-      `<text x="${x.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${MONTHS[d.getUTCMonth()]}</text>`);
+      `<text x="${x.toFixed(1)}" y="${h - m.b + 15}" class="tick" text-anchor="middle">${monthName(d.getUTCMonth())}</text>`);
   }
   for (const l of p.lines) {
     const css = historyColor(l.key);
@@ -1042,9 +1116,10 @@ function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
       parts.push(`<path d="${d}" data-fam="${esc(l.key)}" fill="none" stroke="${css}" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>`);
     }
     for (const q of l.pts) {
-      const who = q.n === 1 ? `run ${q.ids[0]}` : `${q.n} sessions`;
+      const who = q.n === 1 ? tr(`run ${q.ids[0]}`, `実行 ${q.ids[0]}`) : tr(`${q.n} sessions`, `${q.n} セッション`);
       parts.push(historyDot(fx(q.t), sy.f(q.cu), css,
-        `${l.label} · ${label(p.ds)} · ${q.day} · avg ${fmtCu(q.cu)} over ${who}${q.rg ? ` · row groups ${q.rg}` : ""}`, 2.6, l.key));
+        tr(`${l.label} · ${label(p.ds)} · ${q.day} · avg ${fmtCu(q.cu)} over ${who}${q.rg ? ` · row groups ${q.rg}` : ""}`,
+          `${l.label} · ${label(p.ds)} · ${q.day} · ${who} の平均 ${fmtCu(q.cu)}${q.rg ? ` · 行グループ ${q.rg}` : ""}`), 2.6, l.key));
     }
   }
   parts.push("</svg>");
@@ -1054,14 +1129,14 @@ function historyPanel(p, [t0, t1], { w = 360, h = 230 } = {}) {
 /** The history: one panel per dataset on a shared time axis, with a legend naming each writer's mark. */
 export function perfHistory(ctx, phase = "dl") {
   const panels = perfHistoryPoints(ctx, phase);
-  if (!panels.length) return `<p class="empty">No sessions with a read CU yet.</p>`;
+  if (!panels.length) return `<p class="empty">${tr("No sessions with a read CU yet.", "読み取り CU のあるセッションはまだありません。")}</p>`;
   const ts = panels.flatMap((p) => p.lines.flatMap((l) => l.pts.map((q) => q.t)));
   const pad = 2 * 86400000, span = [Math.min(...ts) - pad, Math.max(...ts) + pad];
   const seen = new Map();
   for (const p of panels) for (const l of p.lines) if (!seen.has(l.key)) seen.set(l.key, l);
   // Legend order by the user's call (2026-10-21): the Fabric writers first, the DuckDB family last.
   const rank = (k) => { const i = LEGEND_ORDER.indexOf(k); return i < 0 ? LEGEND_ORDER.length : i; };
-  const key = [...seen.values()].sort((a, b) => rank(a.key) - rank(b.key)).map((l) => `<span class="key" data-key="${esc(l.key)}" role="button" tabindex="0" title="${KEY_HINT}"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
+  const key = [...seen.values()].sort((a, b) => rank(a.key) - rank(b.key)).map((l) => `<span class="key" data-key="${esc(l.key)}" role="button" tabindex="0" title="${KEY_HINT()}"><svg viewBox="0 0 20 12" width="20" height="12"><line x1="1" x2="19" y1="6" y2="6" stroke="${historyColor(l.key)}" stroke-width="1.8"/>${historyDot(10, 6, historyColor(l.key), "", 3)}</svg>${esc(l.label)}</span>`).join("");
   return `<div class="legend">${key}</div><div class="facets three history">${panels.map((p) =>
     `<figure class="facet">${historyPanel(p, span)}</figure>`).join("")}</div>`;
 }
@@ -1081,18 +1156,20 @@ export function context(records, opts = {}, ledger = null) {
 
 function dataSection(ctx) {
   const R = ctx.runs.filter((r) => ctx.datasets.includes(r.ds));
-  const head = ["dataset", "writer", "run", "date", "files", "row groups", "rows / RG", "size", "compression",
-    "DL cold", "DL warm", "DL hot", "DQ cold", "DQ warm", "DL read CU", "DQ read CU"];
+  const head = pick({ en: ["dataset", "writer", "run", "date", "files", "row groups", "rows / RG", "size", "compression",
+    "DL cold", "DL warm", "DL hot", "DQ cold", "DQ warm", "DL read CU", "DQ read CU"],
+  ja: ["データセット", "ライター", "実行", "日付", "ファイル", "行グループ", "行 / RG", "サイズ", "圧縮",
+    "DL コールド", "DL ウォーム", "DL ホット", "DQ コールド", "DQ ウォーム", "DL 読み取り CU", "DQ 読み取り CU"] });
   const rows = R.map((r) => [label(r.ds), esc(r.writerLabel),
     r.url ? `<a href="${esc(r.url)}">${esc(r.id)}</a>` : esc(r.id), esc(r.when), fmtInt(r.files), fmtInt(r.rgs),
     fmtRows(r.rowsPerRg), fmtMb(r.mb), esc(r.compression || "—"),
     fmtMs(r.dl.cold), fmtMs(r.dl.warm), fmtMs(r.dl.hot), fmtMs(r.dq.cold), fmtMs(r.dq.warm), fmtCu(r.cu.dl), fmtCu(r.cu.dq)]);
   const ex = ctx.excluded.filter((r) => ctx.datasets.includes(r.ds));
   return `
-    <p>Every run behind the charts. Click a column heading to sort, or download the flat tables.</p>
-    <p><button type="button" data-csv="runs">Download runs (CSV)</button> <button type="button" data-csv="columns">Download columns (CSV)</button></p>
+    <p>${tr("Every run behind the charts. Click a column heading to sort, or download the flat tables.", "グラフの元になったすべての実行です。列見出しをクリックすると並べ替えられます。フラットなテーブルもダウンロードできます。")}</p>
+    <p><button type="button" data-csv="runs">${tr("Download runs (CSV)", "実行をダウンロード（CSV）")}</button> <button type="button" data-csv="columns">${tr("Download columns (CSV)", "列をダウンロード（CSV）")}</button></p>
     ${table(head, rows, "num sortable")}
-    ${ex.length ? `<p class="note">${ex.length} run${ex.length === 1 ? " was" : "s were"} left out because ${ex.length === 1 ? "it was" : "they were"} measured on a smaller copy of the source: ${ex.map((r) => `${esc(r.writerLabel)} ${esc(r.id)} (${esc(r.reason)})`).join("; ")}.</p>` : ""}`;
+    ${ex.length ? `<p class="note">${tr(`${ex.length} run${ex.length === 1 ? " was" : "s were"} left out because ${ex.length === 1 ? "it was" : "they were"} measured on a smaller copy of the source: `, `${ex.length} 件の実行は、ソースの小さいコピーで測定されたため除外しました: `)}${ex.map((r) => `${esc(r.writerLabel)} ${esc(r.id)} (${esc(r.reason)})`).join("; ")}${tr(".", "。")}</p>` : ""}`;
 }
 
 export function csvOf(rows, keys) {
@@ -1108,20 +1185,40 @@ export const RUN_KEYS = ["ds", "writerLabel", "id", "when", "engine", "vorder", 
 export const COLUMN_KEYS = ["ds", "writerLabel", "runId", "column", "type", "mb", "encodings", "dictPages",
   "chunks", "runsPer1k", "cold", "warm", "coldRaw", "warmRaw"];
 
-const HOW = `
+const HOW = () => lang() === "ja" ? `
+  <p>Direct Lake はデータをインポートしません。列が初めて使われたときにその列の parquet を読み、行グループごとに 1 つずつ VertiPaq 独自のセグメントへトランスコードして、メモリに保持します。その読み取りを安くするファイルの性質（小さい列、再利用できる辞書、同じ値の長いラン、少ないセグメント）はすべて、その瞬間に時間と容量ユニットの両方で効いてきます。それ以降のクエリは VertiPaq のコピーに対して実行されます。</p>
+  ${DIAGRAM()}
+  <p>仕組みの全体はデモ付きで順を追って説明しています: <a href="intro.html">はじめに</a>、<a href="parquet.html">Parquet</a>、<a href="transcode.html">トランスコード</a>。</p>` : `
   <p>Direct Lake does not import data. On a column's first use it reads that column's parquet and transcodes it into VertiPaq's own segments, one per row group, and keeps them in memory. Everything about the file that makes that read cheaper (smaller columns, dictionaries it can reuse, long runs of equal values, fewer segments) pays off at that moment, in time and in capacity units. After it, queries run against VertiPaq's copy.</p>
-  ${DIAGRAM}
+  ${DIAGRAM()}
   <p>The whole mechanism, step by step with demos: <a href="intro.html">Introduction</a>, <a href="parquet.html">Parquet</a> and <a href="transcode.html">Transcoding</a>.</p>`;
 
-const PAGES = { method: "Method", how: "How Power BI reads parquet", data: "The data" };
+const PAGES = () => pick({ en: { method: "Method", how: "How Power BI reads parquet", data: "The data" },
+  ja: { method: "手法", how: "Power BI が parquet を読む仕組み", data: "データ" } });
 
 // The two tabs this page serves, as the tab bar names them (index.html and learn.js: change all three).
-const TAB_HOME = "Recap", TAB_PERF = "Writers compared";
+const TAB_HOME = () => tr("Recap", "まとめ"), TAB_PERF = () => tr("Writers compared", "ライターの比較");
 
 /** THE TAKEAWAY (the user's call, 2026-11-12): this tab is the recap the audience leaves with. The
  *  three parts of V-Order, what to do with them, and what is not a lever; the cards under it are the
  *  evidence. Fixed prose: the numbers live on the cards. */
-const RECAP = `<div class="framing">
+const RECAP = () => lang() === "ja" ? `<div class="framing">
+  <p><b>V-Order は 3 つのことです。</b>ライターが V-Order を持っているなら（Fabric Spark、Fabric Warehouse）、オンにしてください。書き込みは少し高くなりますが、読み取りで元が取れます。持っていないなら（delta-rs、DuckDB、Databricks）、3 つを自分で設定します: <a href="writers.html">レシピ</a>。</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>V-Order の構成要素</th><th>ファイルに必要なこと</th><th>効く場面</th><th>設定方法</th></tr></thead>
+    <tbody>
+      <tr><td><b>1. 辞書エンコーディング</b></td><td>すべての列を辞書エンコードし、<code>encoding_stats</code> で宣言する。PLAIN へのフォールバックなし</td><td>コールド: 再構築ではなく ID の置き換え</td><td>ライターの辞書サイズ上限を上げ、フッターを読み返して確認する</td></tr>
+      <tr><td><b>2. ソート順</b></td><td>レポートがフィルターする列で、同じ値を隣り合わせにする（V-Order はファイル単位でソート）</td><td>コールド: エンコードが安くなる · ウォームとホット: ランをまとめてスキャン</td><td><code>ORDER BY</code>、<code>CLUSTER BY</code>、または V-Order</td></tr>
+      <tr><td><b>3. 行グループ</b></td><td>それぞれ数百万行（200 万〜600 万行）、かつスキャンのスレッド数より多い数</td><td>コールド: マージとセットアップがグループごとに 1 回 · ウォーム: スレッドを遊ばせないだけのセグメント数</td><td>行数を明示的に指定する</td></tr>
+    </tbody></table></div>
+  <h3 class="group">レバーにならないもの</h3>
+  <ul>
+    <li><b>ファイル数とファイルサイズ。</b> Direct Lake は列を読み込むとき、統計に基づくファイルや行グループのスキップを行いません。列全体を読み込みます。</li>
+    <li><b>小さいファイルが速いファイルとは限りません。</b> ディスク上のバイト数は辞書とソートの結果として決まります。</li>
+    <li><b>結合は要求した以上のものを読み込みます。</b> リレーションシップをまたぐコールドクエリは、キー列とディメンションのキーも読み込みます。</li>
+    <li><b>メモリは永遠ではありません。</b> メモリが逼迫するとエンジンはセグメントをアンロードし、次のクエリで再構築します。コールドに逆戻りです。</li>
+  </ul>
+  <h2>根拠</h2>` : `<div class="framing">
   <p><b>V-Order is three things.</b> If your writer has it (Fabric Spark, Fabric Warehouse), turn it on: the write costs a little more and the read pays it back. If it does not (delta-rs, DuckDB, Databricks), set the three yourself: <a href="writers.html">recipes</a>.</p></div>
   <div class="scroll"><table>
     <thead><tr><th>part of V-Order</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
@@ -1139,16 +1236,16 @@ const RECAP = `<div class="framing">
   </ul>
   <h2>The evidence</h2>`;
 
-/** Where the learning tabs explain why each finding happens: [label, href] per finding id. */
+/** Where the learning tabs explain why each finding happens: [label, href, Japanese label] per finding id. */
 export const LEARN = {
-  dictionary: [["Parquet · Encodings", "parquet.html#encodings"], ["Parquet · The footer", "parquet.html#footer"], ["Transcoding · ID swap or rebuild", "transcode.html#swap"]],
-  sort: [["Parquet · Sorting", "parquet.html#sorting"]],
-  "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#merge/threads"]],
-  "spark-vorder": [["Parquet · V-Order in action", "parquet.html#sorting/action"], ["Parquet · Sorting", "parquet.html#sorting"]],
-  "table-size": [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
-  "file-count": [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
+  dictionary: [["Parquet · Encodings", "parquet.html#encodings", "Parquet · エンコーディング"], ["Parquet · The footer", "parquet.html#footer", "Parquet · フッター"], ["Transcoding · ID swap or rebuild", "transcode.html#swap", "トランスコード · ID 置換か再構築か"]],
+  sort: [["Parquet · Sorting", "parquet.html#sorting", "Parquet · ソート"]],
+  "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups", "Parquet · 行グループ"], ["Transcoding · Row groups → segments", "transcode.html#merge", "トランスコード · 行グループ → セグメント"], ["Transcoding · Segments vs threads", "transcode.html#merge/threads", "トランスコード · セグメントとスレッド"]],
+  "spark-vorder": [["Parquet · V-Order in action", "parquet.html#sorting/action", "Parquet · V-Order の実例"], ["Parquet · Sorting", "parquet.html#sorting", "Parquet · ソート"]],
+  "table-size": [["Transcoding · Cold, warm, hot", "transcode.html#tiers", "トランスコード · コールド・ウォーム・ホット"]],
+  "file-count": [["Transcoding · Cold, warm, hot", "transcode.html#tiers", "トランスコード · コールド・ウォーム・ホット"]],
 };
-const learnLine = (id) => (LEARN[id] ? `<p class="note">Why: ${LEARN[id].map(([l, h]) => `<a href="${h}">${esc(l)}</a>`).join(" · ")}</p>` : "");
+const learnLine = (id) => (LEARN[id] ? `<p class="note">${tr("Why:", "理由:")} ${LEARN[id].map(([l, h, ja]) => `<a href="${h}">${esc(tr(l, ja))}</a>`).join(" · ")}</p>` : "");
 
 /** `?a=b&c=d` from the params that are set, so a link keeps the dataset it was clicked under. */
 function href(params) {
@@ -1162,7 +1259,7 @@ function card(f, i, opts) {
     <div class="ctop"><span class="cnum">${i + 1}</span>${badge(f.status)}</div>
     <div class="big">${esc(big)}</div><div class="bigsub">${esc(sub)}</div>
     <h3>${esc(f.title)}</h3><p>${esc(f.card || f.short)}</p>
-    <span class="more">See the evidence →</span></a>`;
+    <span class="more">${tr("See the evidence →", "根拠を見る →")}</span></a>`;
 }
 
 /**
@@ -1171,23 +1268,25 @@ function card(f, i, opts) {
  * the detail behind it can never disagree.
  */
 export function render(records, opts = {}, ledger = null) {
+  setLang(opts.lang);
   const ctx = context(records, opts, ledger);
-  if (!ctx.runs.length) return { html: `<p class="empty">No run records found.</p>`, ctx };
+  if (!ctx.runs.length) return { html: `<p class="empty">${tr("No run records found.", "実行記録が見つかりません。")}</p>`, ctx };
   const found = FINDINGS.map((f) => f(ctx));
   const extra = EXTRA_FINDINGS.map((f) => f(ctx));
   const switcher = "";
-  const back = `<a class="back" href="?">← All properties</a>`;
+  const back = `<a class="back" href="?">${tr("← All properties", "← すべての性質")}</a>`;
   // "How Power BI reads parquet" stays reachable (?page=how) but the learning tabs now carry it.
-  const frame = `<p class="framelinks">${Object.entries(PAGES).filter(([k]) => k !== "how").map(([k, v]) =>
+  const frame = `<p class="framelinks">${Object.entries(PAGES()).filter(([k]) => k !== "how").map(([k, v]) =>
     `<a href="${href({ page: k })}">${esc(v)}</a>`).join(" · ")}</p>`;
   const nds = ctx.datasets.length;
   // One sentence on the home page: by this tab the talk has already said the rest, which lives on
   // the Method page (`FRAMING`) for a reader who lands here first.
-  const intro = `<p class="about">What a table costs to read in Power BI: warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes, and dictionary encoding, sorting and row groups decide it.</p>`;
-  const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
+  const intro = `<p class="about">${tr("What a table costs to read in Power BI: warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes, and dictionary encoding, sorting and row groups decide it.",
+    "Power BI でテーブルを読むコスト: ウォームクエリは誰が parquet を書いても高速です。読み取り CU が使われるのはコールドの読み込みで、それを決めるのは辞書エンコーディング、ソート、行グループです。")}</p>`;
+  const about = `<p class="about">${tr(`One number per card, the median across ${nds} datasets, so each dataset weighs the same.`, `カードごとに 1 つの数値。${nds} データセットの中央値なので、各データセットは同じ重みです。`)}</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
   const grouped = new Set(PROPERTY_GROUPS.flatMap((g) => g.ids));
-  const groups = [...PROPERTY_GROUPS, { title: "Other", ids: found.map((f) => f.id).filter((id) => !grouped.has(id)) }]
+  const groups = [...PROPERTY_GROUPS, { title: tr("Other", "その他"), ids: found.map((f) => f.id).filter((id) => !grouped.has(id)) }]
     .map((g) => ({ ...g, items: g.ids.map((id) => byId[id]).filter(Boolean) })).filter((g) => g.items.length);
   const home = groups.map((g) => g.compact
     ? `<h3 class="group">${esc(g.title)}</h3><ul class="secondary">${g.items.map(([f]) => `<li><a href="${href({ finding: f.id })}">${esc(f.title)}</a>: ${esc((f.head || [])[0] || "—")} ${esc((f.head || [])[1] || "")} ${badge(f.status)}</li>`).join("")}</ul>`
@@ -1196,11 +1295,11 @@ export function render(records, opts = {}, ledger = null) {
   const side = extra.find((f) => f.id === opts.finding);
   // THE DECK: home, each finding, then the writers grid, continuing the learning tabs' tour on either
   // side. The pager's `prev` / `next` links are what ← / → (or a clicker) press, as on those tabs.
-  const deck = [{ href: "?", label: TAB_HOME }, ...found.map((f) => ({ href: href({ finding: f.id }), label: f.title })),
-    { href: href({ page: "perf" }), label: TAB_PERF }];
+  const deck = [{ href: "?", label: TAB_HOME() }, ...found.map((f) => ({ href: href({ finding: f.id }), label: f.title })),
+    { href: href({ page: "perf" }), label: TAB_PERF() }];
   const pagerAt = (i) => {
-    const prev = deck[i - 1] || { href: "transcode.html#last", label: "Transcoding", cross: true };
-    const next = deck[i + 1] || { href: "writers.html", label: "Third-party writers", cross: true };
+    const prev = deck[i - 1] || { href: "transcode.html#last", label: tr("Transcoding", "トランスコード"), cross: true };
+    const next = deck[i + 1] || { href: "writers.html", label: tr("Third-party writers", "サードパーティのライター"), cross: true };
     return `<nav class="pager"><a class="prev${prev.cross ? " cross" : ""}" href="${prev.href}">← ${esc(prev.label)}</a>`
       + `<span class="count">${i + 1} / ${deck.length}</span>`
       + `<a class="next${next.cross ? " cross" : ""}" href="${next.href}">${esc(next.label)} →</a></nav>`;
@@ -1213,11 +1312,11 @@ export function render(records, opts = {}, ledger = null) {
     body = `${back}${switcher}<section id="${f.id}" class="finding"><h2><span class="num">${idx + 1}</span>${esc(f.title)} ${badge(f.status)}</h2>${learnLine(f.id)}${f.html}</section>${pagerAt(idx + 1)}`;
   } else if (opts.page === "perf") {
     body = `<section id="perf" class="perf">${perfSection(ctx, opts)}</section>${pagerAt(deck.length - 1)}`;
-  } else if (PAGES[opts.page]) {
-    const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
-    body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
+  } else if (PAGES()[opts.page]) {
+    const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW() : dataSection(ctx);
+    body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES()[opts.page])}</h2>${inner}</section>`;
   } else {
-    body = `${RECAP}${intro}${home}${frame}${about}${pagerAt(0)}`;
+    body = `${RECAP()}${intro}${home}${frame}${about}${pagerAt(0)}`;
   }
   return { html: body, ctx, found };
 }
@@ -1358,9 +1457,23 @@ function presenting(doc, set) {
   return root.classList.contains("present");
 }
 
+/** The same view in the other language: `/x` <-> `/ja/x`, keeping the query and the hash. */
+export function otherLangHref(pathname, search = "", hash = "", isJa = false) {
+  const dir = pathname.replace(/[^/]*$/, ""), file = pathname.slice(dir.length);
+  const base = isJa ? `../${file}` : `ja/${file}`;
+  return `${base || "./"}${search}${hash}`;
+}
+
 export async function boot(doc = document, loc = location) {
   const app = doc.getElementById("app"), status = doc.getElementById("status");
-  const opts = optsOf(loc.search);
+  // The language is the PATH: the `/ja/` build stamps `<html lang="ja">`. Never the browser's setting.
+  const pageLang = doc.documentElement.lang === "ja" ? "ja" : "en";
+  setLang(pageLang);
+  const opts = { ...optsOf(loc.search), lang: pageLang };
+  const langLink = doc.getElementById("langlink");
+  const syncLang = () => {
+    if (langLink) langLink.setAttribute("href", otherLangHref(doc.defaultView.location.pathname, doc.defaultView.location.search, doc.defaultView.location.hash, pageLang === "ja"));
+  };
   try {
     if (new URLSearchParams(loc.search).has("present")) presenting(doc, true);
     else if (localStorage.getItem(PRESENT_KEY)) doc.documentElement.classList.add("present");
@@ -1372,18 +1485,20 @@ export async function boot(doc = document, loc = location) {
       const s = JSON.parse(snap.textContent);
       records = s.records;
       ledger = s.ledger;
-      note = `Offline copy, frozen at ${s.built || "?"}.`;
+      note = tr(`Offline copy, frozen at ${s.built || "?"}.`, `オフラインコピー（${s.built || "?"} 時点）。`);
     } else {
-      if (status) status.textContent = "Reading the run records from GitHub…";
+      if (status) status.textContent = tr("Reading the run records from GitHub…", "GitHub から実行記録を読み込んでいます…");
       ({ records, ledger } = await loadRemote(opts));
-      note = `Live: ${records.length} run records read from ${opts.repo}@${opts.ref}. Reload for new runs.`;
+      note = tr(`Live: ${records.length} run records read from ${opts.repo}@${opts.ref}. Reload for new runs.`,
+        `ライブ: ${opts.repo}@${opts.ref} から ${records.length} 件の実行記録を読み込みました。新しい実行を見るには再読み込みしてください。`);
     }
     const state = { ctx: null };
     // One view of the page. The records are fetched once; every view after is drawn from memory, so
     // stepping through the findings is instant and works with the network gone.
     const draw = (search) => {
-      const o = optsOf(search);
+      const o = { ...optsOf(search), lang: pageLang };
       const { html, ctx } = render(records, o, ledger);
+      syncLang();
       state.ctx = ctx;
       app.innerHTML = html;
       app.removeAttribute("data-focus");
@@ -1423,8 +1538,9 @@ export async function boot(doc = document, loc = location) {
       if (a) { e.preventDefault(); a.click(); }
     });
   } catch (ex) {
-    app.innerHTML = `<p class="empty"><b>Could not read the run records.</b> ${esc(ex && ex.message || ex)}. ` +
-      `The page reads <code>history/runs/</code> from raw.githubusercontent.com at view time.</p>`;
+    app.innerHTML = `<p class="empty"><b>${tr("Could not read the run records.", "実行記録を読み込めませんでした。")}</b> ${esc(ex && ex.message || ex)}. ` +
+      tr(`The page reads <code>history/runs/</code> from raw.githubusercontent.com at view time.</p>`,
+        `このページは表示時に raw.githubusercontent.com から <code>history/runs/</code> を読み込みます。</p>`);
     if (status) status.textContent = "";
   }
 }
