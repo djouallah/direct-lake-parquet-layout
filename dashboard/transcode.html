@@ -16,9 +16,9 @@
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
   <a href="#translate" role="tab" data-pane="translate">Writer's choices</a>
+  <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
   <a href="#merge" role="tab" data-pane="merge">Segments</a>
   <a href="#swap" role="tab" data-pane="swap">ID swap</a>
-  <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
 </nav>
 </div>
 
@@ -59,129 +59,10 @@
 <p class="note">An illustration, not a measurement: the counters are computed from the 48 toy rows shown.</p>
 </section>
 
-<section class="pane" data-name="merge" aria-label="Row groups → segments">
-<h2>Row groups become segments, one to one</h2>
-<div class="sub" data-name="one" aria-label="One to one">
-<p>The first time a query touches a column (the cold load), every row group brings its own little
-  dictionary. VertiPaq merges them into one dictionary for the whole column, then turns each row group
-  into one segment. Row groups are never merged or split on the way in, so <b>the writer chose your
-  segments</b>.</p>
-<div class="demo" id="mg">
-  <div class="btns" role="group" aria-label="row groups">
-    <span class="lbl">the same DUID column, written as:</span>
-    <button type="button" data-g="1">1 row group</button>
-    <button type="button" data-g="3">3 row groups</button>
-    <button type="button" data-g="6">6 row groups</button>
-  </div>
-  <div id="mg-grid"></div>
-  <div class="stats">
-    <div class="stat" id="mg-seg"><b></b><span>segments VertiPaq builds</span></div>
-    <div class="stat" id="mg-loc"><b></b><span>entries in local dictionaries to read and merge</span></div>
-    <div class="stat" id="mg-glob"><b></b><span>entries in the merged dictionary</span></div>
-  </div>
-  <p class="say" id="mg-say"></p>
-</div>
-</div>
-
-<div class="sub" data-name="real" aria-label="Cold against warm">
-<h3>Row-group size: cold against warm</h3>
-<p>Row-group size pulls the cold load and the warm scan in opposite directions:</p>
-<figure>
-<svg viewBox="0 0 760 400" role="img" aria-label="Sketch of query time against rows per row group: cold falls steeply as row groups grow from 123 thousand rows and flattens from about 2 million; warm stays low until about 6 million and then rises towards 16 million. Between 2 and 6 million rows per group both are low.">
-  <rect x="437.5" y="48" width="134.8" height="292" rx="4" style="fill:var(--good);opacity:.13"/>
-  <text x="504.9" y="72" text-anchor="middle" class="big" style="fill:var(--good)">the plateau</text>
-  <text x="504.9" y="90" text-anchor="middle" style="fill:var(--good)">2–6M rows per group</text>
-  <line x1="70" y1="340" x2="740" y2="340" style="stroke:var(--fg);stroke-width:1.5"/><line x1="70" y1="340" x2="70" y2="44" style="stroke:var(--fg);stroke-width:1.5"/>
-  <line x1="95.4" y1="340" x2="95.4" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="95.4" y="362" text-anchor="middle" class="d">123k</text><line x1="352.5" y1="340" x2="352.5" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="352.5" y="362" text-anchor="middle" class="d">1M</text><line x1="437.5" y1="340" x2="437.5" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="437.5" y="362" text-anchor="middle" class="d">2M</text><line x1="572.3" y1="340" x2="572.3" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="572.3" y="362" text-anchor="middle" class="d">6M</text><line x1="692.6" y1="340" x2="692.6" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="692.6" y="362" text-anchor="middle" class="d">16M</text>
-  <text x="405" y="388" text-anchor="middle">rows per row group (fewer, bigger groups →)</text>
-  <text x="26" y="195" text-anchor="middle" transform="rotate(-90 26 195)">query time</text>
-  <path d="M95.4,92.0 C109.9,106.3 153.7,154.0 182.4,178.0 C211.1,202.0 239.1,221.7 267.4,236.0 C295.8,250.3 324.1,257.0 352.5,264.0 C380.8,271.0 400.9,275.3 437.5,278.0 C474.2,280.7 529.8,282.7 572.3,280.0 C614.8,277.3 672.6,265.0 692.6,262.0" style="fill:none;stroke:var(--d1);stroke-width:3;stroke-linecap:round"/>
-  <path d="M95.4,232.0 C109.9,235.7 153.7,247.3 182.4,254.0 C211.1,260.7 239.1,266.7 267.4,272.0 C295.8,277.3 324.1,282.0 352.5,286.0 C380.8,290.0 400.9,294.3 437.5,296.0 C474.2,297.7 541.5,298.7 572.3,296.0 C603.0,293.3 607.9,291.7 622.0,280.0 C636.2,268.3 645.6,249.3 657.3,226.0 C669.1,202.7 686.7,154.3 692.6,140.0" style="fill:none;stroke:var(--d2);stroke-width:3;stroke-linecap:round"/>
-  <text x="99.4" y="58" style="fill:var(--d1)">1,172 tiny groups:</text>
-  <text x="99.4" y="75" style="fill:var(--d1)">96.5 s cold, against 27.8 s</text>
-  <text x="216.5" y="176" class="b" style="fill:var(--d1)">cold (first query)</text>
-  <text x="155.0" y="296" class="b" style="fill:var(--d2)">warm (in memory)</text>
-  <text x="738" y="88" text-anchor="end" style="fill:var(--d2)">too few segments to</text>
-  <text x="738" y="105" text-anchor="end" style="fill:var(--d2)">keep the cores busy:</text>
-  <text x="738" y="122" text-anchor="end" style="fill:var(--d2)">5.7 s at 19, 3.2 s at 24</text>
-</svg>
-<figcaption class="note">A sketch: the anchors are measured on the 144M-row AEMO mart, the curve between
-  them is illustrative. Cold wants fewer, bigger row groups, because every group is one more dictionary
-  to merge and one more segment to set up. Warm wants enough of them to keep every core scanning.</figcaption>
-</figure>
-<p class="note">Microsoft says 1–16M rows per segment. Across the datasets here, more row groups made
-  columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5: a trade, with a wide flat
-  middle. Why the warm scan wants more of them: <a href="#merge/threads">Threads</a>.</p>
-</div>
-
-<div class="sub" data-name="threads" aria-label="Threads">
-<h3>Segments vs threads: the warm scan wants enough of them</h3>
-<p>A warm query scans segments in parallel, one per thread at a time. With fewer segments
-  than threads some threads sit idle, however big each segment is.</p>
-<div class="demo" id="sg">
-  <div class="btns">
-    <span class="lbl">same rows, cut into:</span>
-    <button type="button" data-n="4">4 segments</button>
-    <button type="button" data-n="6">6</button>
-    <button type="button" data-n="8">8</button>
-    <button type="button" data-n="24">24</button>
-    <button type="button" data-n="24u">24, uneven</button>
-    <button type="button" data-n="96">96</button>
-  </div>
-  <p class="note" style="margin:0">8 threads is a number picked for the demo. How many threads Direct Lake's scan gets is not documented.</p>
-  <div class="lanes" id="sg-lanes"></div>
-  <div class="stats">
-    <div class="stat" id="sg-n"><b></b><span>segments</span></div>
-    <div class="stat" id="sg-idle"><b></b><span>threads with nothing to do</span></div>
-    <div class="stat" id="sg-time"><b></b><span>time to scan, in units (illustration)</span></div>
-  </div>
-  <p class="say" id="sg-say"></p>
-</div>
-<p>Microsoft <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">lays
-  out row groups to match the capacity's cores</a> and warns that uneven row-group sizes
-  unbalance the scan. Measured on the 144M-row AEMO mart: warm query time stepped down from ≈5,700 ms at
-  19 segments to 3,221 ms at 24, and 72 segments bought nothing over 24.</p>
-<p class="note">A strict "segments ÷ threads" cost model was tested
-  with a deliberate 8-segment run and did not hold, consistent with fetching and transcoding overlapping
-  the scan. The thread count itself is not documented, so the step from 19 to 24 segments is the only
-  measured hint of where it sits.</p>
-</div>
-</section>
-
-<section class="pane" data-name="swap" aria-label="ID swap or rebuild">
-<h2>The footer decides: swap IDs, or rebuild the column</h2>
-<p>The other half of the cold load. If a chunk is dictionary-encoded, VertiPaq can keep the parquet's
-  work and just swap its IDs for global ones. It only does that when the footer proves it.</p>
-<div class="demo" id="ft">
-  <div class="btns" role="group" aria-label="footer">
-    <span class="lbl">the footer:</span>
-    <button type="button" data-mode="first">declares the dictionary</button>
-    <button type="button" data-mode="none">declares nothing</button>
-  </div>
-  <div class="ftrow"><span class="lbl">one column chunk, as loaded</span><div class="ids" id="ft-ids"></div></div>
-  <div class="stats">
-    <div class="stat" id="ft-path"><b></b><span>what VertiPaq does</span></div>
-    <div class="stat" id="ft-hash"><b></b><span>values decoded and re-hashed one by one</span></div>
-    <div class="stat" id="ft-meas"><b></b><span>measured</span></div>
-  </div>
-  <p class="say" id="ft-say"></p>
-</div>
-<div class="scroll"><table class="left">
-  <thead><tr><th>the footer…</th><th>where it was measured</th></tr></thead>
-  <tbody>
-    <tr><td>declares nothing</td><td>DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>: a 142M-row string column's cold first touch, 10,857.5 → 689.3 ms once declared, same pages.</td></tr>
-    <tr><td>declares PLAIN pages</td><td>the dictionary grew past the writer's limit and the rest of the chunk fell back to PLAIN; OSS-profile Spark and DuckDB's own writer did this on the widest columns.</td></tr>
-  </tbody>
-</table></div>
-<p>A cold-only cost: once the column is in memory the parquet encoding is out of the picture. It is
-  also the biggest single item on the read bill, which is why dictionary encoding leads the experiments.
-  What the footer looks like in each case: <a href="parquet.html#footer">Parquet · The footer</a>.</p>
-</section>
-
 <section class="pane" data-name="tiers" aria-label="Cold, warm, hot">
 <h2>Cold, warm, hot</h2>
-<p>The merge and the ID swap happen once per column. After that the column stays in VertiPaq's memory
-  and later queries only scan it. A query's cost depends on whether its columns are already there.</p>
+<p>The translation happens once per column, the first time a query touches it. After that the column
+  stays in VertiPaq's memory and later queries only scan it. A query's cost depends on whether its columns are already there.</p>
 <div class="demo" id="tc">
   <div class="btns" role="group" aria-label="query">
     <span class="lbl">the query:</span>
@@ -249,9 +130,129 @@
   dataset. So the layout is paid for mostly <b>once</b>, at the cold load, and that is where the read CU
   goes. One part keeps paying after: the row order survives into memory
   (<a href="parquet.html#sorting">Parquet · Sorting</a>).</p>
+<p>The cold load has two parts, and the next two sections take them in turn: row groups become
+  segments, and the footer decides whether dictionaries are reused or rebuilt.</p>
 <p class="note">A caution that holds for every number in this tour: a live model transcodes once per
   reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
+</section>
+
+<section class="pane" data-name="merge" aria-label="Row groups → segments">
+<h2>Row groups become segments, one to one</h2>
+<div class="sub" data-name="one" aria-label="One to one">
+<p>The first time a query touches a column (the cold load), every row group brings its own little
+  dictionary. VertiPaq merges them into one dictionary for the whole column, then turns each row group
+  into one segment. Row groups are never merged or split on the way in, so <b>the writer chose your
+  segments</b>.</p>
+<div class="demo" id="mg">
+  <div class="btns" role="group" aria-label="row groups">
+    <span class="lbl">the same DUID column, written as:</span>
+    <button type="button" data-g="1">1 row group</button>
+    <button type="button" data-g="3">3 row groups</button>
+    <button type="button" data-g="6">6 row groups</button>
+  </div>
+  <div id="mg-grid"></div>
+  <div class="stats">
+    <div class="stat" id="mg-seg"><b></b><span>segments VertiPaq builds</span></div>
+    <div class="stat" id="mg-loc"><b></b><span>entries in local dictionaries to read and merge</span></div>
+    <div class="stat" id="mg-glob"><b></b><span>entries in the merged dictionary</span></div>
+  </div>
+  <p class="say" id="mg-say"></p>
+</div>
+</div>
+
+<div class="sub" data-name="threads" aria-label="Threads">
+<h3>Segments vs threads: the warm scan wants enough of them</h3>
+<p>A warm query scans segments in parallel, one per thread at a time. With fewer segments
+  than threads some threads sit idle, however big each segment is.</p>
+<div class="demo" id="sg">
+  <div class="btns">
+    <span class="lbl">same rows, cut into:</span>
+    <button type="button" data-n="4">4 segments</button>
+    <button type="button" data-n="6">6</button>
+    <button type="button" data-n="8">8</button>
+    <button type="button" data-n="24">24</button>
+    <button type="button" data-n="24u">24, uneven</button>
+    <button type="button" data-n="96">96</button>
+  </div>
+  <p class="note" style="margin:0">8 threads is a number picked for the demo. How many threads Direct Lake's scan gets is not documented.</p>
+  <div class="lanes" id="sg-lanes"></div>
+  <div class="stats">
+    <div class="stat" id="sg-n"><b></b><span>segments</span></div>
+    <div class="stat" id="sg-idle"><b></b><span>threads with nothing to do</span></div>
+    <div class="stat" id="sg-time"><b></b><span>time to scan, in units (illustration)</span></div>
+  </div>
+  <p class="say" id="sg-say"></p>
+</div>
+<p>Microsoft <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">lays
+  out row groups to match the capacity's cores</a> and warns that uneven row-group sizes
+  unbalance the scan.</p>
+<p class="note">A strict "segments ÷ threads" cost model was tested
+  with a deliberate 8-segment run and did not hold, consistent with fetching and transcoding overlapping
+  the scan. The thread count itself is not documented, so the one measured step, on the
+  next chart, is the only hint of where it sits.</p>
+</div>
+
+<div class="sub" data-name="real" aria-label="Cold against warm">
+<h3>Row-group size: cold against warm</h3>
+<p>Put the two together. The cold load wants fewer, bigger row groups; the warm scan wants enough of
+  them. Row-group size pulls the two in opposite directions:</p>
+<figure>
+<svg viewBox="0 0 760 400" role="img" aria-label="Sketch of query time against rows per row group: cold falls steeply as row groups grow from 123 thousand rows and flattens from about 2 million; warm stays low until about 6 million and then rises towards 16 million. Between 2 and 6 million rows per group both are low.">
+  <rect x="437.5" y="48" width="134.8" height="292" rx="4" style="fill:var(--good);opacity:.13"/>
+  <text x="504.9" y="72" text-anchor="middle" class="big" style="fill:var(--good)">the plateau</text>
+  <text x="504.9" y="90" text-anchor="middle" style="fill:var(--good)">2–6M rows per group</text>
+  <line x1="70" y1="340" x2="740" y2="340" style="stroke:var(--fg);stroke-width:1.5"/><line x1="70" y1="340" x2="70" y2="44" style="stroke:var(--fg);stroke-width:1.5"/>
+  <line x1="95.4" y1="340" x2="95.4" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="95.4" y="362" text-anchor="middle" class="d">123k</text><line x1="352.5" y1="340" x2="352.5" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="352.5" y="362" text-anchor="middle" class="d">1M</text><line x1="437.5" y1="340" x2="437.5" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="437.5" y="362" text-anchor="middle" class="d">2M</text><line x1="572.3" y1="340" x2="572.3" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="572.3" y="362" text-anchor="middle" class="d">6M</text><line x1="692.6" y1="340" x2="692.6" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="692.6" y="362" text-anchor="middle" class="d">16M</text>
+  <text x="405" y="388" text-anchor="middle">rows per row group (fewer, bigger groups →)</text>
+  <text x="26" y="195" text-anchor="middle" transform="rotate(-90 26 195)">query time</text>
+  <path d="M95.4,92.0 C109.9,106.3 153.7,154.0 182.4,178.0 C211.1,202.0 239.1,221.7 267.4,236.0 C295.8,250.3 324.1,257.0 352.5,264.0 C380.8,271.0 400.9,275.3 437.5,278.0 C474.2,280.7 529.8,282.7 572.3,280.0 C614.8,277.3 672.6,265.0 692.6,262.0" style="fill:none;stroke:var(--d1);stroke-width:3;stroke-linecap:round"/>
+  <path d="M95.4,232.0 C109.9,235.7 153.7,247.3 182.4,254.0 C211.1,260.7 239.1,266.7 267.4,272.0 C295.8,277.3 324.1,282.0 352.5,286.0 C380.8,290.0 400.9,294.3 437.5,296.0 C474.2,297.7 541.5,298.7 572.3,296.0 C603.0,293.3 607.9,291.7 622.0,280.0 C636.2,268.3 645.6,249.3 657.3,226.0 C669.1,202.7 686.7,154.3 692.6,140.0" style="fill:none;stroke:var(--d2);stroke-width:3;stroke-linecap:round"/>
+  <text x="99.4" y="58" style="fill:var(--d1)">1,172 tiny groups:</text>
+  <text x="99.4" y="75" style="fill:var(--d1)">96.5 s cold, against 27.8 s</text>
+  <text x="216.5" y="176" class="b" style="fill:var(--d1)">cold (first query)</text>
+  <text x="155.0" y="296" class="b" style="fill:var(--d2)">warm (in memory)</text>
+  <text x="738" y="88" text-anchor="end" style="fill:var(--d2)">too few segments to</text>
+  <text x="738" y="105" text-anchor="end" style="fill:var(--d2)">keep the cores busy:</text>
+  <text x="738" y="122" text-anchor="end" style="fill:var(--d2)">5.7 s at 19, 3.2 s at 24</text>
+</svg>
+<figcaption class="note">A sketch: the anchors are measured on the 144M-row AEMO mart, the curve between
+  them is illustrative. Cold wants fewer, bigger row groups, because every group is one more dictionary
+  to merge and one more segment to set up. Warm wants enough of them to keep every core scanning.</figcaption>
+</figure>
+<p class="note">Microsoft's guidance is 1–16M rows per segment. The live numbers across all five datasets
+  are on <a href="./?finding=row-groups">the row-group card</a>.</p>
+</div>
+</section>
+
+<section class="pane" data-name="swap" aria-label="ID swap or rebuild">
+<h2>The footer decides: swap IDs, or rebuild the column</h2>
+<p>The other half of the cold load. If a chunk is dictionary-encoded, VertiPaq can keep the parquet's
+  work and just swap its IDs for global ones. It only does that when the footer proves it.</p>
+<div class="demo" id="ft">
+  <div class="btns" role="group" aria-label="footer">
+    <span class="lbl">the footer:</span>
+    <button type="button" data-mode="first">declares the dictionary</button>
+    <button type="button" data-mode="none">declares nothing</button>
+  </div>
+  <div class="ftrow"><span class="lbl">one column chunk, as loaded</span><div class="ids" id="ft-ids"></div></div>
+  <div class="stats">
+    <div class="stat" id="ft-path"><b></b><span>what VertiPaq does</span></div>
+    <div class="stat" id="ft-hash"><b></b><span>values decoded and re-hashed one by one</span></div>
+    <div class="stat" id="ft-meas"><b></b><span>measured</span></div>
+  </div>
+  <p class="say" id="ft-say"></p>
+</div>
+<div class="scroll"><table class="left">
+  <thead><tr><th>the footer…</th><th>where it was measured</th></tr></thead>
+  <tbody>
+    <tr><td>declares nothing</td><td>DuckDB's writer before <a href="https://github.com/duckdb/duckdb/pull/24957">duckdb#24957</a>: a 142M-row string column's cold first touch, 10,857.5 → 689.3 ms once declared, same pages.</td></tr>
+    <tr><td>declares PLAIN pages</td><td>the dictionary grew past the writer's limit and the rest of the chunk fell back to PLAIN; OSS-profile Spark and DuckDB's own writer did this on the widest columns.</td></tr>
+  </tbody>
+</table></div>
+<p>A cold-only cost: once the column is in memory the parquet encoding is out of the picture. It is
+  also the biggest single item on the read bill, which is why dictionary encoding leads the experiments.
+  What the footer looks like in each case: <a href="parquet.html#footer">Parquet · The footer</a>.</p>
 </section>
 
 <footer>

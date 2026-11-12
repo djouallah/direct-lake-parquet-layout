@@ -130,16 +130,15 @@
   <thead><tr><th>what happened</th><th>what it looked like</th></tr></thead>
   <tbody>
     <tr><td>A library default reached OneLake</td><td>DuckDB's 122,880 rows per group: the 144M-row AEMO
-      mart came out as 1,172 row groups instead of about 25, and read 3.5× slower cold.</td></tr>
+      mart came out as 1,172 row groups instead of about 25.</td></tr>
     <tr><td>A hidden byte budget won</td><td>DuckDB's Iceberg writer also closed groups at 128 MB
       <i>uncompressed</i>: on NYC taxi that is ~812,815 rows per group, 728 groups, even when a row
       count was asked for: the byte budget was hit first.</td></tr>
   </tbody>
 </table></div>
-<p>The rule that clears both: <b>declare a row count in the millions</b> (2–6M rows per group
-  clears both failure ends on the tables here), keep any byte budget and file cap comfortably above one
-  row group, and read the footer back. What each size costs a reader, cold and warm, is on the next tab:
-  <a href="transcode.html#merge">row groups become segments</a>.</p>
+<p>The rule that clears both: <b>declare a row count in the millions</b>, keep any byte budget
+  comfortably above one row group, and read the footer back. What each size costs a reader is one chart
+  on the next tab: <a href="transcode.html#merge/real">cold against warm</a>.</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>you write with</th><th>the row-group knob</th></tr></thead>
   <tbody>
