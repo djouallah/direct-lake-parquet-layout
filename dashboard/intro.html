@@ -17,7 +17,6 @@
 <nav class="subtabs" aria-label="sections" role="tablist">
   <a href="#start" role="tab" data-pane="start">Why it matters</a>
   <a href="#formats" role="tab" data-pane="formats">Two formats</a>
-  <a href="#skew" role="tab" data-pane="skew">Real data repeats</a>
   <a href="#question" role="tab" data-pane="question">What we measured</a>
 </nav>
 </div>
@@ -111,54 +110,6 @@
 <p>How much work the translation is depends on how the file was written.</p>
 </section>
 
-<section class="pane" data-name="skew" aria-label="Real data repeats">
-<h2>Real data repeats itself</h2>
-<p>In real tables a few values cover most of the rows: almost every taxi trip has the same rate code,
-  most flights are not cancelled, most CMS payments are of one kind.</p>
-<div class="demo" id="sk">
-  <div class="btns" role="group" aria-label="column">
-    <span class="lbl">200 rows of:</span>
-    <button type="button" data-c="flag">store_and_fwd_flag · NYC taxi</button>
-    <button type="button" data-c="rate">RatecodeID · NYC taxi</button>
-    <button type="button" data-c="nature">Nature_of_Payment · CMS</button>
-    <button type="button" data-c="cancel">CancellationCode · BTS</button>
-    <button type="button" data-c="ts">pickup timestamp · NYC taxi</button>
-  </div>
-  <div class="btns" role="group" aria-label="row order">
-    <span class="lbl">written:</span>
-    <button type="button" data-o="arrival">as it arrived</button>
-    <button type="button" data-o="sorted">sorted</button>
-  </div>
-  <div class="slide" id="sk-strip" style="height:44px"></div>
-  <div class="stats">
-    <div class="stat" id="sk-share"><b></b><span>of the rows hold the most common value</span></div>
-    <div class="stat" id="sk-runs"><b></b><span>runs in the 200 rows shown</span></div>
-    <div class="stat" id="sk-big"><b></b><span>runs in 4 million rows like these</span></div>
-  </div>
-  <p class="say" id="sk-say"></p>
-</div>
-<p>VertiPaq stores a column as a dictionary plus small IDs, and a run of equal IDs as one pair, scanned
-  as one. The more a column repeats, and the closer together the repeats sit, the less there is to hold
-  in memory and to scan.</p>
-<p>Direct Lake keeps the row order of the parquet it reads, so the repetition only pays off if the
-  writer put equal values next to each other. TPC-H, TPC-DS and SSB generate uniform data and hide
-  this; every dataset here is real.</p>
-<div class="scroll"><table class="left">
-  <thead><tr><th>dataset</th><th>column</th><th>skew</th></tr></thead>
-  <tbody>
-    <tr><td>NYC taxi</td><td class="mono">store_and_fwd_flag</td><td>~99% one value</td></tr>
-    <tr><td>NYC taxi</td><td class="mono">RatecodeID</td><td>~97% one value</td></tr>
-    <tr><td>Green taxi</td><td class="mono">trip_type</td><td>~98% one value</td></tr>
-    <tr><td>CMS payments</td><td class="mono">Nature_of_Payment</td><td>92% one value</td></tr>
-    <tr><td>BTS flights</td><td class="mono">CancellationCode</td><td>~98% NULL</td></tr>
-    <tr><td>AEMO</td><td>all five columns</td><td>near-uniform: the control, nothing to gain</td></tr>
-  </tbody>
-</table></div>
-<p class="note">An illustration: the share of each column's most common value is the measured one; the
-  200 rows and the run counts are computed from that share, as if values arrived in random order. What
-  sorting does on the real tables: <a href="parquet.html#sorting">Parquet · Sorting</a>.</p>
-</section>
-
 <section class="pane" data-name="question" aria-label="What we measured">
 <h2>What we measured</h2>
 <p>Same rows, different writers, then read the bill: five real public datasets, four engines (Spark with and
@@ -189,7 +140,7 @@
 <p>V-Order is three things, and they decide the read cost whoever wrote the file:</p>
 <ol class="rules">
   <li><b>Dictionary encoding</b> on every column, declared in the footer. <a href="parquet.html#encodings">Parquet</a> · <a href="transcode.html#swap">Transcoding</a></li>
-  <li><b>Sort order</b> that turns equal values into long runs. <a href="parquet.html#sorting">Parquet</a> · <a href="transcode.html#runs">Transcoding</a></li>
+  <li><b>Sort order</b> that turns equal values into long runs. <a href="parquet.html#sorting">Parquet</a></li>
   <li><b>Row groups</b> of millions of rows each. <a href="parquet.html#rowgroups">Parquet</a> · <a href="transcode.html#merge">Transcoding</a></li>
 </ol>
 <p class="note">Method, caveats and every run id: <a href="./?page=method">Method</a> and
@@ -202,8 +153,8 @@
 </footer>
 </main>
 <script>
-  // The "decode" and "once" sections moved to the Transcoding tab.
-  const MOVED = { decode: "transcode.html#translate", once: "transcode.html#tiers" };
+  // The "decode" and "once" sections moved to the Transcoding tab; sorting is told once, on Parquet.
+  const MOVED = { decode: "transcode.html#translate", once: "transcode.html#tiers", skew: "parquet.html#sorting" };
   if (MOVED[location.hash.slice(1)]) location.replace(MOVED[location.hash.slice(1)]);
   // "Proprietary format" and "The lakehouse" are one section with a switch now.
   window.LEARN_ALIAS = { owned: "formats", lake: "formats" };
@@ -281,56 +232,6 @@
     }, "own");
   }
 
-  // ---- real data repeats: 200 rows at a column's measured skew, as they arrived or sorted
-  {
-    const PAL = ["var(--d1)", "var(--d2)", "var(--d3)", "var(--d4)", "var(--d5)", "var(--d6)"];
-    const N = 200, BIG = 4e6;
-    // `counts`: how many of the 200 rows hold each value, most common first.
-    const COLS = {
-      flag: { share: "~99%", counts: [198, 2] },
-      rate: { share: "~97%", counts: [194, 4, 2] },
-      nature: { share: "92%", counts: [184, 10, 4, 2] },
-      cancel: { share: "~98%", counts: [196, 2, 1, 1] },
-      ts: { share: "~0%", counts: Array(N).fill(1) },
-    };
-    let seed = 7;
-    const rand = () => (seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32;
-    const shuffle = (a) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
-    const runs = (vals) => vals.reduce((n, v, i) => n + (i === 0 || v !== vals[i - 1] ? 1 : 0), 0);
-    const strip = $("sk-strip");
-    const st = { col: "flag", order: "arrival", rows: [] };
-    function build() {
-      seed = 7;
-      const vals = shuffle(COLS[st.col].counts.flatMap((n, v) => Array(n).fill(v)));
-      strip.textContent = "";
-      st.rows = vals.map((v) => {
-        const c = document.createElement("span");
-        c.className = "c"; c.style.width = `calc(${100 / N}% + 1px)`; c.style.background = PAL[v % PAL.length];
-        strip.append(c);
-        return { v, c };
-      });
-    }
-    function place() {
-      const col = COLS[st.col], sorted = st.order === "sorted";
-      const order = sorted ? [...st.rows].sort((a, b) => a.v - b.v) : st.rows;
-      order.forEach((r, i) => { r.c.style.left = `${i * 100 / N}%`; r.c.classList.toggle("rs", i > 0 && r.v !== order[i - 1].v); });
-      const distinct = col.counts.length, unique = distinct === N;
-      const shown = runs(order.map((r) => r.v));
-      // Expected runs when values arrive in random order: 1 + (rows − 1) × the chance two neighbours differ.
-      const differ = 1 - col.counts.reduce((s, n) => s + (n / N) ** 2, 0);
-      const big = unique ? BIG : sorted ? distinct : Math.round(1 + (BIG - 1) * differ);
-      setStat("sk-share", col.share);
-      setStat("sk-runs", fmt(shown), unique ? false : sorted ? true : null);
-      setStat("sk-big", fmt(big), unique ? false : sorted ? true : false);
-      $("sk-say").textContent = unique
-        ? "A near-unique column: every row is its own run, sorted or not. Sorting cannot help it; it is the price of the table."
-        : sorted
-          ? `Sorted, the ${distinct} values become ${distinct} runs, however many rows the table has. A run is stored as one pair and scanned as one.`
-          : `As it arrived, the rare values are scattered through the common one and cut it into pieces: about ${fmt(big)} runs in 4 million rows, where sorting would leave ${distinct}.`;
-    }
-    pick($("sk"), "data-c", (c) => { st.col = c; build(); place(); }, "flag");
-    pick($("sk"), "data-o", (o) => { st.order = o; place(); }, "arrival");
-  }
 })();
 </script>
 </body>

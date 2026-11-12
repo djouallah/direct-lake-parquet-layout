@@ -19,7 +19,6 @@
   <a href="#merge" role="tab" data-pane="merge">Segments</a>
   <a href="#swap" role="tab" data-pane="swap">ID swap</a>
   <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
-  <a href="#runs" role="tab" data-pane="runs">Runs</a>
   <a href="#recap" role="tab" data-pane="recap">Recap</a>
 </nav>
 </div>
@@ -245,34 +244,11 @@
   <code>OPTIMIZE</code>: a reframe), or the capacity runs short of <b>memory</b> and unloads segments.</p>
 <p>Measured in this project, a cold pass of the query suite took 3–27× its warm pass, depending on the
   dataset. So the layout is paid for mostly <b>once</b>, at the cold load, and that is where the read CU
-  goes. One part keeps paying after: the row order survives into memory (<a href="#runs">Runs</a>).</p>
+  goes. One part keeps paying after: the row order survives into memory
+  (<a href="parquet.html#sorting">Parquet · Sorting</a>).</p>
 <p class="note">A caution that holds for every number in this tour: a live model transcodes once per
   reframe or memory eviction and then serves mostly warm and hot traffic. This benchmark deploys a fresh
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
-</section>
-
-<section class="pane" data-name="runs" aria-label="Runs in memory">
-<h2>The row order survives into memory</h2>
-<p>VertiPaq keeps the parquet's row order when it builds segments, and its scan works on the
-  compressed data directly. A run of equal values is stored as one pair and tested as one.</p>
-<div class="demo" id="rn">
-  <div class="btns">
-    <span class="lbl"><code>WHERE payment_type = 'card'</code> on a segment written in:</span>
-    <button type="button" data-o="arrival">arrival order</button>
-    <button type="button" data-o="sorted">sorted order</button>
-  </div>
-  <div class="ids" id="rn-ids"></div>
-  <div class="stats">
-    <div class="stat" id="rn-runs"><b></b><span>runs stored</span></div>
-    <div class="stat" id="rn-tests"><b></b><span>tests the scan makes</span></div>
-  </div>
-  <p class="say" id="rn-say"></p>
-</div>
-<p>So the sort is the one lever that is not only a cold-load cost: the runs it builds are the runs every
-  later query scans. The encoding is gone once the column is loaded; the order is not. What the sort is
-  worth on real tables depends on how repetitive the columns are (the taxi table on
-  <a href="parquet.html#sorting">Parquet · Sorting</a>) and is measured on <a href="./?finding=sort">the
-  sort order card</a>.</p>
 </section>
 
 <section class="pane" data-name="recap" aria-label="Recap: V-Order in three parts">
@@ -332,6 +308,8 @@
 </main>
 <script>
   // Sections that became parts of another one keep their old links.
+  // Sorting is told once, on the Parquet tab.
+  if (location.hash.slice(1) === "runs") location.replace("parquet.html#sorting");
   window.LEARN_ALIAS = { overview: "translate", segments: "merge/threads", noskip: "recap/noskip" };
 </script>
 <script src="learn.js"></script>
@@ -602,31 +580,6 @@
     $("sg").querySelector('button[data-n="4"]').click();
   }
 
-  // ---- runs in memory: the same 48 rows, scanned as runs
-  {
-    const NAMES = ["card", "cash", "no chg", "disp"];
-    seed = 19;
-    const rows = shuffle([...Array(22).fill(0), ...Array(14).fill(1), ...Array(8).fill(2), ...Array(4).fill(3)]);
-    const box = $("rn-ids");
-    const cells = rows.map(() => { const s = document.createElement("span"); s.className = "id"; box.append(s); return s; });
-    buttons($("rn"), "data-o", async (o) => {
-      const v = o === "sorted" ? [...rows].sort((a, b) => a - b) : rows;
-      const r = runs(v);
-      cells.forEach((c, i) => {
-        c.textContent = NAMES[v[i]];
-        const start = i === 0 || v[i] !== v[i - 1];
-        c.className = `id${v[i] === 0 ? " hit" : ""}${start ? " start" : ""}`;
-      });
-      $("rn-runs").querySelector("b").textContent = r;
-      $("rn-tests").querySelector("b").textContent = r;
-      $("rn-runs").className = `stat ${r > 8 ? "up" : "down"}`; $("rn-tests").className = `stat ${r > 8 ? "up" : "down"}`;
-      $("rn-say").textContent = o === "sorted"
-        ? `Sorted: ${r} runs. The filter tests the value of each run once and skips or keeps the whole run, 22 'card' rows in one step.`
-        : `Arrival order: ${r} runs for 48 rows. The filter has to test almost every row. Orange: the rows it keeps; a dark left edge starts a run.`;
-      await wait(300);
-    });
-    $("rn").querySelector('button[data-o="arrival"]').click();
-  }
 })();
 </script>
 </body>

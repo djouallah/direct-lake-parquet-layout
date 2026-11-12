@@ -1138,7 +1138,7 @@ const TAB_HOME = "What matters", TAB_PERF = "Writers compared";
 /** Where the learning tabs explain why each finding happens: [label, href] per finding id. */
 export const LEARN = {
   dictionary: [["Parquet · Encodings", "parquet.html#encodings"], ["Parquet · The footer", "parquet.html#footer"], ["Transcoding · ID swap or rebuild", "transcode.html#swap"]],
-  sort: [["Parquet · Sorting", "parquet.html#sorting"], ["Transcoding · Runs in memory", "transcode.html#runs"]],
+  sort: [["Parquet · Sorting", "parquet.html#sorting"]],
   "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#merge/threads"]],
   "spark-vorder": [["Parquet · V-Order in action", "parquet.html#sorting/action"], ["Parquet · Sorting", "parquet.html#sorting"]],
   "table-size": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
