@@ -1116,7 +1116,28 @@ const HOW = `
 const PAGES = { method: "Method", how: "How Power BI reads parquet", data: "The data" };
 
 // The two tabs this page serves, as the tab bar names them (index.html and learn.js: change all three).
-const TAB_HOME = "What matters", TAB_PERF = "Writers compared";
+const TAB_HOME = "Recap", TAB_PERF = "Writers compared";
+
+/** THE TAKEAWAY (the user's call, 2026-11-12): this tab is the recap the audience leaves with. The
+ *  three parts of V-Order, what to do with them, and what is not a lever; the cards under it are the
+ *  evidence. Fixed prose: the numbers live on the cards. */
+const RECAP = `<div class="framing">
+  <p><b>V-Order is three things.</b> If your writer has it (Fabric Spark, Fabric Warehouse), turn it on: the write costs a little more and the read pays it back. If it does not (delta-rs, DuckDB, Databricks), set the three yourself: <a href="writers.html">recipes</a>.</p></div>
+  <div class="scroll"><table>
+    <thead><tr><th>part of V-Order</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
+    <tbody>
+      <tr><td><b>1. Dictionary encoding</b></td><td>every column dictionary-encoded, declared in <code>encoding_stats</code>, no fallback to PLAIN</td><td>cold: ID swap instead of a rebuild</td><td>raise the writer's dictionary limit; read the footer back</td></tr>
+      <tr><td><b>2. Sort order</b></td><td>equal values next to each other, on what reports filter (V-Order sorts per file)</td><td>cold: cheaper encode · warm and hot: runs scanned as one</td><td><code>ORDER BY</code>, <code>CLUSTER BY</code>, or V-Order</td></tr>
+      <tr><td><b>3. Row groups</b></td><td>millions of rows each (2–6M), and more of them than the scan has threads</td><td>cold: one merge and one setup per group · warm: enough segments to keep threads busy</td><td>a declared row count</td></tr>
+    </tbody></table></div>
+  <h3 class="group">What is not a lever</h3>
+  <ul>
+    <li><b>File count and file size.</b> Direct Lake does no statistics-based file or row-group skipping when it loads a column: it loads the whole column.</li>
+    <li><b>A smaller file is not a faster one.</b> Bytes on disk follow from dictionary and sort.</li>
+    <li><b>Joins load more than you asked for.</b> A cold query that crosses a relationship also loads the key columns and the dimension key.</li>
+    <li><b>Memory is not forever.</b> Under memory pressure the engine unloads segments and rebuilds them on the next query: back to cold.</li>
+  </ul>
+  <h2>The evidence</h2>`;
 
 /** Where the learning tabs explain why each finding happens: [label, href] per finding id. */
 export const LEARN = {
@@ -1124,8 +1145,8 @@ export const LEARN = {
   sort: [["Parquet · Sorting", "parquet.html#sorting"]],
   "row-groups": [["Parquet · Row groups", "parquet.html#rowgroups"], ["Transcoding · Row groups → segments", "transcode.html#merge"], ["Transcoding · Segments vs threads", "transcode.html#merge/threads"]],
   "spark-vorder": [["Parquet · V-Order in action", "parquet.html#sorting/action"], ["Parquet · Sorting", "parquet.html#sorting"]],
-  "table-size": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
-  "file-count": [["Transcoding · What it does not do", "transcode.html#recap/noskip"]],
+  "table-size": [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
+  "file-count": [["Transcoding · Cold, warm, hot", "transcode.html#tiers"]],
 };
 const learnLine = (id) => (LEARN[id] ? `<p class="note">Why: ${LEARN[id].map(([l, h]) => `<a href="${h}">${esc(l)}</a>`).join(" · ")}</p>` : "");
 
@@ -1162,7 +1183,7 @@ export function render(records, opts = {}, ledger = null) {
   const nds = ctx.datasets.length;
   // One sentence on the home page: by this tab the talk has already said the rest, which lives on
   // the Method page (`FRAMING`) for a reader who lands here first.
-  const intro = `<div class="framing"><p><b>What a table costs to read in Power BI.</b> Warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes. V-Order lowers it by doing three things: dictionary encoding, sorting so equal values form long runs, and row groups of millions of rows. If your writer has V-Order, turn it on. If it does not, set the three yourself.</p></div>`;
+  const intro = `<p class="about">What a table costs to read in Power BI: warm queries are fast whoever wrote the parquet; the cold load is where the read CU goes, and dictionary encoding, sorting and row groups decide it.</p>`;
   const about = `<p class="about">One number per card, the median across ${nds} datasets, so each dataset weighs the same.</p>`;
   const byId = Object.fromEntries(found.map((f, i) => [f.id, [f, i]]));
   const grouped = new Set(PROPERTY_GROUPS.flatMap((g) => g.ids));
@@ -1196,7 +1217,7 @@ export function render(records, opts = {}, ledger = null) {
     const inner = opts.page === "method" ? methodSection(ctx) : opts.page === "how" ? HOW : dataSection(ctx);
     body = `${back}${switcher}<section id="${opts.page}"><h2>${esc(PAGES[opts.page])}</h2>${inner}</section>`;
   } else {
-    body = `${intro}${home}${frame}${about}${pagerAt(0)}`;
+    body = `${RECAP}${intro}${home}${frame}${about}${pagerAt(0)}`;
   }
   return { html: body, ctx, found };
 }

@@ -19,7 +19,6 @@
   <a href="#merge" role="tab" data-pane="merge">Segments</a>
   <a href="#swap" role="tab" data-pane="swap">ID swap</a>
   <a href="#tiers" role="tab" data-pane="tiers">Cold, warm, hot</a>
-  <a href="#recap" role="tab" data-pane="recap">Recap</a>
 </nav>
 </div>
 
@@ -255,54 +254,9 @@
   model every run, so cold is fully represented: read the cold numbers as the price of first touch.</p>
 </section>
 
-<section class="pane" data-name="recap" aria-label="Recap: V-Order in three parts">
-<h2>Recap</h2>
-<div class="sub" data-name="noskip" aria-label="What is not a lever">
-<h3>What Direct Lake does not do</h3>
-<p>Direct Lake does no statistics-based file or row-group skipping when it loads a column.
-  It loads the whole column, so file count and file size are not levers.</p>
-<ul>
-  <li><b>File count never separated writers</b> in the read CU data: the Warehouse ships 78 files and sits
-    mid-pack. See <a href="./?finding=file-count">the file count card</a>.</li>
-  <li><b>A smaller file is not a faster one.</b> A sort key that cut the file 30% bought no query time.
-    Bytes on disk follow from dictionary and sort.</li>
-  <li><b>Joins load more than you asked for.</b> A cold query that crosses a relationship builds a join
-    index, which loads the key columns' dictionaries and the dimension key's segments. A star-schema cold
-    query pays for the dimension too.</li>
-  <li><b>Memory is not forever.</b> Under memory pressure the engine unloads segments and join indexes
-    and rebuilds them on the next query that needs them: back to cold.</li>
-</ul>
-</div>
-
-<div class="sub" data-name="levers" aria-label="V-Order in three parts">
-<h3>V-Order is three things, and any writer can set them</h3>
-<div class="scroll"><table class="left">
-  <thead><tr><th>part of V-Order</th><th>what the file needs</th><th>pays at</th><th>how to set it</th></tr></thead>
-  <tbody>
-    <tr><td><b>1. Dictionary encoding</b></td><td>every column dictionary-encoded, declared in
-      <code>encoding_stats</code>, no fallback to PLAIN</td>
-      <td>cold: ID swap instead of a rebuild</td><td>raise the writer's dictionary limit; read the footer back</td></tr>
-    <tr><td><b>2. Sort order</b></td><td>a global sort on what reports filter (V-Order sorts per file)</td>
-      <td>cold: cheaper encode · warm and hot: runs scanned as one</td><td><code>ORDER BY</code>, <code>CLUSTER BY</code>, or V-Order</td></tr>
-    <tr><td><b>3. Row groups</b></td><td>millions of rows each, and more of them than the scan has threads</td>
-      <td>cold: one merge and one setup per group · warm: enough segments to keep threads busy</td><td>a declared row count, file cap above one group</td></tr>
-  </tbody>
-</table></div>
-<div class="cards">
-  <a class="card" href="./?finding=spark-vorder"><b>Your writer has V-Order?</b><span>Turn it on: the
-    <code>readHeavyForPBI</code> profile on Fabric Spark, the default on Fabric Warehouse. The write costs
-    a little more and the read pays it back.</span></a>
-  <a class="card" href="writers.html"><b>Your writer does not?</b><span>Simulate it: set the three things yourself.
-    Recipes for Databricks, delta-rs and DuckDB.</span></a>
-  <a class="card" href="./"><b>The evidence</b><span>Five real datasets, four writers: what each property
-    costs in read CU.</span></a>
-</div>
-</div>
-</section>
-
 <footer>
   <p>Sources: <a href="https://github.com/djouallah/direct-lake-parquet-layout/blob/main/docs/FINDINGS.md">docs/FINDINGS.md</a>
-    · live numbers: <a href="./">What matters</a>. Further reading:
+    · the takeaway: <a href="./">Recap</a>. Further reading:
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-understand-storage">understand Direct Lake query performance</a> (Microsoft),
     <a href="https://learn.microsoft.com/en-us/fabric/fundamentals/direct-lake-how-it-works">how Direct Lake works</a> (Microsoft).</p>
 </footer>
@@ -311,7 +265,7 @@
   // Sections that became parts of another one keep their old links.
   // Sorting is told once, on the Parquet tab.
   if (location.hash.slice(1) === "runs") location.replace("parquet.html#sorting");
-  window.LEARN_ALIAS = { overview: "translate", segments: "merge/threads", noskip: "recap/noskip" };
+  window.LEARN_ALIAS = { overview: "translate", segments: "merge/threads" };
 </script>
 <script src="learn.js"></script>
 <script>

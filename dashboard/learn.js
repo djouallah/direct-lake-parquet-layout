@@ -18,7 +18,7 @@
     ["intro", "intro.html", "Introduction"],
     ["parquet", "parquet.html", "Parquet"],
     ["transcode", "transcode.html", "Transcoding"],
-    ["exp", "./", "What matters"],
+    ["exp", "./", "Recap"],
     ["perf", "./?page=perf", "Writers compared"],
     ["writers", "writers.html", "Third-party writers"],
   ];
