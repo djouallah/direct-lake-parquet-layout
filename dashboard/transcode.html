@@ -84,26 +84,32 @@
 </div>
 </div>
 
-<div class="sub" data-name="real" aria-label="On a real table">
-<h3>On a real table</h3>
-<p>The 144M-row AEMO mart, with what was measured at each size:</p>
-<div class="demo" id="rs">
-  <div class="btns">
-    <span class="lbl">rows per row group:</span>
-    <button type="button" data-rows="122880">122,880 · DuckDB default</button>
-    <button type="button" data-rows="1000000">1M</button>
-    <button type="button" data-rows="2000000">2M</button>
-    <button type="button" data-rows="6000000">6M</button>
-    <button type="button" data-rows="16000000">16M</button>
-  </div>
-  <div class="tiles" id="rs-tiles"></div>
-  <div class="stats">
-    <div class="stat" id="rs-seg"><b></b><span>segments</span></div>
-    <div class="stat" id="rs-cold"><b></b><span>cold load</span></div>
-    <div class="stat" id="rs-warm"><b></b><span>warm scan</span></div>
-  </div>
-  <p class="say" id="rs-say"></p>
-</div>
+<div class="sub" data-name="real" aria-label="Cold against warm">
+<h3>Row-group size: cold against warm</h3>
+<p>Row-group size pulls the cold load and the warm scan in opposite directions:</p>
+<figure>
+<svg viewBox="0 0 760 400" role="img" aria-label="Sketch of query time against rows per row group: cold falls steeply as row groups grow from 123 thousand rows and flattens from about 2 million; warm stays low until about 6 million and then rises towards 16 million. Between 2 and 6 million rows per group both are low.">
+  <rect x="437.5" y="48" width="134.8" height="292" rx="4" style="fill:var(--good);opacity:.13"/>
+  <text x="504.9" y="72" text-anchor="middle" class="big" style="fill:var(--good)">the plateau</text>
+  <text x="504.9" y="90" text-anchor="middle" style="fill:var(--good)">2–6M rows per group</text>
+  <line x1="70" y1="340" x2="740" y2="340" style="stroke:var(--fg);stroke-width:1.5"/><line x1="70" y1="340" x2="70" y2="44" style="stroke:var(--fg);stroke-width:1.5"/>
+  <line x1="95.4" y1="340" x2="95.4" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="95.4" y="362" text-anchor="middle" class="d">123k</text><line x1="352.5" y1="340" x2="352.5" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="352.5" y="362" text-anchor="middle" class="d">1M</text><line x1="437.5" y1="340" x2="437.5" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="437.5" y="362" text-anchor="middle" class="d">2M</text><line x1="572.3" y1="340" x2="572.3" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="572.3" y="362" text-anchor="middle" class="d">6M</text><line x1="692.6" y1="340" x2="692.6" y2="346" style="stroke:var(--fg);stroke-width:1.5"/><text x="692.6" y="362" text-anchor="middle" class="d">16M</text>
+  <text x="405" y="388" text-anchor="middle">rows per row group (fewer, bigger groups →)</text>
+  <text x="26" y="195" text-anchor="middle" transform="rotate(-90 26 195)">query time</text>
+  <path d="M95.4,92.0 C109.9,106.3 153.7,154.0 182.4,178.0 C211.1,202.0 239.1,221.7 267.4,236.0 C295.8,250.3 324.1,257.0 352.5,264.0 C380.8,271.0 400.9,275.3 437.5,278.0 C474.2,280.7 529.8,282.7 572.3,280.0 C614.8,277.3 672.6,265.0 692.6,262.0" style="fill:none;stroke:var(--d1);stroke-width:3;stroke-linecap:round"/>
+  <path d="M95.4,232.0 C109.9,235.7 153.7,247.3 182.4,254.0 C211.1,260.7 239.1,266.7 267.4,272.0 C295.8,277.3 324.1,282.0 352.5,286.0 C380.8,290.0 400.9,294.3 437.5,296.0 C474.2,297.7 541.5,298.7 572.3,296.0 C603.0,293.3 607.9,291.7 622.0,280.0 C636.2,268.3 645.6,249.3 657.3,226.0 C669.1,202.7 686.7,154.3 692.6,140.0" style="fill:none;stroke:var(--d2);stroke-width:3;stroke-linecap:round"/>
+  <text x="99.4" y="58" style="fill:var(--d1)">1,172 tiny groups:</text>
+  <text x="99.4" y="75" style="fill:var(--d1)">96.5 s cold, against 27.8 s</text>
+  <text x="216.5" y="176" class="b" style="fill:var(--d1)">cold (first query)</text>
+  <text x="155.0" y="296" class="b" style="fill:var(--d2)">warm (in memory)</text>
+  <text x="738" y="88" text-anchor="end" style="fill:var(--d2)">too few segments to</text>
+  <text x="738" y="105" text-anchor="end" style="fill:var(--d2)">keep the cores busy:</text>
+  <text x="738" y="122" text-anchor="end" style="fill:var(--d2)">5.7 s at 19, 3.2 s at 24</text>
+</svg>
+<figcaption class="note">A sketch: the anchors are measured on the 144M-row AEMO mart, the curve between
+  them is illustrative. Cold wants fewer, bigger row groups, because every group is one more dictionary
+  to merge and one more segment to set up. Warm wants enough of them to keep every core scanning.</figcaption>
+</figure>
 <p class="note">Microsoft says 1–16M rows per segment. Across the datasets here, more row groups made
   columns slower to load cold on 5 of 5 and warm queries faster on 4 of 5: a trade, with a wide flat
   middle. Why the warm scan wants more of them: <a href="#merge/threads">Threads</a>.</p>
@@ -260,9 +266,6 @@
     mid-pack. See <a href="./?finding=file-count">the file count card</a>.</li>
   <li><b>A smaller file is not a faster one.</b> A sort key that cut the file 30% bought no query time.
     Bytes on disk follow from dictionary and sort.</li>
-  <li><b>The one file-size trap:</b> delta-rs truncates the row group in progress at the file-size cap
-    (groups at 0.43× their declared rows). That makes segments small and uneven, which is exactly the
-    unbalanced scan of the previous sections. Keep the file cap above one row group's bytes.</li>
   <li><b>Joins load more than you asked for.</b> A cold query that crosses a relationship builds a join
     index, which loads the key columns' dictionaries and the dimension key's segments. A star-schema cold
     query pays for the dimension too.</li>
@@ -476,40 +479,6 @@
     $("mg").querySelector('button[data-g="3"]').click();
   }
 
-  // ---- pick a row-group size on the real AEMO mart
-  {
-    const ROWS = 143980961;
-    // [cold label, cold ok?, warm label, warm ok?, what was measured]
-    const NOTES = {
-      122880: ["3.5× slower", false, "—", null, "Measured on this table: 96,503 ms cold, against 27,785 ms with about 25 segments. Every segment is one more dictionary to merge and one more segment to set up."],
-      1000000: ["worst CU", false, "—", null, "Measured: 2,190 Direct Lake CU, the one size in a 60-run sweep clearly worse than the rest (1,561–1,765)."],
-      2000000: ["fine", true, "fine", true, "Measured: 1,593 CU. Anywhere from about 10 to 73 segments, cold and warm cannot tell the difference."],
-      6000000: ["fine", true, "fine", true, "Measured: warm 3,221 ms. In the flat middle, and what the Databricks recipe uses."],
-      16000000: ["cheapest", true, "starved", false, "Cheapest cold (1,561 CU at 8–10 segments), but too few segments to keep every thread scanning: warm was ≈5,700 ms at 19 segments against 3,221 at 24. 16M is also the largest segment VertiPaq takes."],
-    };
-    buttons($("rs"), "data-rows", async (r) => {
-      const n = Math.ceil(ROWS / Number(r));
-      const [c, cOk, w, wOk, text] = NOTES[r];
-      const ok = cOk !== false && wOk !== false;
-      setStat("rs-seg", fmt(n), ok);
-      setStat("rs-cold", c, cOk); setStat("rs-warm", w, wOk);
-      $("rs-say").textContent = text;
-      const size = n > 500 ? 6 : n > 100 ? 14 : n > 50 ? 20 : n > 20 ? 34 : 60;
-      const box = $("rs-tiles");
-      box.innerHTML = "";
-      box.style.setProperty("--t", `${size}px`);
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < n; i++) {
-        const t = document.createElement("span");
-        t.className = `tile ${ok ? "good" : "bad"}`;
-        t.style.animationDelay = `${STILL ? 0 : Math.round(i * 500 / n)}ms`;
-        frag.append(t);
-      }
-      box.append(frag);
-    });
-    $("rs").querySelector('button[data-rows="122880"]').click();
-  }
-
   // ---- the footer: declared, or nothing
   {
     const LOCAL = [0, 0, 1, 2, 2, 2, 3, 0, 1, 1, 3, 3, 0, 2, 1, 0];
@@ -565,7 +534,7 @@
       setStat("sg-idle", p.idle, p.idle === 0);
       setStat("sg-time", p.time.toFixed(1), p.time <= best * 1.1);
       $("sg-say").textContent = p.idle ? `${p.n} segments on ${T} threads: ${p.idle} thread${p.idle > 1 ? "s" : ""} have nothing to do, and the query waits for the busiest one.`
-        : p.uneven ? "24 segments of uneven size: every thread is busy, but the ones handed the big segments finish last. This is what a file-size cap that truncates row groups does."
+        : p.uneven ? "24 segments of uneven size: every thread is busy, but the ones handed the big segments finish last."
         : p.n > T * 4 ? `${p.n} small segments: every thread busy, and a little slower than 24, because each segment adds its own fixed cost. On a cold load it also means ${p.n} dictionaries to merge.`
         : `${p.n} segments on ${T} threads: every thread busy, evenly. Past this point more segments buy nothing.`;
       await wait(400);

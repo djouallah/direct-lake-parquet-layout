@@ -15,7 +15,6 @@
 <main>
 <div class="topbar">
 <nav class="subtabs" aria-label="sections" role="tablist">
-  <a href="#overview" role="tab" data-pane="overview">Overview</a>
   <a href="#anatomy" role="tab" data-pane="anatomy">Anatomy</a>
   <a href="#encodings" role="tab" data-pane="encodings">Encodings</a>
   <a href="#footer" role="tab" data-pane="footer">The footer</a>
@@ -23,33 +22,6 @@
   <a href="#sorting" role="tab" data-pane="sorting">Sorting</a>
 </nav>
 </div>
-
-<section class="pane" data-name="overview" aria-label="Overview">
-<h1>What the writer leaves on disk</h1>
-<p>A Delta table is a folder of parquet files plus a <code>_delta_log</code> that lists which
-  ones are live. Everything a reader pays for is decided inside those parquet files.</p>
-<p>Parquet stores a table column by column, not row by row. A query that needs two columns
-  out of twenty reads two contiguous blocks and skips the other eighteen.</p>
-<div class="demo" id="lay">
-  <div class="btns">
-    <button type="button" data-o="row">row by row, like CSV</button>
-    <button type="button" data-o="col">column by column, like parquet</button>
-  </div>
-  <div class="legend" id="lay-legend"></div>
-  <div class="slide" id="lay-strip" style="height:38px"></div>
-  <p class="say" id="lay-say"></p>
-</div>
-<p>Then three decisions, all made by whoever writes the file, set what every reader pays:</p>
-<ol class="rules">
-  <li><b>How many rows go in a row group.</b> A parquet file is cut into row groups, and each holds its
-    own slice of every column.</li>
-  <li><b>How each column chunk is encoded.</b> Dictionary-encoded, or plain values, and whether the footer
-    says which.</li>
-  <li><b>What order the rows are in.</b> Sorted values sit next to each other and compress into runs.</li>
-</ol>
-<p class="note">None of these is a property of "parquet". Two writers given the same rows produce
-  different files.</p>
-</section>
 
 <section class="pane" data-name="anatomy" aria-label="Anatomy">
 <h2>Inside one file</h2>
@@ -87,7 +59,7 @@
 <p class="note">The shape of the AEMO mart in this project: 144M rows, five columns, sorted by date then
   time. The file stores IDs, not values; the dictionary maps them back.</p>
 <p>Compare <code>date</code> with <code>DUID</code>: same file, same row group, one is a handful of long
-  runs and the other is noise. The writer's row order made that difference, and of the three choices it
+  runs and the other is noise. The writer's row order made that difference, and of the writer's three choices (row-group size, encoding, row order) it
   is the only one that still affects queries once the column is in memory.</p>
 </section>
 
@@ -153,7 +125,7 @@
 <p>A writer closes a row group when it hits a row count or a byte budget, whichever comes
   first. Library defaults are sized for the writer's memory, not for the reader: DuckDB's is 122,880 rows.
   Power BI wants millions.</p>
-<p>Three ways a row group ends up the wrong size, each seen in this project:</p>
+<p>Two ways a row group ends up the wrong size, each seen in this project:</p>
 <div class="scroll"><table class="left">
   <thead><tr><th>what happened</th><th>what it looked like</th></tr></thead>
   <tbody>
@@ -162,11 +134,9 @@
     <tr><td>A hidden byte budget won</td><td>DuckDB's Iceberg writer also closed groups at 128 MB
       <i>uncompressed</i>: on NYC taxi that is ~812,815 rows per group, 728 groups, even when a row
       count was asked for: the byte budget was hit first.</td></tr>
-    <tr><td>The file-size cap cut a group short</td><td>delta-rs truncates the row group in progress when
-      the file reaches its size cap: groups written at 0.43× their declared rows, and uneven.</td></tr>
   </tbody>
 </table></div>
-<p>The rule that clears all three: <b>declare a row count in the millions</b> (2–6M rows per group
+<p>The rule that clears both: <b>declare a row count in the millions</b> (2–6M rows per group
   clears both failure ends on the tables here), keep any byte budget and file cap comfortably above one
   row group, and read the footer back. What each size costs a reader, cold and warm, is on the next tab:
   <a href="transcode.html#merge">row groups become segments</a>.</p>
@@ -313,34 +283,6 @@
       try { await handler(b.getAttribute(attr)); } finally { busy = false; bs.forEach((x) => (x.disabled = false)); }
     }));
     return bs;
-  }
-
-  // ---- 0. row storage vs column storage: four rows of three columns, cells slide
-  {
-    const COLS = [["date", ["01-01", "01-01", "01-02", "01-02"]], ["DUID", ["BW01", "ER01", "BW01", "ER01"]], ["mw", ["412.1", "96.0", "398.7", "101.3"]]];
-    const strip = $("lay-strip"), R = 4, C = COLS.length, N = R * C;
-    $("lay-legend").innerHTML = COLS.map(([n], i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("");
-    const cells = [];
-    for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
-      const e = document.createElement("span");
-      e.className = "c mono"; e.textContent = COLS[c][1][r];
-      e.style.cssText = `width:calc(${100 / N}% + 1px);background:${PAL[c]};color:#fff;font-size:.72rem;display:grid;place-items:center;`;
-      strip.append(e); cells.push({ r, c, e });
-    }
-    const SAY = {
-      row: "Row by row: to add up mw you read every byte of the file, dates and DUIDs included.",
-      col: "Column by column: mw is one contiguous block. A query on mw reads that block and nothing else, and equal values of one type sit together, which is what makes encoding work.",
-    };
-    function place(o) {
-      cells.forEach(({ r, c, e }) => {
-        const i = o === "row" ? r * C + c : c * R + r;
-        e.style.left = `${i * 100 / N}%`;
-      });
-      $("lay-say").textContent = SAY[o];
-    }
-    buttons($("lay"), "data-o", async (o) => { place(o); await wait(750); });
-    $("lay").querySelector('button[data-o="row"]').setAttribute("aria-pressed", "true");
-    place("row");
   }
 
   // ---- 1. parquet anatomy: click a chunk
