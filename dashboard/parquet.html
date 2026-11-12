@@ -154,66 +154,36 @@
 <h2>Sorting</h2>
 <div class="sub" data-name="runs" aria-label="Values into runs">
 <h3>Sorting turns values into runs</h3>
-<p>Real data repeats itself, and that is what sorting feeds on: sorted,
-  a value that covers 90% of the rows becomes one run. In arrival order, equal values are scattered and every row costs bits. Sorted, they sit next to each
-  other and a whole run costs one pair.</p>
-<p>Direct Lake keeps the row order of the parquet it reads, so the runs the writer built are the runs
-  every later query scans: a run is stored as one pair and tested as one.</p>
+<p>Sorted, equal values sit next to each other and a whole run is stored as one pair instead of one entry
+  per row. Direct Lake keeps the row order of the parquet it reads, so the runs the writer built are the
+  runs every later query scans.</p>
 <div class="demo" id="sortdemo">
   <div class="btns" role="group" aria-label="row order">
-    <span class="lbl">NYC taxi, 4 million rows, written by Spark:</span>
-    <button type="button" data-order="arrival" aria-pressed="true">as the rows arrived</button>
-    <button type="button" data-order="sorted">sorted (V-Order on)</button>
+    <span class="lbl">the same 40 rows, written:</span>
+    <button type="button" data-order="arrival" aria-pressed="true">as they arrived</button>
+    <button type="button" data-order="pay">ORDER BY payment_type</button>
+    <button type="button" data-order="payvendor">ORDER BY payment_type, vendor</button>
+    <button type="button" data-order="vorder">V-Order: automatic</button>
   </div>
-  <div class="col"><div class="head"><span class="mono">passenger_count</span><b id="sr-pc"></b></div>
-    <div class="slide" id="s-pc"></div></div>
-  <div class="col"><div class="head"><span class="mono">payment_type</span><b id="sr-pay"></b></div>
-    <div class="slide" id="s-pay"></div></div>
-  <div class="col"><div class="head"><span class="mono">fare_amount</span><b id="sr-fare"></b></div>
-    <div class="slide" id="s-fare"></div></div>
-  <div class="col"><div class="head"><span class="mono">tpep_pickup_datetime</span><b id="sr-ts"></b></div>
-    <div class="slide" id="s-ts"></div></div>
+  <div class="legend" id="legend"></div>
+  <div class="col"><div class="head"><span class="mono">payment_type</span></div>
+    <div class="slide" id="s-pay"></div><div class="rle mono" id="rle-pay"></div></div>
+  <div class="col"><div class="head"><span class="mono">vendor</span></div>
+    <div class="slide" id="s-vendor"></div><div class="rle mono" id="rle-vendor"></div></div>
   <div class="stats">
-    <div class="stat" id="sd-pc"><b></b><span>runs in passenger_count</span></div>
     <div class="stat" id="sd-pay"><b></b><span>runs in payment_type</span></div>
-    <div class="stat" id="sd-x"><b></b><span>fewer runs in passenger_count</span></div>
+    <div class="stat" id="sd-ven"><b></b><span>runs in vendor</span></div>
+    <div class="stat" id="sd-total"><b></b><span>runs in total</span></div>
   </div>
   <p class="say" id="sd-say"></p>
 </div>
-<p class="note">The run counts are measured: runs in the first 4 million rows of the largest file, Spark
-  runs 31451599140 (no V-Order) and 31450956154 (V-Order). The strips are an illustration: 300 rows drawn
-  at a similar skew. On the near-uniform AEMO mart the same switch moved no column.</p>
-<p>Sort by one column and its runs collapse to one per value. A second key gets runs only inside the
-  first key's runs, so the columns that repeat most gain most. A near-unique column (a timestamp)
-  cannot form runs at all.</p>
-<p><b>Pick the key from the queries, not from the file size.</b> One alternative key on AEMO cut the file
-  a further 30% (543 MB against 778, four runs each) and bought no measurable query time or CU.</p>
-
-</div>
-
-<div class="sub" data-name="scope" aria-label="Table vs each file">
-<h3>Sort the whole table, or sort each file</h3>
-<p>A global sort keeps each value in one long run that crosses row groups. V-Order sorts within each
-  file instead, so every value restarts in every row group.</p>
-<div class="demo" id="gs">
-  <div class="btns">
-    <span class="lbl">the same 48 rows, written as:</span>
-    <button type="button" data-o="arrival">arrival order</button>
-    <button type="button" data-o="local">V-Order: sorted within each file</button>
-    <button type="button" data-o="global">global sort: ORDER BY, CLUSTER BY</button>
-  </div>
-  <div class="rgwrap" id="gs-wrap"></div>
-  <div class="rgcaps" id="gs-caps"></div>
-  <div class="stats">
-    <div class="stat" id="gs-runs"><b></b><span>runs to scan</span></div>
-    <div class="stat" id="gs-dict"><b></b><span>entries in local dictionaries to merge</span></div>
-  </div>
-  <p class="say" id="gs-say"></p>
-</div>
-<p>A per-file sort is still far better than arrival order, which is why V-Order works, and a global sort
-  lands in the same place: in this project duckrun's global sort read at 0.90× V-Ordered Spark's Direct
-  Lake CU, the same within noise.</p>
-
+<p><b>V-Order is an automatic sort.</b> It sorts by several columns at once and leads with the most
+  repetitive, so every column that can form runs gets them, and nobody has to name a key.</p>
+<p><b>Any other engine can sort too</b>, with <code>ORDER BY</code> or <code>CLUSTER BY</code>, but only
+  by the columns you name, in the order you name them: the first key collapses and the rest get what is
+  left. You can get close to V-Order by hand; you will not necessarily get the same runs.</p>
+<p class="note">An illustration on 40 toy rows. V-Order's algorithm is not published; the last button
+  mimics the idea. On a real table: the next step.</p>
 </div>
 
 <div class="sub" data-name="action" aria-label="V-Order in action">
@@ -248,6 +218,36 @@
   <code>false</code> or absent on the other.</p>
 </div>
 
+<div class="sub" data-name="scope" aria-label="Sorting by hand">
+<h3>Sorting by hand: delta-rs, DuckDB, Databricks</h3>
+<p>A writer without V-Order sorts with <code>ORDER BY</code> or <code>CLUSTER BY</code>. That differs from
+  V-Order in two ways, and both can work in your favour.</p>
+<p><b>It sorts the whole table, not each file.</b> A global sort keeps each value in one long run that
+  crosses row groups. V-Order sorts within each file, so every value restarts in every row group.</p>
+<div class="demo" id="gs">
+  <div class="btns">
+    <span class="lbl">the same 48 rows, written as:</span>
+    <button type="button" data-o="arrival">arrival order</button>
+    <button type="button" data-o="local">V-Order: sorted within each file</button>
+    <button type="button" data-o="global">global sort: ORDER BY, CLUSTER BY</button>
+  </div>
+  <div class="rgwrap" id="gs-wrap"></div>
+  <div class="rgcaps" id="gs-caps"></div>
+  <div class="stats">
+    <div class="stat" id="gs-runs"><b></b><span>runs to scan</span></div>
+    <div class="stat" id="gs-dict"><b></b><span>entries in local dictionaries to merge</span></div>
+  </div>
+  <p class="say" id="gs-say"></p>
+</div>
+<p>Both are far better than arrival order, and they land in the same place: in this project duckrun's
+  global sort read at 0.90× V-Ordered Spark's Direct Lake CU, the same within noise.</p>
+<p><b>You choose the key, so choose it from the queries.</b> V-Order sorts for compression and does not
+  know your reports. A hand sort can lead with the column the reports filter on: here 9 of 25 queries
+  filter on the date, so the key leads with <code>date</code>. Do not pick it from the file size: one
+  alternative key on AEMO cut the file a further 30% (543 MB against 778, four runs each) and bought no
+  measurable query time or CU.</p>
+
+</div>
 </section>
 
 <footer>
@@ -414,45 +414,59 @@
     $("fo").querySelector('button[data-f="first"]').click();
   }
 
-  // ---- 4. sorting: four real NYC taxi columns, as they arrived and V-Ordered. The run counts are
-  // MEASURED (layout.ordering, runs per 4M rows, Spark runs 31451599140 and 31450956154); the strips
-  // are 300 illustrative rows at a similar skew, sorted the way an encoding-driven sort would.
+  // ---- 4. sorting: two columns, the same 40 rows in four orders, cells slide. V-Order's algorithm
+  // is not published; the demo mimics the idea: several columns at once, the most repetitive (fewest
+  // distinct values) first.
   {
-    const N = 300;
-    const draw = (counts) => shuffle(counts.flatMap((n, v) => Array(n).fill(v)));
-    const fareCounts = Array.from({ length: 30 }, (_, i) => Math.max(2, Math.round(40 * 0.86 ** i)));
-    const fareTotal = fareCounts.reduce((a, b) => a + b, 0);
-    fareCounts[0] += N - fareTotal;
-    const pc = draw([210, 45, 20, 12, 8, 5]), pay = draw([180, 105, 9, 6]), fare = draw(fareCounts);
-    const rows = pc.map((v, i) => ({ pc: v, pay: pay[i], fare: fare[i], ts: i }));
-    const sorted = [...rows].sort((a, b) => a.pc - b.pc || a.pay - b.pay || a.fare - b.fare);
-    const ORDERS = { arrival: rows, sorted };
-    const COLS = [
-      { k: "pc", id: "s-pc", out: "sr-pc", m: { arrival: 1368511, sorted: 406 }, color: (v) => PAL[v] },
-      { k: "pay", id: "s-pay", out: "sr-pay", m: { arrival: 1910869, sorted: 594 }, color: (v) => PAL[v] },
-      { k: "fare", id: "s-fare", out: "sr-fare", m: { arrival: 3857025, sorted: 112540 }, color: (v) => `hsl(${205 + v * 5} 65% ${28 + v * 2}%)` },
-      { k: "ts", id: "s-ts", out: "sr-ts", m: { arrival: 3996210, sorted: 3991701 }, color: (v) => `hsl(${Math.round(v * 300 / N)} 55% 50%)` },
-    ];
-    for (const c of COLS) {
-      const box = $(c.id);
+    const PAY = ["card", "cash", "no charge"], PAYN = [18, 12, 10];
+    const VEN = ["v1", "v2"];
+    seed = 3;
+    const ven = shuffle([...Array(22).fill(0), ...Array(18).fill(1)]);
+    const rows = shuffle(PAYN.flatMap((n, v) => Array.from({ length: n }, () => ({ p: v })))).map((r, i) => ({ ...r, v: ven[i] }));
+    const N = rows.length;
+    const by = (...ks) => [...rows].sort((a, b) => { for (const k of ks) if (a[k] !== b[k]) return a[k] - b[k]; return 0; });
+    const total = (o) => runs(o.map((r) => r.p)) + runs(o.map((r) => r.v));
+    const ORDERS = { arrival: rows, pay: by("p"), payvendor: by("p", "v"), vorder: by("v", "p") };
+    const T = Object.fromEntries(Object.entries(ORDERS).map(([k, o]) => [k, total(o)]));
+    const SAY = {
+      arrival: `As the rows arrived: both columns are scattered, ${T.arrival} runs for 40 rows.`,
+      pay: `A sort by hand on one column: payment_type collapses to one run per value, and vendor is left as scattered as before. ${T.pay} runs.`,
+      payvendor: `Two keys by hand: vendor now gets runs too, but only inside each payment_type run. ${T.payvendor} runs: close to V-Order, because someone named the right columns.`,
+      vorder: `V-Order sorts by both columns itself and leads with the most repetitive one, vendor: ${T.vorder} runs, with no key named by anyone.`,
+    };
+    const best = Math.min(...Object.values(T)), worst = T.arrival;
+    const rle = (vals, names) => {
+      const out = [];
+      vals.forEach((v, i) => { if (i && v === vals[i - 1]) out[out.length - 1][1]++; else out.push([v, 1]); });
+      return out.map(([v, c]) => `${names[v]}×${c}`).join(" · ");
+    };
+    for (const [key, id, off] of [["p", "s-pay", 0], ["v", "s-vendor", 3]]) {
+      const box = $(id);
       rows.forEach((r) => {
-        const el = document.createElement("span");
-        el.className = "c"; el.style.width = `calc(${100 / N}% + 1px)`; el.style.background = c.color(r[c.k]);
-        (r.cells ||= {})[c.k] = el; box.append(el);
+        const c = document.createElement("span");
+        c.className = "c"; c.style.width = `calc(${100 / N}% + 1px)`; c.style.background = PAL[r[key] + off];
+        (r.cells ||= {})[key] = c; box.append(c);
       });
     }
-    const SAY = {
-      arrival: "As the rows arrived: every column is cut into millions of runs. Almost every row starts a new one, so almost every row costs bits to store and a test to scan.",
-      sorted: "V-Order on: passenger_count goes from 1,368,511 runs to 406 and payment_type from 1,910,869 to 594, about 3,000× fewer. fare_amount gets 34× fewer. The pickup timestamp is near-unique: no sort can give it runs.",
-    };
-    function place(o) {
-      ORDERS[o].forEach((r, i) => { for (const c of COLS) r.cells[c.k].style.left = `${i * 100 / N}%`; });
-      for (const c of COLS) $(c.out).textContent = `${fmt(c.m[o])} runs`;
-      const on = o === "sorted";
-      setStat("sd-pc", fmt(COLS[0].m[o]), on);
-      setStat("sd-pay", fmt(COLS[1].m[o]), on);
-      setStat("sd-x", on ? "3,371×" : "—", on ? true : null);
-      $("sd-say").textContent = SAY[o];
+    $("legend").innerHTML = PAY.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("")
+      + VEN.map((n, i) => `<span><i style="background:${PAL[i + 3]}"></i>vendor ${n}</span>`).join("");
+    const arrP = runs(rows.map((x) => x.p)), arrV = runs(rows.map((x) => x.v));
+    function place(key) {
+      const order = ORDERS[key];
+      order.forEach((r, i) => {
+        for (const k of ["p", "v"]) {
+          const c = r.cells[k];
+          c.style.left = `${i * 100 / N}%`;
+          c.classList.toggle("rs", i > 0 && r[k] !== order[i - 1][k]);
+        }
+      });
+      const p = order.map((r) => r.p), v = order.map((r) => r.v);
+      const rp = runs(p), rv = runs(v), rt = rp + rv;
+      setStat("sd-pay", rp, rp <= 3 ? true : rp >= arrP * 0.7 ? false : null);
+      setStat("sd-ven", rv, rv <= 2 ? true : rv >= arrV * 0.7 ? false : null);
+      setStat("sd-total", rt, rt === best ? true : rt === worst ? false : null);
+      $("rle-pay").textContent = rle(p, PAY); $("rle-vendor").textContent = rle(v, VEN);
+      $("sd-say").textContent = SAY[key];
     }
     buttons($("sortdemo"), "data-order", async (o) => { place(o); await wait(750); });
     place("arrival");
