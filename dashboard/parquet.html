@@ -193,27 +193,33 @@
   every later query scans: a run is stored as one pair and tested as one.</p>
 <div class="demo" id="sortdemo">
   <div class="btns" role="group" aria-label="row order">
-    <button type="button" data-order="arrival" aria-pressed="true">arrival order</button>
-    <button type="button" data-order="pay">sort by payment_type</button>
-    <button type="button" data-order="payvendor">sort by payment_type, vendor</button>
-    <button type="button" data-order="vendorpay">sort by vendor, payment_type</button>
-    <button type="button" data-order="vorder">V-Order: picks the columns and their order</button>
+    <span class="lbl">NYC taxi, 4 million rows, written by Spark:</span>
+    <button type="button" data-order="arrival" aria-pressed="true">as the rows arrived</button>
+    <button type="button" data-order="sorted">sorted (V-Order on)</button>
   </div>
-  <div class="legend" id="legend"></div>
-  <div class="col"><div class="head"><span class="mono">payment_type</span></div>
-    <div class="slide" id="s-pay"></div><div class="rle mono" id="rle-pay"></div></div>
-  <div class="col"><div class="head"><span class="mono">vendor</span></div>
-    <div class="slide" id="s-vendor"></div><div class="rle mono" id="rle-vendor"></div></div>
+  <div class="col"><div class="head"><span class="mono">passenger_count</span><b id="sr-pc"></b></div>
+    <div class="slide" id="s-pc"></div></div>
+  <div class="col"><div class="head"><span class="mono">payment_type</span><b id="sr-pay"></b></div>
+    <div class="slide" id="s-pay"></div></div>
+  <div class="col"><div class="head"><span class="mono">fare_amount</span><b id="sr-fare"></b></div>
+    <div class="slide" id="s-fare"></div></div>
+  <div class="col"><div class="head"><span class="mono">tpep_pickup_datetime</span><b id="sr-ts"></b></div>
+    <div class="slide" id="s-ts"></div></div>
   <div class="stats">
+    <div class="stat" id="sd-pc"><b></b><span>runs in passenger_count</span></div>
     <div class="stat" id="sd-pay"><b></b><span>runs in payment_type</span></div>
-    <div class="stat" id="sd-ven"><b></b><span>runs in vendor</span></div>
-    <div class="stat" id="sd-total"><b></b><span>runs in total</span></div>
+    <div class="stat" id="sd-x"><b></b><span>fewer runs in passenger_count</span></div>
   </div>
   <p class="say" id="sd-say"></p>
 </div>
+<p class="note">The run counts are measured: runs in the first 4 million rows of the largest file, Spark
+  runs 31451599140 (no V-Order) and 31450956154 (V-Order). The strips are an illustration: 300 rows drawn
+  at a similar skew. On the near-uniform AEMO mart the same switch moved no column.</p>
 <p>Sort by one column and its runs collapse to one per value. A second key gets runs only inside the
-  first key's runs; swap the order and the winner swaps. A near-unique column (a timestamp, an amount)
+  first key's runs, so the columns that repeat most gain most. A near-unique column (a timestamp)
   cannot form runs at all.</p>
+<p><b>Pick the key from the queries, not from the file size.</b> One alternative key on AEMO cut the file
+  a further 30% (543 MB against 778, four runs each) and bought no measurable query time or CU.</p>
 
 </div>
 
@@ -274,30 +280,6 @@
   <code>false</code> or absent on the other.</p>
 </div>
 
-<div class="sub" data-name="vorder" aria-label="V-Order, measured">
-<h3>V-Order, measured</h3>
-<p>V-Order is three things: dictionary encoding, row-group size, and a sort within each file that
-  shortens the runs. It is not a separate format; any reader can read a V-Ordered file, and any writer
-  can set the same three things. In Fabric Spark only the <code>readHeavyForPBI</code> resource profile turns it on
-  (the default <code>writeHeavy</code> does not, nor does <code>readHeavyForSpark</code> despite its
-  name); Fabric Warehouse has it on by default. Which columns it sorts by is not documented, but the
-  result is measurable. NYC taxi, runs per 4M rows, Spark without and with V-Order:</p>
-<div class="scroll"><table>
-  <thead><tr><th>column</th><th>no V-Order</th><th>V-Order</th><th>fewer runs</th></tr></thead>
-  <tbody>
-    <tr><td class="mono">passenger_count</td><td>1,368,511</td><td>406</td><td>3,371×</td></tr>
-    <tr><td class="mono">payment_type</td><td>1,910,869</td><td>594</td><td>3,217×</td></tr>
-    <tr><td class="mono">fare_amount</td><td>3,857,025</td><td>112,540</td><td>34×</td></tr>
-    <tr><td class="mono">tpep_pickup_datetime</td><td>3,996,210</td><td>3,991,701</td><td>1.0×</td></tr>
-  </tbody>
-</table></div>
-<p class="note">Spark runs 31451599140 and 31450956154. The skewed columns collapse by three orders of
-  magnitude, the near-unique timestamp does not move. On the near-uniform AEMO mart the same switch moved no
-  column. What sorting is worth depends on the skew, not on the row count.</p>
-<p><b>Pick the key from the queries, not from the file size.</b> One alternative key on AEMO cut the file
-  a further 30% (543 MB against 778, four runs each) and bought no measurable query time or CU. Here 9 of
-  25 queries filter on the date, so the key leads with <code>date</code>.</p>
-</div>
 </section>
 
 <footer>
@@ -494,60 +476,48 @@
     $("fo").querySelector('button[data-f="first"]').click();
   }
 
-  // ---- 4. sorting: two columns, four orders, cells slide
+  // ---- 4. sorting: four real NYC taxi columns, as they arrived and V-Ordered. The run counts are
+  // MEASURED (layout.ordering, runs per 4M rows, Spark runs 31451599140 and 31450956154); the strips
+  // are 300 illustrative rows at a similar skew, sorted the way an encoding-driven sort would.
   {
-    const PAY = ["card", "cash", "no charge", "dispute"], PAYN = [29, 12, 5, 2];
-    const VEN = ["v1", "v2"];
-    const rows = shuffle(PAYN.flatMap((n, v) => Array.from({ length: n }, () => ({ p: v, v: rand() < 0.62 ? 0 : 1 }))));
-    const N = rows.length;
-    const by = (...ks) => [...rows].sort((a, b) => { for (const k of ks) if (a[k] !== b[k]) return a[k] - b[k]; return 0; });
-    const total = (o) => runs(o.map((r) => r.p)) + runs(o.map((r) => r.v));
-    const ORDERS = { arrival: rows, pay: by("p"), payvendor: by("p", "v"), vendorpay: by("v", "p") };
-    // V-Order's algorithm is not published. The demo mimics the idea: a multi-column sort whose column
-    // order is chosen for compression, by trying both orders and keeping the one with fewer runs.
-    const vChoice = total(ORDERS.payvendor) <= total(ORDERS.vendorpay) ? "payvendor" : "vendorpay";
-    ORDERS.vorder = ORDERS[vChoice];
-    const SAY = {
-      arrival: "Rows as they arrived: both columns are scattered.",
-      pay: "Sorted by payment_type only: it gets one run per value, and vendor is left almost as scattered as before.",
-      payvendor: "payment_type first, vendor second: vendor gets runs too, but only inside each payment_type run.",
-      vendorpay: "vendor first: now vendor has the best runs and payment_type gets what is left.",
-      vorder: `V-Order sorts by several columns and chooses which ones, and in what order, itself: for compression, not for your queries. Its algorithm is not published; this demo mimics the idea by trying both orders and keeping the one with fewer runs in total (${vChoice === "payvendor" ? "payment_type, then vendor" : "vendor, then payment_type"}). On the real taxi table it shrank several columns at once: see V-Order, measured.`,
-    };
-    const best = Math.min(...Object.values(ORDERS).map(total)), worst = total(rows);
-    const rle = (vals, names) => {
-      const out = [];
-      vals.forEach((v, i) => { if (i && v === vals[i - 1]) out[out.length - 1][1]++; else out.push([v, 1]); });
-      return out.map(([v, c]) => `${names[v]}×${c}`).join(" · ");
-    };
-    for (const [key, id, off] of [["p", "s-pay", 0], ["v", "s-vendor", 4]]) {
-      const box = $(id);
+    const N = 300;
+    const draw = (counts) => shuffle(counts.flatMap((n, v) => Array(n).fill(v)));
+    const fareCounts = Array.from({ length: 30 }, (_, i) => Math.max(2, Math.round(40 * 0.86 ** i)));
+    const fareTotal = fareCounts.reduce((a, b) => a + b, 0);
+    fareCounts[0] += N - fareTotal;
+    const pc = draw([210, 45, 20, 12, 8, 5]), pay = draw([180, 105, 9, 6]), fare = draw(fareCounts);
+    const rows = pc.map((v, i) => ({ pc: v, pay: pay[i], fare: fare[i], ts: i }));
+    const sorted = [...rows].sort((a, b) => a.pc - b.pc || a.pay - b.pay || a.fare - b.fare);
+    const ORDERS = { arrival: rows, sorted };
+    const COLS = [
+      { k: "pc", id: "s-pc", out: "sr-pc", m: { arrival: 1368511, sorted: 406 }, color: (v) => PAL[v] },
+      { k: "pay", id: "s-pay", out: "sr-pay", m: { arrival: 1910869, sorted: 594 }, color: (v) => PAL[v] },
+      { k: "fare", id: "s-fare", out: "sr-fare", m: { arrival: 3857025, sorted: 112540 }, color: (v) => `hsl(${205 + v * 5} 65% ${28 + v * 2}%)` },
+      { k: "ts", id: "s-ts", out: "sr-ts", m: { arrival: 3996210, sorted: 3991701 }, color: (v) => `hsl(${Math.round(v * 300 / N)} 55% 50%)` },
+    ];
+    for (const c of COLS) {
+      const box = $(c.id);
       rows.forEach((r) => {
-        const c = document.createElement("span");
-        c.className = "c"; c.style.width = `calc(${100 / N}% + 1px)`; c.style.background = PAL[r[key] + off];
-        (r.cells ||= {})[key] = c; box.append(c);
+        const el = document.createElement("span");
+        el.className = "c"; el.style.width = `calc(${100 / N}% + 1px)`; el.style.background = c.color(r[c.k]);
+        (r.cells ||= {})[c.k] = el; box.append(el);
       });
     }
-    $("legend").innerHTML = PAY.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("")
-      + VEN.map((n, i) => `<span><i style="background:${PAL[i + 4]}"></i>vendor ${n}</span>`).join("");
-    function place(order) {
-      order.forEach((r, i) => {
-        for (const k of ["p", "v"]) {
-          const c = r.cells[k];
-          c.style.left = `${i * 100 / N}%`;
-          c.classList.toggle("rs", i > 0 && r[k] !== order[i - 1][k]);
-        }
-      });
-      const p = order.map((r) => r.p), v = order.map((r) => r.v);
-      const rp = runs(p), rv = runs(v), rt = rp + rv;
-      const col = (r, distinct, arrival) => (r === distinct ? true : r >= arrival * 0.7 ? false : null);
-      setStat("sd-pay", rp, col(rp, 4, runs(rows.map((x) => x.p))));
-      setStat("sd-ven", rv, col(rv, 2, runs(rows.map((x) => x.v))));
-      setStat("sd-total", rt, rt === best ? true : rt === worst ? false : null);
-      $("rle-pay").textContent = rle(p, PAY); $("rle-vendor").textContent = rle(v, VEN);
+    const SAY = {
+      arrival: "As the rows arrived: every column is cut into millions of runs. Almost every row starts a new one, so almost every row costs bits to store and a test to scan.",
+      sorted: "V-Order on: passenger_count goes from 1,368,511 runs to 406 and payment_type from 1,910,869 to 594, about 3,000× fewer. fare_amount gets 34× fewer. The pickup timestamp is near-unique: no sort can give it runs.",
+    };
+    function place(o) {
+      ORDERS[o].forEach((r, i) => { for (const c of COLS) r.cells[c.k].style.left = `${i * 100 / N}%`; });
+      for (const c of COLS) $(c.out).textContent = `${fmt(c.m[o])} runs`;
+      const on = o === "sorted";
+      setStat("sd-pc", fmt(COLS[0].m[o]), on);
+      setStat("sd-pay", fmt(COLS[1].m[o]), on);
+      setStat("sd-x", on ? "3,371×" : "—", on ? true : null);
+      $("sd-say").textContent = SAY[o];
     }
-    buttons($("sortdemo"), "data-order", async (o) => { place(ORDERS[o]); $("sd-say").textContent = SAY[o]; await wait(750); });
-    place(ORDERS.arrival); $("sd-say").textContent = SAY.arrival;
+    buttons($("sortdemo"), "data-order", async (o) => { place(o); await wait(750); });
+    place("arrival");
   }
 
   // ---- V-Order in action: MEASURED, not a toy. Two new Fabric Warehouses, the same 7,696,617 real
