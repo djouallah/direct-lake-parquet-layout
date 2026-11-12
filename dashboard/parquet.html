@@ -159,31 +159,26 @@
   runs every later query scans.</p>
 <div class="demo" id="sortdemo">
   <div class="btns" role="group" aria-label="row order">
-    <span class="lbl">the same 40 rows, written:</span>
+    <span class="lbl">the same 80 taxi trips, written:</span>
     <button type="button" data-order="arrival" aria-pressed="true">as they arrived</button>
     <button type="button" data-order="pay">ORDER BY payment_type</button>
     <button type="button" data-order="payvendor">ORDER BY payment_type, vendor</button>
     <button type="button" data-order="vorder">V-Order: automatic</button>
   </div>
-  <div class="legend" id="legend"></div>
-  <div class="col"><div class="head"><span class="mono">payment_type</span></div>
-    <div class="slide" id="s-pay"></div><div class="rle mono" id="rle-pay"></div></div>
-  <div class="col"><div class="head"><span class="mono">vendor</span></div>
-    <div class="slide" id="s-vendor"></div><div class="rle mono" id="rle-vendor"></div></div>
+  <div id="sd-cols"></div>
   <div class="stats">
-    <div class="stat" id="sd-pay"><b></b><span>runs in payment_type</span></div>
-    <div class="stat" id="sd-ven"><b></b><span>runs in vendor</span></div>
+    <div class="stat" id="sd-named"><b></b><span>runs in the two columns named</span></div>
+    <div class="stat" id="sd-rest"><b></b><span>runs in the other three</span></div>
     <div class="stat" id="sd-total"><b></b><span>runs in total</span></div>
   </div>
   <p class="say" id="sd-say"></p>
 </div>
-<p><b>V-Order is an automatic sort.</b> It sorts by several columns at once and leads with the most
+<p><b>V-Order is an automatic sort.</b> It sorts by every column at once and leads with the most
   repetitive, so every column that can form runs gets them, and nobody has to name a key.</p>
-<p><b>Any other engine can sort too</b>, with <code>ORDER BY</code> or <code>CLUSTER BY</code>, but only
-  by the columns you name, in the order you name them: the first key collapses and the rest get what is
-  left. You can get close to V-Order by hand; you will not necessarily get the same runs.</p>
-<p class="note">An illustration on 40 toy rows. V-Order's algorithm is not published; the last button
-  mimics the idea. On a real table: the next step.</p>
+<p><b>A hand sort orders the columns you name.</b> Real data repeats in combinations (the same kind of
+  trip, over and over), so the columns you did not name stay as scattered as they arrived.</p>
+<p class="note">An illustration on 80 toy rows drawn from eight trip profiles. V-Order's algorithm is
+  not published; the last button mimics the idea. On a real table: the next step.</p>
 </div>
 
 <div class="sub" data-name="action" aria-label="V-Order in action">
@@ -218,18 +213,17 @@
   <code>false</code> or absent on the other.</p>
 </div>
 
-<div class="sub" data-name="scope" aria-label="Sorting by hand">
-<h3>Sorting by hand: delta-rs, DuckDB, Databricks</h3>
-<p>A writer without V-Order sorts with <code>ORDER BY</code> or <code>CLUSTER BY</code>. That differs from
-  V-Order in two ways, and both can work in your favour.</p>
-<p><b>It sorts the whole table, not each file.</b> A global sort keeps each value in one long run that
-  crosses row groups. V-Order sorts within each file, so every value restarts in every row group.</p>
+<div class="sub" data-name="scope" aria-label="Global vs file">
+<h3>Global sort, or a sort inside each file</h3>
+<p>A global sort orders the whole table, so each value sits in one long run that crosses row groups and
+  files. A per-file sort, which is what V-Order does, orders the rows inside each file, so every value
+  restarts in every row group.</p>
 <div class="demo" id="gs">
   <div class="btns">
     <span class="lbl">the same 48 rows, written as:</span>
     <button type="button" data-o="arrival">arrival order</button>
     <button type="button" data-o="local">V-Order: sorted within each file</button>
-    <button type="button" data-o="global">global sort: ORDER BY, CLUSTER BY</button>
+    <button type="button" data-o="global">global sort</button>
   </div>
   <div class="rgwrap" id="gs-wrap"></div>
   <div class="rgcaps" id="gs-caps"></div>
@@ -239,13 +233,7 @@
   </div>
   <p class="say" id="gs-say"></p>
 </div>
-<p>Both are far better than arrival order, and they land in the same place: in this project duckrun's
-  global sort read at 0.90× V-Ordered Spark's Direct Lake CU, the same within noise.</p>
-<p><b>You choose the key, so choose it from the queries.</b> V-Order sorts for compression and does not
-  know your reports. A hand sort can lead with the column the reports filter on: here 9 of 25 queries
-  filter on the date, so the key leads with <code>date</code>. Do not pick it from the file size: one
-  alternative key on AEMO cut the file a further 30% (543 MB against 778, four runs each) and bought no
-  measurable query time or CU.</p>
+<p>For compression the two land close: both are far better than arrival order.</p>
 
 </div>
 </section>
@@ -414,58 +402,63 @@
     $("fo").querySelector('button[data-f="first"]').click();
   }
 
-  // ---- 4. sorting: two columns, the same 40 rows in four orders, cells slide. V-Order's algorithm
-  // is not published; the demo mimics the idea: several columns at once, the most repetitive (fewest
-  // distinct values) first.
+  // ---- 4. sorting: five columns, 80 rows drawn from eight trip profiles, four orders. Real data
+  // repeats in COMBINATIONS, which is what a sort over every column finds and a two-key sort misses.
+  // V-Order's algorithm is not published; the demo mimics it: every column, fewest distinct values first.
   {
-    const PAY = ["card", "cash", "no charge"], PAYN = [18, 12, 10];
-    const VEN = ["v1", "v2"];
-    seed = 3;
-    const ven = shuffle([...Array(22).fill(0), ...Array(18).fill(1)]);
-    const rows = shuffle(PAYN.flatMap((n, v) => Array.from({ length: n }, () => ({ p: v })))).map((r, i) => ({ ...r, v: ven[i] }));
+    const COLS = [
+      { k: "flag", name: "store_and_fwd_flag", vals: ["N", "Y"], off: 0 },
+      { k: "rate", name: "RatecodeID", vals: ["standard", "JFK"], off: 2 },
+      { k: "vendor", name: "vendor", vals: ["v1", "v2"], off: 4 },
+      { k: "pay", name: "payment_type", vals: ["card", "cash", "no charge"], off: 0 },
+      { k: "pc", name: "passenger_count", vals: ["1", "2", "3", "4"], off: 3 },
+    ];
+    // [rows, flag, rate, vendor, pay, pc]
+    const PROFILES = [[22, 0, 0, 0, 0, 0], [16, 0, 0, 1, 0, 1], [12, 0, 0, 0, 1, 0], [10, 0, 0, 1, 1, 2],
+      [8, 0, 1, 0, 0, 3], [6, 0, 0, 1, 2, 0], [4, 1, 0, 0, 0, 1], [2, 0, 1, 1, 1, 0]];
+    seed = 4;
+    const rows = shuffle(PROFILES.flatMap(([n, ...v]) => Array.from({ length: n }, () => Object.fromEntries(COLS.map((c, i) => [c.k, v[i]])))));
     const N = rows.length;
     const by = (...ks) => [...rows].sort((a, b) => { for (const k of ks) if (a[k] !== b[k]) return a[k] - b[k]; return 0; });
-    const total = (o) => runs(o.map((r) => r.p)) + runs(o.map((r) => r.v));
-    const ORDERS = { arrival: rows, pay: by("p"), payvendor: by("p", "v"), vorder: by("v", "p") };
-    const T = Object.fromEntries(Object.entries(ORDERS).map(([k, o]) => [k, total(o)]));
-    const SAY = {
-      arrival: `As the rows arrived: both columns are scattered, ${T.arrival} runs for 40 rows.`,
-      pay: `A sort by hand on one column: payment_type collapses to one run per value, and vendor is left as scattered as before. ${T.pay} runs.`,
-      payvendor: `Two keys by hand: vendor now gets runs too, but only inside each payment_type run. ${T.payvendor} runs: close to V-Order, because someone named the right columns.`,
-      vorder: `V-Order sorts by both columns itself and leads with the most repetitive one, vendor: ${T.vorder} runs, with no key named by anyone.`,
-    };
-    const best = Math.min(...Object.values(T)), worst = T.arrival;
-    const rle = (vals, names) => {
-      const out = [];
-      vals.forEach((v, i) => { if (i && v === vals[i - 1]) out[out.length - 1][1]++; else out.push([v, 1]); });
-      return out.map(([v, c]) => `${names[v]}×${c}`).join(" · ");
-    };
-    for (const [key, id, off] of [["p", "s-pay", 0], ["v", "s-vendor", 3]]) {
-      const box = $(id);
+    const card = (k) => new Set(rows.map((r) => r[k])).size;
+    const auto = COLS.map((c) => c.k).sort((a, b) => card(a) - card(b));
+    const ORDERS = { arrival: rows, pay: by("pay"), payvendor: by("pay", "vendor"), vorder: by(...auto) };
+    const count = (o, ks) => ks.reduce((n, k) => n + runs(o.map((r) => r[k])), 0);
+    const ALL = COLS.map((c) => c.k), NAMED = ["pay", "vendor"], REST = ALL.filter((k) => !NAMED.includes(k));
+    const T = Object.fromEntries(Object.entries(ORDERS).map(([k, o]) => [k, count(o, ALL)]));
+    const box = $("sd-cols");
+    for (const c of COLS) {
+      const col = document.createElement("div"); col.className = "col";
+      col.innerHTML = `<div class="head"><span class="mono">${c.name}</span><b id="sd-r-${c.k}"></b></div><div class="slide" id="sd-s-${c.k}"></div>`;
+      box.append(col);
+      const strip = col.querySelector(".slide");
       rows.forEach((r) => {
-        const c = document.createElement("span");
-        c.className = "c"; c.style.width = `calc(${100 / N}% + 1px)`; c.style.background = PAL[r[key] + off];
-        (r.cells ||= {})[key] = c; box.append(c);
+        const e = document.createElement("span");
+        e.className = "c"; e.style.width = `calc(${100 / N}% + 1px)`; e.style.background = PAL[(r[c.k] + c.off) % PAL.length];
+        e.title = c.vals[r[c.k]];
+        (r.cells ||= {})[c.k] = e; strip.append(e);
       });
     }
-    $("legend").innerHTML = PAY.map((n, i) => `<span><i style="background:${PAL[i]}"></i>${n}</span>`).join("")
-      + VEN.map((n, i) => `<span><i style="background:${PAL[i + 3]}"></i>vendor ${n}</span>`).join("");
-    const arrP = runs(rows.map((x) => x.p)), arrV = runs(rows.map((x) => x.v));
+    const SAY = {
+      arrival: `As they arrived: every column is scattered, ${T.arrival} runs for 80 rows.`,
+      pay: `ORDER BY payment_type: that column collapses to 3 runs, every other column stays scattered. ${T.pay} runs.`,
+      payvendor: `Two keys by hand: payment_type and vendor collapse, the three columns nobody named stay scattered. ${T.payvendor} runs.`,
+      vorder: `V-Order sorts by every column, most repetitive first: the trip profiles line up and every column collapses. ${T.vorder} runs, ${(T.payvendor / T.vorder).toFixed(1)}× fewer than the two-key sort, with no key named by anyone.`,
+    };
     function place(key) {
       const order = ORDERS[key];
       order.forEach((r, i) => {
-        for (const k of ["p", "v"]) {
-          const c = r.cells[k];
-          c.style.left = `${i * 100 / N}%`;
-          c.classList.toggle("rs", i > 0 && r[k] !== order[i - 1][k]);
+        for (const c of COLS) {
+          const e = r.cells[c.k];
+          e.style.left = `${i * 100 / N}%`;
+          e.classList.toggle("rs", i > 0 && r[c.k] !== order[i - 1][c.k]);
         }
       });
-      const p = order.map((r) => r.p), v = order.map((r) => r.v);
-      const rp = runs(p), rv = runs(v), rt = rp + rv;
-      setStat("sd-pay", rp, rp <= 3 ? true : rp >= arrP * 0.7 ? false : null);
-      setStat("sd-ven", rv, rv <= 2 ? true : rv >= arrV * 0.7 ? false : null);
-      setStat("sd-total", rt, rt === best ? true : rt === worst ? false : null);
-      $("rle-pay").textContent = rle(p, PAY); $("rle-vendor").textContent = rle(v, VEN);
+      for (const c of COLS) $(`sd-r-${c.k}`).textContent = `${runs(order.map((r) => r[c.k]))} runs`;
+      const best = key === "vorder", worst = key === "arrival";
+      setStat("sd-named", count(order, NAMED), worst ? false : true);
+      setStat("sd-rest", count(order, REST), best ? true : false);
+      setStat("sd-total", T[key], best ? true : worst ? false : null);
       $("sd-say").textContent = SAY[key];
     }
     buttons($("sortdemo"), "data-order", async (o) => { place(o); await wait(750); });
@@ -540,7 +533,7 @@
     const SAY = {
       arrival: "Rows as they arrived, 12 per row group. Every row group holds every value, scattered.",
       local: "Each file sorted on its own, the way V-Order sorts: runs inside every row group, but every value restarts in every one.",
-      global: "One ORDER BY over the whole table, then cut into row groups: runs continue across the boundaries and most row groups hold one or two values.",
+      global: "One sort over the whole table, then cut into row groups: runs continue across the boundaries and most row groups hold one or two values.",
     };
     const totals = (o) => groups[o].reduce((t, grp) => { const v = grp.map((x) => x.v); return { r: t.r + runs(v), d: t.d + new Set(v).size }; }, { r: 0, d: 0 });
     function place(o) {
